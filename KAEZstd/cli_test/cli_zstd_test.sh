@@ -13,7 +13,7 @@ EXE="$zstd_executable $kaezstd_executable"
 # 压缩级别
 compression_level="1 2 3 4 5 6 7 8 9 10 15 20"
 
-# 测试文件大小(M)
+# 生成测试文件大小(M)
 test_file_size="1 10 20 30 40 50 100 500 1000"
 
 function generate_test_file() {
