@@ -1,0 +1,92 @@
+#! /bin/bash
+if [[ $# == 0 ]]; then
+    openssl_path=/usr/local
+    wd_path=/usr/local
+elif [[ $# == 1 ]]; then
+    if [[ $1 == --openssl_path=* ]]; then
+        openssl_path=${1#*=}
+        wd_path=/usr/local
+    elif [[ $1 == --wd_path=* ]]; then
+        openssl_path=/usr/local
+        wd_path=${1#*=}
+    else
+        echo "usage: ./configure [--openssl_path] [--wd_path=]"
+        exit 1;
+    fi
+elif [[ $# == 2 ]]; then
+    if [ ${1%%=*} == --openssl_path ] && [ ${2%=*} == --wd_path ]; then
+        openssl_path=${1#*=}
+        wd_path=${2##*=}
+    elif [ ${1%%=*} == --wd_path ] && [ ${2%=*} == --openssl_path ]; then
+        wd_path=${1#*=}
+        openssl_path=${2##*=}
+    else
+        echo "usage: ./configure [--openssl_path=] [--wd_path=]"
+        exit 1;
+    fi
+else
+    echo "Too many options, option numbers less than or equal 2"
+    exit 1;
+fi
+
+if [ -d $openssl_path ]; then
+    echo "checking openssl install path... ok"
+else
+    echo "No such file or directory"
+    exit 1;
+fi
+
+if [ -d $wd_path ]; then
+    echo "checking wd install path... ok"
+else
+    echo "No such file or directory"
+    exit 1;
+fi
+
+grep -n "OPENSSL_WORK_PATH" Makefile > /dev/null
+if [ $? = 0 ]; then
+    sed -i "1d" Makefile
+    sed -i "1i\export OPENSSL_WORK_PATH=$openssl_path" Makefile
+else
+    sed -i "1i\export OPENSSL_WORK_PATH=$openssl_path" Makefile
+fi
+grep -n "LDFLAGS   += -Wl,-rpath*" Makefile > /dev/null
+if [ $? = 0 ]; then
+    line=($(grep -n "LDFLAGS   += -Wl,-rpath*" Makefile | cut -d ':' -f 1))
+    sed -i "${line}d" Makefile
+    sed -i "${line}i\LDFLAGS   += -Wl,-rpath,$openssl_path/lib:$wd_path/lib" Makefile
+else
+    line=($(grep -n "LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack" Makefile | cut -d ':' -f 1))
+    sed -i "${line}a\LDFLAGS   += -Wl,-rpath,$openssl_path/lib:$wd_path/lib" Makefile
+fi
+
+WD_PATH=./../drivers/warpdrive
+WD_SOURCE_PATH=/usr/local/include/warpdrive
+WD_RPM_PATH=/usr/include/warpdrive
+grep -n "INCDIR += -I ${WD_PATH} -I ${WD_PATH}/include" Makefile > /dev/null
+if [ $? = 0 ]; then
+    include_line=($(grep -n "INCDIR += -I ${WD_PATH} -I ${WD_PATH}/include" Makefile | cut -d ':' -f 1))
+    sed -i "${include_line}d" Makefile
+fi
+grep -n "INCDIR += -I ${WD_RPM_PATH} -I ${WD_RPM_PATH}/include" Makefile > /dev/null
+if [ $? = 0 ]; then
+    include_line=($(grep -n "INCDIR += -I ${WD_RPM_PATH} -I ${WD_RPM_PATH}/include" Makefile | cut -d ':' -f 1))
+    sed -i "${include_line}d" Makefile
+fi
+grep -n "INCDIR += -I ${WD_SOURCE_PATH} -I ${WD_SOURCE_PATH}/include" Makefile > /dev/null
+if [ $? = 0 ]; then
+    include_line=($(grep -n "INCDIR += -I ${WD_SOURCE_PATH} -I ${WD_SOURCE_PATH}/include" Makefile | cut -d ':' -f 1))
+    sed -i "${include_line}d" Makefile
+fi
+
+include_line=($(grep -n "INCDIR += -I \$(OPENSSL_WORK_PATH)/include" Makefile | cut -d ':' -f 1))
+if [ -f ${WD_PATH}/wd.h ]; then
+    sed -i "${include_line}a\INCDIR += -I ${WD_PATH} -I ${WD_PATH}/include" Makefile
+elif [ -f ${WD_RPM_PATH}/wd.h ]; then
+    sed -i "${include_line}a\INCDIR += -I ${WD_RPM_PATH} -I ${WD_RPM_PATH}/include" Makefile
+elif [ -f ${WD_SOURCE_PATH}/wd.h ]; then
+    sed -i "${include_line}a\INCDIR += -I ${WD_SOURCE_PATH} -I ${WD_SOURCE_PATH}/include" Makefile
+else
+    echo "Warpdrive have not installed!"
+fi
+
