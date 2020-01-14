@@ -185,11 +185,7 @@ void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t* e_cipher_ctx)
         wcrypto_del_cipher_ctx(e_cipher_ctx->wd_ctx);
         e_cipher_ctx->wd_ctx = NULL;
     }
-
-    if (e_cipher_ctx->q_node != NULL) {
-        (void)kae_put_node_to_pool(g_sec_ciphers_qnode_pool, e_cipher_ctx->q_node);
-    }
-    
+   
     if (e_cipher_ctx->priv_ctx && e_cipher_ctx->priv_ctx->ecb_encryto) {
         if (e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx != NULL) {
             EVP_CIPHER_CTX_free(e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx);
@@ -200,7 +196,11 @@ void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t* e_cipher_ctx)
         kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->iv_out);
         kae_free(e_cipher_ctx->priv_ctx->ecb_encryto);
     }
-    e_cipher_ctx->priv_ctx = NULL;
+
+    if (e_cipher_ctx->q_node != NULL) {
+        (void)kae_put_node_to_pool(g_sec_ciphers_qnode_pool, e_cipher_ctx->q_node);
+    }
+	
     e_cipher_ctx = NULL;
 
     return;
