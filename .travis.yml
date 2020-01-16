@@ -1,21 +1,21 @@
 arch:
-	- arm64
+  - arm64
 
 addons:
-	hosts:
-		- node1
+  hosts:
+    - node1
 
 scripts:
 
-	- cd ../
-	- wget https://www.openssl.org/source/old/1.1.1/openssl-1.1.1a.tar.gz
-	- tar -zxf openssl-1.1.1a.tar.gz
-	- cd openssl-1.1.1a
-	- ./config -d -Wl,-rpath,/usr/local/lib
-	- make -j20 && make install -j20
+  - cd ../
+  - wget https://www.openssl.org/source/old/1.1.1/openssl-1.1.1a.tar.gz
+  - tar -zxf openssl-1.1.1a.tar.gz
+  - cd openssl-1.1.1a
+  - ./config -d -Wl,-rpath,/usr/local/lib
+  - make -j20 && make install -j20
 
-	- cd ../KAE
-	- chmod +x configure
-	- ./configure
-	- make clean && make
-	
+  - cd ../KAE
+  - chmod +x configure
+  - ./configure
+  - make clean && make
+  
