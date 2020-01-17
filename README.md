@@ -76,22 +76,24 @@ Clone the Github repository containing the Kunpeng Accelerator Engine:
 
     git clone https://github.com/kunpengcompute/KAE
 
-Note: To build the Kunpeng Accelerator Engine, install the `kernel-devel` package first.
+Download the release version of Kunpeng Accelerator Engine Driver from:
 
-The code contains four parts, accelerator driver, accelerator library, accelerator OpenSSL engine and the patch for zlib. 
+<https://github.com/kunpengcompute/KAEdriver>
 
-Firstly, download accelerator driver from:
-
-```
-https://www.huaweicloud.com/kunpeng/software/accelerator.html
-``` 
-install the accelerator driver:
+Firstly, build and install the accelerator driver:
+Note: To build the Kunpeng Accelerator Engine Driver, install the `kernel-devel` package first.
 
 ```
 tar -zxf Kunpeng_KAE_driver.tar.gz
 cd kae_driver
 make
 make install
+modprobe uacce
+modprobe hisi_qm
+modprobe hisi_sec2
+modprobe hisi_hpre
+modprobe hisi_zip
+modprobe hisi_rde
 ```
 Secondly, install the accelerator library:
 
@@ -103,7 +105,7 @@ make
 make install
 ```
 
-Then, install the accelerator OpenSSL engine:
+Then, install the  Kunpeng Accelerator Engine:
 
 ```
 cd KAE 
@@ -114,7 +116,7 @@ make install
 
 ```
 
-Note: The `--openssl_path` can be used with the `./configure` command to specify the location that  `make install` will copy files to. The default installation path for the accelerator engine is `/usr/local/lib/openssl-1.1`. You are advised to install the accelerator OpenSSL engine by default as the OpenSSL; 
+Note: The `--openssl_path` can be used with the `./configure` command to specify the location that  `make install` will copy files to. The default installation path for the accelerator engine is `/usr/local/lib/openssl-1.1`. You are advised to install the Kunpeng Accelerator Engine by default as the OpenSSL; 
 Export the environment variableas `OPENSSL_ENGINES` as follows :
 
 ```
@@ -187,11 +189,11 @@ The most likely failure point is that the Kunpeng Accelerator Engine is not load
 
 ## Loading Engines by Setting the OpenSSL Configuration File 
 
-By setting up the OpenSSL configuration file, you can also initialize the Kunpeng Accelerator Engines for your OpenSSL application. For further details on using the `openssl.cnf` file, see the OpenSSL online documentation at:
+By setting up the OpenSSL configuration file, you can also initialize the Kunpeng Accelerator Engine for your OpenSSL application. For further details on using the `openssl.cnf` file, see the OpenSSL online documentation at:
 
 <https://www.openssl.org/docs/man1.1.0/apps/config.html>
 
-Here is an example to show you how to set up the  `openssl.cnf`  file to load engines. Add the following statements to the global section (assuming that the path is the one that accelerator OpenSSL engine installed):
+Here is an example to show you how to set up the  `openssl.cnf`  file to load engines. Add the following statements to the global section (assuming that the path is the one that KAE installed):
 
     openssl_conf = openssl_engine_init
     
@@ -212,6 +214,7 @@ For further assistance, contact Huawei Support at:
 
 <https://support.huawei.com>
 
+<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
 
 ## Copyright
 
