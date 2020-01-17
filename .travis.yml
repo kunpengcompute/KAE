@@ -23,7 +23,7 @@ scripts:
   - make 
   - make install
   
-  - cd ../KAE
+  - cd ../../KAE
   - chmod +x configure
   - ./configure
   - make clean && make
