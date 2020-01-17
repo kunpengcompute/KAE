@@ -11,20 +11,22 @@ scripts:
   - wget https://www.openssl.org/source/old/1.1.1/openssl-1.1.1a.tar.gz
   - tar -zxf openssl-1.1.1a.tar.gz
   - cd openssl-1.1.1a
-  - ./config -d -Wl,-rpath,/usr/local/lib
-  - make -j20 && make install -j20
+  - sudo ./config -d -Wl,-rpath,/usr/local/lib
+  - sudo make -j20
+  - sudo make install -j20
 
   - cd ../
   - wget https://github.com/kunpengcompute/KAEdriver/releases/download/v1.2.8-beta.1/Kunpeng_KAE_driver-1.2.8-bata.1.tar.gz
   - tar -zxf Kunpeng_KAE_driver-1.2.8-bata.1.tar.gz
   - cd Kunpeng_KAE_driver/warpdrive
-  - sh autogen.sh 
-  - ./configure 
-  - make 
-  - make install
+  - sudo sh autogen.sh 
+  - sudo ./configure 
+  - sudo make 
+  - sudo make install
   
   - cd ../../KAE
-  - chmod +x configure
-  - ./configure
-  - make clean && make
+  - sudo chmod +x configure
+  - sudo ./configure
+  - sudo make clean
+  - sudo make
   
