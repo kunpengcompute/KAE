@@ -17,7 +17,7 @@ scripts:
 
   - cd ../
   - wget https://github.com/kunpengcompute/KAEdriver/releases/download/v1.2.8-beta.1/Kunpeng_KAE_driver-1.2.8-beta.1.tar.gz
-  - tar -zxf Kunpeng_KAE_driver-1.2.8-bata.1.tar.gz
+  - tar -zxf Kunpeng_KAE_driver-1.2.8-beta.1.tar.gz
   - cd Kunpeng_KAE_driver/warpdrive
   - sudo sh autogen.sh 
   - sudo ./configure 
