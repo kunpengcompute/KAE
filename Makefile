@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := $(OPENSSL_WORK_PATH)/lib/engines-1.1
 CC=gcc
 
 LIBNAME := libkae.so
-VERSION = 1.2.8
+VERSION = 1.2.10
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = kae.so
 
