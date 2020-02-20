@@ -26,9 +26,6 @@
 #define MAXBLOCKSIZE   0x90000
 #define MAXRSVMEM      0x400000
 
-#define MAXBLOCKSIZE   0x90000
-#define MAXRSVMEM      0x400000
-
 const char *g_alg_type[] = {
     "rsa",
     "dh",
