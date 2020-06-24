@@ -40,19 +40,26 @@
 #include "async_event.h"
 #include "wd_queue_memory.h"
 #include "engine_types.h"
+#include "hpre_rsa_utils.h"
 #include "utils/engine_check.h"
 
 static void hpre_rsa_cb(const void *message, void *tag);
 
 KAE_QUEUE_POOL_HEAD_S *g_hpre_rsa_qnode_pool = NULL;
 
-int wd_hpre_init_qnode_pool()
+void wd_hpre_uninit_qnode_pool(void)
+{
+    kae_queue_pool_destroy(g_hpre_rsa_qnode_pool, NULL);
+    g_hpre_rsa_qnode_pool = NULL;
+}
+
+int wd_hpre_init_qnode_pool(void)
 {
     kae_queue_pool_destroy(g_hpre_rsa_qnode_pool, NULL);
 
     g_hpre_rsa_qnode_pool = kae_init_queue_pool(WCRYPTO_RSA);
     if (g_hpre_rsa_qnode_pool == NULL) {
-        WD_ERR("hpre rsa qnode poll init fail!\n");
+        US_ERR("hpre rsa qnode poll init fail!\n");
         return KAE_FAIL;
     }
 
@@ -104,7 +111,9 @@ static int hpre_init_eng_ctx(hpre_engine_ctx_t *eng_ctx, int bits)
             eng_ctx->priv_ctx.key_size = bits >> BIT_BYTES_SHIFT;
         }
         eng_ctx->rsa_setup.key_bits = eng_ctx->priv_ctx.key_size << BIT_BYTES_SHIFT;
+
         eng_ctx->rsa_setup.is_crt = ISSET;
+
         eng_ctx->rsa_setup.cb = (wcrypto_cb)hpre_rsa_cb;
         eng_ctx->rsa_setup.br.alloc = kae_wd_alloc_blk;
         eng_ctx->rsa_setup.br.free = kae_wd_free_blk;
@@ -263,8 +272,7 @@ static void hpre_rsa_fill_prikey2(RSA *rsa, hpre_engine_ctx_t *eng_ctx)
 void hpre_rsa_fill_prikey(RSA *rsa, hpre_engine_ctx_t *eng_ctx, int version, const BIGNUM *p, const BIGNUM *q,
     const BIGNUM *dmp1, const BIGNUM *dmq1, const BIGNUM *iqmp)
 {
-    if (RSA_test_flags(rsa, RSA_FLAG_EXT_PKEY) || (version == RSA_ASN1_VERSION_MULTI) ||
-        ((p != NULL) && (q != NULL) && (dmp1 != NULL) && (dmq1 != NULL) && (iqmp != NULL))) {
+    if (hpre_rsa_iscrt(rsa)) {
         hpre_rsa_fill_prikey2(rsa, eng_ctx);
     } else {
         hpre_rsa_fill_prikey1(rsa, eng_ctx);

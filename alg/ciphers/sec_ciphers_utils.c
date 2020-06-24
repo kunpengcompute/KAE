@@ -36,6 +36,7 @@ int sec_ciphers_get_cipher_mode(int nid)
         case NID_aes_128_ecb:
         case NID_aes_192_ecb:
         case NID_aes_256_ecb:
+        case NID_sm4_ecb:
             c_mode = ECB;
             break;
         case NID_aes_128_cbc:
@@ -54,6 +55,9 @@ int sec_ciphers_get_cipher_mode(int nid)
         case NID_aes_256_xts:
             c_mode = XTS;
             break;
+        case NID_sm4_ofb128:
+            c_mode = OFB;
+            break;
         default:
             US_WARN("nid=%d don't support by sec engine.", nid);
             break;
@@ -68,6 +72,8 @@ int sec_ciphers_get_cipher_alg(int nid)
     switch (nid) {
         case NID_sm4_ctr:
         case NID_sm4_cbc:
+        case NID_sm4_ofb128:
+        case NID_sm4_ecb:
             c_alg = SM4;
             break;
         case NID_aes_128_ecb:

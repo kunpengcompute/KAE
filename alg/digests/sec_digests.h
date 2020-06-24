@@ -32,6 +32,7 @@
 #define INPUT_CACHE_SIZE (512 * 1024)
 #define SM3_LEN 32
 #define MAX_OUTLEN 64
+#define MD5_HASH_LEN  16
 
 enum sec_digest_state {
     SEC_DIGEST_INIT = 0,
@@ -67,6 +68,11 @@ struct digest_engine_ctx {
     sec_digest_priv_t*              md_ctx;
 };
 
+struct digest_threshold_table {
+    int nid;
+    int threshold;
+};
+void sec_digests_set_enabled(int nid, int enabled);
 int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int nid);
 void sec_digests_free_methods(void);
 int sec_cipher_engine_ctx_poll(void* engnine_ctx);

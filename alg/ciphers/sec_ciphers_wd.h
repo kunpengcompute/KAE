@@ -37,6 +37,8 @@ inline void wd_ciphers_get_output_data(cipher_engine_ctx_t *e_cipher_ctx);
 inline uint32_t wd_ciphers_get_do_cipher_len(uint32_t offset,  int leftlen);
 
 int wd_ciphers_init_qnode_pool(void);
+void wd_ciphers_uninit_qnode_pool(void);
+
 KAE_QUEUE_POOL_HEAD_S* wd_ciphers_get_qnode_pool(void);
 void wd_ciphers_free_engine_ctx(void* engine_ctx);
 

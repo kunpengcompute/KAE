@@ -44,6 +44,8 @@ static cipher_threshold_table_t g_sec_ciphers_pkt_threshold_table[] = {
     
     { NID_sm4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sm4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sm4_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sm4_ecb, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 };
 static int g_sec_ciphers_pkt_threshold_table_size = BLOCKSIZES_OF(g_sec_ciphers_pkt_threshold_table);
 
@@ -63,6 +65,8 @@ static sw_cipher_t g_sec_ciphers_sw_cipher_table[] = {
 
     { NID_sm4_cbc, EVP_sm4_cbc },
     { NID_sm4_ctr, EVP_sm4_ctr },
+    { NID_sm4_ofb128, EVP_sm4_ofb },
+    { NID_sm4_ecb, EVP_sm4_ecb },
 };
 static int g_sec_ciphers_sw_cipher_table_size = BLOCKSIZES_OF(g_sec_ciphers_sw_cipher_table);
 

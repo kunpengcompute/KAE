@@ -31,7 +31,6 @@
 
 #include "async_callback.h"
 #include "engine_log.h"
-#include "engine_utils.h"
 
 #include <openssl/err.h>
 

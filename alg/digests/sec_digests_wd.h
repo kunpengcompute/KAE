@@ -32,6 +32,7 @@ inline uint32_t wd_digests_get_do_digest_len(digest_engine_ctx_t *e_digest_ctx, 
 
 KAE_QUEUE_POOL_HEAD_S* wd_digests_get_qnode_pool(void);
 int wd_digests_init_qnode_pool(void);
+void wd_digests_uninit_qnode_pool(void);
 void wd_digests_free_engine_ctx(void* digest_ctx);
 
 #endif

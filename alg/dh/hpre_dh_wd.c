@@ -56,13 +56,19 @@ static int hpre_internal_do_dh(hpre_dh_engine_ctx_t *eng_ctx, enum wcrypto_dh_op
 static int hpre_dh_async(hpre_dh_engine_ctx_t *eng_ctx,
     struct wcrypto_dh_op_data *opdata, op_done_t *op_done);
 
-int wd_hpre_dh_init_qnode_pool()
+void wd_hpre_dh_uninit_qnode_pool(void)
+{
+    kae_queue_pool_destroy(g_hpre_dh_qnode_pool, NULL);
+    g_hpre_dh_qnode_pool = NULL;
+}
+
+int wd_hpre_dh_init_qnode_pool(void)
 {
     kae_queue_pool_destroy(g_hpre_dh_qnode_pool, NULL);
 
     g_hpre_dh_qnode_pool = kae_init_queue_pool(WCRYPTO_DH);
     if (g_hpre_dh_qnode_pool == NULL) {
-        WD_ERR("hpre dh qnode poll init fail!\n");
+        US_ERR("hpre dh qnode poll init fail!\n");
         return KAE_FAIL;
     }
 

@@ -39,6 +39,8 @@
 #include "hpre_dh.h"
 
 #define KAE_CMD_ENABLE_ASYNC   ENGINE_CMD_BASE
+#define KAE_CMD_ENABLE_SM3   ENGINE_CMD_BASE + 1
+#define KAE_CMD_ENABLE_SM4   ENGINE_CMD_BASE + 2
 #define PKEY_METHOD_TYPE_NUM   3
 
 /* Engine id */
@@ -60,6 +62,16 @@ static const ENGINE_CMD_DEFN g_kae_cmd_defns[] = {
         "Enable or Disable the engine async interface.",
         ENGINE_CMD_FLAG_NUMERIC},
     {
+        KAE_CMD_ENABLE_SM3,
+        "KAE_CMD_ENABLE_SM3",
+        "Enable or Disable the SM3.",
+        ENGINE_CMD_FLAG_NUMERIC},
+    {
+        KAE_CMD_ENABLE_SM4,
+        "KAE_CMD_ENABLE_SM4",
+        "Enable or Disable the SM4.",
+        ENGINE_CMD_FLAG_NUMERIC},
+    {
         0, NULL, NULL, 0
     }
 };
@@ -75,7 +87,7 @@ static const ENGINE_CMD_DEFN g_kae_cmd_defns[] = {
 * @param f   [IN] - Callback function
 *
 * description:
-*   kae engine control functions.
+*   Qat engine control functions.
 *   Note: KAE_CMD_ENABLE_ASYNC should be called at the following
 *         point during startup:
 *         ENGINE_by_id
@@ -100,6 +112,28 @@ static int kae_engine_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void)
                 kae_disable_async();
             } else {
                 kae_enable_async();
+            }
+            break;
+        case KAE_CMD_ENABLE_SM3:
+            US_DEBUG("%s SM3\n", i == 0 ? "Disable" : "Enable");
+            if (i == 0) {
+                sec_digests_set_enabled(NID_sm3, 0);
+            } else {
+                sec_digests_set_enabled(NID_sm3, 1);
+            }
+            break;
+        case KAE_CMD_ENABLE_SM4:
+            US_DEBUG("%s SM4\n", i == 0 ? "Disable" : "Enable");
+            if (i == 0) {
+                sec_ciphers_set_enabled(NID_sm4_ctr, 0);
+                sec_ciphers_set_enabled(NID_sm4_cbc, 0);
+                sec_ciphers_set_enabled(NID_sm4_ofb128, 0);
+                sec_ciphers_set_enabled(NID_sm4_ecb, 0);
+            } else {
+                sec_ciphers_set_enabled(NID_sm4_ctr, 1);
+                sec_ciphers_set_enabled(NID_sm4_cbc, 1);
+                sec_ciphers_set_enabled(NID_sm4_ofb128, 1);
+                sec_ciphers_set_enabled(NID_sm4_ecb, 1);
             }
             break;
         default:

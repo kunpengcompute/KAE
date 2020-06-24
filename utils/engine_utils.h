@@ -114,10 +114,7 @@ static inline void kae_memset(void *ptr, int value, int len)
     (void)memset(ptr, value, len);
 }
 
-static inline void kae_memcpy(void *src, const void *dst, int len)
-{
-    (void)memcpy(src, dst, len);
-}
+void* kae_memcpy(void *dstpp, const void *srcpp, size_t len);
 
 static inline void kae_pthread_yield()
 {

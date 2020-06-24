@@ -36,6 +36,7 @@ enum CIPHERS_MODE {
     CBC,
     CTR,
     XTS,
+    OFB,
 };
 
 enum CIPHERS_ALG {

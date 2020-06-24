@@ -91,6 +91,7 @@ struct cipher_engine_ctx {
     cipher_priv_ctx_t*              priv_ctx;
 };
 
+void sec_ciphers_set_enabled(int nid, int enabled);
 int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, int nid);
 void sec_ciphers_free_ciphers(void);
 int sec_cipher_engine_ctx_poll(void* engnine_ctx);

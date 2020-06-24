@@ -1,6 +1,6 @@
 Name:          libkae
 Summary:       Huawei Kunpeng Accelerator Engine
-Version:       1.2.8
+Version:       1.3.6
 Release:       1%dist
 License:       Apache-2.0
 Source:        %{name}-%{version}.tar.gz
@@ -11,7 +11,10 @@ BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Prefix: /usr/local/lib/engines-1.1
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: libwd >= %{version}
+Requires:      libwd >= %{version}
+Autoreq: no
+Autoprov: no
+Prefix: /usr/local/lib/engines-1.1
 
 %description
 This package contains the Huawei Kunpeng Accelerator Engine
@@ -63,4 +66,4 @@ fi
 
 %changelog
 * Tue Jan 07 2020 jinbinhua <jinbinhua@huawei.com> 1.2.7-1
-- First Spec Version Include kunpeng_engine Code
+- First Spec Version Include kunpeng accelerator engine Code

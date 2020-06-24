@@ -19,7 +19,6 @@
 #ifndef ASYNC_POLLING_H
 #define ASYNC_POLLING_H
 #include <pthread.h>
-#include "../engine_kae.h"
 #include "async_callback.h"
 #include "async_task_queue.h"
 
