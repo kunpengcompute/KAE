@@ -17,7 +17,7 @@ scripts:
 
   - cd ../
   - git clone https://github.com/kunpengcompute/KAEdriver.git
-  - cd KAE_driver/warpdrive
+  - cd KAEdriver/warpdrive
   - sudo sh autogen.sh 
   - sudo ./configure 
   - sudo make 
