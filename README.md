@@ -68,7 +68,7 @@ By default, we usually install OpenSSL as follows:
     ./config -Wl,-rpath=/usr/local/lib
     make
     make install
-The `-Wl,-rpath` optioncan specify the openssl shared libraries where the binaries will link to.
+The `-Wl,-rpath` option can specify the openssl shared libraries where the binaries will link to.
 
 ### Cloning and Building Kunpeng Acceleration Engine
 
@@ -109,14 +109,13 @@ Then, install the  Kunpeng Accelerator Engine:
 
 ```
 cd KAE 
-chmod +x configure 
 ./configure 
 make  
 make install
 
 ```
 
-Note: The `--openssl_path` can be used with the `./configure` command to specify the location that  `make install` will copy files to. The default installation path for the accelerator engine is `/usr/local/lib/openssl-1.1`. You are advised to install the Kunpeng Accelerator Engine by default as the OpenSSL; 
+Note: The `--openssl_path` can be used with the `./configure` command to specify the location that  `make install` will copy files to. The default installation path for the accelerator engine is `/usr/local/lib/openssl-1.1`. You are advised to install the Kunpeng Accelerator Engine as a default OpenSSL engine. 
 Export the environment variableas `OPENSSL_ENGINES` as follows :
 
 ```
