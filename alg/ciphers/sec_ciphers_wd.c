@@ -185,12 +185,13 @@ void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t* e_cipher_ctx)
         wcrypto_del_cipher_ctx(e_cipher_ctx->wd_ctx);
         e_cipher_ctx->wd_ctx = NULL;
     }
-   
+    
     if (e_cipher_ctx->priv_ctx && e_cipher_ctx->priv_ctx->ecb_encryto) {
         if (e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx != NULL) {
             EVP_CIPHER_CTX_free(e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx);
             e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx = NULL;
         }
+
         kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->key2);
         kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->encryto_iv);
         kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->iv_out);
@@ -200,7 +201,7 @@ void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t* e_cipher_ctx)
     if (e_cipher_ctx->q_node != NULL) {
         (void)kae_put_node_to_pool(g_sec_ciphers_qnode_pool, e_cipher_ctx->q_node);
     }
-	
+
     e_cipher_ctx = NULL;
 
     return;
@@ -219,7 +220,7 @@ int wd_ciphers_do_crypto_impl(cipher_engine_ctx_t *e_cipher_ctx)
 again:    
     ret = wcrypto_do_cipher(e_cipher_ctx->wd_ctx, &e_cipher_ctx->op_data, NULL);
     if (ret != WD_SUCCESS) {
-        if (ret == WD_EBUSY && trycount <= 5) { // try 5 times
+        if (ret == -WD_EBUSY && trycount <= 5) { // try 5 times
             US_WARN("do cipher busy, retry again!");
             trycount++;
             goto again;
@@ -297,3 +298,8 @@ int wd_ciphers_init_qnode_pool(void)
     return KAE_SUCCESS;
 }
 
+void wd_ciphers_uninit_qnode_pool(void)
+{
+    kae_queue_pool_destroy(g_sec_ciphers_qnode_pool, wd_ciphers_free_engine_ctx);
+    g_sec_ciphers_qnode_pool = NULL;
+}

@@ -26,6 +26,9 @@
 #define MAXBLOCKSIZE   0x90000
 #define MAXRSVMEM      0x400000
 
+#define MAXBLOCKSIZE   0x90000
+#define MAXRSVMEM      0x400000
+
 const char *g_alg_type[] = {
     "rsa",
     "dh",
@@ -470,6 +473,7 @@ void kae_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, release_engine_ctx
     while (cur_pool != NULL) {
         error = pthread_mutex_lock(&cur_pool->destroy_mutex);
         if (error != 0) {
+            (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
             return;
         }
 
@@ -521,6 +525,7 @@ void kae_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, release_
         error = pthread_mutex_lock(&cur_pool->destroy_mutex);
         if (error != 0) {
             cur_pool = cur_pool->next;
+            (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
             continue;
         }
         if (cur_pool->kae_queue_pool == NULL) {

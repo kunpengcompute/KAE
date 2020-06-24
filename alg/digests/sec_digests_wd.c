@@ -187,7 +187,7 @@ int wd_digests_doimpl(digest_engine_ctx_t *e_digest_ctx)
 again:    
     ret = wcrypto_do_digest(e_digest_ctx->wd_ctx, &e_digest_ctx->op_data, NULL);  
     if (ret != WD_SUCCESS) {
-        if (ret == WD_EBUSY && trycount <= 5) { // try 5 times
+        if (ret == -WD_EBUSY && trycount <= 5) { // try 5 times
             US_WARN("do digest busy, retry again!");
             trycount++;
             goto again;
@@ -255,4 +255,10 @@ int wd_digests_init_qnode_pool(void)
     }
 
     return KAE_SUCCESS;
+}
+
+void wd_digests_uninit_qnode_pool(void)
+{
+    kae_queue_pool_destroy(g_sec_digests_qnode_pool, wd_digests_free_engine_ctx);
+    g_sec_digests_qnode_pool = NULL;
 }

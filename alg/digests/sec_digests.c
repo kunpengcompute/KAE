@@ -28,17 +28,29 @@
 #include "async_event.h"
 #include "async_task_queue.h"
 
+#define DIGEST_SM3_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (512)
+#define DIGEST_MD5_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (8 * 1024)
+
 struct digest_info {
     int nid;
+    int is_enabled;
     EVP_MD *digest;
 };
+
+static struct digest_threshold_table g_digest_pkt_threshold_table[] = {
+    { NID_sm3, DIGEST_SM3_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_md5, DIGEST_MD5_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+};
+
 static struct digest_info g_sec_digests_info[] = { 
-    { NID_sm3, NULL },
+    { NID_sm3, 1, NULL },
+    { NID_md5, 1, NULL },
 };
 
 #define DIGESTS_COUNT (BLOCKSIZES_OF(g_sec_digests_info))
 static int g_known_digest_nids[DIGESTS_COUNT] = {
     NID_sm3,
+    NID_md5,
 };
 
 #define SEC_DIGESTS_RETURN_FAIL_IF(cond, mesg, ret) \
@@ -54,6 +66,29 @@ static int sec_digests_cleanup(EVP_MD_CTX *ctx);
 static int sec_digests_dowork(sec_digest_priv_t *md_ctx);
 static int sec_digests_sync_dowork(sec_digest_priv_t *md_ctx);
 static int sec_digests_async_dowork(sec_digest_priv_t *md_ctx, op_done_t *op_done);
+static uint32_t sec_digests_sw_get_threshold(int nid);
+
+void sec_digests_set_enabled(int nid, int enabled) {
+    unsigned int i = 0;
+    for (i = 0; i < DIGESTS_COUNT; i++) {
+        if (g_sec_digests_info[i].nid == nid) {
+            g_sec_digests_info[i].is_enabled = enabled;
+        }
+    }
+}
+static uint32_t sec_digests_sw_get_threshold(int nid)
+{
+    int threshold_table_sz = BLOCKSIZES_OF(g_digest_pkt_threshold_table);
+    int i = 0;
+    do {
+        if (g_digest_pkt_threshold_table[i].nid == nid) {
+            return g_digest_pkt_threshold_table[i].threshold;
+        }
+    } while (++i < threshold_table_sz);
+
+    US_ERR("nid %d not found in digest threshold table", nid);
+    return UINT_MAX;
+}
 
 static void sec_digests_get_alg(sec_digest_priv_t *md_ctx)
 {
@@ -61,6 +96,10 @@ static void sec_digests_get_alg(sec_digest_priv_t *md_ctx)
         case NID_sm3:
             md_ctx->d_alg = WCRYPTO_SM3;
             md_ctx->out_len = SM3_LEN;
+            break;
+        case NID_md5:
+            md_ctx->d_alg = WCRYPTO_MD5;
+            md_ctx->out_len = MD5_HASH_LEN;
             break;
         default:
             US_WARN("nid=%d don't support by sec engine.", md_ctx->e_nid);
@@ -198,7 +237,8 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
     }
 
     if (md_ctx->last_update_buff && md_ctx->last_update_bufflen != 0) {
-        if (md_ctx->state == SEC_DIGEST_INIT && md_ctx->last_update_bufflen < MIN_DIGEST_LEN) {
+        if (md_ctx->state == SEC_DIGEST_INIT 
+                && md_ctx->last_update_bufflen < sec_digests_sw_get_threshold(md_ctx->e_nid)) {
             US_WARN_LIMIT("small package offload, switch to soft digest");
             goto do_soft_digest;
         }
@@ -419,7 +459,10 @@ static EVP_MD *sec_set_digests_methods(struct digest_info digestinfo)
         switch (digestinfo.nid) {
             case NID_sm3:
                 default_digest = EVP_sm3();	
-            break;
+                break;
+            case NID_md5:
+                default_digest = EVP_md5();	
+                break;
             default:
                 return NULL;
         }
@@ -484,13 +527,15 @@ int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int n
         }
         return BLOCKSIZES_OF(g_sec_digests_info);
     }
+
     for (i = 0; i < DIGESTS_COUNT; i++) {
         if (g_sec_digests_info[i].nid == nid) {
             if (g_sec_digests_info[i].digest == NULL) {
                 sec_create_digests();
             }
-            
-            *digest = g_sec_digests_info[i].digest;
+            /*SM3 is disabled*/
+            *digest = g_sec_digests_info[i].is_enabled 
+                ? g_sec_digests_info[i].digest : (EVP_MD *)EVP_MD_meth_dup(EVP_sm3());
             return OPENSSL_SUCCESS;
         }
     }

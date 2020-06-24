@@ -40,4 +40,6 @@ int check_rsa_padding(unsigned char *to, int num,
 
 int hpre_rsa_primegen(int bits, BIGNUM *e_value, BIGNUM *p, BIGNUM *q, BN_GENCB *cb);
 
+int hpre_rsa_iscrt(RSA *rsa);
+
 #endif

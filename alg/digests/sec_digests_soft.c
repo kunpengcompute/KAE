@@ -28,6 +28,9 @@ static const EVP_MD *sec_digests_soft_md(uint32_t e_nid)
         case NID_sm3:
             g_digest_md = EVP_sm3();
             break;
+        case NID_md5:
+            g_digest_md = EVP_md5();
+            break;            
         default:
             break;
     }

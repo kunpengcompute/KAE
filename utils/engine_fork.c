@@ -27,6 +27,7 @@
 #include "hpre_dh.h"
 #include "sec_ciphers.h"
 #include "sec_digests.h"
+#include "engine_log.h"
 
 void engine_init_child_at_fork_handler(void)
 {

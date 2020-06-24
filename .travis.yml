@@ -16,9 +16,8 @@ scripts:
   - sudo make install -j20
 
   - cd ../
-  - wget https://github.com/kunpengcompute/KAEdriver/releases/download/v1.2.10/Kunpeng_KAE_driver-1.2.10.tar.gz
-  - tar -zxf Kunpeng_KAE_driver-1.2.10.tar.gz
-  - cd Kunpeng_KAE_driver/warpdrive
+  - git clone https://github.com/kunpengcompute/KAEdriver.git
+  - cd KAEdriver/warpdrive
   - sudo sh autogen.sh 
   - sudo ./configure 
   - sudo make 

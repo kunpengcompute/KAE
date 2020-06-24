@@ -33,8 +33,6 @@
 #include <openssl/err.h>
 
 #include "async_task_queue.h"
-#include "engine_kae.h"
-#include "async_event.h"
 #include "engine_utils.h"
 
 #define ASYNC_POLL_TASK_NUM 4096

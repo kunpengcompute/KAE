@@ -96,10 +96,10 @@ static void kae_checking_q_thread_destroy(void)
     kae_set_exit_flag();
     (void)kae_join_thread(g_kae_check_q_task.thread_id, NULL);
 
-    kae_queue_pool_destroy(wd_ciphers_get_qnode_pool(), wd_ciphers_free_engine_ctx);
-    kae_queue_pool_destroy(wd_digests_get_qnode_pool(), wd_digests_free_engine_ctx);
-    kae_queue_pool_destroy(wd_hpre_get_qnode_pool(), NULL);
-    kae_queue_pool_destroy(wd_hpre_dh_get_qnode_pool(), NULL);
+    (void)wd_digests_uninit_qnode_pool();
+    (void)wd_ciphers_uninit_qnode_pool();
+    (void)wd_hpre_dh_uninit_qnode_pool();
+    (void)wd_hpre_uninit_qnode_pool();
 
     return;
 }

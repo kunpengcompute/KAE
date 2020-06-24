@@ -43,26 +43,28 @@ struct cipher_info {
         int keylen;
         int ivlen;
         int flags;
+        int is_enabled;
         EVP_CIPHER *cipher;
 };
 typedef struct cipher_info cipher_info_t;
 
 static cipher_info_t g_sec_ciphers_info[] = {
-    {NID_aes_128_ecb, 16, 16, 0, EVP_CIPH_ECB_MODE, NULL},
-    {NID_aes_192_ecb, 16, 24, 0, EVP_CIPH_ECB_MODE, NULL},
-    {NID_aes_256_ecb, 16, 32, 0, EVP_CIPH_ECB_MODE, NULL},
-    {NID_aes_128_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE, NULL},
-    {NID_aes_192_cbc, 16, 24, 16, EVP_CIPH_CBC_MODE, NULL},
-    {NID_aes_256_cbc, 16, 32, 16, EVP_CIPH_CBC_MODE, NULL},
-    {NID_aes_128_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, NULL},
-    {NID_aes_192_ctr, 1, 24, 16, EVP_CIPH_CTR_MODE, NULL},
-    {NID_aes_256_ctr, 1, 32, 16, EVP_CIPH_CTR_MODE, NULL},
-    {NID_aes_128_xts, 1, 32, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, NULL},
-    {NID_aes_256_xts, 1, 64, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, NULL},
+    {NID_aes_128_ecb, 16, 16, 0, EVP_CIPH_ECB_MODE, 1, NULL},
+    {NID_aes_192_ecb, 16, 24, 0, EVP_CIPH_ECB_MODE, 1, NULL},
+    {NID_aes_256_ecb, 16, 32, 0, EVP_CIPH_ECB_MODE, 1, NULL},
+    {NID_aes_128_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE, 1, NULL},
+    {NID_aes_192_cbc, 16, 24, 16, EVP_CIPH_CBC_MODE, 1, NULL},
+    {NID_aes_256_cbc, 16, 32, 16, EVP_CIPH_CBC_MODE, 1, NULL},
+    {NID_aes_128_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
+    {NID_aes_192_ctr, 1, 24, 16, EVP_CIPH_CTR_MODE, 1, NULL},
+    {NID_aes_256_ctr, 1, 32, 16, EVP_CIPH_CTR_MODE, 1, NULL},
+    {NID_aes_128_xts, 1, 32, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
+    {NID_aes_256_xts, 1, 64, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
 
-    {NID_sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, NULL},
-    {NID_sm4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1,
-     NULL},
+    {NID_sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
+    {NID_sm4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
+    {NID_sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE, 1, NULL},
+    {NID_sm4_ecb, 16, 16, 0, EVP_CIPH_CTR_MODE, 1, NULL},
 };
 
 #define CIPHERS_COUNT (BLOCKSIZES_OF(g_sec_ciphers_info))
@@ -82,12 +84,20 @@ static int g_known_cipher_nids[CIPHERS_COUNT] = {
     
     NID_sm4_ctr,
     NID_sm4_cbc,
+    NID_sm4_ofb128,
+    NID_sm4_ecb,
 };
 
 #define SEC_CIPHERS_RETURN_FAIL_IF(cond, mesg, ret)\
     if (unlikely(cond)) {\
-    US_ERR(mesg);\
-    return (ret);\
+        US_ERR(mesg);\
+        return (ret);\
+    }\
+
+#define SEC_CIPHERS_GOTO_FAIL_IF(cond, mesg, tag)\
+    if (unlikely(cond)) {\
+        US_ERR(mesg);\
+        goto tag;\
     }\
 
 static int sec_ciphers_init(EVP_CIPHER_CTX *ctx, const unsigned char *key, const unsigned char *iv, int encrypt);
@@ -96,6 +106,17 @@ static int sec_ciphers_cleanup(EVP_CIPHER_CTX *ctx);
 static int sec_ciphers_priv_ctx_cleanup(EVP_CIPHER_CTX *ctx);
 static int sec_ciphers_is_check_valid(EVP_CIPHER_CTX *ctx, cipher_priv_ctx_t *priv_ctx);
 static int sec_ciphers_async_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, op_done_t *op_done);
+
+void sec_ciphers_set_enabled(int nid, int enabled)
+{
+    unsigned int i = 0;
+    for (i = 0; i < CIPHERS_COUNT; i++) {
+        if (g_sec_ciphers_info[i].nid == nid) {
+            g_sec_ciphers_info[i].is_enabled = enabled;
+        }
+    }
+}
+
 static int sec_ciphers_sync_do_crypto(EVP_CIPHER_CTX *ctx, cipher_engine_ctx_t *e_cipher_ctx, 
     cipher_priv_ctx_t *priv_ctx);
 
@@ -104,27 +125,17 @@ static int sec_ciphers_init_priv_ctx(cipher_priv_ctx_t *priv_ctx, EVP_CIPHER_CTX
 {
     int nid = 0;
     int ret = KAE_FAIL;
-    if (unlikely(ctx == NULL)) {
-        US_ERR("ctx is NULL");
-        return ret;
-    }
-    if (unlikely(priv_ctx == NULL)) {
-        US_ERR("priv_ctx is NULL");
-        goto ERR;
-    }
+
+    SEC_CIPHERS_RETURN_FAIL_IF(ctx == NULL || priv_ctx == NULL, "null ctx or priv ctx", KAE_FAIL);
+
     // init encrypt of private ctx
     priv_ctx->encrypt = EVP_CIPHER_CTX_encrypting(ctx);
-
     // init offset of private ctx
     priv_ctx->offset = 0;
-
     // init key of private ctx
     if (priv_ctx->key == NULL) {
         priv_ctx->key = (uint8_t *)kae_malloc(EVP_CIPHER_CTX_key_length(ctx));
-        if (unlikely(priv_ctx->key == NULL)) {
-                US_ERR("malloc key failed.");
-                goto ERR;
-        }
+        SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->key == NULL, "malloc key failed", ERR);
     }
 
     kae_memcpy(priv_ctx->key, key, EVP_CIPHER_CTX_key_length(ctx));
@@ -133,10 +144,7 @@ static int sec_ciphers_init_priv_ctx(cipher_priv_ctx_t *priv_ctx, EVP_CIPHER_CTX
     // init iv of private ctx
     if (priv_ctx->iv == NULL) {
         priv_ctx->iv = (uint8_t *)kae_malloc(EVP_CIPHER_CTX_iv_length(ctx));
-        if (unlikely(priv_ctx->iv == NULL)) {
-            US_ERR("malloc iv failed.");
-            goto ERR;
-        }
+        SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->iv == NULL, "malloc iv failed.", ERR);
     }
     if (iv != NULL) {
         kae_memcpy(priv_ctx->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
@@ -147,29 +155,57 @@ static int sec_ciphers_init_priv_ctx(cipher_priv_ctx_t *priv_ctx, EVP_CIPHER_CTX
 
     if (priv_ctx->next_iv == NULL) {
         priv_ctx->next_iv = (uint8_t *)kae_malloc(priv_ctx->iv_len);
-        if (unlikely(priv_ctx->next_iv == NULL)) {
-            US_ERR("malloc iv failed.");
-            return KAE_FAIL;
-        }
+        SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->next_iv == NULL, "malloc next iv failed.", ERR);
     }
 
     // init cipher mode and alg of private ctx
     nid = EVP_CIPHER_CTX_nid(ctx);
     priv_ctx->c_mode = sec_ciphers_get_cipher_mode(nid);
     priv_ctx->c_alg = sec_ciphers_get_cipher_alg(nid);
-    if (unlikely((priv_ctx->c_mode == NO_C_MODE) || (priv_ctx->c_alg == NO_C_ALG))) {
-        US_ERR("don't support the cipher nid=%d, alg=%d, mode=%d", nid, priv_ctx->c_alg, priv_ctx->c_mode);
-        goto ERR;
-    }
+    SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->c_mode == NO_C_MODE || priv_ctx->c_alg == NO_C_ALG, 
+        "unsupport the cipher nid", ERR);
 
-    priv_ctx->ecb_encryto = NULL;
+    if (priv_ctx->ecb_encryto == NULL && priv_ctx->c_mode == XTS) {
+        // set XTS PARAM
+        priv_ctx->ecb_encryto = (xts_ecb_data *)kae_malloc(sizeof(xts_ecb_data));
+        SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->ecb_encryto == NULL, "malloc ecb ctx", ERR);
+
+        priv_ctx->ecb_encryto->ecb_ctx = EVP_CIPHER_CTX_new();
+        priv_ctx->ecb_encryto->key2_len = priv_ctx->key_len >> 1;
+        priv_ctx->ecb_encryto->key2 = (uint8_t *)kae_malloc(priv_ctx->key_len >> 1);
+        priv_ctx->ecb_encryto->encryto_iv = (uint8_t *)kae_malloc(priv_ctx->iv_len);
+        priv_ctx->ecb_encryto->iv_out = (uint8_t *)kae_malloc(priv_ctx->iv_len);
+        if (priv_ctx->ecb_encryto->ecb_ctx == NULL
+            || priv_ctx->ecb_encryto->key2 == NULL
+            || priv_ctx->ecb_encryto->encryto_iv == NULL
+            || priv_ctx->ecb_encryto->iv_out == NULL) {
+            if (priv_ctx->ecb_encryto->ecb_ctx != NULL) {
+                EVP_CIPHER_CTX_free(priv_ctx->ecb_encryto->ecb_ctx);
+                priv_ctx->ecb_encryto->ecb_ctx = NULL;
+            }
+
+            kae_free(priv_ctx->ecb_encryto->key2);
+            kae_free(priv_ctx->ecb_encryto->encryto_iv);
+            kae_free(priv_ctx->ecb_encryto->iv_out);
+            kae_free(priv_ctx->ecb_encryto);
+            goto ERR;
+        }
+
+        if (priv_ctx->ecb_encryto->key2_len == 32) { // 256-xts key2len is 32 
+            priv_ctx->ecb_encryto->cipher_type = EVP_aes_256_ecb();
+        } else {
+            priv_ctx->ecb_encryto->cipher_type = EVP_aes_128_ecb();
+        }
+        priv_ctx->ecb_encryto->countNum = 0;
+        kae_memcpy(priv_ctx->ecb_encryto->key2, 
+                   priv_ctx->key + priv_ctx->ecb_encryto->key2_len, 
+                   priv_ctx->ecb_encryto->key2_len);
+    }
 
 #ifndef OPENSSL_ENABLE_KAE_SMALL_PACKKET_CIPHER_OFFLOADS
     ret = sec_ciphers_sw_impl_init(ctx, key, iv, priv_ctx->encrypt);
-    if (ret != KAE_SUCCESS) {
-        US_ERR("kae sw iml init failed. ret = %d", ret);
-        goto ERR;
-    }
+    SEC_CIPHERS_GOTO_FAIL_IF(ret != KAE_SUCCESS, "kae sw iml init failed", ERR);
+
     priv_ctx->switch_threshold =
             (size_t)sec_ciphers_sw_get_threshold(EVP_CIPHER_CTX_nid(ctx));
 #endif
@@ -252,6 +288,10 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
                 priv_ctx->offset = (priv_ctx->offset + (do_cipher_len & 0xf)) % 16; // hardware need 16-byte alignment 
             }
             break;
+        case OFB:
+            kae_memcpy(priv_ctx->iv, (uint8_t*)priv_ctx->e_cipher_ctx->op_data.iv, 
+                priv_ctx->e_cipher_ctx->op_data.iv_bytes);  
+            break;
         default:
             US_WARN("mode=%d don't support.", priv_ctx->c_mode);
             break;
@@ -269,33 +309,6 @@ static int sec_ciphers_before_dociphers_cb(cipher_priv_ctx_t *priv_ctx)
     }
 
     if (priv_ctx->c_mode == XTS && priv_ctx->c_alg == AES) {
-        if (priv_ctx->ecb_encryto == NULL) {
-            // set XTS PARAM
-            priv_ctx->ecb_encryto = (xts_ecb_data *)kae_malloc(sizeof(xts_ecb_data));
-            priv_ctx->ecb_encryto->ecb_ctx = EVP_CIPHER_CTX_new();
-            priv_ctx->ecb_encryto->key2_len = priv_ctx->key_len >> 1;
-            priv_ctx->ecb_encryto->key2 = (uint8_t *)kae_malloc(priv_ctx->key_len >> 1);
-            priv_ctx->ecb_encryto->encryto_iv = (uint8_t *)kae_malloc(priv_ctx->iv_len);
-            priv_ctx->ecb_encryto->iv_out = (uint8_t *)kae_malloc(priv_ctx->iv_len);
-            if (priv_ctx->ecb_encryto == NULL
-                || priv_ctx->ecb_encryto->ecb_ctx == NULL
-                || priv_ctx->ecb_encryto->key2 == NULL
-                || priv_ctx->ecb_encryto->encryto_iv == NULL
-                || priv_ctx->ecb_encryto->iv_out == NULL) {
-                return KAE_FAIL;
-            }
-
-            if (priv_ctx->ecb_encryto->key2_len == 32) { // 256-xts key2len is 32 
-                priv_ctx->ecb_encryto->cipher_type = EVP_aes_256_ecb();
-            } else {
-                priv_ctx->ecb_encryto->cipher_type = EVP_aes_128_ecb();
-            }
-            priv_ctx->ecb_encryto->countNum = 0;
-            kae_memcpy(priv_ctx->ecb_encryto->key2, 
-                       priv_ctx->key + priv_ctx->ecb_encryto->key2_len, 
-                       priv_ctx->ecb_encryto->key2_len);
-        }
-
         sec_ciphers_ecb_encryt(priv_ctx->ecb_encryto, 
                                priv_ctx->ecb_encryto->encryto_iv, 
                                priv_ctx->iv, priv_ctx->iv_len);
@@ -556,6 +569,18 @@ static int sec_ciphers_priv_ctx_cleanup(EVP_CIPHER_CTX *ctx)
     kae_free(priv_ctx->iv);
     kae_free(priv_ctx->key);
     kae_free(priv_ctx->next_iv);
+    if (priv_ctx->ecb_encryto) {
+        if (priv_ctx->ecb_encryto->ecb_ctx != NULL) {
+            EVP_CIPHER_CTX_free(priv_ctx->ecb_encryto->ecb_ctx);
+            priv_ctx->ecb_encryto->ecb_ctx = NULL;
+        }
+
+        kae_free(priv_ctx->ecb_encryto->key2);
+        kae_free(priv_ctx->ecb_encryto->encryto_iv);
+        kae_free(priv_ctx->ecb_encryto->iv_out);
+        kae_free(priv_ctx->ecb_encryto);
+    }
+        
     (void)wd_ciphers_put_engine_ctx(priv_ctx->e_cipher_ctx);
     priv_ctx->e_cipher_ctx = NULL;
 
@@ -619,21 +644,29 @@ void sec_create_ciphers(void)
     }
 }
 
-/******************************************************************************
- * function:
- * sec_engine_ciphers(ENGINE *e,
- *                    const EVP_CIPHER **cipher,
- *                    const int **nids,
- *                    int nid)
- *
- * @param e[IN] - OpenSSL engine pointer
- * @param cipher[IN] - cipher structure pointer
- * @param nids[IN] - cipher function nids
- * @param nid[IN] - cipher operation id
- *
- * description:
- *     kae engine cipher operations registrar
- ******************************************************************************/
+static EVP_CIPHER *get_ciphers_default_method(int nid)
+{
+    EVP_CIPHER *cipher = NULL;
+    switch (nid) {
+        case NID_sm4_ctr:
+            cipher = (EVP_CIPHER *)EVP_sm4_ctr();
+            break;
+        case NID_sm4_cbc:
+            cipher = (EVP_CIPHER *)EVP_sm4_cbc();
+            break;
+        case NID_sm4_ofb128:
+            cipher = (EVP_CIPHER *)EVP_sm4_ofb();
+            break;
+        case NID_sm4_ecb:
+            cipher = (EVP_CIPHER *)EVP_sm4_ecb();
+            break;
+        default:
+            US_WARN("nid = %d not support.", nid);
+            break;
+    }
+    return cipher;
+}
+
 int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, int nid)
 {
     UNUSED(e);
@@ -660,8 +693,8 @@ int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, i
             if (g_sec_ciphers_info[i].cipher == NULL) {
                 sec_create_ciphers();
             }
-
-            *cipher = g_sec_ciphers_info[i].cipher;
+            /*SM4 is disabled*/
+            *cipher = g_sec_ciphers_info[i].is_enabled ? g_sec_ciphers_info[i].cipher : get_ciphers_default_method(nid);
             return OPENSSL_SUCCESS;
         }
     }

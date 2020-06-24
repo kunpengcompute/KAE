@@ -104,7 +104,7 @@ void kae_debug_init_log()
         g_kae_debug_log_file = fopen(KAE_DEBUG_FILE_PATH, "a+");
         if (g_kae_debug_log_file == NULL) {
             g_kae_debug_log_file = stderr;
-            US_WARN("unable to open %s", KAE_DEBUG_FILE_PATH);
+            fprintf(stderr, "unable to open %s, %s\n", KAE_DEBUG_FILE_PATH, strerror(errno));
         } else {
             g_debug_file_ref_count++;
         }

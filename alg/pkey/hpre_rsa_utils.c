@@ -531,3 +531,32 @@ redo:
     hpre_free_bn_ctx_buf(ctx, NULL, 0);
     return ok;
 }
+
+int hpre_rsa_iscrt(RSA *rsa)
+{
+    if (unlikely(rsa == NULL)) {
+        return 0;
+    }
+
+    if (RSA_test_flags(rsa, RSA_FLAG_EXT_PKEY)) {
+        return 1;
+    }
+
+    int version = RSA_get_version(rsa);
+    if (version == RSA_ASN1_VERSION_MULTI) {
+        return 1;
+    }
+
+    const BIGNUM *p = NULL;
+    const BIGNUM *q = NULL;
+    const BIGNUM *dmp1 = NULL;
+    const BIGNUM *dmq1 = NULL;
+    const BIGNUM *iqmp = NULL;
+    RSA_get0_factors(rsa, &p, &q);
+    RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
+    if ((p != NULL) && (q != NULL) && (dmp1 != NULL) && (dmq1 != NULL) && (iqmp != NULL)) {
+        return 1;
+    } 
+
+    return 0;
+}

@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := $(OPENSSL_WORK_PATH)/lib/engines-1.1
 CC=gcc
 
 LIBNAME := libkae.so
-VERSION = 1.2.10
+VERSION = 1.3.6
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = kae.so
 
@@ -51,7 +51,7 @@ INCDIR += -I $(OPENSSL_WORK_PATH)/include
 
 # Include Libs.
 LIBDIR := -L$(OPENSSL_WORK_PATH)/lib
-LIBDIR += -L$(WORK_PATH)/../drivers/warpdrive/.libs
+LIBDIR += -L/usr/lib64
 LIBS := -lcrypto -lwd -pthread
 LIBS += -lc_nonshared
 
@@ -86,7 +86,7 @@ objs : $(OBJS)
 
 $(TARGET): $(OBJS)
 	@echo Linking $@
-	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) $(LDFLAGS) -o ./$(TARGET) $(OBJS)
+	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
 	-@objcopy --only-keep-debug ./$(TARGET) $(TARGET).symbol
 	-@strip ./$(TARGET)
 rebuild: clean all
