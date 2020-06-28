@@ -66,7 +66,7 @@ Clone OpenSSL from Github at the following location:
 You are advised to check out and build the OpenSSL 1.1.1a git tag specified in the release notes.
 Versions of OpenSSL before OpenSSL 1.1.0 are not supported.
 
-Note: You are not advised to install the accelerated version of OpenSSL as your default system library. Otherwise, acceleration may be used unexpectedly by other applications on the system, resulting in undesired/unsupported behavior. The `--prefix` can be used with the `./config` command to specify the location that `make install` will copy files to. Please see the OpenSSL INSTALL file for full details on usage of the `--prefix` option.
+The `--prefix` can be used with the `./config` command to specify the location that `make install` will copy files to. Please see the OpenSSL INSTALL file for full details on usage of the `--prefix` option.
 
 By default, we usually install OpenSSL as follows:
 
