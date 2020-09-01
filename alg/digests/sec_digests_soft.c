@@ -92,26 +92,18 @@ void sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *di
     if (md_ctx->soft_ctx == NULL) {
         md_ctx->soft_ctx = EVP_MD_CTX_new();
     }
-    if (md_ctx->last_update_buff == NULL) {
-        md_ctx->last_update_buff = (unsigned char *)kae_malloc(len * sizeof(unsigned char));
-    }
-    if (md_ctx->last_update_buff == NULL) {
-        US_ERR("digests soft work:malloc last_update_buff filed!");
-    }
-
+    
     (void)sec_digests_soft_init(md_ctx->soft_ctx, md_ctx->e_nid);
-    (void)sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff, len, md_ctx->e_nid);
+    if (len != 0) {
+        (void)sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff, len, md_ctx->e_nid);
+    }
     (void)sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
 
     if (md_ctx->soft_ctx != NULL) {
         EVP_MD_CTX_free(md_ctx->soft_ctx);
         md_ctx->soft_ctx = NULL;
     }
-
-    if (md_ctx->last_update_buff != NULL) {
-        kae_free(md_ctx->last_update_buff);
-    }
-
+    
     return;
 }
 

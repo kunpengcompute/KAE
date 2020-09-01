@@ -195,12 +195,16 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
         return sec_digests_soft_update(md_ctx->soft_ctx, data, data_len, md_ctx->e_nid);
     }
 
-    if (md_ctx->last_update_buff == NULL) {
-        md_ctx->last_update_buff = (unsigned char *)kae_malloc(INPUT_CACHE_SIZE);
-        if (md_ctx->last_update_buff == NULL) {
-            US_WARN("NO MEM to alloc ctx->in");
+    if (md_ctx->e_digest_ctx == NULL) {
+        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
+        if (md_ctx->e_digest_ctx == NULL) {
+            US_WARN("failed to get engine ctx");
             return OPENSSL_FAIL;
         }
+    }
+    digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
+    if (md_ctx->last_update_buff == NULL) {
+        md_ctx->last_update_buff = e_digest_ctx->op_data.in;
     }
 
     int nid = EVP_MD_nid(EVP_MD_CTX_md(ctx));
@@ -358,15 +362,6 @@ err:
 static int sec_digests_sync_dowork(sec_digest_priv_t *md_ctx)
 {
     SEC_DIGESTS_RETURN_FAIL_IF(md_ctx == NULL,   "md_ctx is NULL.", KAE_FAIL);
-
-    if (md_ctx->e_digest_ctx == NULL) {
-        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
-        if (md_ctx->e_digest_ctx == NULL) {
-            US_WARN("failed to get engine ctx, switch to soft digest");
-            return KAE_FAIL;
-        }
-    }
-
     digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
     md_ctx->in = md_ctx->last_update_buff;
     uint32_t leftlen = md_ctx->last_update_bufflen;
@@ -397,13 +392,6 @@ static int sec_digests_async_dowork(sec_digest_priv_t *md_ctx, op_done_t *op_don
     enum task_type type = ASYNC_TASK_DIGEST;
 
     SEC_DIGESTS_RETURN_FAIL_IF(md_ctx == NULL, "md_ctx is NULL.", KAE_FAIL);
-    if (md_ctx->e_digest_ctx == NULL) {
-        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
-        if (md_ctx->e_digest_ctx == NULL) {
-            US_WARN("failed to get engine ctx, switch to soft digest");
-            return KAE_FAIL;
-        }
-    }
     digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
     SEC_DIGESTS_RETURN_FAIL_IF(e_digest_ctx == NULL, "e_digest_ctx is NULL", KAE_FAIL);
     void *tag = e_digest_ctx;

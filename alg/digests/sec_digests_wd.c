@@ -156,10 +156,6 @@ void wd_digests_put_engine_ctx(digest_engine_ctx_t* e_digest_ctx)
         return;
     }
 
-    if (e_digest_ctx->md_ctx->last_update_buff != NULL) {
-        kae_free(e_digest_ctx->md_ctx->last_update_buff);
-    }
-
     if (e_digest_ctx->wd_ctx != NULL) {
         wcrypto_del_digest_ctx(e_digest_ctx->wd_ctx);
         e_digest_ctx->wd_ctx = NULL;
@@ -205,7 +201,6 @@ void wd_digests_set_input_data(digest_engine_ctx_t *e_digest_ctx)
     // fill engine ctx opdata
     sec_digest_priv_t* md_ctx = e_digest_ctx->md_ctx;
 
-    kae_memcpy((uint8_t *)e_digest_ctx->op_data.in, md_ctx->in, md_ctx->do_digest_len);
     e_digest_ctx->op_data.in_bytes = md_ctx->do_digest_len;
     e_digest_ctx->op_data.out_bytes = md_ctx->out_len;
 
