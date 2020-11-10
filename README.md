@@ -1,11 +1,11 @@
-# Kunpeng Acceleration Engine
+# Kunpeng Accelerator Engine
 
 - [Introduction](#introduction)
 - [License](#license)
 - [Requirements](#requirements)
 - [Installation Instructions](#installation-instructions)
     - [Building OpenSSL](#building-openssl)
-    - [Cloning and Building Kunpeng Acceleration Engine](#cloning-and-building-kunpeng-acceleration-engine)
+    - [Cloning and Building Kunpeng Accelerator Engine](#cloning-and-building-kunpeng-acceleration-engine)
     - [Testing Kunpeng Accelerator Engine](#testing-kunpeng-accelerator-engine)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -15,11 +15,11 @@
 
 ## Introduction
 
-Kunpeng Acceleration Engine is a new technology within Hisilicon Kunpeng 920 processors which 
+Kunpeng Accelerator Engine is a new technology within Hisilicon Kunpeng 920 processors which 
 
 provides a hardware-enabled foundation for security, authentication, and compression. It significantly increases the performance across cloud, networking, big data, and storage applications and  platforms.
 
-Kunpeng Acceleration Engine includes symmetric encryption, asymmetric encryption, digital signatures, and RSA for accelerating SSL/TLS application, which makes processors more efficient and reduces hardware costs. By accelerating SSL/TLS with Kunpeng Acceleration Engine, you can:
+Kunpeng Accelerator Engine includes symmetric encryption, asymmetric encryption, digital signatures, and RSA for accelerating SSL/TLS application, which makes processors more efficient and reduces hardware costs. By accelerating SSL/TLS with Kunpeng Accelerator Engine, you can:
 
 - Support higher-performance secured tunnels and a greater number of authenticated clients
 - Have higher-performance encrypted traffic throughout a secured network
@@ -28,7 +28,7 @@ Kunpeng Acceleration Engine includes symmetric encryption, asymmetric encryption
 - Have higher-performance compression and decompression
 - Maximize CPU utilization
 
-So far, the algorithms supported by Kunpeng Acceleration Engine are:
+So far, the algorithms supported by Kunpeng Accelerator Engine are:
 
 - Asymmetric encryption algorithm:  RSA Support Key Sizes 1024/2048/3072/4096
 - Digest algorithm: SM3/MD5
@@ -75,7 +75,7 @@ By default, we usually install OpenSSL as follows:
     make install
 The `-Wl,-rpath` option can specify the openssl shared libraries where the binaries will link to.
 
-### Cloning and Building Kunpeng Acceleration Engine
+### Cloning and Building Kunpeng Accelerator Engine
 
 Clone the Github repository containing the Kunpeng Accelerator Engine:
 
