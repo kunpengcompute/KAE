@@ -127,6 +127,9 @@ Export the environment variableas `OPENSSL_ENGINES` as follows :
 export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
 ```
 
+for more install guid and user guid, get information at:
+<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
+
 ### Testing Kunpeng Accelerator Engine
 
 Run the following command to check when the Kunpeng Accelerator Engine is loaded correctly:
@@ -226,7 +229,7 @@ OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
 
 ## More Information
 
-For further assistance, contact Huawei Support at:
+For further assistance and QA, contact Huawei Support at:
 
 <https://www.huaweicloud.com/kunpeng/software/accelerator.html>
 
