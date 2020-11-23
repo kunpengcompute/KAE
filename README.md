@@ -10,10 +10,13 @@
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [Loading Engines by Setting the OpenSSL Configuration File](#loading-engines-by-setting-the-openssl-configuration-file)
+- [Contribution guidelines](#contribution-guidelines)
 - [More Information](#more-information)
 - [Copyright](#copyright)
 
 ## Introduction
+
+Kunpeng Accelerator Engine is to build performance competitiveness of common software libraries on the Kunpeng platform. 
 
 Kunpeng Accelerator Engine is a new technology within Hisilicon Kunpeng 920 processors which 
 
@@ -226,6 +229,9 @@ By loading the openssl configuration file, the user application does not need to
 ```
 OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
 ```
+## Contribution guidelines
+
+If you want to contribute to KAE, please use GitHub [issues](https://github.com/kunpengcompute/KAE/issues/new) for tracking requests and bugs.
 
 ## More Information
 
