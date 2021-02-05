@@ -57,10 +57,6 @@ static int prepare_dh_data(const int bits, const BIGNUM* g, DH* dh, hpre_dh_engi
 
 static int hpre_dh_ctx_poll(void* engine_ctx);
 
-static int hpre_dh_keygen(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey);
-
-static int hpre_dh_derive(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen);
-
 const DH_METHOD* hpre_get_dh_methods(void)
 {
     int ret = 1;
@@ -96,6 +92,9 @@ int hpre_module_dh_init()
 {
     wd_hpre_dh_init_qnode_pool();
 
+    (void)get_dh_pkey_meth();
+    (void)hpre_get_dh_methods();
+
     /* register async poll func */
     async_register_poll_fn(ASYNC_TASK_DH, hpre_dh_ctx_poll);
 
@@ -119,11 +118,8 @@ EVP_PKEY_METHOD* get_dh_pkey_meth(void)
             US_ERR("failed to new pkey meth");
             return NULL;
         }
+        EVP_PKEY_meth_copy(g_hpre_dh_pkey_meth, def_dh);
     }
-    EVP_PKEY_meth_copy(g_hpre_dh_pkey_meth, def_dh);
-
-    EVP_PKEY_meth_set_keygen(g_hpre_dh_pkey_meth, 0, hpre_dh_keygen);
-    EVP_PKEY_meth_set_derive(g_hpre_dh_pkey_meth, 0, hpre_dh_derive);
 
     return g_hpre_dh_pkey_meth;
 }
@@ -131,82 +127,6 @@ EVP_PKEY_METHOD* get_dh_pkey_meth(void)
 EVP_PKEY_METHOD *get_dsa_pkey_meth(void)
 {
     return (EVP_PKEY_METHOD*)EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
-}
-
-static DH* change_dh_method(DH* dh_default)
-{
-    const DH_METHOD* hw_dh = hpre_get_dh_methods();
-    DH* dh = DH_new();
-
-    const BIGNUM *p, *q, *g, *priv_key, *pub_key;
-    BIGNUM *p1, *q1, *g1, *priv_key1, *pub_key1;
-    DH_get0_pqg(dh_default, &p, &q, &g);
-    DH_get0_key(dh_default, &pub_key, &priv_key);
-    p1 = BN_dup(p);
-    q1 = BN_dup(q);
-    g1 = BN_dup(g);
-    priv_key1 = BN_dup(priv_key);
-    pub_key1 = BN_dup(pub_key);
-    if (dh != NULL) {
-        DH_set_method(dh, hw_dh);
-        DH_set0_pqg(dh, p1, q1, g1);
-        DH_set0_key(dh, pub_key1, priv_key1);
-        return dh;
-    } else {
-        KAEerr(KAE_F_CHANGDHMETHOD, KAE_R_MALLOC_FAILURE);
-        US_ERR("changDHMethod failed.");
-        return (DH*)NULL;
-    }
-}
-
-static int hpre_dh_keygen(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey)
-{
-    DH* dh = NULL;
-    int ret = 0;
-    int (*pkeygen)(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey);
-    EVP_PKEY* pk = EVP_PKEY_CTX_get0_pkey(ctx);
-    DH* dh_default = EVP_PKEY_get1_DH(pk);
-    bool is_dsa = DH_get0_q(dh_default) != NULL;
-    if (is_dsa) {
-        const EVP_PKEY_METHOD* def_dh_meth = EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
-        EVP_PKEY_meth_get_keygen(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pkeygen);
-        ret = pkeygen(ctx, pkey);
-    } else {
-        dh = change_dh_method(dh_default);
-        EVP_PKEY_set1_DH(pk, dh);
-        const EVP_PKEY_METHOD* def_dh_meth = EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
-        EVP_PKEY_meth_get_keygen(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pkeygen);
-        ret = pkeygen(ctx, pkey);
-        EVP_PKEY_assign_DH(pk, dh_default);
-        DH_free(dh);
-    }
-
-    return ret;
-}
-
-static int hpre_dh_derive(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen)
-{
-    DH* dh = NULL;
-    int ret = 0;
-    int (*pderive)(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen);
-    EVP_PKEY* pk = EVP_PKEY_CTX_get0_pkey(ctx);
-    DH* dh_default = EVP_PKEY_get1_DH(pk);
-    bool is_dsa = DH_get0_q(dh_default) != NULL;
-    if (is_dsa) {
-        const EVP_PKEY_METHOD* def_dh_meth = EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
-        EVP_PKEY_meth_get_derive(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pderive);
-        ret = pderive(ctx, key, keylen);
-    } else {
-        dh = change_dh_method(dh_default);
-        EVP_PKEY_set1_DH(pk, dh);
-        const EVP_PKEY_METHOD* def_dh_meth = EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
-        EVP_PKEY_meth_get_derive(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pderive);
-        ret = pderive(ctx, key, keylen);
-        EVP_PKEY_assign_DH(pk, dh_default);
-        DH_free(dh);
-    }
-
-    return ret;
 }
 
 static int hpre_dh_ctx_poll(void* engine_ctx)

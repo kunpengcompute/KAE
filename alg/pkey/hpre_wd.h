@@ -58,6 +58,8 @@ struct hpre_engine_ctx {
 
 typedef struct hpre_engine_ctx hpre_engine_ctx_t;
 
+extern KAE_QUEUE_POOL_HEAD_S *g_hpre_rsa_qnode_pool;
+
 int wd_hpre_init_qnode_pool(void);
 void wd_hpre_uninit_qnode_pool(void);
 

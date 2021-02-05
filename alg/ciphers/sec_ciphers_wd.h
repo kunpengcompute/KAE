@@ -28,6 +28,8 @@
 
 #include "sec_ciphers.h"
 
+extern KAE_QUEUE_POOL_HEAD_S *g_sec_ciphers_qnode_pool;
+
 cipher_engine_ctx_t* wd_ciphers_get_engine_ctx(cipher_priv_ctx_t* priv_ctx);
 void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t* e_cipher_ctx);
 int wd_ciphers_do_crypto_impl(cipher_engine_ctx_t *e_cipher_ctx);

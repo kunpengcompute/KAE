@@ -28,20 +28,37 @@
 #include "sec_ciphers.h"
 #include "sec_digests.h"
 #include "engine_log.h"
+#include "hpre_wd.h"
+#include "hpre_dh_wd.h"
+#include "sec_ciphers_wd.h"
+#include "sec_digests_wd.h"
 
 void engine_init_child_at_fork_handler(void)
 {
     US_DEBUG("call engine_init_child_at_fork_handler");
 
-    kae_check_thread_reset();
-    if (!kae_checking_q_thread_init()) {
-        US_WARN("kae queue check thread init failed");
+    if (g_sec_digests_qnode_pool) {
+        g_sec_digests_qnode_pool->pool_use_num = 0;
+    }
+    if (g_sec_ciphers_qnode_pool) {
+        g_sec_ciphers_qnode_pool->pool_use_num = 0;
+    }
+    if (g_hpre_rsa_qnode_pool) {
+        g_hpre_rsa_qnode_pool->pool_use_num = 0;
+    }
+    if (g_hpre_dh_qnode_pool) {
+        g_hpre_dh_qnode_pool->pool_use_num = 0;
     }
     
     (void)hpre_module_init();
     (void)hpre_module_dh_init();
     (void)cipher_module_init();
     (void)digest_module_init();
+    
+    kae_check_thread_reset();
+    if (!kae_checking_q_thread_init()) {
+        US_WARN("kae queue check thread init failed");
+    }
     async_module_init();
 
     return;

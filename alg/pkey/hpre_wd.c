@@ -153,12 +153,7 @@ void hpre_free_eng_ctx(hpre_engine_ctx_t *eng_ctx)
         US_DEBUG("no eng_ctx to free");
         return;
     }
-
-    if (eng_ctx->qlist != NULL) {
-        hpre_free_rsa_ctx(eng_ctx->ctx);
-        kae_put_node_to_pool(g_hpre_rsa_qnode_pool, eng_ctx->qlist);
-    }
-
+    
     if (eng_ctx->opdata.op_type != WCRYPTO_RSA_GENKEY) {
         if (eng_ctx->opdata.in) {
             eng_ctx->rsa_setup.br.free(eng_ctx->qlist->kae_queue_mem_pool, eng_ctx->opdata.in);
@@ -176,6 +171,12 @@ void hpre_free_eng_ctx(hpre_engine_ctx_t *eng_ctx)
             wcrypto_del_kg_out(eng_ctx->ctx, (struct wcrypto_rsa_kg_out *)eng_ctx->opdata.out);
         }
     }
+
+    if (eng_ctx->qlist != NULL) {
+        hpre_free_rsa_ctx(eng_ctx->ctx);
+        kae_put_node_to_pool(g_hpre_rsa_qnode_pool, eng_ctx->qlist);
+    }
+
     eng_ctx->priv_ctx.ssl_alg = NULL;
     eng_ctx->qlist = NULL;
     eng_ctx->ctx = NULL;
