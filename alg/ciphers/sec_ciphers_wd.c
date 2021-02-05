@@ -34,8 +34,7 @@
 #define MAX_IV_SIZE        16
 
      
-static KAE_QUEUE_POOL_HEAD_S* g_sec_ciphers_qnode_pool = NULL;
-
+KAE_QUEUE_POOL_HEAD_S* g_sec_ciphers_qnode_pool = NULL;
 static cipher_engine_ctx_t* wd_ciphers_new_engine_ctx(KAE_QUEUE_DATA_NODE_S* q_node, cipher_priv_ctx_t* priv_ctx);
 
 void wd_ciphers_free_engine_ctx(void* engine_ctx)

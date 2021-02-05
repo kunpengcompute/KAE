@@ -22,7 +22,7 @@
 #include "engine_types.h"
 #include "engine_log.h"
 
-static KAE_QUEUE_POOL_HEAD_S* g_sec_digests_qnode_pool = NULL;
+KAE_QUEUE_POOL_HEAD_S* g_sec_digests_qnode_pool = NULL;
 static digest_engine_ctx_t* wd_digests_new_engine_ctx(KAE_QUEUE_DATA_NODE_S* q_node, sec_digest_priv_t* md_ctx);
 static int wd_digests_init_engine_ctx(digest_engine_ctx_t *e_digest_ctx);
 

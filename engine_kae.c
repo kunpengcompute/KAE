@@ -340,27 +340,31 @@ static int bind_kae(ENGINE *e, const char *id)
 
     ret = kae_get_device(sec_device);
     if (ret != 0) {
+#ifndef KAE_NO_CIPHER_METH
         ret = ENGINE_set_ciphers(e, sec_engine_ciphers);
         RETURN_FAIL_IF(ret != 1, "ENGINE_set_ciphers failed.",
             KAE_F_BIND_HELPER, KAE_R_SET_CIPHERS_FAILURE);
-
+#endif
+#ifndef KAE_NO_DIGEST_METH
         ret = ENGINE_set_digests(e, sec_engine_digests);
         RETURN_FAIL_IF(ret != 1, "ENGINE_set_digests failed.",
             KAE_F_BIND_HELPER, KAE_R_SET_DIGESTS_FAILURE);
+#endif        
     }
 
     ret = ENGINE_set_pkey_meths(e, hpre_pkey_meths);
     RETURN_FAIL_IF(ret != 1, "ENGINE_set_finish_function failed",
         KAE_F_BIND_HELPER, KAE_R_SET_PKEYMETH_FAILURE);
-
+#ifndef KAE_NO_RSA_METH
     ret = ENGINE_set_RSA(e, hpre_get_rsa_methods());
     RETURN_FAIL_IF(ret != 1, "ENGINE_set_RSA failed.",
         KAE_F_BIND_HELPER, KAE_R_SET_RSA_FAILURE);
-
+#endif
+#ifndef KAE_NO_DH_METH
     ret = ENGINE_set_DH(e, hpre_get_dh_methods());
     RETURN_FAIL_IF(ret != 1, "ENGINE_set_DH failed.",
         KAE_F_BIND_HELPER, KAE_R_SET_DH_FAILURE);
-
+#endif
     ret = ENGINE_set_destroy_function(e, kae_engine_destroy);
     RETURN_FAIL_IF(ret != 1, "ENGINE_set_destroy_function failed.",
         KAE_F_BIND_HELPER, KAE_R_SET_DESTORY_FAILURE);

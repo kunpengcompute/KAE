@@ -21,6 +21,7 @@
 
 #include "sec_digests.h"
 
+extern KAE_QUEUE_POOL_HEAD_S *g_sec_digests_qnode_pool;
 
 digest_engine_ctx_t* wd_digests_get_engine_ctx(sec_digest_priv_t* md_ctx);
 void wd_digests_put_engine_ctx(digest_engine_ctx_t* e_digest_ctx);
