@@ -78,6 +78,10 @@ By default, we usually install OpenSSL as follows:
     make install
 The `-Wl,-rpath` option can specify the openssl shared libraries where the binaries will link to.
 
+Note: by default, KAE supports algorithms supported by all specifications. If you do not need to compile an algorithm, you can configure macros. The following configuration macros are supported: KAE_NO_DIGEST_METH, KAE_NO_DH_METH, KAE_NO_CIPHER_METH, and KAE_NO_RSA_METH.The file KAE/Makefile need to be modified.
+If the KAE does not compile the RSA algorithm, the -D KAE_NO_RSA_METH configuration needs to be added to the CFLAGS configuration. For example:
+CFLAGS := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline -D KAE_NO_RSA_METH
+
 ### Cloning and Building Kunpeng Accelerator Engine
 
 Clone the Github repository containing the Kunpeng Accelerator Engine:
