@@ -10,7 +10,7 @@
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [Loading Engines by Setting the OpenSSL Configuration File](#loading-engines-by-setting-the-openssl-configuration-file)
-- [Contribution guidelines](#contribution-guidelines)
+- [Contribution Guidelines](#contribution-Guidelines)
 - [More Information](#more-information)
 - [Copyright](#copyright)
 
@@ -92,7 +92,7 @@ Download the release version of Kunpeng Accelerator Engine Driver from:
 
 <https://github.com/kunpengcompute/KAEdriver/releases> 
 
-Firstly, build and install the accelerator driver:
+Firstly, build and install the accelerator driver.
 Note: To build the Kunpeng Accelerator Engine Driver, install the `kernel-devel` package first.
 
 ```
@@ -128,13 +128,13 @@ make install
 ```
 
 Note: The `--openssl_path` can be used with the `./configure` command to specify the location that  `make install` will copy files to. The default installation path for the accelerator engine is `/usr/local/lib/openssl-1.1`. You are advised to install the Kunpeng Accelerator Engine as a default OpenSSL engine. 
-Export the environment variableas `OPENSSL_ENGINES` as follows :
+Export the environment variables `OPENSSL_ENGINES` as follows :
 
 ```
 export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
 ```
 
-for more install guid and user guid, get information at:
+For more install guid and user guid, get information at:
 <https://www.huaweicloud.com/kunpeng/software/accelerator.html>
 
 ### Testing Kunpeng Accelerator Engine
@@ -194,13 +194,13 @@ int main(int argc, char **argv)
 
 The most likely failure point is that the Kunpeng Accelerator Engine is not loaded successfully. If this occurs:
 
-   1. Check that the accelerator driver has been loaded successfully by running the `lsmod` command. 
+   1. Check whether the accelerator driver has been loaded successfully by running the `lsmod` command. 
 
       `uacce.ko, hisi_qm.ko, sgl.ko, hisi_sec2.ko, hisi_hpre.ko, hisi_zip.ko` should be in the list. 
 
-   2. Check that the paths have been set correctly so that the `libkae.so` engine file can be copied to the correct location.
+   2. Check whether the paths have been set correctly so that the `libkae.so` engine file can be copied to the correct location.
 
-   3. Check that the installation path has been correctly added to the environment variable `OPENSSL_ENGINES` and exported to the shell by running the `export` command.
+   3. Check whether the installation path has been correctly added to the environment variable `OPENSSL_ENGINES` and exported to the shell by running the `export` command.
 
 ## Loading Engines by Setting the OpenSSL Configuration File 
 
@@ -233,22 +233,22 @@ By loading the openssl configuration file, the user application does not need to
 ```
 OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
 ```
-## Contribution guidelines
+## Contribution Guidelines
 
 If you want to contribute to KAE, please use GitHub [issues](https://github.com/kunpengcompute/KAE/issues/new) for tracking requests and bugs.
 
 ## Vulnerability Management
 Please refer to https://github.com/kunpengcompute/Kunpeng#security
 
-## Quality requirements
+## Quality Requirements
 Please refer to [Secure Coding Specifications](https://github.com/kunpengcompute/Kunpeng/blob/master/security/SecureCoding.md).
 
-## Secure design
+## Secure Design
 Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/master/security/SecureDesign.md).
 
 ## More Information
 
-For further assistance and QA, contact Huawei Support at:
+For further assistance and more QAs, contact Huawei Support at:
 
 <https://www.huaweicloud.com/kunpeng/software/accelerator.html>
 
