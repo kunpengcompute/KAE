@@ -133,9 +133,7 @@ Export the environment variables `OPENSSL_ENGINES` as follows :
 export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
 ```
 Note2: by default, KAE supports algorithms supported by all specifications. If you do not need to compile an algorithm, you can configure macros. The following configuration macros are supported: KAE_NO_DIGEST_METH, KAE_NO_DH_METH, KAE_NO_CIPHER_METH, and KAE_NO_RSA_METH.The file KAE/Makefile need to be modified.
-If the KAE does not compile the RSA algorithm, the -D KAE_NO_RSA_METH configuration needs to be added to the CFLAGS configuration. 
-For example:
-    CFLAGS := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline -D KAE_NO_RSA_METH
+If the KAE does not compile the RSA algorithm, the -D KAE_NO_RSA_METH configuration needs to be added to the CFLAGS configuration. For example:CFLAGS := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline -D KAE_NO_RSA_METH
 
 For more install guid and user guid, get information at:
 <https://www.huaweicloud.com/kunpeng/software/accelerator.html>
