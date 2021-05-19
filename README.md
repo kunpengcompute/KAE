@@ -136,7 +136,7 @@ Note2: by default, KAE supports algorithms supported by all specifications. If y
 If the KAE does not compile the RSA algorithm, the -D KAE_NO_RSA_METH configuration needs to be added to the CFLAGS configuration. For example:CFLAGS := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline -D KAE_NO_RSA_METH
 
 For more install guid and user guid, get information at:
-<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
+<https://www.hikunpeng.com/developer/boostkit/library/encryption-decryption>
 
 ### Testing Kunpeng Accelerator Engine
 
@@ -251,7 +251,7 @@ Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/m
 
 For further assistance and more QAs, contact Huawei Support at:
 
-<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
+<https://www.hikunpeng.com/developer/boostkit/library/encryption-decryption>
 
 ## Copyright
 
