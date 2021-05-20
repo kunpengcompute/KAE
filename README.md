@@ -146,14 +146,18 @@ Run the following command to check when the Kunpeng Accelerator Engine is loaded
 cd /usr/local/bin/
 ./openssl  genrsa -out test.key -engine kae 2048 
 ./openssl  rsa -in test.key -pubout -out test_pub.key -engine kae 
+echo asdsdf3246wdgg1024 > rsa_test
 ./openssl  rsautl -encrypt -in rsa_test -inkey test_pub.key -pubin -out rsa_test.en -engine kae 
 ./openssl  rsautl -decrypt -in rsa_test.en -inkey test.key -out rsa_test.de -engine kae
 ```
 
 ```
+dd if=/dev/urandom of=sm4_test bs=M count=1
 ./openssl enc -sm4-cbc -a -in sm4_test -out sm4_test.en -pass pass:123456 -engine kae 
 ./openssl enc -sm4-cbc -a -in sm4_test -out sm4_test.en -pass pass:123456 -p -engine kae 
 ./openssl enc -sm4-cbc -d -a -in sm4_test.en -out sm4_test.de -pass pass:123456 -engine kae 
+
+dd if=/dev/urandom of=sm3_test bs=M count=1
 ./openssl sm3 -out sm3_out -engine kae sm3_test
 ```
 
