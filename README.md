@@ -16,6 +16,7 @@
 - [Secure Design](#Secure-Design)
 - [More Information](#more-information)
 - [Copyright](#copyright)
+- [ReleaseNote](#ReleaseNote)
 
 ## Introduction
 
@@ -258,3 +259,5 @@ For further assistance and more QAs, contact Huawei Support at:
 ## Copyright
 
 Copyright © 2018 Huawei Corporation. All rights reserved.
+## ReleaseNote
+The latest version 1.3.11 is recommended.
