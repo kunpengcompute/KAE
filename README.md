@@ -14,6 +14,7 @@
 - [Vulnerability Management](#Vulnerability-Management)
 - [Quality Requirements](#Quality-Requirements)
 - [Secure Design](#Secure-Design)
+- [ReleaseNote](#ReleaseNote)
 - [More Information](#more-information)
 - [Copyright](#copyright)
 
@@ -250,6 +251,9 @@ Please refer to [Secure Coding Specifications](https://github.com/kunpengcompute
 
 ## Secure Design
 Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/master/security/SecureDesign.md).
+
+## ReleaseNote
+The latest version 1.3.11 is recommended.
 
 ## More Information
 
