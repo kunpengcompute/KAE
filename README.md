@@ -254,6 +254,7 @@ Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/m
 
 ## ReleaseNote
 The latest version 1.3.11 is recommended.
+Please refer to https://github.com/tuyawangfq/KAE/blob/master/ReleaseNote
 
 ## More Information
 
