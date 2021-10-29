@@ -263,6 +263,8 @@ static int hpre_rsa_public_encrypt(int flen, const unsigned char *from,
     BIGNUM *ret_bn  = NULL;
     hpre_engine_ctx_t *eng_ctx = NULL;
     unsigned char *in_buf = NULL;
+    BN_CTX *bn_ctx = NULL;
+    int num_bytes = 0;
 
     if (hpre_rsa_check_para(flen, from, to, rsa) != HPRE_CRYPTO_SUCC) {
         return HPRE_CRYPTO_FAIL;
@@ -285,13 +287,13 @@ static int hpre_rsa_public_encrypt(int flen, const unsigned char *from,
     GOTOEND_IF(ret != HPRE_CRYPTO_SUCC, "check public key fail",
         KAE_F_HPRE_RSA_PUBENC, KAE_R_PUBLIC_KEY_INVALID);
 
-    BN_CTX *bn_ctx = BN_CTX_new();
+    bn_ctx = BN_CTX_new();
     GOTOEND_IF(bn_ctx == NULL, "bn_ctx MALLOC FAILED!",
         KAE_F_HPRE_RSA_PUBENC, KAE_R_MALLOC_FAILURE);
 
     BN_CTX_start(bn_ctx);
     ret_bn = BN_CTX_get(bn_ctx);
-    int num_bytes = BN_num_bytes(n);
+    num_bytes = BN_num_bytes(n);
     in_buf = (unsigned char *)OPENSSL_malloc(num_bytes);
     GOTOEND_IF(ret_bn == NULL || in_buf == NULL, "PUBLIC_ENCRYPT RSA MALLOC FAILED!",
         KAE_F_HPRE_RSA_PUBENC, KAE_R_MALLOC_FAILURE);
@@ -349,6 +351,8 @@ static int hpre_rsa_private_encrypt(int flen, const unsigned char *from,
     const BIGNUM *dmq1 = (const BIGNUM *)NULL;
     const BIGNUM *iqmp = (const BIGNUM *)NULL;
     unsigned char *in_buf = (unsigned char *)NULL;
+    BN_CTX *bn_ctx = NULL;
+    int num_bytes = 0;
 
     if (hpre_rsa_check_para(flen, from, to, rsa) != HPRE_CRYPTO_SUCC) {
         return HPRE_CRYPTO_FAIL;
@@ -367,7 +371,7 @@ static int hpre_rsa_private_encrypt(int flen, const unsigned char *from,
         goto end_soft;
     }
 
-    BN_CTX *bn_ctx = BN_CTX_new();
+    bn_ctx = BN_CTX_new();
     GOTOEND_IF(bn_ctx == NULL, "PRI_ENC MALLOC_FAILURE ",
         KAE_F_HPRE_RSA_PRIENC, KAE_R_MALLOC_FAILURE);
 
@@ -378,7 +382,7 @@ static int hpre_rsa_private_encrypt(int flen, const unsigned char *from,
     RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
     int version = RSA_get_version(rsa);
     RSA_get0_key(rsa, &n, &e, &d);
-    int num_bytes = BN_num_bytes(n);
+    num_bytes = BN_num_bytes(n);
     in_buf = (unsigned char *)OPENSSL_malloc(num_bytes);
     GOTOEND_IF(bn_ret == NULL || in_buf == NULL, "OpenSSL malloc failure",
         KAE_F_HPRE_RSA_PRIENC, KAE_R_MALLOC_FAILURE);
