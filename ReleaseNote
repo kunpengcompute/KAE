@@ -1,9 +1,0 @@
-ReleaseNote
-The latest version is 1.3.11.
-1.3.11 Updated the content：
-  1.update kae version to 1.3.11
-  2.bugfix for libkae:fix libkae support custom location installation
-  3.bugfix for kaezip:resolve multi-thread contention lock,causing crashes
-  4.bugfix for kaezip:ceph cluster object storage, When KAEzip is used to compress data larger than 4 MB in the ceph cluster object storage, an error is returned and the minor 
-    bug is fixed, see the FAQ link：https://support.huaweicloud.com/kunpengaccel_faq/kunpengaccel_10_0021.html
-  
