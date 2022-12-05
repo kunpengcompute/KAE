@@ -1,0 +1,59 @@
+Define WD related environment variables
+=======================================
+
+-v0.1 2021.3.29 Sherlock         Init
+-v0.2 2021.4. 1 Barry, Sherlock  Remove driver, sched, async polling env
+
+Currently WD lib offers init related APIs to init accelerator resources in
+one process. User should call libwd and libwd_comp/libwd_crypto APIs to do
+this. WD lib could help to do this by parsing a set of WD configurations
+set by user. This document defines this set of WD environment variables to
+offer process level WD configures.
+
+1. WD environment variables define
+==================================
+
+WD_<alg>_ASYNC_POLL_EN
+----------------------
+
+ Define if enble polling threads in WD. WD_<alg>_ASYNC_POLL_EN=1 means enable
+ polling threads in WD, otherwise caller should poll finished request by
+ WD APIs.
+
+WD_COMP_CTX_NUM
+-----------------
+
+ Define the algorithm ctx number. For example:
+ WD_COMP_CTX_NUM=sync-comp:10@0,async-decomp:20@1 means 10 sync ctxs are used
+ for compression in node0, and 20 async ctxs are used for decompression in
+ node1.
+
+ currently, we only have:
+ <sync-comp|sync-decomp|async-comp|async-decomp>:<num>@<node>
+
+WD_<alg>_CTX_NUM
+-----------------
+
+ Define the algorithm ctx number. For example:
+ WD_<alg>_CTX_NUM=sync:10@0,async:20@1 means 10 sync ctxs are used
+ in node0, and 20 async ctxs are used in node1.
+
+alg above could be CIPHER, AEAD, DIGEST, DH, RSA, ECC.
+
+WD_<alg>_ASYNC_POLL_NUM
+-----------------------
+
+ Define the async polling thread numbers in NUMA node. For example:
+ WD_<alg>_ASYNC_POLL_NUM=2@0,4@2 means to configure 2 async polling threads in
+ node0, and 4 polling threads in node2.
+
+WD_<alg>_EPOLL_EN
+ Define if wd_do_<alg>_sync enable wd_ctx_wait in WD. WD_<alg>_EPOLL_EN=1
+ means enable wd_ctx_wait in WD, driver will wait to receive the package until
+ hardware is done with package, otherwise driver will try to receive the package
+ directly after the package is sent.
+
+2. User model
+=============
+
+ (to do: ...)
