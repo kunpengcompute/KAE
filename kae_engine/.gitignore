@@ -1,0 +1,16 @@
+build-aux
+autom4te.cache
+.deps
+.libs
+*.m4
+*.lo
+*.la
+*.o
+*.tar.gz
+Makefile
+Makefile.in
+config.status
+config.log
+configure
+libtool
+cscope.*
