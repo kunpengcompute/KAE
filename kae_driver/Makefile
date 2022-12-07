@@ -1,8 +1,8 @@
-KERNEL_PATH := /lib/modules/5.10*/build
-KSP :=	$(shell if test -d /lib/modules/5.10*/source; then  \
-                    echo /lib/modules/5.10*/source; \
+KERNEL_PATH := /lib/modules/`uname -r`/build
+KSP :=	$(shell if test -d /lib/modules/`uname -r`/source; then  \
+                    echo /lib/modules/`uname -r`/source; \
 	        else  \
-                    echo /lib/modules/5.10*/build;  \
+                    echo /lib/modules/`uname -r`/build;  \
                 fi)
 
 obj-m += uacce/
@@ -28,22 +28,20 @@ defaul:
 #	cp -f $(shell pwd)/include_uapi_linux/uacce.h $(KSP)/include/uapi/linux
 
 install:
-	$(shell mkdir -p /lib/modules/5.10*/extra)
-	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/5.10*/extra \;)
+	$(shell mkdir -p /lib/modules/`uname -r`/extra)
+	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/`uname -r`/extra \;)
 	depmod -a
 	$(shell if test -e /etc/modprobe.d/10-unsupported-modules.conf; then \
 		sed -i "s/^allow_unsupported_modules.*/allow_unsupported_modules 1/" /etc/modprobe.d/10-unsupported-modules.conf; \
 	fi)
 	-modprobe uacce
 	-modprobe hisi_qm
-	-modprobe hisi_sec2 uacce_mode=2 enable_sm4_ctr=1 pf_q_num=256
-	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
-	-modprobe hisi_zip  uacce_mode=2 pf_q_num=256
-	-modprobe hisi_trng_v2  uacce_mode=2 pf_q_num=256
-	-echo "options hisi_sec2 uacce_mode=2 enable_sm4_ctr=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
-	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
-	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-	-echo "options hisi_trng_v2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_trng_v2.conf
+	-modprobe hisi_sec2 uacce_mode=1 pf_q_num=256
+	-modprobe hisi_hpre uacce_mode=1 pf_q_num=256
+	-modprobe hisi_zip  uacce_mode=1 pf_q_num=256
+	-echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
+	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
+	-echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 uninstall:
 	modprobe -r hisi_zip
 	modprobe -r hisi_hpre
@@ -51,16 +49,14 @@ uninstall:
 	modprobe -r hisi_trng_v2
 	modprobe -r hisi_qm
 	modprobe -r uacce
-	rm -rf /lib/modules/5.10*/extra/uacce.ko
-	rm -rf /lib/modules/5.10*/extra/hisi_qm.ko
-	rm -rf /lib/modules/5.10*/extra/hisi_sec2.ko
-	rm -rf /lib/modules/5.10*/extra/hisi_hpre.ko
-	rm -rf /lib/modules/5.10*/extra/hisi_trng_v2.ko
-	rm -rf /lib/modules/5.10*/extra/hisi_zip.ko
+	rm -rf /lib/modules/`uname -r`/extra/uacce.ko
+	rm -rf /lib/modules/`uname -r`/extra/hisi_qm.ko
+	rm -rf /lib/modules/`uname -r`/extra/hisi_sec2.ko
+	rm -rf /lib/modules/`uname -r`/extra/hisi_hpre.ko
+	rm -rf /lib/modules/`uname -r`/extra/hisi_zip.ko
 	rm -rf /etc/modprobe.d/hisi_sec2.conf
 	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
-	rm -rf /etc/modprobe.d/hisi_trng_v2.conf
 	depmod -a
 
 clean:
