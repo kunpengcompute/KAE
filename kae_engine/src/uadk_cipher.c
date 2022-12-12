@@ -91,6 +91,9 @@ static int cipher_hw_v2_nids[] = {
 	NID_des_ede3_cbc,
 	NID_des_ede3_ecb,
 	NID_sm4_ecb,
+	NID_sm4_cfb128,
+	NID_sm4_ofb128,
+	NID_sm4_ctr,
 	0,
 };
 
@@ -1007,7 +1010,18 @@ static int bind_v2_cipher(void)
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-
+	UADK_CIPHER_DESCR(sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
+			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
+			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
+			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
+			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	UADK_CIPHER_DESCR(sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
+			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
+			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);    
 	return 0;
 }
 
@@ -1061,8 +1075,7 @@ static int bind_v3_cipher(void)
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-
-	return 0;
+    return 0;
 }
 
 int uadk_e_bind_cipher(ENGINE *e)
