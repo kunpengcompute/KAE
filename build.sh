@@ -15,7 +15,7 @@ function main()
                 make -j
                 make install
                 cd ../kae_engine
-		        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+                export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
                 autoreconf -i
                 ./configure --libdir=/usr/local/lib/engines-1.1/
                 make -j
