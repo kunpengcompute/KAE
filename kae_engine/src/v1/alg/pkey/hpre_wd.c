@@ -42,7 +42,7 @@
 #include "../../utils/engine_types.h"
 #include "hpre_rsa_utils.h"
 #include "../../utils/engine_check.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 static void hpre_rsa_cb(const void *message, void *tag);
 

@@ -24,6 +24,7 @@
 #include <uadk/wd.h>
 #include "uadk.h"
 #include "uadk_async.h"
+#include "utils/engine_log.h"
 #ifdef KAE
 #include "v1/uadk_v1.h"
 #endif
@@ -206,8 +207,8 @@ static int uadk_destroy(ENGINE *e)
 		hpre_destroy();
 	if (uadk_dh_nosva)
 		hpre_dh_destroy();
-	kae_debug_close_log();
 #endif
+	kae_debug_close_log();
 
 	if (uadk_cipher)
 		uadk_e_destroy_cipher();
@@ -387,20 +388,23 @@ static int bind_fn(ENGINE *e, const char *id)
 		return 0;
 	}
 
-#ifdef KAE
 	kae_debug_init_log();
+#ifdef KAE
 	bind_fn_kae_alg(e);
 
 	if (uadk_cipher_nosva || uadk_digest_nosva || uadk_rsa_nosva ||
 	    uadk_dh_nosva) {
 		async_module_init_v1();
 		pthread_atfork(NULL, NULL, engine_init_child_at_fork_handler_v1);
+		US_INFO("enable nosva");
 	}
 #endif
 	bind_fn_uadk_alg(e);
 
-	if (uadk_cipher || uadk_digest || uadk_rsa || uadk_dh || uadk_ecc)
+	if (uadk_cipher || uadk_digest || uadk_rsa || uadk_dh || uadk_ecc) {
 		pthread_atfork(NULL, NULL, engine_init_child_at_fork_handler);
+		US_INFO("enable sva");
+	}
 
 	ret = ENGINE_set_ctrl_function(e, uadk_engine_ctrl);
 	if (ret != 1) {

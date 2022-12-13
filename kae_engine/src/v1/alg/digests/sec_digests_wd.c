@@ -18,9 +18,9 @@
 
 #include "sec_digests_wd.h"
 #include "../../wdmngr/wd_queue_memory.h"
-#include "../../utils/engine_utils.h"
+#include "../../../utils/engine_utils.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 KAE_QUEUE_POOL_HEAD_S *g_sec_digests_qnode_pool;
 static digest_engine_ctx_t *wd_digests_new_engine_ctx(KAE_QUEUE_DATA_NODE_S *q_node, sec_digest_priv_t *md_ctx);

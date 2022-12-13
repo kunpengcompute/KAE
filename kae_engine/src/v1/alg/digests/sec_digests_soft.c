@@ -19,7 +19,7 @@
 #include <asm/byteorder.h>
 #include "sec_digests_soft.h"
 #include "../../utils/engine_opensslerr.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 static const EVP_MD *sec_digests_soft_md(uint32_t e_nid)
 {

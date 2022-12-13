@@ -20,7 +20,7 @@
 #include "hpre_dh_wd.h"
 #include "hpre_dh_util.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 #include "../../async/async_callback.h"
 #include "../../async/async_task_queue.h"
 #include "../../async/async_event.h"

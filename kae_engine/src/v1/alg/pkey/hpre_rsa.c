@@ -26,7 +26,7 @@
 #include "hpre_rsa_soft.h"
 #include "../../async/async_poll.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 #include "../dh/hpre_dh.h"
 
 #ifndef OPENSSL_NO_RSA

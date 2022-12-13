@@ -4,7 +4,8 @@ ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES=uadk_engine.la
 
 uadk_engine_la_SOURCES=uadk_utils.c e_uadk.c uadk_cipher.c uadk_digest.c uadk_async.c \
-		uadk_rsa.c uadk_sm2.c uadk_pkey.c uadk_dh.c uadk_ec.c uadk_ecx.c
+		uadk_rsa.c uadk_sm2.c uadk_pkey.c uadk_dh.c uadk_ec.c uadk_ecx.c \
+		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
 uadk_engine_la_LIBADD=-ldl $(WD_LIBS) -lpthread
 uadk_engine_la_LDFLAGS=-module -version-number $(VERSION)
 uadk_engine_la_CFLAGS=$(WD_CFLAGS)
@@ -12,7 +13,7 @@ uadk_engine_la_CFLAGS=$(WD_CFLAGS)
 AUTOMAKE_OPTIONS = subdir-objects
 
 if WD_KAE
-AM_CFLAGS = -DKAE
+uadk_engine_la_CFLAGS += -DKAE
 uadk_engine_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/alg/ciphers/sec_ciphers_soft.c \
 		 v1/alg/ciphers/sec_ciphers_utils.c \
@@ -30,11 +31,8 @@ uadk_engine_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/wdmngr/wd_alg_queue.c \
 		 v1/wdmngr/wd_queue_memory.c \
 		 v1/utils/engine_check.c \
-		 v1/utils/engine_config.c \
 		 v1/utils/engine_fork.c \
-		 v1/utils/engine_log.c \
 		 v1/utils/engine_opensslerr.c \
-		 v1/utils/engine_utils.c \
 		 v1/async/async_callback.c \
 		 v1/async/async_event.c \
 		 v1/async/async_poll.c \

@@ -28,7 +28,7 @@
 #include <openssl/bn.h>
 #include <openssl/engine.h>
 
-#include "../../utils/engine_utils.h"
+#include "../../../utils/engine_utils.h"
 #include "../../utils/engine_opensslerr.h"
 
 #define RSA_MIN_MODULUS_BITS    512
