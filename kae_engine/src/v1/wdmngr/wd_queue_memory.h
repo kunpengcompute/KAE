@@ -22,7 +22,7 @@
 #include <semaphore.h>
 #include <uadk/v1/wd.h>
 #include "wd_alg_queue.h"
-#include "../utils/engine_utils.h"
+#include "../../utils/engine_utils.h"
 
 #define KAE_QUEUE_POOL_MAX_SIZE    512
 #define CHECK_QUEUE_TIME_SECONDS 5 // seconds

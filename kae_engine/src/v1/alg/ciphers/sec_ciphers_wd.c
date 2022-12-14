@@ -25,9 +25,9 @@
 #include "sec_ciphers_wd.h"
 #include "sec_ciphers_utils.h"
 #include "../../wdmngr/wd_queue_memory.h"
-#include "../../utils/engine_utils.h"
+#include "../../../utils/engine_utils.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 #define OUTPUT_CACHE_SIZE  (256*1024)
 #define INPUT_CACHE_SIZE   (256*1024)

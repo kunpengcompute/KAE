@@ -18,8 +18,8 @@
 
 #include <stdio.h>
 #include "wd_queue_memory.h"
-#include "../utils/engine_utils.h"
-#include "../utils/engine_log.h"
+#include "../../utils/engine_utils.h"
+#include "../../utils/engine_log.h"
 #include <uadk/v1/wd_bmm.h>
 
 #define MAXBLOCKSIZE   0x90000

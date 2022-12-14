@@ -16,7 +16,7 @@
 #define UADK_V1_H
 #include "async/async_poll.h"
 #include "utils/engine_fork.h"
-#include "utils/engine_log.h"
+#include "../utils/engine_log.h"
 
 extern void sec_ciphers_free_ciphers(void);
 extern int cipher_module_init(void);

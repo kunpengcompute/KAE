@@ -29,8 +29,8 @@
 #include "../alg/pkey/hpre_wd.h"
 #include "../alg/dh/hpre_dh_wd.h"
 #include "engine_check.h"
-#include "engine_utils.h"
-#include "engine_log.h"
+#include "../../utils/engine_utils.h"
+#include "../../utils/engine_log.h"
 
 KAE_CHECK_Q_TASK g_kae_check_q_task = {
 	.init_flag = NOT_INIT,

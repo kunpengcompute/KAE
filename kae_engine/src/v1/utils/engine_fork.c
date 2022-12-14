@@ -27,7 +27,7 @@
 #include "../alg/dh/hpre_dh.h"
 #include "../alg/ciphers/sec_ciphers.h"
 #include "../alg/digests/sec_digests.h"
-#include "../utils/engine_log.h"
+#include "../../utils/engine_log.h"
 #include "../alg/pkey/hpre_wd.h"
 #include "../alg/dh/hpre_dh_wd.h"
 #include "../alg/ciphers/sec_ciphers_wd.h"

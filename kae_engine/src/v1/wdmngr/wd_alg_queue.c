@@ -17,7 +17,7 @@
  */
 
 #include "wd_alg_queue.h"
-#include "../utils/engine_log.h"
+#include "../../utils/engine_log.h"
 
 struct wd_queue *wd_new_queue(int algtype)
 {

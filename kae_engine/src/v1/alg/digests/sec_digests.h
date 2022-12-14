@@ -24,7 +24,7 @@
 #include <uadk/v1/wd_digest.h>
 #include "../../wdmngr/wd_queue_memory.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_utils.h"
+#include "../../../utils/engine_utils.h"
 
 #define MAX_SEND_TRY_CNTS 50
 

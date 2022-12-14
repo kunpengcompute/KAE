@@ -24,7 +24,7 @@
 #include "../../utils/engine_types.h"
 #include "../../utils/engine_opensslerr.h"
 #include "../../async/async_task_queue.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 #define DH768BITS 768
 #define DH1024BITS 1024

@@ -21,9 +21,9 @@
 #include "sec_digests_wd.h"
 
 #include "../../utils/engine_check.h"
-#include "../../utils/engine_utils.h"
+#include "../../../utils/engine_utils.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 #include "../../async/async_callback.h"
 #include "../../async/async_event.h"
 #include "../../async/async_task_queue.h"

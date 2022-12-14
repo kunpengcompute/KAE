@@ -18,7 +18,7 @@
 
 #include "hpre_dh_soft.h"
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 
 static int generate_new_priv_key(const DH *dh, BIGNUM *new_priv_key);
 

@@ -20,7 +20,7 @@
 #define __WD_ALG_QUEUE_H
 
 #include <uadk/v1/wd.h>
-#include "../utils/engine_utils.h"
+#include "../../utils/engine_utils.h"
 
 struct wd_queue *wd_new_queue(int algtype);
 

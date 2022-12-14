@@ -21,7 +21,7 @@
 #include <openssl/evp.h>
 
 #include "../../utils/engine_types.h"
-#include "../../utils/engine_log.h"
+#include "../../../utils/engine_log.h"
 #include "hpre_rsa.h"
 #include "hpre_wd.h"
 #include <uadk/v1/wd_rsa.h>
