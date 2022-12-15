@@ -1,0 +1,13 @@
+openssl_conf=openssl_def
+[openssl_def]
+engines=engine_section
+[engine_section]
+uadk_engine=uadk_section
+[uadk_section]
+UADK_CMD_ENABLE_RSA_ENV=1
+UADK_CMD_ENABLE_DH_ENV=1
+UADK_CMD_ENABLE_CIPHER_ENV=1
+UADK_CMD_ENABLE_DIGEST_ENV=1
+default_algorithms=ALL
+init=1
+
