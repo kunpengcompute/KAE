@@ -35,14 +35,15 @@ SRCEXTS   := .c # C program
 INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
-INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.7
-INCDIR += -I /usr/local/include/warpdrive/
-INCDIR += -I /usr/include/warpdrive/
+#INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.7
+INCDIR += -I /usr/local/include/uadk/
+#INCDIR += -I /usr/include/warpdrive/
+
 # Include Libs.
 LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64
 LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.11
-LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.7
+#LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.7
 LIBS := -lz -lwd -pthread
 LIBS += -lc_nonshared
 
@@ -73,11 +74,11 @@ all : $(TARGET)
 objs : $(OBJS)
 %.o : %.c
 	@echo compiling $(notdir $<)
-	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
+	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -D$(KAE) -o $@ $<
 
 $(TARGET): $(OBJS)
 	@echo Linking $@
-	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
+	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -D$(KAE) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
 rebuild: clean all
 
 clean :

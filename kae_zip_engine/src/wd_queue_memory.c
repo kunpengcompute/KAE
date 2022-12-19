@@ -23,8 +23,8 @@
 #include <stdio.h>
 #include "wd_queue_memory.h"
 #include "kaezip_log.h"
-#include "wd_bmm.h"
-#include "wd_comp.h"
+#include "uadk/v1/wd_bmm.h"
+#include "uadk/v1/wd_comp.h"
 #include "kaezip_ctx.h"
 
 void kaezip_wd_free_queue(struct wd_queue* queue);

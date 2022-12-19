@@ -24,8 +24,8 @@
 #include "kaezip_common.h"
 #include "kaezip_ctx.h"
 #include "kaezip_log.h"
-#include "wd.h"
-#include "wd_comp.h"
+#include "uadk/v1/wd.h"
+#include "uadk/v1/wd_comp.h"
 
 #define __swab32(x)                \
       ((((x)&0x000000ff) << 24) |  \

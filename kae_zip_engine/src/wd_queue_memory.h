@@ -24,7 +24,7 @@
 #define __KAEZIP_QUEUE_MEMORY_H
 
 #include <semaphore.h>
-#include "wd.h"
+#include "uadk/v1/wd.h"
 #include "kaezip_utils.h"
 
 #define KAE_QUEUE_POOL_MAX_SIZE     (512)

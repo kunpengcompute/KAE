@@ -23,7 +23,7 @@
 #ifndef KAEZIP_CTX_H
 #define KAEZIP_CTX_H
 #include "wd_queue_memory.h"
-#include "wd_comp.h"
+#include "uadk/v1/wd_comp.h"
 
 enum kaezip_comp_status {
     KAEZIP_COMP_INIT = 0,
