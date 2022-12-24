@@ -3,7 +3,7 @@
 sudo chmod 666 /dev/hisi_*
 
 if [ ! -n "$1" ]; then
-	engine_id=uadk_engine
+	engine_id=kae
 else
 	engine_id=$1
 fi
