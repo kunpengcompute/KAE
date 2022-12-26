@@ -1,20 +1,20 @@
 VERSION = 1:0:1
 ACLOCAL_AMFLAGS = -I m4
 
-lib_LTLIBRARIES=uadk_engine.la
+lib_LTLIBRARIES=kae.la
 
-uadk_engine_la_SOURCES=uadk_utils.c e_uadk.c uadk_cipher.c uadk_digest.c uadk_async.c \
+kae_la_SOURCES=uadk_utils.c e_uadk.c uadk_cipher.c uadk_digest.c uadk_async.c \
 		uadk_rsa.c uadk_sm2.c uadk_pkey.c uadk_dh.c uadk_ec.c uadk_ecx.c \
 		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
-uadk_engine_la_LIBADD=-ldl $(WD_LIBS) -lpthread
-uadk_engine_la_LDFLAGS=-module -version-number $(VERSION)
-uadk_engine_la_CFLAGS=$(WD_CFLAGS)
+kae_la_LIBADD=-ldl $(WD_LIBS) -lpthread
+kae_la_LDFLAGS=-module -version-number $(VERSION)
+kae_la_CFLAGS=$(WD_CFLAGS)
 
 AUTOMAKE_OPTIONS = subdir-objects
 
 if WD_KAE
-uadk_engine_la_CFLAGS += -DKAE
-uadk_engine_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
+kae_la_CFLAGS += -DKAE
+kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/alg/ciphers/sec_ciphers_soft.c \
 		 v1/alg/ciphers/sec_ciphers_utils.c \
 		 v1/alg/ciphers/sec_ciphers_wd.c \

@@ -36,7 +36,7 @@
 #define UADK_CMD_ENABLE_ECC_ENV		(ENGINE_CMD_BASE + 4)
 
 /* Constants used when creating the ENGINE */
-const char *engine_uadk_id = "uadk_engine";
+const char *engine_uadk_id = "kae";
 static const char *engine_uadk_name = "uadk hardware engine support";
 
 static int uadk_cipher;
