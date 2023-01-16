@@ -7,7 +7,8 @@
 #ifndef __WD_COMP_H
 #define __WD_COMP_H
 
-#include "wd.h"
+#include <numa.h>
+
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
@@ -113,6 +114,35 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched);
  */
 void wd_comp_uninit(void);
 
+/**
+ * wd_comp_init2_() - A simplify interface to initializate uadk
+ * compression/decompression. This interface keeps most functions of
+ * wd_comp_init(). Users just need to descripe the deployment of
+ * business scenarios. Then the initialization will request appropriate
+ * resources to support the business scenarios.
+ * To make the initializate simpler, ctx_params support set NULL.
+ * And then the function will set them as default.
+ * Please do not use this interface with wd_comp_init() together, or
+ * some resources may be leak.
+ *
+ * @alg: The algorithm users want to use.
+ * @sched_type: The scheduling type users want to use.
+ * @task_type: Reserved.
+ * @ctx_params: The ctxs resources users want to use. Include per operation
+ * type ctx numbers and business process run numa.
+ *
+ * Return 0 if succeed and others if fail.
+ */
+int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params);
+
+#define wd_comp_init2(alg, sched_type, task_type) \
+	wd_comp_init2_(alg, sched_type, task_type, NULL)
+
+/**
+ * wd_comp_uninit2() - Uninitialise ctx configuration and scheduler.
+ */
+void wd_comp_uninit2(void);
+
 struct wd_comp_sess_setup {
 	enum wd_comp_alg_type alg_type; /* Denoted by enum wd_comp_alg_type */
 	enum wd_comp_level comp_lv;     /* Denoted by enum wd_comp_level */
@@ -128,10 +158,17 @@ struct wd_comp_sess_setup {
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup);
 
 /**
- * wd_comp_free_sess() - Free  a wd comp session.
+ * wd_comp_free_sess() - Free a wd comp session.
  * @h_sess: The sess to be freed.
  */
 void wd_comp_free_sess(handle_t h_sess);
+
+/**
+ * wd_comp_reset_sess() - Reset a wd comp session. After reset h_sess, it can
+ * used for a new stream request.
+ * @h_sess: The sess to be reset.
+ */
+int wd_comp_reset_sess(handle_t h_sess);
 
 /**
  * wd_do_comp_sync() - Send a sync compression request.

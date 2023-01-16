@@ -9,16 +9,11 @@
 
 #include <stdbool.h>
 
-#include "wd.h"
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define BYTE_BITS			8
-#define BYTE_BITS_SHIFT			3
-#define GET_NEGATIVE(val)		(0 - (val))
 
 typedef void (*wd_dh_cb_t)(void *cb_param);
 

@@ -1054,11 +1054,16 @@ static void ecc_get_io_len(__u32 atype, __u32 hsz, size_t *ilen,
 	}
 }
 
-static bool is_all_zero(struct wd_dtb *e, struct wd_ecc_msg *msg)
+static bool is_all_zero(struct wd_dtb *e)
 {
 	int i;
 
-	for (i = 0; i < e->dsize && i < msg->key_bytes; i++) {
+	if (!e || !e->data) {
+		WD_ERR("invalid: e or e->data is NULL\n");
+		return true;
+	}
+
+	for (i = 0; i < e->bsize; i++) {
 		if (e->data[i])
 			return false;
 	}
@@ -1094,12 +1099,12 @@ static int ecc_prepare_sign_in(struct wd_ecc_msg *msg,
 			return -WD_EINVAL;
 		}
 		hw_msg->sm2_ksel = 1;
-	} else if (is_all_zero(k, msg)) {
+	} else if (is_all_zero(k)) {
 		WD_ERR("invalid: ecc sign in k all zero!\n");
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(e, msg)) {
+	if (is_all_zero(e)) {
 		WD_ERR("invalid: ecc sign in e all zero!\n");
 		return -WD_EINVAL;
 	}
@@ -1141,7 +1146,7 @@ static int ecc_prepare_verf_in(struct wd_ecc_msg *msg,
 	s = &vin->s;
 	r = &vin->r;
 
-	if (is_all_zero(e, msg)) {
+	if (is_all_zero(e)) {
 		WD_ERR("invalid: ecc verf in e all zero!\n");
 		return -WD_EINVAL;
 	}
@@ -1282,7 +1287,7 @@ static int u_is_in_p(struct wd_ecc_msg *msg)
 		return -WD_EINVAL;
 	}
 
-	if (is_all_zero(&pbk->x, msg)) {
+	if (is_all_zero(&pbk->x)) {
 		WD_ERR("invalid: ux is zero!\n");
 		return -WD_EINVAL;
 	}
@@ -2191,11 +2196,11 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	struct wd_sm2_dec_out *dout = &out->param.dout;
 	struct wd_ecc_in *in = (void *)src->req.src;
 	struct wd_sm2_dec_in *din = &in->param.din;
+	char buff[MAX_HASH_LENS] = {0};
 	struct wd_ecc_dh_out *dh_out;
 	__u32 ksz = dst->key_bytes;
 	struct wd_ecc_point x2y2;
-	struct wd_dtb tmp = {0};
-	char buff[64] = {0};
+	struct wd_dtb u = {0};
 	int ret;
 
 	/*
@@ -2211,8 +2216,6 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 	x2y2.x.dsize = ksz;
 	x2y2.y.dsize = ksz;
 
-	tmp.data = buff;
-
 	/* t = KDF(x2 || y2, klen) */
 	ret = sm2_kdf(&dout->plaintext, &x2y2, din->c2.dsize, &src->hash);
 	if (unlikely(ret)) {
@@ -2220,20 +2223,21 @@ static int sm2_convert_dec_out(struct wd_ecc_msg *src,
 		return ret;
 	}
 
-	/* M' = C2 XOR t */
+	/* M' = c2 XOR t */
 	sm2_xor(&dout->plaintext, &din->c2);
 
-	/* u = hash(x2 || M' || y2), save u to din->c2 */
-	ret = sm2_hash(&tmp, &x2y2, &dout->plaintext, &src->hash);
+	/* u = hash(x2 || M' || y2) */
+	u.data = buff;
+	ret = sm2_hash(&u, &x2y2, &dout->plaintext, &src->hash);
 	if (unlikely(ret)) {
 		WD_ERR("failed to compute c3, ret = %d!\n", ret);
 		return ret;
 	}
 
-	/* u == c3 */
-	ret = is_equal(&tmp, &din->c3);
+	/* Judge whether u == c3 */
+	ret = is_equal(&u, &din->c3);
 	if (ret)
-		WD_ERR("failed to decode sm2, u != C3!\n");
+		WD_ERR("failed to decode sm2, u != c3!\n");
 
 	return ret;
 }

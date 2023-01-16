@@ -30,6 +30,13 @@ extern "C" {
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
 
+/* Required compiler attributes */
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+
+#define handle_t uintptr_t
+typedef struct wd_dev_mask wd_dev_mask_t;
+
 typedef void (*wd_log)(const char *format, ...);
 
 #ifndef WD_NO_LOG
@@ -91,12 +98,12 @@ typedef void (*wd_log)(const char *format, ...);
 #define WD_IS_ERR(h)			((uintptr_t)(h) > \
 					(uintptr_t)(-1000))
 
-static inline void *WD_ERR_PTR(uintptr_t error)
-{
-	return (void *)error;
-}
+enum wd_buff_type {
+	WD_FLAT_BUF,
+	WD_SGL_BUF,
+};
 
-enum wcrypto_type {
+enum wd_alg_type {
 	WD_CIPHER,
 	WD_DIGEST,
 	WD_AEAD,
@@ -141,9 +148,6 @@ struct wd_dev_mask {
 	unsigned int magic;
 };
 
-#define handle_t uintptr_t
-typedef struct wd_dev_mask wd_dev_mask_t;
-
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 #define dsb(opt)        { asm volatile("dsb " #opt : : : "memory"); }
 #define rmb() dsb(ld) /* read fence */
@@ -183,6 +187,16 @@ static inline void wd_iowrite64(void *addr, uint64_t value)
 {
 	wmb();
 	*((volatile uint64_t *)addr) = value;
+}
+
+static inline void *WD_ERR_PTR(uintptr_t error)
+{
+	return (void *)error;
+}
+
+static inline long WD_PTR_ERR(const void *ptr)
+{
+	return (long)ptr;
 }
 
 /**
@@ -344,6 +358,16 @@ int wd_get_avail_ctx(struct uacce_dev *dev);
 struct uacce_dev_list *wd_get_accel_list(const char *alg_name);
 
 /**
+ * wd_find_dev_by_numa() - get device with max available ctx number from an
+ *			   device list according to numa id.
+ * @list: The device list.
+ * @numa_id: The numa_id.
+ *
+ * Return device if succeed and other error number if fail.
+ */
+struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id);
+
+/**
  * wd_get_accel_dev() - Get device supporting the algorithm with
 			smallest numa distance to current numa node.
  * @alg_name: Algorithm name, which could be got from
@@ -502,6 +526,35 @@ void wd_mempool_stats(handle_t mempool, struct wd_mempool_stats *stats);
  * @stats: Pointer of struct wd_blockpool_stats.
  */
 void wd_blockpool_stats(handle_t blkpool, struct wd_blockpool_stats *stats);
+
+/**
+ * wd_clone_dev() - clone a new uacce device.
+ * @dev: The source device.
+ *
+ * Return a pointer value if succeed, and NULL if fail.
+ */
+struct uacce_dev *wd_clone_dev(struct uacce_dev *dev);
+
+/**
+ * wd_add_dev_to_list() - add a node to end of list.
+ * @head: The list head.
+ * @node: The node need to be add.
+ */
+void wd_add_dev_to_list(struct uacce_dev_list *head, struct uacce_dev_list *node);
+
+/**
+ * wd_create_device_nodemask() - create a numa node mask of device list.
+ * @list: The devices list.
+ *
+ * Return a pointer value if succeed, and error number if fail.
+ */
+struct bitmask *wd_create_device_nodemask(struct uacce_dev_list *list);
+
+/**
+ * wd_free_device_nodemask() - free a numa node mask.
+ * @bmp: A numa node mask.
+ */
+void wd_free_device_nodemask(struct bitmask *bmp);
 
 /**
  * wd_ctx_get_dev_name() - Get the device name about task.
