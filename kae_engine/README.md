@@ -3,9 +3,9 @@ OpenSSL engine for uadk
 
 - [Prerequisites](#prerequisites)
 - [Installation Instruction](#installation-instruction)
-	- [Build & Install OpenSSL](#build-&-install-openssl)
-	- [Build & Install UADK](#build-&-install-uadk)
-	- [Build & Install OpenSSL UADK engine](#build-&-install-openssl-uadk-engine)
+	- [Build and install OpenSSL](#build-and-install-openssl)
+	- [Build and install UADK](#build-and-install-uadk)
+	- [Build and install UADK engine](#build-and-install-uadk-engine)
 	- [Testing](#testing)
 - [Install libraries to the temp folder](#Install-libraries-to-the-temp-folder)
 - [Environment variable of uadk engin](#Environment-variable-of-uadk-engine)
@@ -20,7 +20,7 @@ Prerequisites
 Installation Instruction
 ========================
 
-Build & Install OpenSSL
+Build and install OpenSSL
 -----------------------
 
 ```
@@ -34,7 +34,7 @@ Build & Install OpenSSL
     openssl version
 ```
 
-Build & Install UADK
+Build and install UADK
 --------------------
 
 ```
@@ -49,11 +49,11 @@ Build & Install UADK
 * If get error:"cannot find -lnuma", please install the libnuma-dev
 * If get error:"fatal error: zlib.h: No such file or directory", please install zlib.
 
-Build & Install OpenSSL UADK Engine
+Build and install UADK Engine
 -----------------------------------
 ```
-    git clone https://github.com/Linaro/openssl-uadk.git
-    cd openssl-uadk
+    git clone https://github.com/Linaro/uadk_engine.git
+    cd uadk_engine
     autoreconf -i
     ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae
     make
@@ -92,7 +92,7 @@ Install libraries to the temp folder
     $ pkg-config libwd --libs
     -L/tmp/build/lib -lwd
 
-    $ cd openssl-uadk
+    $ cd uadk_engine
     $ autoreconf
     $ ./configure --prefix=/tmp/build
     $ make; make install

@@ -187,7 +187,7 @@ static int rsa_prime_mul_res(int num, struct rsa_prime_param *param,
 }
 
 static int check_rsa_prime_sufficient(int *num, const int *bitsr,
-				      int *bitse, const int *n,
+				      int *bitse, int * const n,
 				      struct rsa_prime_param *param,
 				      BN_CTX *ctx, BN_GENCB *cb)
 {
@@ -230,7 +230,8 @@ static int check_rsa_prime_sufficient(int *num, const int *bitsr,
 		else
 			return -1;
 
-		ret = BN_GENCB_call(cb, GENCB_NEXT, *n++);
+		ret = BN_GENCB_call(cb, GENCB_NEXT, *n);
+		(*n)++;
 		if (!ret)
 			return -1;
 
@@ -287,14 +288,15 @@ static int check_rsa_prime_equal(int num, BIGNUM *rsa_p, BIGNUM *rsa_q,
 	return UADK_E_SUCCESS;
 }
 
-static int check_rsa_prime_useful(const int *n, struct rsa_prime_param *param,
+static int check_rsa_prime_useful(int * const n, struct rsa_prime_param *param,
 				  BIGNUM *e_pub, BN_CTX *ctx, BN_GENCB *cb)
 {
 	unsigned long err;
+	int ret;
 
 	/*
-	 * BN_sub(r,a,b) substracts b from a and place the result in r,
-	 * r = a-b.
+	 * BN_sub(r, a, b) substracts b from a and place the result in r,
+	 * r = a - b.
 	 * BN_value_one() returns a BIGNUM constant of value 1.
 	 * r2 = prime - 1.
 	 */
@@ -303,11 +305,11 @@ static int check_rsa_prime_useful(const int *n, struct rsa_prime_param *param,
 	ERR_set_mark();
 	BN_set_flags(param->r2, BN_FLG_CONSTTIME);
 	/*
-	 * BN_mod_inverse(r,a,n,ctx) used to compute inverse modulo n.
+	 * BN_mod_inverse(r, a, n, ctx) used to compute inverse modulo n.
 	 * Precisely, it computes the inverse of "a" modulo "n", and places
-	 * the result in "r", which means (a * r) % n==1.
+	 * the result in "r", which means (a * r) % n == 1.
 	 * If r == NULL, error. If r != NULL, success.
-	 * The expected result: (r2 * r1) % e_pub ==1,
+	 * The expected result: (r2 * r1) % e_pub == 1,
 	 * the inverse of r2 exist, that is r1.
 	 */
 	if (BN_mod_inverse(param->r1, param->r2, e_pub, ctx))
@@ -320,13 +322,15 @@ static int check_rsa_prime_useful(const int *n, struct rsa_prime_param *param,
 	else
 		return BN_ERR;
 
-	if (!BN_GENCB_call(cb, GENCB_NEXT, *n++))
+	ret = BN_GENCB_call(cb, GENCB_NEXT, *n);
+	(*n)++;
+	if (!ret)
 		return BN_ERR;
 
 	return GET_ERR_FINISH;
 }
 
-static int get_rsa_prime_once(int num, const int *bitsr, const int *n,
+static int get_rsa_prime_once(int num, const int *bitsr, int * const n,
 			      BIGNUM *e_pub, struct rsa_prime_param *param,
 			      BN_CTX *ctx, BN_GENCB *cb)
 {

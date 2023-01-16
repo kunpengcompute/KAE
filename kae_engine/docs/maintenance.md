@@ -5,7 +5,7 @@
 
 Clone UADK from [Github](https://github.com/Linaro/uadk).
 
-Clone openssl-uadk from [Github](https://github.com/Linaro/openssl-uadk).
+Clone uadk_engine from [Github](https://github.com/Linaro/uadk_engine).
 
 ## License
 
