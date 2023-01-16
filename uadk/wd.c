@@ -18,7 +18,6 @@
 #include <numa.h>
 #include <sched.h>
 
-#include "wd_alg_common.h"
 #include "wd.h"
 
 #define SYS_CLASS_DIR			"/sys/class/uacce"
@@ -342,7 +341,13 @@ out:
 	return strndup(name, len);
 }
 
-static struct uacce_dev *clone_uacce_dev(struct uacce_dev *dev)
+static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
+{
+	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
+	       sizeof(ctx->qfrs_offs));
+}
+
+struct uacce_dev *wd_clone_dev(struct uacce_dev *dev)
 {
 	struct uacce_dev *new;
 
@@ -355,10 +360,14 @@ static struct uacce_dev *clone_uacce_dev(struct uacce_dev *dev)
 	return new;
 }
 
-static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
+void wd_add_dev_to_list(struct uacce_dev_list *head, struct uacce_dev_list *node)
 {
-	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
-	       sizeof(ctx->qfrs_offs));
+	struct uacce_dev_list *tmp = head;
+
+	while (tmp->next)
+		tmp = tmp->next;
+
+	tmp->next = node;
 }
 
 handle_t wd_request_ctx(struct uacce_dev *dev)
@@ -393,7 +402,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 	if (!ctx->drv_name)
 		goto free_dev_name;
 
-	ctx->dev = clone_uacce_dev(dev);
+	ctx->dev = wd_clone_dev(dev);
 	if (!ctx->dev)
 		goto free_drv_name;
 
@@ -633,17 +642,6 @@ static bool dev_has_alg(const char *dev_alg_name, const char *alg_name)
 	return false;
 }
 
-static void add_uacce_dev_to_list(struct uacce_dev_list *head,
-				  struct uacce_dev_list *node)
-{
-	struct uacce_dev_list *tmp = head;
-
-	while (tmp->next)
-		tmp = tmp->next;
-
-	tmp->next = node;
-}
-
 static int check_alg_name(const char *alg_name)
 {
 	int i = 0;
@@ -715,7 +713,7 @@ struct uacce_dev_list *wd_get_accel_list(const char *alg_name)
 		if (!head)
 			head = node;
 		else
-			add_uacce_dev_to_list(head, node);
+			wd_add_dev_to_list(head, node);
 	}
 
 	closedir(wd_class);
@@ -726,6 +724,35 @@ free_list:
 	closedir(wd_class);
 	wd_free_list_accels(head);
 	return NULL;
+}
+
+struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
+{
+	struct uacce_dev *dev = WD_ERR_PTR(-WD_ENODEV);
+	struct uacce_dev_list *p = list;
+	int ctx_num, ctx_max = 0;
+
+	if (!list) {
+		WD_ERR("invalid: list is NULL!\n");
+		return WD_ERR_PTR(-WD_EINVAL);
+	}
+
+	while (p) {
+		if (numa_id != p->dev->numa_id) {
+			p = p->next;
+			continue;
+		}
+
+		ctx_num = wd_get_avail_ctx(p->dev);
+		if (ctx_num > ctx_max) {
+			dev = p->dev;
+			ctx_max = ctx_num;
+		}
+
+		p = p->next;
+	}
+
+	return dev;
 }
 
 void wd_free_list_accels(struct uacce_dev_list *list)
@@ -774,7 +801,7 @@ struct uacce_dev *wd_get_accel_dev(const char *alg_name)
 	}
 
 	if (dev)
-		target = clone_uacce_dev(dev);
+		target = wd_clone_dev(dev);
 
 	wd_free_list_accels(head);
 
@@ -792,6 +819,39 @@ int wd_ctx_set_io_cmd(handle_t h_ctx, unsigned long cmd, void *arg)
 		return ioctl(ctx->fd, cmd);
 
 	return ioctl(ctx->fd, cmd, arg);
+}
+
+struct bitmask *wd_create_device_nodemask(struct uacce_dev_list *list)
+{
+	struct uacce_dev_list *p;
+	struct bitmask *bmp;
+
+	if (!list) {
+		WD_ERR("invalid: list is NULL!\n");
+		return WD_ERR_PTR(-WD_EINVAL);
+	}
+
+	bmp = numa_allocate_nodemask();
+	if (!bmp) {
+		WD_ERR("failed to alloc bitmask(%d)!\n", errno);
+		return WD_ERR_PTR(-WD_ENOMEM);
+	}
+
+	p = list;
+	while (p) {
+		numa_bitmask_setbit(bmp, p->dev->numa_id);
+		p = p->next;
+	}
+
+	return bmp;
+}
+
+void wd_free_device_nodemask(struct bitmask *bmp)
+{
+	if (!bmp)
+		return;
+
+	numa_free_nodemask(bmp);
 }
 
 void wd_get_version(void)

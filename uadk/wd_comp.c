@@ -12,14 +12,14 @@
 #include <string.h>
 #include <time.h>
 
-#include "config.h"
 #include "drv/wd_comp_drv.h"
-#include "wd_util.h"
 #include "wd_comp.h"
 
 #define WD_POOL_MAX_ENTRIES		1024
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
+
+#define SCHED_RR_NAME			"sched_rr"
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -41,6 +41,8 @@ struct wd_comp_sess {
 };
 
 struct wd_comp_setting {
+	enum wd_status status;
+	enum wd_status status2;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_comp_driver *driver;
@@ -50,6 +52,20 @@ struct wd_comp_setting {
 } wd_comp_setting;
 
 struct wd_env_config wd_comp_env_config;
+
+static struct wd_init_attrs wd_comp_init_attrs;
+static struct wd_ctx_config wd_comp_ctx;
+static struct wd_sched *wd_comp_sched;
+
+static struct wd_ctx_nums wd_comp_ctx_num[] = {
+	{1, 1}, {1, 1}, {}
+};
+
+static struct wd_ctx_params wd_comp_ctx_params = {
+	.op_type_num = WD_DIR_MAX,
+	.ctx_set_num = wd_comp_ctx_num,
+	.bmp = NULL,
+};
 
 #ifdef WD_STATIC_DRV
 static void wd_comp_set_static_drv(void)
@@ -63,7 +79,7 @@ static void __attribute__((constructor)) wd_comp_open_driver(void)
 {
 	wd_comp_setting.dlhandle = dlopen("libhisi_zip.so", RTLD_NOW);
 	if (!wd_comp_setting.dlhandle)
-		WD_ERR("failed to open libhisi_zip.so!\n");
+		WD_ERR("failed to open libhisi_zip.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_comp_close_driver(void)
@@ -78,7 +94,12 @@ void wd_comp_set_driver(struct wd_comp_driver *drv)
 	wd_comp_setting.driver = drv;
 }
 
-int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static void wd_comp_clear_status(void)
+{
+	wd_alg_clear_init(&wd_comp_setting.status);
+}
+
+static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
 	int ret;
@@ -98,7 +119,7 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	ret = wd_init_sched(&wd_comp_setting.sched, sched);
 	if (ret < 0)
-		goto out;
+		goto out_clear_ctx_config;
 	/*
 	 * Fix me: ctx could be passed into wd_comp_set_static_drv to help to
 	 * choose static compiled vendor driver. For dynamic vendor driver,
@@ -118,35 +139,36 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 					 config->ctx_num, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_comp_msg));
 	if (ret < 0)
-		goto out_sched;
+		goto out_clear_sched;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_comp_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
-		goto out_priv;
+		goto out_clear_pool;
 	}
 	wd_comp_setting.priv = priv;
 	ret = wd_comp_setting.driver->init(&wd_comp_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to do driver init, ret = %d!\n", ret);
-		goto out_init;
+		goto out_free_priv;
 	}
+
 	return 0;
 
-out_init:
+out_free_priv:
 	free(priv);
 	wd_comp_setting.priv = NULL;
-out_priv:
+out_clear_pool:
 	wd_uninit_async_request_pool(&wd_comp_setting.pool);
-out_sched:
+out_clear_sched:
 	wd_clear_sched(&wd_comp_setting.sched);
-out:
+out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_comp_setting.config);
 	return ret;
 }
 
-void wd_comp_uninit(void)
+static void wd_comp_uninit_nolock(void)
 {
 	void *priv = wd_comp_setting.priv;
 
@@ -163,6 +185,104 @@ void wd_comp_uninit(void)
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_comp_setting.sched);
 	wd_clear_ctx_config(&wd_comp_setting.config);
+}
+
+int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_comp_clear_status);
+
+	flag = wd_alg_try_init(&wd_comp_setting.status);
+	if (!flag)
+		return 0;
+
+	ret = wd_comp_init_nolock(config, sched);
+	if (ret) {
+		wd_alg_clear_init(&wd_comp_setting.status);
+		goto out;
+	}
+
+	wd_alg_set_init(&wd_comp_setting.status);
+
+out:
+	return ret;
+}
+
+void wd_comp_uninit(void)
+{
+	wd_comp_uninit_nolock();
+	wd_alg_clear_init(&wd_comp_setting.status);
+}
+
+int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_comp_clear_status);
+
+	flag = wd_alg_try_init(&wd_comp_setting.status);
+	if (!flag)
+		return 0;
+
+	if (!alg) {
+		WD_ERR("invalid: alg is NULL!\n");
+		ret = -WD_EINVAL;
+		goto out_uninit;
+	}
+
+	wd_comp_init_attrs.alg = alg;
+	wd_comp_init_attrs.sched_type = sched_type;
+
+	wd_comp_init_attrs.ctx_params = ctx_params ? ctx_params : &wd_comp_ctx_params;
+	wd_comp_init_attrs.ctx_config = &wd_comp_ctx;
+
+	wd_comp_sched = wd_sched_rr_alloc(sched_type, wd_comp_init_attrs.ctx_params->op_type_num,
+					  numa_max_node() + 1, wd_comp_poll_ctx);
+	if (!wd_comp_sched) {
+		ret = -WD_EINVAL;
+		goto out_uninit;
+	}
+	wd_comp_sched->name = SCHED_RR_NAME;
+	wd_comp_init_attrs.sched = wd_comp_sched;
+
+	ret = wd_alg_pre_init(&wd_comp_init_attrs);
+	if (ret)
+		goto out_freesched;
+
+	ret = wd_comp_init_nolock(&wd_comp_ctx, wd_comp_sched);
+	if (ret)
+		goto out_freesched;
+
+	wd_alg_set_init(&wd_comp_setting.status);
+
+	return 0;
+
+out_freesched:
+	wd_sched_rr_release(wd_comp_sched);
+
+out_uninit:
+	wd_alg_clear_init(&wd_comp_setting.status);
+
+	return ret;
+}
+
+void wd_comp_uninit2(void)
+{
+	int i;
+
+	wd_comp_uninit_nolock();
+
+	for (i = 0; i < wd_comp_ctx.ctx_num; i++)
+		if (wd_comp_ctx.ctxs[i].ctx) {
+			wd_release_ctx(wd_comp_ctx.ctxs[i].ctx);
+			wd_comp_ctx.ctxs[i].ctx = 0;
+	}
+
+	wd_sched_rr_release(wd_comp_sched);
+	wd_alg_clear_init(&wd_comp_setting.status);
 }
 
 struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
@@ -276,6 +396,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	sess->comp_lv = setup->comp_lv;
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
 		     wd_comp_setting.sched.h_sched_ctx, setup->sched_param);
@@ -305,7 +426,23 @@ void wd_comp_free_sess(handle_t h_sess)
 
 	if (sess->sched_key)
 		free(sess->sched_key);
+
 	free(sess);
+}
+
+int wd_comp_reset_sess(handle_t h_sess)
+{
+	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
+
+	if (!sess) {
+		WD_ERR("invalid: sess is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	sess->stream_pos = WD_COMP_STREAM_NEW;
+	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	return 0;
 }
 
 static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,

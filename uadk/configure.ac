@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.3.38], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.4], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -63,12 +63,6 @@ AC_ARG_WITH(static_drv,
 	WD_STATIC_DRV=$withvar, WD_STATIC_DRV=)
 AC_SUBST(with_static_drv)
 AM_CONDITIONAL([WD_STATIC_DRV], [test -n "$with_static_drv"])
-
-AC_ARG_WITH(openssl_dir,
-	AS_HELP_STRING([--with-openssl_dir], [Path to OpenSSL source code]))
-AC_SUBST(with_openssl_dir)
-
-AM_CONDITIONAL([WITH_OPENSSL_DIR], [test -n "$with_openssl_dir"])
 
 AC_ARG_WITH(zlib_fse_dir,
 	AS_HELP_STRING([--with-zlib_fse_dir], [Path to Zlib FSE library]))

@@ -7,11 +7,13 @@
 #ifndef __WD_UTIL_H
 #define __WD_UTIL_H
 
+#include <numa.h>
 #include <stdbool.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <asm/types.h>
-#include "wd_alg_common.h"
+
+#include "wd_sched.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +22,12 @@ extern "C" {
 #define FOREACH_NUMA(i, config, config_numa) \
 	for ((i) = 0, (config_numa) = (config)->config_per_numa; \
 	     (i) < (config)->numa_num; (config_numa)++, (i)++)
+
+enum wd_status {
+	WD_UNINIT,
+	WD_INITING,
+	WD_INIT,
+};
 
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
@@ -104,6 +112,14 @@ struct wd_ctx_attr {
 struct wd_msg_handle {
 	int (*send)(handle_t sess, void *msg);
 	int (*recv)(handle_t sess, void *msg);
+};
+
+struct wd_init_attrs {
+	__u32 sched_type;
+	char *alg;
+	struct wd_sched *sched;
+	struct wd_ctx_params *ctx_params;
+	struct wd_ctx_config *ctx_config;
 };
 
 /*
@@ -355,6 +371,57 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
  * Return 0 if successful or less than 0 otherwise.
  */
 int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched);
+
+/**
+ * wd_alg_try_init() - Check the algorithm status and set it as WD_INITING
+ * if need initialization.
+ * @status: algorithm initialization status.
+ *
+ * Return true if need initialization and false if initialized, otherwise will wait
+ * last initialization result.
+ */
+bool wd_alg_try_init(enum wd_status *status);
+
+/**
+ * wd_alg_set_init() - Set the algorithm status as WD_INIT.
+ * @status: algorithm initialization status.
+ */
+static inline void wd_alg_set_init(enum wd_status *status)
+{
+	enum wd_status setting = WD_INIT;
+
+	__atomic_store(status, &setting, __ATOMIC_RELAXED);
+}
+
+/**
+ * wd_alg_get_init() - Get the algorithm status.
+ * @status: algorithm initialization status.
+ * @value: value of algorithm initialization status.
+ */
+static inline void wd_alg_get_init(enum wd_status *status, enum wd_status *value)
+{
+	__atomic_load(status, value, __ATOMIC_RELAXED);
+}
+
+/**
+ * wd_alg_clear_init() - Set the algorithm status as WD_UNINIT.
+ * @status: algorithm initialization status.
+ */
+static inline void wd_alg_clear_init(enum wd_status *status)
+{
+	enum wd_status setting = WD_UNINIT;
+
+	__atomic_store(status, &setting, __ATOMIC_RELAXED);
+}
+
+/**
+ * wd_alg_pre_init() - Request the ctxs and initialize the sched_domain
+ *                     with the given devices list, ctxs number and numa mask.
+ * @attrs: the algorithm initialization parameters.
+ *
+ * Return device if succeed and other error number if fail.
+ */
+int wd_alg_pre_init(struct wd_init_attrs *attrs);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx

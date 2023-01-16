@@ -6,7 +6,6 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include "wd_util.h"
 #include "include/drv/wd_aead_drv.h"
 #include "wd_aead.h"
 
@@ -31,6 +30,7 @@ static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 };
 
 struct wd_aead_setting {
+	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
 	struct wd_aead_driver *driver;
@@ -69,7 +69,7 @@ static void __attribute__((constructor)) wd_aead_open_driver(void)
 {
 	wd_aead_setting.dlhandle = dlopen("libhisi_sec.so", RTLD_NOW);
 	if (!wd_aead_setting.dlhandle)
-		WD_ERR("failed to open libhisi_sec.so!\n");
+		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 }
 
 static void __attribute__((destructor)) wd_aead_close_driver(void)
@@ -389,27 +389,39 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 	return 0;
 }
 
+static void wd_aead_clear_status(void)
+{
+	wd_alg_clear_init(&wd_aead_setting.status);
+}
+
 int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	void *priv;
+	bool flag;
 	int ret;
+
+	pthread_atfork(NULL, NULL, wd_aead_clear_status);
+
+	flag = wd_alg_try_init(&wd_aead_setting.status);
+	if (!flag)
+		return 0;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_AEAD_EPOLL_EN",
 			      &wd_aead_setting.config.epoll_en);
 	if (ret < 0)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_ctx_config(&wd_aead_setting.config, config);
 	if (ret)
-		return ret;
+		goto out_clear_init;
 
 	ret = wd_init_sched(&wd_aead_setting.sched, sched);
 	if (ret < 0)
-		goto out;
+		goto out_clear_ctx_config;
 
 	/* set driver */
 #ifdef WD_STATIC_DRV
@@ -421,33 +433,37 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 				config->ctx_num, WD_POOL_MAX_ENTRIES,
 				sizeof(struct wd_aead_msg));
 	if (ret < 0)
-		goto out_sched;
+		goto out_clear_sched;
 
 	/* init ctx related resources in specific driver */
 	priv = calloc(1, wd_aead_setting.driver->drv_ctx_size);
 	if (!priv) {
 		ret = -WD_ENOMEM;
-		goto out_priv;
+		goto out_clear_pool;
 	}
 	wd_aead_setting.priv = priv;
 
 	ret = wd_aead_setting.driver->init(&wd_aead_setting.config, priv);
 	if (ret < 0) {
 		WD_ERR("failed to init aead dirver!\n");
-		goto out_init;
+		goto out_free_priv;
 	}
+
+	wd_alg_set_init(&wd_aead_setting.status);
 
 	return 0;
 
-out_init:
+out_free_priv:
 	free(priv);
 	wd_aead_setting.priv = NULL;
-out_priv:
+out_clear_pool:
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
-out_sched:
+out_clear_sched:
 	wd_clear_sched(&wd_aead_setting.sched);
-out:
+out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_aead_setting.config);
+out_clear_init:
+	wd_alg_clear_init(&wd_aead_setting.status);
 	return ret;
 }
 
@@ -465,6 +481,7 @@ void wd_aead_uninit(void)
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 	wd_clear_sched(&wd_aead_setting.sched);
 	wd_clear_ctx_config(&wd_aead_setting.config);
+	wd_alg_clear_init(&wd_aead_setting.status);
 }
 
 static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
