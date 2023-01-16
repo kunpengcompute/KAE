@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([openssl-uadk], [1.0.1])
+AC_INIT([uadk_engine], [1.1])
 AC_CONFIG_SRCDIR([src/e_uadk.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 

@@ -1,5 +1,5 @@
 
-# UADK engine Release Pre v1.1 November 2022
+# UADK engine Release v1.1 December 2022
 
 ## New Features
 
@@ -41,5 +41,5 @@
 
 ## Working combination
 
-- UADK v2.3.28
+- UADK v2.4
 - OpenSSL 1.1.1f

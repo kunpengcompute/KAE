@@ -341,7 +341,7 @@ static int uadk_get_accel_platform(char *alg_name)
 {
 	struct uacce_dev *dev;
 
-	dev = wd_get_accel_dev("cipher");
+	dev = wd_get_accel_dev(alg_name);
 	if (dev == NULL)
 		return 0;
 
