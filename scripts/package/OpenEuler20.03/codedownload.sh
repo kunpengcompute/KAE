@@ -11,9 +11,9 @@ function getcode()
     mkdir -p $CODE_PATH
 
     cd $CODE_PATH
-    git clone https://github.com/kunpengcompute/KAEzip.git
-    git clone https://github.com/kunpengcompute/KAEdriver.git
-    git clone https://github.com/kunpengcompute/KAE.git
+    git clone https://gitee.com/kunpengcompute/KAEzip.git
+    git clone https://gitee.com/kunpengcompute/KAEdriver.git
+    git clone https://gitee.com/kunpengcompute/KAE.git
 
 }
 
