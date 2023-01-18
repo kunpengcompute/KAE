@@ -1,1 +1,0 @@
-注意：Centos7.6的出包脚本和流程与OpenEuler20.03的一致，可以参照OpenEuler20.03的步骤和文件
