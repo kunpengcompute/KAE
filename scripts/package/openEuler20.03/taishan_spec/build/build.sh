@@ -1,3 +1,27 @@
+#!/bin/bash
+set -e
+MAKE_PATH=$(pwd)
+
+OUTPUT_PATH=$MAKE_PATH/../output
+SRC_PATH=$MAKE_PATH/../../hisi_acc
+KAE_SPEC_PATH="/home/taishan/kae.spec"
+VBUILDVERSION=$(cat $KAE_SPEC_PATH | grep 'Version:' | awk '{print substr($0, 15, 7)}')
+BUILDVERSION=$(eval echo $VBUILDVERSION)
+
+ZLIB_PATH="/home/taishan/zlib-1.2.11.tar.gz"
+KAEDRIVER_SPEC_PATH="/home/taishan/kae_driver.spec"
+WARPDRIVER_SPEC_PATH="/home/taishan/libwd.spec"
+KAEZIP_SPEC_PATH="/home/taishan/kaezip.spec"
+
+if [ $2 == "sles15.1" ];then
+    RPM_PATH=/usr/src/packages/RPMS/aarch64
+else
+    RPM_PATH=/root/rpmbuild/RPMS/aarch64
+fi:::
+
+function build_targets_hisi()
+{
+    cd $SRC_PATH/KAEdriver
 
     cp $KAEDRIVER_SPEC_PATH kae_driver
     cp $WARPDRIVER_SPEC_PATH warpdrive
