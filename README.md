@@ -22,9 +22,7 @@
 
 Kunpeng Accelerator Engine is to build performance competitiveness of common software libraries on the Kunpeng platform. 
 
-Kunpeng Accelerator Engine is a new technology within Hisilicon Kunpeng 920 processors which 
-
-provides a hardware-enabled foundation for security, authentication, and compression. It significantly increases the performance across cloud, networking, big data, and storage applications and  platforms.
+Kunpeng Accelerator Engine is a new technology within Hisilicon Kunpeng 920 processors which provides a hardware-enabled foundation for security, authentication, and compression. It significantly increases the performance across cloud, networking, big data, and storage applications and platforms.
 
 Kunpeng Accelerator Engine includes symmetric encryption, asymmetric encryption, digital signatures, and RSA for accelerating SSL/TLS application, which makes processors more efficient and reduces hardware costs. By accelerating SSL/TLS with Kunpeng Accelerator Engine, you can:
 
