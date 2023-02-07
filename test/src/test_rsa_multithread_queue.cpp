@@ -1,6 +1,6 @@
 #include "testsuit_common.h"
 
-#define NUM_THREADS 10   //线程个数
+#define NUM_THREADS 10   //Number of threads
 
 static int rsa_encrypt_dencrypt(void)
 {

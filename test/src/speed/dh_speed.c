@@ -649,6 +649,7 @@ int perf_compute_key_sync_evp(DH *dh, DH *otherDH, ENGINE *e, const BIGNUM *othe
     EVP_PKEY_derive_set_peer(ctx,other_pkey);
 
     unsigned char *pub_key_bin = malloc(BN_num_bytes(other_pub_key) * sizeof(unsigned char));
+     memset(pub_key_bin, 0, BN_num_bytes(other_pub_key) * sizeof(unsigned char));
     size_t keylen = (size_t)BN_bn2bin(other_pub_key, pub_key_bin);
 
     int i;
@@ -674,6 +675,7 @@ int perf_compute_key_sync_dh(DH *dh, const BIGNUM *other_pub_key, int loopNum)
     int i;
     for (i = 0; i < loopNum; i++) {
         unsigned char *buf = OPENSSL_malloc(DH_size(dh));
+        memset(buf, 0, DH_size(dh));
         if (DH_compute_key(buf, other_pub_key, dh) <= 0) {
             OPENSSL_free(buf);
             return 0;
@@ -762,6 +764,8 @@ static int do_multi(int multi, double perf[])
     int *fds;
 
     fds = malloc(sizeof(*fds) * multi);
+    memset(fds, 0, sizeof(*fds) * multi);
+    
     for (n = 0; n < multi; ++n) {
         if (pipe(fd) == -1) {
             exit(1);
