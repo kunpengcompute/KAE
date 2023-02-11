@@ -1,0 +1,957 @@
+ /*lint -e* */
+
+#include <openssl/ssl.h>  
+#include <openssl/err.h>
+#include <openssl/engine.h>
+#include <openssl/dh.h>
+#include <openssl/ossl_typ.h>
+#include <openssl/async.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/time.h>
+
+#define CLOCK_ON()              \
+    struct timeval stop, start; \
+    gettimeofday(&start, NULL)
+#define CLOCK_OFF(duration)    \
+    gettimeofday(&stop, NULL); \
+    duration = (double)(stop.tv_sec - start.tv_sec) * 1000 + (double)(stop.tv_usec - start.tv_usec) / 1000
+
+#define MAKE_DH_DATA(bits)                         \
+    {                                              \
+        bits, dhtest_##bits, sizeof(dhtest_##bits), 0 \
+    }
+
+int perf_generate_key_sync_evp(ENGINE *e, DH* dh, int loopNum);
+int perf_generate_key_sync_dh(DH* dh, int loopNum);
+int perf_compute_key_sync_evp(DH *dh, DH *oherDH, ENGINE *e, const BIGNUM *other_pub_key, int loopNum);
+int perf_compute_key_sync_dh(DH *dh, const BIGNUM *other_pub_key, int loopNum);
+
+struct dh_data
+{
+    // dh算法的位数
+    int bits;
+    // 质数
+    const unsigned char *p;
+    // 质数长度（字节）
+    size_t p_len;
+    // 重新生成质数
+    int generate_param;
+};
+
+typedef struct dh_async_arg
+{
+    DH *dh;
+    DH *other;
+    BIGNUM *other_pub_key;
+    int loop_cnt;
+    int evp;
+    ENGINE *e;
+    ASYNC_JOB *inprogress_job;
+    ASYNC_WAIT_CTX *wait_ctx;
+} dh_async_arg_t;
+
+// g
+int GENERATOR = 2;
+// 跑接口的循环次数
+const int LOOP_NUM = 1024;
+
+// 质数p
+static const unsigned char dhtest_768[] = {
+    0xe2, 0x7f, 0x03, 0x40, 0x75, 0x67, 0xb2, 0x78, 0xaf, 0xb0, 0xa6, 0x2e, 0x96, 0xcf,
+    0x79, 0x47, 0x42, 0x74, 0x01, 0x2f, 0x14, 0x88, 0x72, 0xc5, 0xff, 0x03, 0x9c, 0x70, 0x9a,
+    0x3d, 0x89, 0x96, 0x14, 0x9b, 0x4d, 0x20, 0xbc, 0x4d, 0x56, 0xa6, 0xe8, 0x97, 0x66, 0x79,
+    0x08, 0x0e, 0x44, 0x83, 0x79, 0xc8, 0xaa, 0xcc, 0x19, 0x4a, 0x23, 0xdb, 0xe6, 0x3f, 0xa0,
+    0x69, 0x67, 0x6e, 0xf5, 0x4f, 0x7b, 0xab, 0x22, 0x6a, 0xbf, 0x97, 0x6f, 0x8b, 0xe9, 0x41,
+    0xa3, 0x12, 0x6c, 0xc5, 0x24, 0x7a, 0x32, 0x01, 0x18, 0x22, 0x15, 0x36, 0xbc, 0xbc, 0xdf,
+    0xa8, 0x3d, 0x82, 0xdc, 0x80, 0x03, 0x0b};
+
+static const unsigned char dhtest_1024[] = {
+    0xe5, 0x39, 0x7f, 0x9b, 0xad, 0x71, 0x82, 0x34, 0xb3, 0x07, 0x99, 0x0d, 0x8f, 0x4e,
+    0xee, 0xdb, 0x66, 0x2b, 0xa1, 0xac, 0x3f, 0x7d, 0x92, 0xd4, 0xb3, 0x56, 0xed, 0x9d, 0x59,
+    0x15, 0x6c, 0xcf, 0x5f, 0xf2, 0x12, 0x44, 0xa4, 0x1d, 0xa9, 0x7b, 0x41, 0x22, 0xfc, 0xdf,
+    0xa9, 0xa0, 0x39, 0x54, 0x5d, 0xb2, 0x52, 0xde, 0xe5, 0x84, 0x5e, 0x8b, 0xe3, 0x57, 0xba,
+    0x35, 0x1e, 0x62, 0x78, 0x92, 0x86, 0x74, 0xa8, 0xc7, 0x74, 0x62, 0xa7, 0xc7, 0xc9, 0x5d,
+    0xc3, 0x17, 0xf8, 0xeb, 0xfa, 0x9b, 0xae, 0xe7, 0x2b, 0x59, 0x40, 0xa7, 0x08, 0xb9, 0xb0,
+    0x53, 0x03, 0x43, 0xd1, 0xa8, 0xa1, 0xe1, 0xc8, 0x3a, 0xe6, 0x58, 0x64, 0xe1, 0xfb, 0x5c,
+    0x4c, 0xd7, 0xbd, 0x94, 0xde, 0xc7, 0xdf, 0x9d, 0xe5, 0x65, 0xd9, 0x46, 0xf3, 0x0f, 0x42,
+    0x1b, 0x30, 0xb8, 0x27, 0x02, 0x27, 0xe1, 0x57, 0x23};
+
+static const unsigned char dhtest_1536[] = {
+    0xe8, 0x85, 0xd8, 0xeb, 0xdc, 0xc9, 0x13, 0xe2, 0x1a, 0x81, 0xa6, 0x24, 0x64, 0xf0,
+    0xa9, 0x57, 0x3d, 0xeb, 0xbe, 0x4c, 0x3c, 0xfb, 0xe4, 0x3c, 0x28, 0xea, 0x5b, 0x1b, 0x68,
+    0x58, 0xaa, 0x50, 0x00, 0x9e, 0x99, 0xae, 0x24, 0x30, 0xda, 0x25, 0x73, 0xe8, 0x56, 0x16,
+    0x2f, 0x23, 0x9b, 0x00, 0x00, 0x43, 0x07, 0xdb, 0xbf, 0x49, 0x45, 0x9f, 0x84, 0xa7, 0xd9,
+    0x8d, 0xfb, 0x7c, 0x09, 0xa3, 0x38, 0x81, 0x59, 0x95, 0xc7, 0xd3, 0xf5, 0x0f, 0xd5, 0xa4,
+    0x62, 0xcc, 0x06, 0x9f, 0x68, 0xea, 0x84, 0x7e, 0x3f, 0x6b, 0x45, 0xe9, 0x58, 0x65, 0x72,
+    0x1d, 0x09, 0x41, 0xa5, 0x76, 0x1d, 0x0a, 0x2a, 0xaf, 0xe3, 0xaa, 0x30, 0x26, 0x2e, 0x2c,
+    0xbb, 0x03, 0xc2, 0xc4, 0x49, 0xa7, 0xc5, 0x10, 0x37, 0x5a, 0x1d, 0x68, 0x5e, 0x7e, 0x10,
+    0xfd, 0x2c, 0x25, 0x4a, 0xa6, 0x7d, 0x80, 0x9d, 0x27, 0x85, 0x1e, 0xd1, 0x38, 0x39, 0xec,
+    0x93, 0x21, 0x00, 0xd7, 0x8e, 0xe5, 0xbc, 0x3e, 0x43, 0xc3, 0x90, 0x46, 0x00, 0x6e, 0x4f,
+    0xcb, 0x7e, 0x69, 0x70, 0xfa, 0xeb, 0x93, 0x83, 0x2c, 0x43, 0x9f, 0xab, 0xde, 0x2d, 0x3d,
+    0xd7, 0x45, 0x46, 0x24, 0x44, 0x46, 0x30, 0xda, 0xfe, 0x3c, 0x65, 0x19, 0x5f, 0x00, 0x45,
+    0x8e, 0xba, 0xb4, 0x3f, 0x18, 0xbb, 0x0e, 0x34, 0x71, 0x4a, 0x35, 0x23, 0x23};
+
+static const unsigned char dhtest_2048[] = {
+    0xff, 0xf3, 0xc5, 0xaa, 0x89, 0xa7, 0x23, 0xe3, 0xe6, 0xd7, 0xb3, 0x87, 0xae, 0xa7,
+    0x4f, 0x44, 0x3d, 0x07, 0x47, 0x4f, 0xac, 0x4e, 0x88, 0x68, 0x39, 0x4e, 0x1f, 0xa5, 0xf3,
+    0x98, 0x8e, 0xb1, 0xd1, 0x00, 0x3e, 0xf4, 0x1a, 0x4b, 0x1c, 0x7e, 0xc4, 0xaa, 0xa3, 0xcc,
+    0xb3, 0xab, 0x09, 0x47, 0x21, 0xcc, 0x7d, 0x37, 0x98, 0x81, 0x5b, 0x12, 0xd1, 0x94, 0x9f,
+    0xe5, 0x22, 0x4a, 0x5c, 0xb5, 0x29, 0x58, 0x17, 0x26, 0xc8, 0x38, 0x09, 0x26, 0x44, 0x8d,
+    0x25, 0x3b, 0xb7, 0x7e, 0xed, 0x23, 0xd3, 0x32, 0xa2, 0x3d, 0xc1, 0x08, 0x13, 0x03, 0x3a,
+    0x7e, 0x7c, 0x44, 0x48, 0xa5, 0x7d, 0xc8, 0xda, 0x59, 0xfe, 0x0d, 0xff, 0xda, 0xf1, 0xcb,
+    0xcb, 0x9a, 0x61, 0x14, 0xd2, 0x9f, 0xf3, 0x0c, 0x5d, 0xe9, 0x6b, 0xd7, 0xf0, 0x76, 0x30,
+    0x4c, 0xee, 0x67, 0x85, 0x98, 0x5e, 0x4c, 0xea, 0x1d, 0xae, 0xbf, 0xb5, 0xc6, 0x0b, 0x39,
+    0x7f, 0x0c, 0x08, 0x69, 0x26, 0xc9, 0x6f, 0xf3, 0xd0, 0x1f, 0x02, 0x55, 0x24, 0xd3, 0x26,
+    0x6d, 0x77, 0xf9, 0xcf, 0x42, 0xe1, 0xeb, 0x7c, 0x92, 0x48, 0x60, 0x95, 0x61, 0x0e, 0x20,
+    0x25, 0x26, 0x1c, 0xd0, 0xf0, 0xb0, 0x64, 0x24, 0x42, 0x3e, 0x3f, 0x57, 0x58, 0x25, 0x40,
+    0xd3, 0xd6, 0x4f, 0x3c, 0x28, 0x24, 0x0c, 0x4f, 0x3c, 0x1b, 0xad, 0xf8, 0xb6, 0x43, 0x7c,
+    0x5e, 0x56, 0x79, 0xf2, 0x47, 0xe7, 0xf9, 0x4f, 0x6f, 0xe7, 0x34, 0x5c, 0x95, 0x97, 0x81,
+    0x2f, 0xd2, 0x0d, 0x3c, 0x56, 0x46, 0x06, 0x26, 0xeb, 0xa9, 0xd4, 0x02, 0xe1, 0xfa, 0x76,
+    0x6e, 0xc9, 0x96, 0xc0, 0xaf, 0x74, 0x8d, 0xe6, 0x7b, 0x28, 0xf7, 0x7b, 0x38, 0x8c, 0xfc,
+    0xf6, 0x55, 0x55, 0xd8, 0x07, 0x5a, 0x6f, 0x2b, 0x0b, 0x37, 0x65, 0x0a, 0xad, 0x36, 0xf8,
+    0x73, 0x73};
+
+static const unsigned char dhtest_3072[] = {
+    0x84, 0x01, 0xd2, 0xc5, 0x9e, 0x8a, 0x44, 0x34, 0x5a, 0x18, 0xfa, 0xa5, 0x33, 0x51,
+    0x23, 0xc1, 0xc3, 0x66, 0x95, 0x2f, 0xab, 0xc8, 0xb1, 0xf3, 0x9f, 0x59, 0x15, 0xe4, 0x0e,
+    0x67, 0x20, 0xda, 0xcc, 0xc0, 0xc1, 0xfb, 0x3d, 0x62, 0xca, 0x98, 0xf3, 0xd2, 0x49, 0xed,
+    0x5c, 0x36, 0x7f, 0x80, 0xd8, 0xe4, 0x9e, 0x6a, 0x33, 0x78, 0x57, 0xac, 0x94, 0x77, 0xe3,
+    0x39, 0x84, 0xf4, 0x4a, 0xd0, 0xeb, 0x18, 0x5c, 0x1f, 0xd7, 0xa3, 0xf6, 0xd7, 0x90, 0x1a,
+    0x4c, 0x8f, 0x38, 0x8b, 0xd2, 0x3d, 0x04, 0x72, 0xc1, 0x4d, 0xca, 0x17, 0xc9, 0x47, 0x7a,
+    0x36, 0xdd, 0xe4, 0x18, 0x08, 0xaf, 0xba, 0x08, 0x34, 0x49, 0x08, 0x0b, 0xca, 0xad, 0xc2,
+    0x5b, 0xb6, 0xf3, 0xd9, 0xca, 0xca, 0xfd, 0x87, 0xa7, 0x9b, 0xa2, 0x7b, 0xcb, 0xaf, 0xc3,
+    0xeb, 0xc2, 0x69, 0x6d, 0x4f, 0x2d, 0x4a, 0xe3, 0xb2, 0x81, 0x1a, 0x29, 0x1b, 0xce, 0x92,
+    0xfb, 0x71, 0xd3, 0xca, 0x27, 0xe7, 0xc4, 0xa0, 0x10, 0x0a, 0x34, 0x2a, 0x0f, 0x1c, 0xde,
+    0xf5, 0x79, 0x56, 0x00, 0x08, 0xe1, 0xe5, 0xcf, 0xf5, 0x59, 0xfa, 0xc9, 0x90, 0x9c, 0x60,
+    0xf6, 0x79, 0xa8, 0xa1, 0x27, 0xb2, 0xff, 0x54, 0xdd, 0xb7, 0x3f, 0xd3, 0x31, 0x01, 0xc3,
+    0xca, 0xb7, 0x2a, 0x01, 0xa4, 0x2a, 0x04, 0xb8, 0x32, 0xe3, 0x18, 0xe8, 0x53, 0x74, 0x73,
+    0x39, 0xd0, 0xa5, 0xac, 0x83, 0xb0, 0x8d, 0xe6, 0x8d, 0xc0, 0xe0, 0x95, 0x28, 0x36, 0x47,
+    0xe3, 0xdd, 0x0f, 0x56, 0x87, 0x45, 0xfb, 0x6f, 0x45, 0x08, 0x63, 0xe5, 0xd3, 0x9d, 0x64,
+    0x1c, 0x2b, 0xa2, 0x32, 0xb3, 0x5f, 0x82, 0xf3, 0xe6, 0x6c, 0x10, 0xb4, 0x36, 0xe9, 0x1a,
+    0x1a, 0x57, 0x43, 0x8a, 0x81, 0xde, 0xb4, 0x21, 0xb0, 0x46, 0x60, 0x61, 0x65, 0x5c, 0x54,
+    0x53, 0xe9, 0x73, 0xbb, 0x54, 0xff, 0xce, 0x9b, 0x8d, 0x56, 0x0f, 0xec, 0xb6, 0x36, 0x50,
+    0xe9, 0x8b, 0xac, 0x3f, 0xee, 0x4e, 0x12, 0xc4, 0x81, 0x3d, 0x06, 0x66, 0xd9, 0x17, 0xbb,
+    0xd0, 0x57, 0x60, 0x78, 0xcc, 0x68, 0xbe, 0x4b, 0x67, 0xbd, 0x76, 0xdc, 0x82, 0x57, 0x07,
+    0xe1, 0x59, 0x2a, 0x14, 0xe0, 0x58, 0xc7, 0x43, 0xc1, 0xff, 0x96, 0xf6, 0x15, 0x65, 0x47,
+    0x2b, 0xe6, 0x65, 0x1f, 0xd6, 0x31, 0x4e, 0x50, 0x16, 0x74, 0x97, 0xe2, 0x66, 0x11, 0x4d,
+    0x56, 0x3b, 0x36, 0x4a, 0x39, 0x9a, 0x1e, 0x45, 0xd7, 0xee, 0x81, 0xf2, 0x17, 0x39, 0xfd,
+    0xd3, 0xca, 0x15, 0x49, 0x8f, 0x89, 0xfe, 0x96, 0xa0, 0xaf, 0xe2, 0xc3, 0x09, 0x9f, 0x53,
+    0xa7, 0x72, 0xc4, 0xba, 0xb8, 0xa7, 0xf2, 0x07, 0xe4, 0x9a, 0xd0, 0xd0, 0xb5, 0xd3, 0x48,
+    0x5d, 0xb6, 0xcb, 0x0c, 0xf6, 0xc3, 0xaf, 0xf0, 0x0f, 0x03};
+
+static const unsigned char dhtest_4096[] = {
+    0xde, 0x7d, 0x47, 0xaf, 0x76, 0x03, 0xd9, 0xd7, 0x8f, 0x35, 0x03, 0x95, 0x8b, 0x4b,
+    0xad, 0x2c, 0x74, 0x4a, 0x07, 0x21, 0xa6, 0x70, 0x54, 0x03, 0x9b, 0xb3, 0x86, 0x5f, 0x9c,
+    0x04, 0x8b, 0x5e, 0x83, 0x83, 0x70, 0x27, 0xbf, 0x4c, 0x87, 0x65, 0x92, 0xa8, 0x93, 0x89,
+    0xee, 0xb1, 0xed, 0xa6, 0xba, 0x40, 0xab, 0x21, 0xb8, 0x57, 0xac, 0x51, 0xb9, 0x72, 0x81,
+    0xf8, 0x6c, 0x36, 0x07, 0x71, 0x7a, 0x31, 0xa8, 0x41, 0xa0, 0x32, 0xe6, 0x59, 0x72, 0xa4,
+    0x2b, 0x16, 0xdf, 0xa9, 0x91, 0x71, 0xe4, 0x2a, 0x87, 0x65, 0xfa, 0x1e, 0x45, 0x92, 0xc4,
+    0xf4, 0x32, 0xbe, 0x8b, 0xde, 0x4f, 0x95, 0x6e, 0xbc, 0xa7, 0xf7, 0x63, 0x66, 0xaa, 0x83,
+    0x02, 0x33, 0xf1, 0xe9, 0x9e, 0x05, 0x1b, 0x06, 0x18, 0x40, 0x36, 0xca, 0xaa, 0xb2, 0xf4,
+    0x31, 0xcf, 0x35, 0xdb, 0xa5, 0xd4, 0xd2, 0x2e, 0xb2, 0x28, 0xbd, 0xc2, 0x66, 0x39, 0x41,
+    0xe2, 0xc5, 0x03, 0x06, 0x5c, 0x81, 0x85, 0x52, 0x49, 0xda, 0x17, 0x99, 0x33, 0x7d, 0x33,
+    0x7e, 0x3e, 0x3f, 0x11, 0xe4, 0x2e, 0xe8, 0x8d, 0x08, 0x81, 0x48, 0xbf, 0x3e, 0xad, 0x35,
+    0x3f, 0x49, 0xf2, 0xf7, 0x22, 0x57, 0xbd, 0x9d, 0x04, 0x66, 0x5a, 0x53, 0x7b, 0x78, 0xd7,
+    0x09, 0x6a, 0xdb, 0x91, 0x2d, 0xf4, 0x13, 0xb5, 0xab, 0x6f, 0x9b, 0xaf, 0xdb, 0x4f, 0x7b,
+    0x2f, 0x29, 0x34, 0xc0, 0x54, 0x9c, 0x1b, 0xa9, 0x24, 0xd5, 0x98, 0x8b, 0x75, 0xeb, 0xa8,
+    0x0a, 0x04, 0xf5, 0xd2, 0xcf, 0x06, 0x1c, 0x00, 0xfe, 0xe7, 0x18, 0x5b, 0x3f, 0x80, 0x31,
+    0xa4, 0x41, 0x44, 0x1f, 0x17, 0x8f, 0x8e, 0xa0, 0xaa, 0x33, 0xfb, 0x98, 0xaf, 0x72, 0x77,
+    0x0d, 0x64, 0x29, 0x4e, 0xaa, 0x37, 0x73, 0x86, 0x61, 0x62, 0xb7, 0xcd, 0x75, 0xd5, 0x66,
+    0x81, 0x70, 0x10, 0x91, 0x7c, 0xd3, 0x7d, 0x18, 0x55, 0xf9, 0x11, 0xe3, 0xc0, 0xd6, 0x3a,
+    0x33, 0x13, 0x92, 0x8d, 0xda, 0x0e, 0x82, 0x89, 0xd4, 0xf6, 0x41, 0x83, 0xd0, 0xd6, 0x64,
+    0x94, 0x2a, 0xd7, 0xf8, 0x8b, 0x0a, 0x4f, 0xe8, 0x6c, 0x76, 0xe3, 0xfd, 0x25, 0x47, 0x32,
+    0xb9, 0x97, 0x6d, 0xec, 0xf1, 0xee, 0xb0, 0xa3, 0x59, 0x3a, 0xdd, 0x32, 0x14, 0x10, 0xb9,
+    0xcd, 0x5b, 0x9e, 0x35, 0xcc, 0xaa, 0x14, 0x58, 0x9e, 0xcf, 0x48, 0x13, 0x12, 0x93, 0xcd,
+    0x15, 0xac, 0x1e, 0x78, 0xae, 0x4b, 0x17, 0xaa, 0xf1, 0x63, 0x26, 0x8e, 0x11, 0xc3, 0xf3,
+    0x67, 0x2a, 0x3b, 0x2e, 0x08, 0x3a, 0xf7, 0xee, 0xc8, 0xa0, 0x9d, 0x02, 0x51, 0x12, 0x39,
+    0x2c, 0x78, 0x04, 0xdd, 0x8a, 0x9f, 0x25, 0x03, 0x40, 0x55, 0x32, 0x74, 0xc3, 0x36, 0xf8,
+    0x61, 0xf7, 0x2a, 0x22, 0xd5, 0x26, 0x12, 0xad, 0xde, 0xe3, 0x73, 0xe8, 0xff, 0x8b, 0xd0,
+    0xee, 0x29, 0xb8, 0x77, 0xfd, 0xe0, 0xb0, 0x02, 0x67, 0xaf, 0x42, 0x74, 0x8d, 0xbb, 0x83,
+    0x0d, 0x58, 0xe4, 0xdf, 0x4e, 0x70, 0x42, 0xb0, 0x21, 0xef, 0x75, 0xdb, 0xe6, 0x3d, 0x52,
+    0xab, 0x47, 0xb4, 0xab, 0x02, 0x02, 0xde, 0xa3, 0x96, 0x8d, 0xfa, 0xb4, 0x78, 0xbf, 0xca,
+    0xe2, 0xb2, 0xf4, 0x95, 0xd0, 0xc9, 0x6a, 0xb4, 0x68, 0x80, 0xd1, 0x12, 0x9c, 0x97, 0x39,
+    0x06, 0xf5, 0x59, 0xba, 0x62, 0x69, 0xbf, 0x8f, 0x7d, 0x39, 0xc2, 0xb5, 0x8a, 0x6e, 0xc9,
+    0x7a, 0xbb, 0xd4, 0x35, 0x92, 0x24, 0xde, 0x50, 0xba, 0x3b, 0x53, 0x98, 0xed, 0xf3, 0xf0,
+    0x3c, 0x39, 0x58, 0xff, 0x53, 0x1d, 0xf9, 0x7a, 0xc7, 0xdd, 0xb8, 0x6c, 0x39, 0x74, 0x18,
+    0x6e, 0xfd, 0x16, 0x0f, 0x51, 0x06, 0x8c, 0x2c, 0x0f, 0x82, 0xc5, 0x84, 0x51, 0xcb, 0x97,
+    0xd3, 0xfd, 0x03};
+
+static const struct dh_data DH_SAMPLES[] = {
+    MAKE_DH_DATA(768),
+    MAKE_DH_DATA(1024),
+    MAKE_DH_DATA(1536),
+    MAKE_DH_DATA(2048),
+    MAKE_DH_DATA(3072),
+    MAKE_DH_DATA(4096),
+};
+
+static ENGINE *try_load_engine(const char *engine)
+{
+    ENGINE *e = ENGINE_by_id("dynamic");
+    if (e) {
+        if (!ENGINE_ctrl_cmd_string(e, "SO_PATH", engine, 0) || !ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0)) {
+            ENGINE_free(e);
+            e = NULL;
+        }
+    }
+    return e;
+}
+
+ENGINE *setup_engine(const char *engine)
+{
+    ENGINE *e = NULL;
+
+    if (engine != NULL) {
+        if (strcmp(engine, "auto") == 0) {
+            // BIO_printf(bio_err, "enabling auto ENGINE support\n");
+            ENGINE_register_all_complete();
+            return NULL;
+        }
+        if ((e = ENGINE_by_id(engine)) == NULL && (e = try_load_engine(engine)) == NULL) {
+            // BIO_printf(bio_err, "invalid engine \"%s\"\n", engine);
+            // ERR_print_errors(bio_err);
+            return NULL;
+        }
+
+        // ENGINE_ctrl_cmd(e, "SET_USER_INTERFACE", 0, (void *)get_ui_method(),
+        //                 0, 1);
+        if (!ENGINE_set_default(e, ENGINE_METHOD_ALL)) {
+            // BIO_printf(bio_err, "can't use that engine\n");
+            // ERR_print_errors(bio_err);
+            ENGINE_free(e);
+            return NULL;
+        }
+        // BIO_printf(bio_err, "engine \"%s\" set.\n", ENGINE_get_id(e));
+    }
+    return e;
+}
+
+int init_dh_generate_key(DH *dh, struct dh_data dhsample)
+{
+    if (dhsample.generate_param) {
+        // 重新生成质数
+        if (!DH_generate_parameters_ex(dh, dhsample.bits, GENERATOR, NULL)) {
+            return 0;
+        }
+    }
+    else {
+        // 绑定内置的质数和g
+        BIGNUM *g = BN_new();
+        BN_set_word(g, GENERATOR);
+        BIGNUM *p = BN_bin2bn(dhsample.p, dhsample.p_len, NULL);
+        if (p == NULL) {
+            return 0;
+        }
+        // 设置g和p
+        if (!DH_set0_pqg(dh, p, NULL, g)) {
+            return 0;
+        }
+    }
+
+    // 创建并设置私钥
+    unsigned int l = DH_bits(dh) - 1;
+    BIGNUM *priv_key = BN_secure_new();
+    if (!BN_priv_rand(priv_key, l, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY)) {
+        return 0;
+    }
+
+    if (!DH_set0_key(dh, NULL, priv_key)) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int create_dh_generate_key(ENGINE *e, struct dh_data dhsample, DH **dh)
+{
+    *dh = DH_new_method(e);
+    if (*dh == NULL) {
+        return 0;
+    }
+
+    // 如果e是null，则是软算。
+    if (e == NULL && !DH_set_method(*dh, DH_get_default_method())) {
+        return 0;
+    }
+
+    if (!init_dh_generate_key(*dh, dhsample)) {
+        return 0;
+    }
+
+    if (DH_bits(*dh) != dhsample.bits) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int run_generate_key(void *arg)
+{
+    dh_async_arg_t *dh_arg = (dh_async_arg_t *)arg;
+    if(dh_arg->evp) {
+        if(!perf_generate_key_sync_evp(dh_arg->e,dh_arg->dh,dh_arg->loop_cnt)) {
+            return 0;
+        }
+    }
+    else {
+        if(!perf_generate_key_sync_dh(dh_arg->dh,dh_arg->loop_cnt)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int run_async_jobs(dh_async_arg_t *dh_array, int jobs, int (*loop_function)(void *))
+{
+    int job_op_count = 0;
+    int num_inprogress = 0;
+    size_t num_job_fds = 0;
+    OSSL_ASYNC_FD job_fd = 0;
+    int ret = 0;
+    int duration = 0;
+    CLOCK_ON();
+    int i;
+    for (i = 0; i < jobs; i++) {
+        dh_async_arg_t looparg_item = dh_array[i];
+        ret = ASYNC_start_job(&dh_array[i].inprogress_job, dh_array[i].wait_ctx,
+                              &job_op_count, loop_function,
+                              (void *)&looparg_item, sizeof(looparg_item));
+        switch (ret) {
+        case ASYNC_PAUSE:
+            ++num_inprogress;
+            break;
+        case ASYNC_FINISH:
+            if (job_op_count == -1) {
+                return 0;
+            }
+            break;
+        case ASYNC_NO_JOBS:
+        case ASYNC_ERR:
+            return 0;
+        }
+    }
+
+    while (num_inprogress > 0) {
+        int select_result = 0;
+        OSSL_ASYNC_FD max_fd = 0;
+        fd_set waitfdset;
+
+        FD_ZERO(&waitfdset);
+
+        int j;
+        for (j = 0; j < jobs && num_inprogress > 0; j++) {
+            if (dh_array[j].inprogress_job == NULL)
+                continue;
+
+            if (!ASYNC_WAIT_CTX_get_all_fds(dh_array[j].wait_ctx, NULL, &num_job_fds) || num_job_fds > 1) {
+                return 0;
+            }
+            ASYNC_WAIT_CTX_get_all_fds(dh_array[j].wait_ctx, &job_fd,
+                                       &num_job_fds);
+            FD_SET(job_fd, &waitfdset);
+            if (job_fd > max_fd)
+                max_fd = job_fd;
+        }
+
+        if (max_fd >= (OSSL_ASYNC_FD)FD_SETSIZE) {
+            return 0;
+        }
+
+        select_result = select(max_fd + 1, &waitfdset, NULL, NULL, NULL);
+        if (select_result == -1 && errno == EINTR)
+            continue;
+
+        if (select_result == -1) {
+            return 0;
+        }
+
+        if (select_result == 0)
+            continue;
+
+        int k;
+        for (k = 0; k < jobs; k++) {
+            if (dh_array[k].inprogress_job == NULL)
+                continue;
+
+            if (!ASYNC_WAIT_CTX_get_all_fds(dh_array[k].wait_ctx, NULL, &num_job_fds) || num_job_fds > 1) {
+                return 0;
+            }
+            ASYNC_WAIT_CTX_get_all_fds(dh_array[k].wait_ctx, &job_fd,
+                                       &num_job_fds);
+
+            if (num_job_fds == 1 && !FD_ISSET(job_fd, &waitfdset))
+                continue;
+            ret = ASYNC_start_job(&dh_array[k].inprogress_job,
+                                  dh_array[k].wait_ctx, &job_op_count,
+                                  loop_function, (void *)(&dh_array[k]),
+                                  sizeof(dh_async_arg_t));
+            switch (ret) {
+            case ASYNC_PAUSE:
+                break;
+            case ASYNC_FINISH:
+                if (job_op_count == -1) {
+                    return 0;
+                }
+                --num_inprogress;
+                dh_array[k].inprogress_job = NULL;
+                break;
+            case ASYNC_NO_JOBS:
+            case ASYNC_ERR:
+                --num_inprogress;
+                dh_array[k].inprogress_job = NULL;
+                return 0;
+            }
+        }
+    }
+    CLOCK_OFF(duration);
+    printf(",%lf", (double)LOOP_NUM* jobs / (double)duration * 1000.0 );
+
+    return 1;
+}
+
+int perf_generate_key_async(ENGINE *e, struct dh_data dhsample, int jobs, int (*loop_function)(void *), int evp)
+{
+    dh_async_arg_t *dh_array = (dh_async_arg_t *)malloc(jobs * sizeof(dh_async_arg_t));
+    int i;
+    for (i = 0; i < jobs; i++) {
+        DH *dh = NULL;
+        if (!create_dh_generate_key(e, dhsample, &dh)) {
+            free(dh_array);
+            return 0;
+        }
+        dh_array[i].dh = dh;
+        dh_array[i].loop_cnt = LOOP_NUM;
+        dh_array[i].inprogress_job = NULL;
+        dh_array[i].wait_ctx = ASYNC_WAIT_CTX_new();
+        dh_array[i].evp = evp;
+        dh_array[i].e = e;
+    }
+
+    if (!run_async_jobs(dh_array, jobs, loop_function)) {
+        free(dh_array);
+        return 0;
+    }
+
+    int j;
+    for (j = 0; j < jobs; j++) {
+        if (dh_array[j].wait_ctx != NULL) {
+            ASYNC_WAIT_CTX_free(dh_array[j].wait_ctx);
+        }
+        if (dh_array[j].dh != NULL) {
+            DH_free(dh_array[j].dh);
+        }
+    }
+    free(dh_array);
+
+    return 1;
+}
+
+int perf_generate_key_sync_evp(ENGINE *e, DH* dh, int loopNum)
+{
+    EVP_PKEY *pkey = EVP_PKEY_new();
+    EVP_PKEY_set1_DH(pkey, dh);
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pkey, e);
+    EVP_PKEY_keygen_init(ctx);
+    EVP_PKEY *outpkey = NULL;
+
+    int i;
+    for (i = 0; i < loopNum; i++) {
+        if (EVP_PKEY_keygen(ctx, &outpkey)!=1)
+            return 0;
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(outpkey);
+    EVP_PKEY_free(pkey);
+
+    return 1;
+}
+
+int perf_generate_key_sync_dh(DH* dh, int loopNum)
+{
+    int i;
+    for (i = 0; i < loopNum; i++) {
+        if (DH_generate_key(dh)!=1)
+            return 0;
+    }
+
+    return 1;
+}
+
+int perf_generate_key_sync(ENGINE *e, struct dh_data dhsample, int evp)
+{
+    DH *dh = NULL;
+    if (!create_dh_generate_key(e, dhsample, &dh)) {
+        return 0;
+    }
+
+    int duration = 0;
+    CLOCK_ON();
+    if(evp)
+    {
+        if (!perf_generate_key_sync_evp(e, dh, LOOP_NUM)) {
+            return 0;
+        }
+    }
+    else {
+        if (!perf_generate_key_sync_dh(dh, LOOP_NUM)) {
+            return 0;
+        }
+    }
+    CLOCK_OFF(duration);
+
+    printf(",%lf", (double)LOOP_NUM / duration * 1000.0);
+
+    DH_free(dh);
+
+    return 1;
+}
+
+int perf_generate_key(ENGINE *e, struct dh_data dhsample, int async_jobs, int evp)
+{
+    if (async_jobs == 0) {
+        return perf_generate_key_sync(e, dhsample, evp);
+    }
+    else {
+        return perf_generate_key_async(e, dhsample, async_jobs, run_generate_key, evp);
+    }
+}
+
+int init_dh_compute_key(DH *dh, DH *other, struct dh_data dhsample, const BIGNUM **other_pub_key)
+{
+    // 初始化dh和other的g、p
+    if (!init_dh_generate_key(dh, dhsample)) {
+        return 0;
+    }
+
+    if (!init_dh_generate_key(other, dhsample)) {
+        return 0;
+    }
+
+    if (DH_generate_key(dh)!=1)
+        return 0;
+    if (DH_generate_key(other)!=1)
+        return 0;
+
+    // 获取other的公钥
+    *other_pub_key = DH_get0_pub_key(other);
+
+    return *other_pub_key != NULL;
+}
+
+int create_dh_compute_key(ENGINE *e, struct dh_data dhsample, DH **dh, DH **otherDH, const BIGNUM **other_pub_key)
+{
+    *dh = DH_new_method(e);
+    if (*dh == NULL) {
+        return 0;
+    }
+    // 如果e是null，则是软算。
+    if (e == NULL && !DH_set_method(*dh, DH_get_default_method())) {
+        return 0;
+    }
+
+    *otherDH = DH_new_method(e);
+    if (*otherDH == NULL) {
+        return 0;
+    }
+    // 如果e是null，则是软算。
+    if (e == NULL && !DH_set_method(*otherDH, DH_get_default_method())) {
+        return 0;
+    }
+
+    const BIGNUM *other_pub_key_tmp = NULL;
+    if (!init_dh_compute_key(*dh, *otherDH, dhsample, &other_pub_key_tmp)) {
+        return 0;
+    }
+
+    if (DH_bits(*dh) != dhsample.bits) {
+        return 0;
+    }
+
+    *other_pub_key = BN_secure_new();
+    BN_copy((BIGNUM *)*other_pub_key, other_pub_key_tmp);
+
+    return 1;
+}
+
+int run_compute_key(void *arg)
+{
+    dh_async_arg_t *dh_arg = arg;
+    if(dh_arg->evp) {
+        if(!perf_compute_key_sync_evp(dh_arg->dh, dh_arg->other, dh_arg->e,dh_arg->other_pub_key,dh_arg->loop_cnt)) {
+            return 0;
+        }
+    }
+    else {
+        if(!perf_compute_key_sync_dh(dh_arg->dh,dh_arg->other_pub_key,dh_arg->loop_cnt)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int perf_compute_key_async(ENGINE *e, struct dh_data dhsample, int jobs, int (*loop_function)(void *), int evp)
+{
+    dh_async_arg_t *dh_array = (dh_async_arg_t *)malloc(jobs * sizeof(dh_async_arg_t));
+    int i;
+    for (i = 0; i < jobs; i++) {
+        DH *dh = NULL;
+        DH *otherDH = NULL;
+        const BIGNUM *other_pub_key = NULL;
+        if (!create_dh_compute_key(e, dhsample, &dh, &otherDH, &other_pub_key)) {
+            return 0;
+        }
+        dh_array[i].dh = dh;
+        dh_array[i].other = otherDH;
+        dh_array[i].other_pub_key = (BIGNUM *)other_pub_key;
+        dh_array[i].loop_cnt = LOOP_NUM;
+        dh_array[i].inprogress_job = NULL;
+        dh_array[i].wait_ctx = ASYNC_WAIT_CTX_new();
+        dh_array[i].e = e;
+        dh_array[i].evp = evp;
+    }
+
+    if (!run_async_jobs(dh_array, jobs, loop_function)) {
+        return 0;
+    }
+
+    int j;
+    for (j = 0; j < jobs; j++) {
+        if (dh_array[j].wait_ctx != NULL) {
+            ASYNC_WAIT_CTX_free(dh_array[j].wait_ctx);
+        }
+        if (dh_array[j].dh != NULL) {
+            DH_free(dh_array[j].dh);
+        }
+        if (dh_array[j].other_pub_key != NULL) {
+            BN_free(dh_array[j].other_pub_key);
+        }
+        if (dh_array[j].other != NULL) {
+            DH_free(dh_array[j].other);
+        }
+    }
+    free(dh_array);
+
+    return 1;
+}
+
+int perf_compute_key_sync_evp(DH *dh, DH *otherDH, ENGINE *e, const BIGNUM *other_pub_key, int loopNum)
+{
+    EVP_PKEY *pkey = EVP_PKEY_new();
+    EVP_PKEY_set1_DH(pkey, dh);
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pkey, e);
+    EVP_PKEY_derive_init(ctx);
+    EVP_PKEY *other_pkey = EVP_PKEY_new();
+    EVP_PKEY_set1_DH(other_pkey, otherDH);
+    EVP_PKEY_derive_set_peer(ctx,other_pkey);
+
+    unsigned char *pub_key_bin = malloc(BN_num_bytes(other_pub_key) * sizeof(unsigned char));
+     memset(pub_key_bin, 0, BN_num_bytes(other_pub_key) * sizeof(unsigned char));
+    size_t keylen = (size_t)BN_bn2bin(other_pub_key, pub_key_bin);
+
+    int i;
+    for (i = 0; i < loopNum; i++) {
+        if (EVP_PKEY_derive(ctx, pub_key_bin, &keylen) == 0) {
+            free(pub_key_bin);
+            EVP_PKEY_free(other_pkey);
+            EVP_PKEY_CTX_free(ctx);
+            EVP_PKEY_free(pkey);            
+            return 0;
+        }
+    }
+
+    free(pub_key_bin);
+    EVP_PKEY_free(other_pkey);
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+int perf_compute_key_sync_dh(DH *dh, const BIGNUM *other_pub_key, int loopNum)
+{
+    int i;
+    for (i = 0; i < loopNum; i++) {
+        unsigned char *buf = OPENSSL_malloc(DH_size(dh));
+        memset(buf, 0, DH_size(dh));
+        if (DH_compute_key(buf, other_pub_key, dh) <= 0) {
+            OPENSSL_free(buf);
+            return 0;
+        }
+        OPENSSL_free(buf);
+    }
+
+    return 1;
+}
+
+int perf_compute_key_sync(ENGINE *e, struct dh_data dhsample, int evp)
+{
+    DH *dh = NULL;
+    DH *otherDH = NULL;
+    const BIGNUM *other_pub_key = NULL;
+    if (!create_dh_compute_key(e, dhsample, &dh, &otherDH, &other_pub_key)) {
+        return 0;
+    }
+
+    int duration = 0;
+    CLOCK_ON();
+    if(evp) {
+        if (!perf_compute_key_sync_evp(dh, otherDH, e, other_pub_key, LOOP_NUM)) {
+            return 0;
+        }
+    }
+    else
+    {
+        if (!perf_compute_key_sync_dh(dh, other_pub_key, LOOP_NUM)) {
+            return 0;
+        }
+    }
+    CLOCK_OFF(duration);
+
+    printf(",%lf", (double)LOOP_NUM / duration * 1000.0);
+
+    DH_free(dh);
+    DH_free(otherDH);
+    BN_free((BIGNUM *)other_pub_key);
+
+    return 1;
+}
+
+int perf_compute_key(ENGINE *e, struct dh_data dhsample, int async_jobs, int evp)
+{
+    if (async_jobs == 0) {
+        return perf_compute_key_sync(e, dhsample, evp);
+    }
+    else {
+        return perf_compute_key_async(e, dhsample, async_jobs, run_compute_key, evp);
+    }
+}
+
+static char *sstrsep(char **string, const char *delim)
+{
+    char isdelim[256];
+    char *token = *string;
+
+    if (**string == 0)
+        return NULL;
+
+    memset(isdelim, 0, sizeof(isdelim));
+    isdelim[0] = 1;
+
+    while (*delim) {
+        isdelim[(unsigned char)(*delim)] = 1;
+        delim++;
+    }
+
+    while (!isdelim[(unsigned char)(**string)]) {
+        (*string)++;
+    }
+
+    if (**string) {
+        **string = 0;
+        (*string)++;
+    }
+
+    return token;
+}
+
+static int do_multi(int multi, double perf[])
+{
+    int n;
+    int fd[2];
+    int *fds;
+
+    fds = malloc(sizeof(*fds) * multi);
+    memset(fds, 0, sizeof(*fds) * multi);
+    
+    for (n = 0; n < multi; ++n) {
+        if (pipe(fd) == -1) {
+            exit(1);
+        }
+        fflush(stdout);
+        if (fork()) {
+            close(fd[1]);
+            fds[n] = fd[0];
+        } else {
+            close(fd[0]);
+            close(1);
+            if (dup(fd[1]) == -1) {
+                exit(1);
+            }
+            close(fd[1]);
+            free(fds);
+            return 0;
+        }
+        printf("Forked child %d\n", n);
+    }
+
+    int mode = 0;
+    /* for now, assume the pipe is long enough to take all the output */
+    for (n = 0; n < multi; ++n) {
+        FILE *f;
+        char buf[1024];
+        char *p;
+        static char sep[] = ",";
+        double ops;
+
+        f = fdopen(fds[n], "r");
+        while (fgets(buf, sizeof(buf), f)) {
+            p = strchr(buf, '\0');
+            if (p)
+                *p = '\0';
+            printf("Got: %s from %d\n", buf, n);
+
+            if(buf[0] == '+' && buf[1] == 'g') {
+                mode = 0;
+                continue;
+            }
+            if(buf[0] == '+' && buf[1] == 'c') {
+                mode = 1;
+                continue;
+            }
+            if(buf[0] == '\n') {
+                continue;
+            }
+
+            p = buf;
+            sstrsep(&p, sep);
+            ops = atof(sstrsep(&p, sep));
+
+            perf[mode] += ops;
+        }
+
+        fclose(f);
+    }
+    free(fds);
+    return 1;
+}
+
+int get_support_bit_index(int bit)
+{
+    int ret = -1;
+    int i;
+    for (i = 0; i < 6; i++) {
+        if(bit == DH_SAMPLES[i].bits) {
+            ret = i;
+            break;
+        }
+    }
+
+    return ret;
+}
+
+int main(int argc, char **argv)
+{
+    int o = 0;
+    const char *optstring = "pa:m:e:l:g:";
+    const char *engine_id = NULL;
+    int multi = 0;
+    int async_jobs = 0;
+    int bit = 0;
+    int evp = 0;
+    while ((o = getopt(argc, argv, optstring)) != -1) {
+        if(optstring == NULL) continue;
+        switch (o) {
+            case 'a':
+                async_jobs = atoi(optarg);
+                break;
+            case 'm':
+                multi = atoi(optarg);
+                break;
+            case 'e':
+                engine_id = optarg;
+                break;
+            case 'g':
+                GENERATOR = atoi(optarg);
+                break;
+            case 'l':
+                bit = atoi(optarg);
+                break;
+            case 'p':
+                evp = 1;
+                break;
+        }
+    }
+    printf("engine: %s, async_jobs: %d, multi: %d\n", engine_id, async_jobs, multi);
+    printf("generator: %d, bit: %d\n", GENERATOR, bit);
+
+    SSL_load_error_strings();
+    ERR_load_BIO_strings();
+    OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+    OPENSSL_add_all_algorithms_conf();
+
+    double *multi_perf = malloc(sizeof(double) * 2);
+    memset(multi_perf, 0, sizeof(double) * 2);
+    if(multi && do_multi(multi, multi_perf)) {
+        printf("+generate_key\n");
+        printf("%d,%lf\n", bit, multi_perf[0]);
+        printf("+compute_key\n");
+        printf("%d,%lf\n", bit, multi_perf[1]);
+        free(multi_perf);
+        return 0;
+    }    
+    free(multi_perf);
+
+    // 获取引擎
+    ENGINE *e = setup_engine(engine_id);
+
+    if (bit == 0) {
+        // 跑需求支持的所有位宽
+        // 跑generate_key的性能
+        printf("+generate_key\n");
+        int i;
+        for (i = 0; i < 6; i++) {
+            printf("%d", DH_SAMPLES[i].bits);
+            if (!perf_generate_key(e, DH_SAMPLES[i], async_jobs, evp)) {
+                printf("Fail to generate key.\n");
+            }
+            printf("\n");
+        }
+        printf("\n");
+
+        // 跑compute_key的性能
+        printf("+compute_key\n");
+        int j;
+        for (j = 0; j < 6; j++) {
+            printf("%d", DH_SAMPLES[j].bits);
+            if (!perf_compute_key(e, DH_SAMPLES[j], async_jobs, evp)) {
+                printf("Fail to compute key.\n");
+            }
+            printf("\n");
+        }
+    }
+    else {
+        int bit_index = get_support_bit_index(bit);
+        struct dh_data input;
+        if (bit_index != -1) {
+            // 位宽在需求规格里
+            input = DH_SAMPLES[bit_index];
+        }
+        else {
+            // 位宽不在需求规格里，需要重新生成质数
+            input.bits = bit;
+            input.generate_param = 1;
+        }
+
+        printf("+generate_key\n");
+        printf("%d", input.bits);
+        if (!perf_generate_key(e, input, async_jobs, evp)) {
+            printf("Fail to generate key.\n");
+        }
+        printf("\n");
+
+        printf("+compute_key\n");
+        printf("%d", input.bits);
+        if (!perf_compute_key(e, input, async_jobs, evp)) {
+            printf("Fail to compute key.\n");
+        }
+        printf("\n");
+    }
+
+    if (e) {
+        ENGINE_free(e);
+    }
+    return 0;
+}
