@@ -1,0 +1,181 @@
+diff -upNr zstd/examples/Makefile ./open_source/zstd/examples/Makefile
+--- zstd/examples/Makefile	2023-02-20 15:05:23.000000000 +0800
++++ ./open_source/zstd/examples/Makefile	2023-02-20 15:35:34.000000000 +0800
+@@ -12,7 +12,8 @@ LIBDIR =../lib
+ CPPFLAGS += -I$(LIBDIR)
+ LIB = $(LIBDIR)/libzstd.a
+ 
+-
++KAEZSTD_LDFLAGS=-L/usr/local/lib -L/usr/local/kaezstd/lib -Wl,-rpath,/usr/local/lib:/usr/local/kaezstd/lib -lzstd -lwd_comp -lkaezstd
++LDFLAFS+=$(KAEZSTD_LDFLAGS)
+ .PHONY: default
+ default: all
+ 
+diff -upNr zstd/lib/common/error_private.c ./open_source/zstd/lib/common/error_private.c
+--- zstd/lib/common/error_private.c	2023-02-20 15:06:06.000000000 +0800
++++ ./open_source/zstd/lib/common/error_private.c	2023-02-20 15:33:53.000000000 +0800
+@@ -12,7 +12,7 @@
+ 
+ #include "error_private.h"
+ 
+-const char* ERR_getErrorString(ERR_enum code)
++__attribute__ ((visibility("default"))) const char* ERR_getErrorString(ERR_enum code)
+ {
+ #ifdef ZSTD_STRIP_ERROR_STRINGS
+     (void)code;
+diff -upNr zstd/lib/common/error_private.h ./open_source/zstd/lib/common/error_private.h
+--- zstd/lib/common/error_private.h	2023-02-20 15:05:23.000000000 +0800
++++ ./open_source/zstd/lib/common/error_private.h	2023-02-20 15:33:33.000000000 +0800
+@@ -68,7 +68,7 @@ ERR_STATIC ERR_enum ERR_getErrorCode(siz
+ *  Error Strings
+ ******************************************/
+ 
+-const char* ERR_getErrorString(ERR_enum code);   /* error_private.c */
++__attribute__ ((visibility("default"))) const char* ERR_getErrorString(ERR_enum code);   /* error_private.c */
+ 
+ ERR_STATIC const char* ERR_getErrorName(size_t code)
+ {
+diff -upNr zstd/lib/compress/zstd_compress.c ./open_source/zstd/lib/compress/zstd_compress.c
+--- zstd/lib/compress/zstd_compress.c	2023-02-20 15:06:06.000000000 +0800
++++ ./open_source/zstd/lib/compress/zstd_compress.c	2023-02-20 15:29:48.000000000 +0800
+@@ -28,6 +28,9 @@
+ #include "zstd_ldm.h"
+ #include "zstd_compress_superblock.h"
+ 
++#ifdef CONF_KAEZSTD
++#include "kaezstd.h"
++#endif
+ /* ***************************************************************
+ *  Tuning parameters
+ *****************************************************************/
+@@ -104,6 +107,15 @@ static void ZSTD_initCCtx(ZSTD_CCtx* cct
+         assert(!ZSTD_isError(err));
+         (void)err;
+     }
++#ifdef CONF_KAEZSTD
++    int ret ;
++    ret = kaezstd_init(cctx);
++    if (ret == 0) {
++        cctx->kaeInited = 1;
++    } else {
++        cctx->kaeInited = 0;
++    }
++#endif
+ }
+ 
+ ZSTD_CCtx* ZSTD_createCCtx_advanced(ZSTD_customMem customMem)
+@@ -170,6 +182,11 @@ static void ZSTD_freeCCtxContent(ZSTD_CC
+     ZSTDMT_freeCCtx(cctx->mtctx); cctx->mtctx = NULL;
+ #endif
+     ZSTD_cwksp_free(&cctx->workspace, cctx->customMem);
++#ifdef CONF_KAEZSTD
++    if (cctx->kaeInited == 1) {
++        kaezstd_release(cctx);
++    }
++#endif
+ }
+ 
+ size_t ZSTD_freeCCtx(ZSTD_CCtx* cctx)
+@@ -2844,7 +2861,15 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
+         if (curr > ms->nextToUpdate + 384)
+             ms->nextToUpdate = curr - MIN(192, (U32)(curr - ms->nextToUpdate - 384));
+     }
+-
++#ifdef CONF_KAEZSTD
++    if (zc->kaeInited == 1) {
++        int ret;
++        ret = kaezstd_compress(zc, src, srcSize);
++        if (ret) {
++            return ZSTDbss_noCompress;
++        }
++    } else {
++#endif
+     /* select and store sequences */
+     {   ZSTD_dictMode_e const dictMode = ZSTD_matchState_dictMode(ms);
+         size_t lastLLSize;
+@@ -2889,6 +2914,9 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
+         {   const BYTE* const lastLiterals = (const BYTE*)src + srcSize - lastLLSize;
+             ZSTD_storeLastLiterals(&zc->seqStore, lastLiterals, lastLLSize);
+     }   }
++#ifdef CONF_KAEZSTD
++    }
++#endif
+     return ZSTDbss_compress;
+ }
+ 
+@@ -3963,7 +3991,11 @@ static size_t ZSTD_compress_frameChunk(Z
+ 
+         /* Ensure hash/chain table insertion resumes no sooner than lowlimit */
+         if (ms->nextToUpdate < ms->window.lowLimit) ms->nextToUpdate = ms->window.lowLimit;
+-
++#ifdef CONF_KAEZSTD
++        if (cctx->kaeInited == 1) {
++            cctx->kaeFrameMode = lastBlock;
++        }
++#endif
+         {   size_t cSize;
+             if (ZSTD_useTargetCBlockSize(&cctx->appliedParams)) {
+                 cSize = ZSTD_compressBlock_targetCBlockSize(cctx, op, dstCapacity, ip, blockSize, lastBlock);
+@@ -3982,6 +4014,11 @@ static size_t ZSTD_compress_frameChunk(Z
+ 
+                 if (cSize == 0) {  /* block is not compressible */
+                     cSize = ZSTD_noCompressBlock(op, dstCapacity, ip, blockSize, lastBlock);
++#ifdef CONF_KAEZSTD
++                    if (cctx->kaeInited == 1) {
++                        kaezstd_setstatus(cctx, TUPLE_STATUS_NOCOMPRESS);
++                    }
++#endif
+                     FORWARD_IF_ERROR(cSize, "ZSTD_noCompressBlock failed");
+                 } else {
+                     U32 const cBlockHeader = cSize == 1 ?
+@@ -3989,6 +4026,11 @@ static size_t ZSTD_compress_frameChunk(Z
+                         lastBlock + (((U32)bt_compressed)<<1) + (U32)(cSize << 3);
+                     MEM_writeLE24(op, cBlockHeader);
+                     cSize += ZSTD_blockHeaderSize;
++#ifdef CONF_KAEZSTD
++                    if (cctx->kaeInited == 1) {
++                        kaezstd_setstatus(cctx, TUPLE_STATUS_COMPRESS);
++                    }
++#endif
+                 }
+             }
+ 
+diff -upNr zstd/lib/compress/zstd_compress_internal.h ./open_source/zstd/lib/compress/zstd_compress_internal.h
+--- zstd/lib/compress/zstd_compress_internal.h	2023-02-20 15:06:06.000000000 +0800
++++ ./open_source/zstd/lib/compress/zstd_compress_internal.h	2023-02-20 15:32:36.000000000 +0800
+@@ -18,6 +18,9 @@
+ /*-*************************************
+ *  Dependencies
+ ***************************************/
++#ifdef CONF_KAEZSTD
++#include <stdint.h>
++#endif
+ #include "../common/zstd_internal.h"
+ #include "zstd_cwksp.h"
+ #ifdef ZSTD_MULTITHREAD
+@@ -427,6 +430,11 @@ struct ZSTD_CCtx_s {
+     ZSTD_TraceCtx traceCtx;
+ #endif
+ 
++#ifdef CONF_KAEZSTD
++    unsigned char kaeInited;
++    unsigned int kaeFrameMode;
++    uintptr_t kaeConfig;
++#endif
+     /* Workspace for block splitter */
+     ZSTD_blockSplitCtx blockSplitCtx;
+ };
+diff -upNr zstd/lib/libzstd.mk ./open_source/zstd/lib/libzstd.mk
+--- zstd/lib/libzstd.mk	2023-02-20 15:06:06.000000000 +0800
++++ ./open_source/zstd/lib/libzstd.mk	2023-02-20 15:38:10.000000000 +0800
+@@ -99,6 +99,10 @@ ASFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS) $
+ LDFLAGS  += $(MOREFLAGS)
+ FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
+ 
++KAEZSTD_CFLAGS=-I/usr/local/kaezstd/include -I. -I../lib -DCONF_KAEZSTD
++KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib -lkaezstd
++CFLAGS+=$(KAEZSTD_CFLAGS)
++LDFLAGS+=$(KAEZSTD_LDFLAGS)
+ ifndef ALREADY_APPENDED_NOEXECSTACK
+ export ALREADY_APPENDED_NOEXECSTACK := 1
+ ifeq ($(shell echo "int main(int argc, char* argv[]) { (void)argc; (void)argv; return 0; }" | $(CC) $(FLAGS) -z noexecstack -x c -Werror - -o $(VOID) 2>$(VOID) && echo 1 || echo 0),1)
