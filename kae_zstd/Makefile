@@ -103,4 +103,5 @@ uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)
+	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaezstd.a
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaezstd.h
