@@ -17,8 +17,10 @@
 #include "uadk/uacce.h"
 
 #include "kaezstd_common.h"
-#include "kaezstd_sched.h"
 #include "kaezstd_config.h"
+
+#define CTX_SET_SIZE 4
+#define CTX_SET_NUM 1
 
 KaeZstdConfig* kaezstd_get_config(ZSTD_CCtx* zc)
 {
@@ -48,85 +50,51 @@ static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
     }
     return 0;
 }
-int sample_sched_fill_data(const struct wd_sched *sched, int numa_id,
-    __u8 mode, __u8 type, __u32 begin, __u32 end)
+
+static struct wd_sched *kaezstd_sched_init()
 {
-    struct sample_sched_info *sched_info = NULL;
-    struct sample_sched_ctx *sched_ctx = NULL;
-
-    if (!sched || !sched->h_sched_ctx) {
-        WD_ERR("para err: sched of h_sched_ctx is null\n");
-        return -EINVAL;
-    }
-
-    sched_ctx = (struct sample_sched_ctx*)sched->h_sched_ctx;
-
-    if ((numa_id >= sched_ctx->numa_num) || (numa_id < 0) ||
-        (mode >= SCHED_MODE_BUTT) ||
-        (type >= sched_ctx->type_num)) {
-        WD_ERR("para err: numa_id=%d, mode=%u, type=%u\n", numa_id, mode, type);
-        return -EINVAL;
-    }
-
-    sched_info = sched_ctx->sched_info;
-
-    if (!sched_info[numa_id].ctx_region[mode]) {
-        WD_ERR("para err: ctx_region:numa_id=%d, mode=%u is null\n", numa_id, mode);
-        return -EINVAL;
-    }
-
-    sched_info[numa_id].ctx_region[mode][type].begin = begin;
-    sched_info[numa_id].ctx_region[mode][type].end = end;
-    sched_info[numa_id].ctx_region[mode][type].last = begin;
-    sched_info[numa_id].ctx_region[mode][type].valid = true;
-    sched_info[numa_id].valid = true;
-
-    pthread_mutex_init(&sched_info[numa_id].ctx_region[mode][type].lock, NULL);
-
-    return 0;
-}
-static int kaezstd_init_ctx_config(Info* info, Options opts)
-{
-    struct wd_ctx_config *ctx_config = &(info->ctx_config);
-    struct wd_sched *sched = info->sched;
-    int ctx_num = opts.ctx_num;
+    int ctx_set_num = CTX_SET_NUM;
     int ret;
     int i, j;
+    struct sched_params param;
+    struct wd_sched *sched;
 
     sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
     if (!sched) {
         WD_ERR("failed to alloc a sample_sched\n");
-        return KAE_ZSTD_ALLOC_FAIL;
+        return NULL;
     }
 
     sched->name = "sched_rr";
 
-    ret = sample_sched_fill_data(sched, 0, 0, 0, 0, ctx_num - 1);
-    if (ret < 0) {
-        WD_ERR("Fail to fill sched region.\n");
-        ret = KAE_ZSTD_SET_FAIL;
-        goto out_fill;
+    for (i = 0; i < CTX_SET_SIZE; i++) {
+        for (j = CTX_SET_NUM * i; j < CTX_SET_NUM * (i + 1); j++) {
+            param.mode = i / 2;
+            param.type = i % 2;
+            param.numa_id = 0;
+            param.begin = ctx_set_num * i;
+            param.end = ctx_set_num * (i + 1) - 1;
+            ret = wd_sched_rr_instance(sched, &param);
+            if (ret < 0) {
+                WD_ERR("Fail to fill sched region.\n");
+                ret = KAE_ZSTD_SET_FAIL;
+                goto out_fill;
+            }
+        }
     }
-    ret = sample_sched_fill_data(sched, 0, 0, 1, ctx_num, ctx_num * 2 - 1);
-    if (ret < 0) {
-        WD_ERR("Fail to fill sched region.\n");
-        ret = KAE_ZSTD_SET_FAIL;
-        goto out_fill;
-    }
-    ret = sample_sched_fill_data(sched, 0, 1, 0, ctx_num * 2,
-                                ctx_num * 3 - 1);
-    if (ret < 0) {
-        WD_ERR("Fail to fill sched region.\n");
-        ret = KAE_ZSTD_SET_FAIL;
-        goto out_fill;
-    }
-    ret = sample_sched_fill_data(sched, 0, 1, 1, ctx_num * 3,
-                                ctx_num * 4 - 1);
-    if (ret < 0) {
-        WD_ERR("Fail to fill sched region.\n");
-        ret = KAE_ZSTD_SET_FAIL;
-        goto out_fill;
-    }
+    return sched;
+
+out_fill:
+    wd_sched_rr_release(sched);
+    return NULL;
+}
+
+static int kaezstd_init_ctx_config(Info* info, Options opts)
+{
+    struct wd_ctx_config *ctx_config = &(info->ctx_config);
+    int ctx_num = opts.ctx_num;
+    int ret;
+    int i, j;
 
     memset(ctx_config, 0, sizeof(struct wd_ctx_config));
     ctx_config->ctx_num = ctx_num * 4;
@@ -134,10 +102,8 @@ static int kaezstd_init_ctx_config(Info* info, Options opts)
     if (!ctx_config->ctxs) {
         WD_ERR("Not enough memory to allocate contexts.\n");
         ret = KAE_ZSTD_ALLOC_FAIL;
-        goto out_fill;
+        return ret;
     }
-
-    // dbg("request ctx number is %u\n", ctx_config->ctx_num);
 
     for (i = 0; i < ctx_config->ctx_num; i++) {
         ctx_config->ctxs[i].ctx = wd_request_ctx(info->list->dev);
@@ -146,20 +112,31 @@ static int kaezstd_init_ctx_config(Info* info, Options opts)
             ret = KAE_ZSTD_ALLOC_FAIL;
             goto out_ctx;
         }
-        ctx_config->ctxs[i].op_type = WD_DIR_COMPRESS;
-        ctx_config->ctxs[i].ctx_mode = CTX_MODE_SYNC;
+        ctx_config->ctxs[i].op_type = i % 2;
+        ctx_config->ctxs[i].ctx_mode = i / 2;
     }
 
-    wd_comp_init(ctx_config, sched);
+    struct wd_sched *sched = kaezstd_sched_init();
+    if (!sched) {
+        ret = -WD_EINVAL;
+        goto out_ctx;
+    }
+    info->sched = sched;
+
+    ret = wd_comp_init(ctx_config, sched);
+    if (ret) {
+        WD_ERR("fail to init comp.\n");
+        goto out_fill;
+    }
 
     return ret;
+out_fill:
+    wd_sched_rr_release(sched);
+
 out_ctx:
     for (j = 0; j < i; j++)
         wd_release_ctx(ctx_config->ctxs[j].ctx);
     free(ctx_config->ctxs);
-
-out_fill:
-    wd_sched_rr_release(sched);
 
     return ret;
 }

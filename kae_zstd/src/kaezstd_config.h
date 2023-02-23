@@ -17,8 +17,6 @@
 #include "uadk/wd_comp.h"
 #include "uadk/uacce.h"
 
-#include "kaezstd_sched.h"
-
 typedef struct Comp4Tuple_S {
     unsigned char* litStart;    /* literal address start */
     seqDef* sequencesStart;     /* sequences address start */
