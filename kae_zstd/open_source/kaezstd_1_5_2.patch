@@ -1,6 +1,6 @@
-diff -upNr zstd/examples/Makefile ./open_source/zstd/examples/Makefile
+diff -uprN zstd/examples/Makefile ./open_source/zstd/examples/Makefile
 --- zstd/examples/Makefile	2023-02-20 15:05:23.000000000 +0800
-+++ ./open_source/zstd/examples/Makefile	2023-02-20 15:35:34.000000000 +0800
++++ ./open_source/zstd/examples/Makefile	2023-02-23 16:01:11.344198400 +0800
 @@ -12,7 +12,8 @@ LIBDIR =../lib
  CPPFLAGS += -I$(LIBDIR)
  LIB = $(LIBDIR)/libzstd.a
@@ -11,9 +11,9 @@ diff -upNr zstd/examples/Makefile ./open_source/zstd/examples/Makefile
  .PHONY: default
  default: all
  
-diff -upNr zstd/lib/common/error_private.c ./open_source/zstd/lib/common/error_private.c
+diff -uprN zstd/lib/common/error_private.c ./open_source/zstd/lib/common/error_private.c
 --- zstd/lib/common/error_private.c	2023-02-20 15:06:06.000000000 +0800
-+++ ./open_source/zstd/lib/common/error_private.c	2023-02-20 15:33:53.000000000 +0800
++++ ./open_source/zstd/lib/common/error_private.c	2023-02-23 16:01:11.355169400 +0800
 @@ -12,7 +12,7 @@
  
  #include "error_private.h"
@@ -23,9 +23,9 @@ diff -upNr zstd/lib/common/error_private.c ./open_source/zstd/lib/common/error_p
  {
  #ifdef ZSTD_STRIP_ERROR_STRINGS
      (void)code;
-diff -upNr zstd/lib/common/error_private.h ./open_source/zstd/lib/common/error_private.h
+diff -uprN zstd/lib/common/error_private.h ./open_source/zstd/lib/common/error_private.h
 --- zstd/lib/common/error_private.h	2023-02-20 15:05:23.000000000 +0800
-+++ ./open_source/zstd/lib/common/error_private.h	2023-02-20 15:33:33.000000000 +0800
++++ ./open_source/zstd/lib/common/error_private.h	2023-02-23 16:01:11.367136600 +0800
 @@ -68,7 +68,7 @@ ERR_STATIC ERR_enum ERR_getErrorCode(siz
  *  Error Strings
  ******************************************/
@@ -35,9 +35,9 @@ diff -upNr zstd/lib/common/error_private.h ./open_source/zstd/lib/common/error_p
  
  ERR_STATIC const char* ERR_getErrorName(size_t code)
  {
-diff -upNr zstd/lib/compress/zstd_compress.c ./open_source/zstd/lib/compress/zstd_compress.c
+diff -uprN zstd/lib/compress/zstd_compress.c ./open_source/zstd/lib/compress/zstd_compress.c
 --- zstd/lib/compress/zstd_compress.c	2023-02-20 15:06:06.000000000 +0800
-+++ ./open_source/zstd/lib/compress/zstd_compress.c	2023-02-20 15:29:48.000000000 +0800
++++ ./open_source/zstd/lib/compress/zstd_compress.c	2023-02-23 21:05:09.780709200 +0800
 @@ -28,6 +28,9 @@
  #include "zstd_ldm.h"
  #include "zstd_compress_superblock.h"
@@ -140,9 +140,9 @@ diff -upNr zstd/lib/compress/zstd_compress.c ./open_source/zstd/lib/compress/zst
                  }
              }
  
-diff -upNr zstd/lib/compress/zstd_compress_internal.h ./open_source/zstd/lib/compress/zstd_compress_internal.h
+diff -uprN zstd/lib/compress/zstd_compress_internal.h ./open_source/zstd/lib/compress/zstd_compress_internal.h
 --- zstd/lib/compress/zstd_compress_internal.h	2023-02-20 15:06:06.000000000 +0800
-+++ ./open_source/zstd/lib/compress/zstd_compress_internal.h	2023-02-20 15:32:36.000000000 +0800
++++ ./open_source/zstd/lib/compress/zstd_compress_internal.h	2023-02-28 14:51:18.311450900 +0800
 @@ -18,6 +18,9 @@
  /*-*************************************
  *  Dependencies
@@ -153,21 +153,21 @@ diff -upNr zstd/lib/compress/zstd_compress_internal.h ./open_source/zstd/lib/com
  #include "../common/zstd_internal.h"
  #include "zstd_cwksp.h"
  #ifdef ZSTD_MULTITHREAD
-@@ -427,6 +430,11 @@ struct ZSTD_CCtx_s {
-     ZSTD_TraceCtx traceCtx;
- #endif
+@@ -362,6 +365,11 @@ typedef struct {
+ } ZSTD_blockSplitCtx;
  
+ struct ZSTD_CCtx_s {
 +#ifdef CONF_KAEZSTD
 +    unsigned char kaeInited;
 +    unsigned int kaeFrameMode;
 +    uintptr_t kaeConfig;
 +#endif
-     /* Workspace for block splitter */
-     ZSTD_blockSplitCtx blockSplitCtx;
- };
-diff -upNr zstd/lib/libzstd.mk ./open_source/zstd/lib/libzstd.mk
+     ZSTD_compressionStage_e stage;
+     int cParamsChanged;                  /* == 1 if cParams(except wlog) or compression level are changed in requestedParams. Triggers transmission of new params to ZSTDMT (if available) then reset to 0. */
+     int bmi2;                            /* == 1 if the CPU supports BMI2 and 0 otherwise. CPU support is determined dynamically once per context lifetime. */
+diff -uprN zstd/lib/libzstd.mk ./open_source/zstd/lib/libzstd.mk
 --- zstd/lib/libzstd.mk	2023-02-20 15:06:06.000000000 +0800
-+++ ./open_source/zstd/lib/libzstd.mk	2023-02-20 15:38:10.000000000 +0800
++++ ./open_source/zstd/lib/libzstd.mk	2023-02-23 16:01:11.499781400 +0800
 @@ -99,6 +99,10 @@ ASFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS) $
  LDFLAGS  += $(MOREFLAGS)
  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
