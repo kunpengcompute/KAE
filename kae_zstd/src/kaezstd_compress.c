@@ -16,9 +16,7 @@
 #include "uadk/uacce.h"
 
 #include "kaezstd_common.h"
-#include "kaezstd_sched.h"
 #include "kaezstd_config.h"
-#include "kaezstd_compress.h"
 
 void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
 {

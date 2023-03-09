@@ -18,4 +18,9 @@
 #define KAE_ZSTD_ALLOC_FAIL 5
 #define KAE_ZSTD_SET_FAIL 6
 
+#include "kaezstd.h"
+
+#include "zstd.h"
+#include "zstd_internal.h"
+#include "zstd_compress_internal.h"
 #endif
