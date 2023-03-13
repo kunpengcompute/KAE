@@ -28,7 +28,12 @@ if(CMAKE_VERSION VERSION_LESS 2.8.11)
     )
 endif()
 # 这里改成自己的运行文件
-add_executable(zstd_functest main.cpp)
+add_executable(zstd_functest main.cpp
+                             func_common.cpp
+)
 # 链接库是必须的
-target_link_libraries(zstd_functest gtest gtest_main)
+target_link_libraries(zstd_functest gtest
+                                    gtest_main
+                                    zstd
+)
 enable_testing()
