@@ -1,0 +1,1 @@
+cmd_/home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.o := ld -EL  -maarch64linux   -r -o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/qm.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/sgl.o 

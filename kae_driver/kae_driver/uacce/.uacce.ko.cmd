@@ -1,0 +1,1 @@
+cmd_/home/taishan/hisi_acc/KAEdriver/kae_driver/uacce/uacce.ko := ld -EL -r  -maarch64linux -T ./scripts/module-common.lds -T ./arch/arm64/kernel/module.lds --build-id  -o /home/taishan/hisi_acc/KAEdriver/kae_driver/uacce/uacce.ko /home/taishan/hisi_acc/KAEdriver/kae_driver/uacce/uacce.o /home/taishan/hisi_acc/KAEdriver/kae_driver/uacce/uacce.mod.o ;  true

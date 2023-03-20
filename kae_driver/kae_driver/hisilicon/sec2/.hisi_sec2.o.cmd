@@ -1,0 +1,1 @@
+cmd_/home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/sec2/hisi_sec2.o := ld -EL  -maarch64linux   -r -o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/sec2/hisi_sec2.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/sec2/sec_main.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/sec2/sec_crypto.o 
