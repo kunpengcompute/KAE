@@ -1,0 +1,479 @@
+diff -Naru zlib-1.2.11/compress.c ./zlib-1.2.11_new/compress.c
+--- zlib-1.2.11/compress.c	2017-01-01 15:37:10.000000000 +0800
++++ ./zlib-1.2.11_new/compress.c	2020-09-17 11:38:29.404655410 +0800
+@@ -81,6 +81,10 @@
+ uLong ZEXPORT compressBound (sourceLen)
+     uLong sourceLen;
+ {
++#ifdef CONF_KAEZIP
++    return sourceLen + (sourceLen >> 3) + 13;
++#else
+     return sourceLen + (sourceLen >> 12) + (sourceLen >> 14) +
+-           (sourceLen >> 25) + 13;
++        (sourceLen >> 25) + 13;
++#endif
+ }
+diff -Naru zlib-1.2.11/deflate.c ./zlib-1.2.11_new/deflate.c
+--- zlib-1.2.11/deflate.c	2017-01-16 01:29:40.000000000 +0800
++++ ./zlib-1.2.11_new/deflate.c	2020-09-17 11:41:29.454655410 +0800
+@@ -50,6 +50,7 @@
+ /* @(#) $Id$ */
+ 
+ #include "deflate.h"
++#include "kaezip.h"
+ 
+ const char deflate_copyright[] =
+    " deflate 1.2.11 Copyright 1995-2017 Jean-loup Gailly and Mark Adler ";
+@@ -236,8 +237,9 @@
+     /* To do: ignore strm->next_in if we use it as window */
+ }
+ 
++
+ /* ========================================================================= */
+-int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
++int ZEXPORT lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
+                   version, stream_size)
+     z_streamp strm;
+     int  level;
+@@ -344,7 +346,29 @@
+     s->strategy = strategy;
+     s->method = (Byte)method;
+ 
+-    return deflateReset(strm);
++    return lz_deflateReset(strm);
++}
++	
++int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
++                  version, stream_size)
++    z_streamp strm;
++    int  level;
++    int  method;
++    int  windowBits;
++    int  memLevel;
++    int  strategy;
++    const char *version;
++    int stream_size;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        return kz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
++                    version, stream_size);
++    }
++#endif
++
++    return lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
++                version, stream_size);
+ }
+ 
+ /* =========================================================================
+@@ -502,7 +526,7 @@
+ }
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflateReset (strm)
++int ZEXPORT lz_deflateReset (strm)
+     z_streamp strm;
+ {
+     int ret;
+@@ -513,6 +537,18 @@
+     return ret;
+ }
+ 
++int ZEXPORT deflateReset(strm)
++z_streamp strm;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        return kz_deflateReset(strm);       
++    }
++#endif
++
++    return lz_deflateReset(strm);
++}
++
+ /* ========================================================================= */
+ int ZEXPORT deflateSetHeader (strm, head)
+     z_streamp strm;
+@@ -653,6 +689,17 @@
+     z_streamp strm;
+     uLong sourceLen;
+ {
++#ifdef CONF_KAEZIP
++    return sourceLen + (sourceLen >> 3) + 13;
++#else
++    return lz_deflateBound(strm, sourceLen);
++#endif
++}
++
++uLong ZEXPORT lz_deflateBound(strm, sourceLen)
++    z_streamp strm;
++    uLong sourceLen;
++{
+     deflate_state *s;
+     uLong complen, wraplen;
+ 
+@@ -760,7 +807,8 @@
+     } while (0)
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflate (strm, flush)
++
++int ZEXPORT lz_deflate (strm, flush)
+     z_streamp strm;
+     int flush;
+ {
+@@ -1072,10 +1120,30 @@
+     return s->pending != 0 ? Z_OK : Z_STREAM_END;
+ }
+ 
++int ZEXPORT deflate(strm, flush)
++z_streamp strm;
++int flush;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        unsigned long kaezip_ctx = getDeflateKaezipCtx(strm);
++        if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
++            return kz_deflate(strm, flush);
++        } else {
++            return lz_deflate(strm, flush);
++        }
++    } 
++#endif
++
++    return lz_deflate(strm, flush);
++}
++
+ /* ========================================================================= */
+-int ZEXPORT deflateEnd (strm)
++
++int ZEXPORT lz_deflateEnd (strm)
+     z_streamp strm;
+ {
++
+     int status;
+ 
+     if (deflateStateCheck(strm)) return Z_STREAM_ERROR;
+@@ -1091,9 +1159,22 @@
+     ZFREE(strm, strm->state);
+     strm->state = Z_NULL;
+ 
++
+     return status == BUSY_STATE ? Z_DATA_ERROR : Z_OK;
+ }
+ 
++int ZEXPORT deflateEnd (strm)
++    z_streamp strm;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        return kz_deflateEnd(strm);
++    }
++#endif
++
++    return lz_deflateEnd(strm);
++}
++
+ /* =========================================================================
+  * Copy the source state to the destination state.
+  * To simplify the source, this is not supported for 16-bit MSDOS (which
+@@ -2161,3 +2242,36 @@
+         FLUSH_BLOCK(s, 0);
+     return block_done;
+ }
++    
++unsigned long getDeflateKaezipCtx(z_streamp strm)
++{
++    deflate_state *state;
++  
++    if (strm == Z_NULL) {
++        return (unsigned long)0;
++    }
++    state = (deflate_state *)strm->state;
++    if (state == Z_NULL) {
++        return (unsigned long)0;
++    }
++    state = (deflate_state *)strm->state;
++
++    return state->kaezip_ctx;
++}
++
++void setDeflateKaezipCtx(z_streamp strm, unsigned long kaezip_ctx)
++{
++    deflate_state *state;
++ 
++    if (strm == Z_NULL) {
++        return;
++    }
++    state = (deflate_state *)strm->state;
++    if (state == Z_NULL) {
++        return;
++    }
++
++    state->kaezip_ctx = kaezip_ctx;
++    return;
++}
++
+diff -Naru zlib-1.2.11/deflate.h ./zlib-1.2.11_new/deflate.h
+--- zlib-1.2.11/deflate.h	2017-01-01 15:37:10.000000000 +0800
++++ ./zlib-1.2.11_new/deflate.h	2020-09-17 11:41:29.494655410 +0800
+@@ -272,7 +272,7 @@
+      * longest match routines access bytes past the input.  This is then
+      * updated to the new high water mark.
+      */
+-
++    ulg kaezip_ctx; /* kunpeng kaezip context */    
+ } FAR deflate_state;
+ 
+ /* Output a byte on the stream.
+diff -Naru zlib-1.2.11/inflate.c ./zlib-1.2.11_new/inflate.c
+--- zlib-1.2.11/inflate.c	2017-01-01 15:37:10.000000000 +0800
++++ ./zlib-1.2.11_new/inflate.c	2020-09-17 11:41:29.434655410 +0800
+@@ -84,6 +84,7 @@
+ #include "inftrees.h"
+ #include "inflate.h"
+ #include "inffast.h"
++#include "kaezip.h"
+ 
+ #ifdef MAKEFIXED
+ #  ifndef BUILDFIXED
+@@ -141,7 +142,7 @@
+     return Z_OK;
+ }
+ 
+-int ZEXPORT inflateReset(strm)
++int ZEXPORT lz_inflateReset(strm)
+ z_streamp strm;
+ {
+     struct inflate_state FAR *state;
+@@ -154,6 +155,18 @@
+     return inflateResetKeep(strm);
+ }
+ 
++int ZEXPORT inflateReset(strm)
++z_streamp strm;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        return kz_inflateReset(strm);       
++    }
++#endif
++
++    return lz_inflateReset(strm);
++}
++
+ int ZEXPORT inflateReset2(strm, windowBits)
+ z_streamp strm;
+ int windowBits;
+@@ -189,10 +202,10 @@
+     /* update state and reset the rest of it */
+     state->wrap = wrap;
+     state->wbits = (unsigned)windowBits;
+-    return inflateReset(strm);
++    return lz_inflateReset(strm);
+ }
+ 
+-int ZEXPORT inflateInit2_(strm, windowBits, version, stream_size)
++int ZEXPORT lz_inflateInit2_(strm, windowBits, version, stream_size)
+ z_streamp strm;
+ int windowBits;
+ const char *version;
+@@ -236,6 +249,21 @@
+     return ret;
+ }
+ 
++int ZEXPORT inflateInit2_(strm, windowBits, version, stream_size)
++z_streamp strm;
++int windowBits;
++const char *version;
++int stream_size;
++{ 
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) {
++        return kz_inflateInit2_(strm, windowBits, version, stream_size);
++    } 
++#endif
++
++    return lz_inflateInit2_(strm, windowBits, version, stream_size);
++}
++
+ int ZEXPORT inflateInit_(strm, version, stream_size)
+ z_streamp strm;
+ const char *version;
+@@ -619,7 +647,8 @@
+    will return Z_BUF_ERROR if it has not reached the end of the stream.
+  */
+ 
+-int ZEXPORT inflate(strm, flush)
++
++int ZEXPORT lz_inflate(strm, flush)
+ z_streamp strm;
+ int flush;
+ {
+@@ -1273,8 +1302,30 @@
+         ret = Z_BUF_ERROR;
+     return ret;
+ }
++int ZEXPORT inflate(strm, flush)
++z_streamp strm;
++int flush;
++{
++#ifdef CONF_KAEZIP
++    int alg_type;
++    unsigned long kaezip_ctx;
++    if (kz_get_devices()) {
++        alg_type = kz_getAutoInflateAlgType(strm);
++        (void)kz_do_inflateInit(strm, alg_type);
++        kaezip_ctx = getInflateKaezipCtx(strm);
++        if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH 
++            && flush != Z_TREES) {
++            return kz_inflate(strm, flush);
++        } else {
++            return lz_inflate(strm, flush);
++        }
++    }
++#endif
+ 
+-int ZEXPORT inflateEnd(strm)
++    return lz_inflate(strm, flush);
++}
++
++int ZEXPORT lz_inflateEnd(strm)
+ z_streamp strm;
+ {
+     struct inflate_state FAR *state;
+@@ -1285,9 +1336,22 @@
+     ZFREE(strm, strm->state);
+     strm->state = Z_NULL;
+     Tracev((stderr, "inflate: end\n"));
++
+     return Z_OK;
+ }
+ 
++int ZEXPORT inflateEnd(strm)
++z_streamp strm;
++{
++#ifdef CONF_KAEZIP
++    if (kz_get_devices()) { 
++        return kz_inflateEnd(strm);
++    }    
++#endif
++
++    return lz_inflateEnd(strm);
++}
++
+ int ZEXPORT inflateGetDictionary(strm, dictionary, dictLength)
+ z_streamp strm;
+ Bytef *dictionary;
+@@ -1397,6 +1461,7 @@
+     return next;
+ }
+ 
++
+ int ZEXPORT inflateSync(strm)
+ z_streamp strm;
+ {
+@@ -1434,7 +1499,7 @@
+     /* return no joy or set up to restart inflate() on a new block */
+     if (state->have != 4) return Z_DATA_ERROR;
+     in = strm->total_in;  out = strm->total_out;
+-    inflateReset(strm);
++    lz_inflateReset(strm);
+     strm->total_in = in;  strm->total_out = out;
+     state->mode = TYPE;
+     return Z_OK;
+@@ -1559,3 +1624,53 @@
+     state = (struct inflate_state FAR *)strm->state;
+     return (unsigned long)(state->next - state->codes);
+ }
++
++int getInflateStateWrap(z_streamp strm)
++{
++    struct inflate_state FAR *state;
++    
++    if (strm == Z_NULL) {
++        return 0;
++    }
++    state = (struct inflate_state FAR *)strm->state;
++
++    if (state == Z_NULL) {
++        return 0;
++    }
++
++    return state->wrap;
++}
++
++unsigned long getInflateKaezipCtx(z_streamp strm)
++{
++    struct inflate_state FAR *state;
++    
++    if (strm == Z_NULL) {
++        return (unsigned long)0;
++    }
++    
++    state = (struct inflate_state FAR *)strm->state;
++    if (state == Z_NULL) {
++        return (unsigned long)0;
++    }
++
++    return state->kaezip_ctx;
++}
++
++void setInflateKaezipCtx(z_streamp strm, unsigned long kaezip_ctx)
++{
++    struct inflate_state FAR *state;
++    
++    if (strm == Z_NULL) {
++        return;
++    }
++    state = (struct inflate_state FAR *)strm->state;
++
++    if (state == Z_NULL) {
++        return;
++    }
++
++    state->kaezip_ctx = kaezip_ctx;
++    return;
++}
++
+diff -Naru zlib-1.2.11/inflate.h ./zlib-1.2.11_new/inflate.h
+--- zlib-1.2.11/inflate.h	2017-01-01 15:37:10.000000000 +0800
++++ ./zlib-1.2.11_new/inflate.h	2020-09-17 11:41:29.474655410 +0800
+@@ -122,4 +122,5 @@
+     int sane;                   /* if false, allow invalid distance too far */
+     int back;                   /* bits back of last unprocessed length/lit */
+     unsigned was;               /* initial length of match */
++    unsigned long kaezip_ctx;   /* kunpeng kaezip context */
+ };
+diff -Naru zlib-1.2.11/Makefile.in ./zlib-1.2.11_new/Makefile.in
+--- zlib-1.2.11/Makefile.in	2017-01-16 01:29:40.000000000 +0800
++++ ./zlib-1.2.11_new/Makefile.in	2020-09-17 11:38:29.414655410 +0800
+@@ -26,7 +26,15 @@
+ 
+ SFLAGS=-O
+ LDFLAGS=
++
++KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I. -DCONF_KAEZIP
++KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -Wl,-rpath,/usr/local/kaezip/lib:/usr/local/lib -lkaezip -lwd
++CFLAGS+=$(KAEZIP_CFLAGS)
++SFLAGS+=$(KAEZIP_CFLAGS)
++LDFLAGS+=$(KAEZIP_LDFLAGS)
+ TEST_LDFLAGS=-L. libz.a
++
++TEST_LDFLAGS+=$(KAEZIP_LDFLAGS)
+ LDSHARED=$(CC)
+ CPP=$(CC) -E
+ 
+@@ -292,10 +300,10 @@
+ 	$(CC) $(CFLAGS) -o $@ minigzip.o $(TEST_LDFLAGS)
+ 
+ examplesh$(EXE): example.o $(SHAREDLIBV)
+-	$(CC) $(CFLAGS) -o $@ example.o -L. $(SHAREDLIBV)
++	$(CC) $(CFLAGS) -o $@ example.o -L. $(SHAREDLIBV) $(KAEZIP_LDFLAGS)
+ 
+ minigzipsh$(EXE): minigzip.o $(SHAREDLIBV)
+-	$(CC) $(CFLAGS) -o $@ minigzip.o -L. $(SHAREDLIBV)
++	$(CC) $(CFLAGS) -o $@ minigzip.o -L. $(SHAREDLIBV) $(KAEZIP_LDFLAGS)
+ 
+ example64$(EXE): example64.o $(STATICLIB)
+ 	$(CC) $(CFLAGS) -o $@ example64.o $(TEST_LDFLAGS)
