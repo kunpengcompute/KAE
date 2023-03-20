@@ -114,7 +114,7 @@ Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/m
 
 For further assistance and more QAs, contact Huawei Support at:
 
-<https://www.huaweicloud.com/kunpeng/software/kaezip.html> 
+<https://www.hikunpeng.com/developer/boostkit/library/compression> 
 
 ## Copyright
 

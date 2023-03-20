@@ -79,7 +79,7 @@ make install
 Check whether the accelerator driver has been loaded successfully by running the `ls -al /usr/local/lib` command. `libwd.so` should be in the list. 
 
 For more information about the installation guide and the user guide, visit:
-<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
+<https://www.hikunpeng.com/developer/boostkit/library/encryption-decryption>
 
 ## Contribution Guidelines
 
@@ -100,7 +100,7 @@ For further assistance, contact Huawei Support at:
 
 <https://support.huawei.com>
 
-<https://www.huaweicloud.com/kunpeng/software/accelerator.html>
+<https://www.hikunpeng.com/developer/boostkit/library/encryption-decryption>
 
 ## Copyright
 

@@ -1,1 +1,0 @@
-cmd_/home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hpre/hisi_hpre.o := ld -EL  -maarch64linux   -r -o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hpre/hisi_hpre.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hpre/hpre_main.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hpre/hpre_crypto.o 

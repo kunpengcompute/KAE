@@ -1,1 +1,0 @@
-cmd_/home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.ko := ld -EL -r  -maarch64linux -T ./scripts/module-common.lds -T ./arch/arm64/kernel/module.lds --build-id  -o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.ko /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.o /home/taishan/hisi_acc/KAEdriver/kae_driver/hisilicon/hisi_qm.mod.o ;  true
