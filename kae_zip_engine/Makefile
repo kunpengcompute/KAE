@@ -28,6 +28,9 @@ endif
 # Src
 SRCDIRS   := ${WORK_PATH}/
 SRCDIRS   += ${WORK_PATH}/src
+SRCDIRS   += ${WORK_PATH}/src/utils
+SRCDIRS   += ${WORK_PATH}/src/v1
+SRCDIRS   += ${WORK_PATH}/src/v2
 
 SRCEXTS   := .c # C program
 
@@ -35,16 +38,18 @@ SRCEXTS   := .c # C program
 INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
-#INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.7
 INCDIR += -I /usr/local/include/uadk/
-#INCDIR += -I /usr/include/warpdrive/
+INCDIR += -I ${WORK_PATH}/../uadk
+INCDIR += -I ${WORK_PATH}/src/utils
+INCDIR += -I ${WORK_PATH}/src/v1
+INCDIR += -I ${WORK_PATH}/src/v2
 
 # Include Libs.
-LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64
+LIBDIR += -L/usr/local/lib
 LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.11
 #LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.7
-LIBS := -lz -lwd -pthread
+LIBS := -lz -lwd -lwd_comp -pthread
 LIBS += -lc_nonshared
 
 # The flags

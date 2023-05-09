@@ -23,10 +23,10 @@
 #ifndef KAEZIP_INFLATE_H
 #define KAEZIP_INFLATE_H
 
-extern int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size);
-extern int kz_inflate(z_streamp strm, int flush);
-extern int kz_inflateEnd(z_streamp strm);
-extern int kz_inflateReset(z_streamp strm);
+extern int kz_inflateInit2_v1(z_streamp strm, int windowBits, const char *version, int stream_size);
+extern int kz_inflate_v1(z_streamp strm, int flush);
+extern int kz_inflateEnd_v1(z_streamp strm);
+extern int kz_inflateReset_v1(z_streamp strm);
 extern int kz_do_inflateInit(z_streamp strm, int alg_comp_type);
 
 extern int lz_inflateEnd(z_streamp strm);

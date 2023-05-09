@@ -47,7 +47,7 @@
 static int  kaezip_do_deflate(z_streamp strm, int flush);
 static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type);
 
-int kz_deflateInit2_(z_streamp strm, int level,
+int kz_deflateInit2_v1(z_streamp strm, int level,
                       int method, int windowBits,
                       int memLevel, int strategy,
                       const char *version,
@@ -101,7 +101,7 @@ static int kz_deflate_check_strm_avail(z_streamp strm, int flush)
     return 1;
 }
 
-int kz_deflate(z_streamp strm, int flush)
+int kz_deflate_v1(z_streamp strm, int flush)
 {
     int ret = -1;
     KAEZIP_RETURN_FAIL_IF(strm == NULL, "strm is NULL.", Z_ERRNO);
@@ -146,7 +146,7 @@ int kz_deflate(z_streamp strm, int flush)
     }
 }
 
-int kz_deflateEnd(z_streamp strm)
+int kz_deflateEnd_v1(z_streamp strm)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {
@@ -158,7 +158,7 @@ int kz_deflateEnd(z_streamp strm)
     return lz_deflateEnd(strm);
 }
 
-int ZEXPORT kz_deflateReset(z_streamp strm)
+int ZEXPORT kz_deflateReset_v1(z_streamp strm)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {

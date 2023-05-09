@@ -46,7 +46,7 @@
 static int kaezip_check_strm_truely_end(z_streamp strm);
 static int kaezip_do_inflate(z_streamp strm, int flush);
 
-int ZEXPORT kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size)
+int ZEXPORT kz_inflateInit2_v1(z_streamp strm, int windowBits, const char *version, int stream_size)
 {
     static const int GZIP_INFLATE_MAX_AUTO_WBITS    = 47;
     static const int GZIP_INFLATE_MIN_AUTO_WBITS    = 32;
@@ -87,7 +87,7 @@ static int kaezip_check_strm_truely_end(z_streamp strm)
     return KAEZIP_SUCCESS;
 }
 
-int ZEXPORT kz_inflate(z_streamp strm, int flush)
+int ZEXPORT kz_inflate_v1(z_streamp strm, int flush)
 {
     int ret = -1;
     KAEZIP_RETURN_FAIL_IF(strm == NULL, "strm is NULL.", Z_ERRNO);
@@ -125,7 +125,7 @@ int ZEXPORT kz_inflate(z_streamp strm, int flush)
     }
 }
 
-int kz_inflateEnd(z_streamp strm)
+int kz_inflateEnd_v1(z_streamp strm)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getInflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {
@@ -137,7 +137,7 @@ int kz_inflateEnd(z_streamp strm)
     return lz_inflateEnd(strm);
 }
 
-int ZEXPORT kz_inflateReset(z_streamp strm)
+int ZEXPORT kz_inflateReset_v1(z_streamp strm)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getInflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {
