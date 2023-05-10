@@ -7,6 +7,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/idr.h>
 #include <linux/io.h>
+#include <linux/iommu.h>
 #include <linux/irqreturn.h>
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
@@ -3469,6 +3470,15 @@ static int qm_alloc_uacce(struct hisi_qm *qm)
 	if (ret < 0)
 		return -ENAMETOOLONG;
 
+	if (qm->mode == UACCE_MODE_SVA) {
+		if (!qm->use_iommu) {
+			pci_err(pdev, "iommu not support sva!\n");
+			return -EINVAL;
+		}
+
+		interface.flags |= UACCE_DEV_SVA;
+	}
+
 	uacce = uacce_alloc(&pdev->dev, &interface);
 	if (IS_ERR(uacce))
 		return PTR_ERR(uacce);
@@ -3645,6 +3655,18 @@ err_free_qp_finish_id:
 	return ret;
 }
 
+static inline bool is_iommu_used(struct device *dev)
+{
+	struct iommu_domain *domain;
+
+	domain = iommu_get_domain_for_dev(dev);
+	if (domain) {
+		dev_info(dev, "iommu domain type = %u\n", domain->type);
+		return domain->type & __IOMMU_DOMAIN_PAGING;
+	}
+
+	return false;
+}
 static void hisi_qm_pre_init(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -3661,6 +3683,7 @@ static void hisi_qm_pre_init(struct hisi_qm *qm)
 	init_rwsem(&qm->qps_lock);
 	qm->qp_in_used = 0;
 	qm->misc_ctl = false;
+	qm->use_iommu = is_iommu_used(&pdev->dev);
 	if (test_bit(QM_SUPPORT_RPM, &qm->caps)) {
 		if (!acpi_device_power_manageable(ACPI_COMPANION(&pdev->dev)))
 			dev_info(&pdev->dev, "_PS0 and _PR0 are not defined");

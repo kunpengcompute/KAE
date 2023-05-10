@@ -334,6 +334,7 @@ struct hisi_qm {
 	const char *algs;
 	bool use_sva;
 	bool is_frozen;
+	bool use_iommu;
 
 	resource_size_t phys_base;
 	resource_size_t db_phys_base;
