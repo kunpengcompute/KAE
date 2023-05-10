@@ -14,8 +14,8 @@ static int wd_zlib_do_request_v2(z_streamp strm, int flush, enum wd_comp_op_type
 {
 	handle_t h_sess = strm->reserved;
 	struct wd_comp_req req = {0};
-	int src_len = strm->avail_in;
-	int dst_len = strm->avail_out;
+	unsigned long src_len = strm->avail_in;
+	unsigned long dst_len = strm->avail_out;
 	int ret;
 
 	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_NO_FLUSH && flush != Z_FINISH)) {
@@ -23,9 +23,9 @@ static int wd_zlib_do_request_v2(z_streamp strm, int flush, enum wd_comp_op_type
 		return Z_STREAM_ERROR;
 	}
 
-	req.src = (void *)strm->next_in;
+	req.src = (void *)(strm->next_in + strm->total_in);
 	req.src_len = strm->avail_in;
-	req.dst = (void *)strm->next_out;
+	req.dst = (void *)(strm->next_out + strm->total_out);
 	req.dst_len = strm->avail_out;
 	req.op_type = type;
 	req.data_fmt = WD_FLAT_BUF;
@@ -42,8 +42,9 @@ static int wd_zlib_do_request_v2(z_streamp strm, int flush, enum wd_comp_op_type
 	strm->total_in += req.src_len;
 	strm->total_out += req.dst_len;
 
-	if (flush == Z_FINISH && req.src_len == src_len)
+	if (flush == Z_FINISH && req.src_len == src_len) {
 		ret = Z_STREAM_END;
+	}
 
 	return ret;
 }
