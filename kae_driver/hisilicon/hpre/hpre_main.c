@@ -11,7 +11,6 @@
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
 #include <linux/topology.h>
-#include "../../include_linux/uacce.h"
 #include "hpre.h"
 
 #define HPRE_QM_ABNML_INT_MASK		0x100004
@@ -1394,18 +1393,17 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		dev_warn(&pdev->dev, "init debugfs fail!\n");
 
+
 	ret = hisi_qm_alg_register(qm, &hpre_devices);
 	if (ret < 0) {
 		pci_err(pdev, "fail to register algs to crypto!\n");
 		goto err_with_qm_start;
 	}
 
-	if (qm->uacce) {
-		ret = uacce_register(qm->uacce);
-		if (ret) {
-			pci_err(pdev, "failed to register uacce (%d)!\n", ret);
-			goto err_with_alg_register;
-		}
+	ret = qm_register_uacce(qm);
+	if (ret) {
+		pci_err(pdev, "Failed to register uacce (%d)!\n", ret);
+		goto err_with_alg_register;
 	}
 
 	if (qm->fun_type == QM_HW_PF && vfs_num) {
