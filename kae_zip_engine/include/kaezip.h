@@ -37,11 +37,13 @@ extern int kz_deflateReset(z_streamp strm);
 extern int kz_getAutoInflateAlgType(z_streamp strm);
 extern int kz_do_inflateInit(z_streamp strm, int alg_comp_type);
 
+extern int lz_deflate(z_streamp strm, int flush);
 extern int lz_deflateEnd(z_streamp strm);
 extern int lz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int memLevel, int strategy,
                       const char *version, int stream_size);
 extern int lz_deflateReset(z_streamp strm);
 
+extern int lz_inflate(z_streamp strm, int flush);
 extern int lz_inflateEnd(z_streamp strm);
 extern int lz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size);
 extern int lz_inflateReset(z_streamp strm);

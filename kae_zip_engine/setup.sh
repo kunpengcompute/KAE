@@ -30,8 +30,8 @@ function Target_zlib()
     rm -rf zlib-1.2.11
     tar -zxvf zlib-1.2.11.tar.gz
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
-    #./configure
-    #make
+    ./configure
+    make
 }
 
 function Build_kaezip()
