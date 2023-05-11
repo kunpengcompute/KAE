@@ -24,8 +24,8 @@
 #include <openssl/evp.h>
 #include <uadk/wd_ecc.h>
 #include <uadk/wd_sched.h>
-#include "uadk_pkey.h"
-#include "uadk.h"
+#include "v2/alg/pkey/uadk_pkey.h"
+#include "v2/uadk.h"
 
 #define X25519_KEYLEN		32
 #define X448_KEYLEN		56

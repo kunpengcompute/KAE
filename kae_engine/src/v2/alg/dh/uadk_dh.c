@@ -24,8 +24,8 @@
 #include <string.h>
 #include <uadk/wd_dh.h>
 #include <uadk/wd_sched.h>
-#include "uadk.h"
-#include "uadk_async.h"
+#include "v2/uadk.h"
+#include "v2/async/uadk_async.h"
 
 #define DH768BITS		768
 #define DH1024BITS		1024

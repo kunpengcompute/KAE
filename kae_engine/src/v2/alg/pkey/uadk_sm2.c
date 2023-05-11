@@ -23,8 +23,8 @@
 #include <openssl/err.h>
 #include <uadk/wd_ecc.h>
 #include <uadk/wd_sched.h>
-#include "uadk.h"
-#include "uadk_pkey.h"
+#include "v2/uadk.h"
+#include "v2/alg/pkey/uadk_pkey.h"
 
 enum {
 	CTX_INIT_FAIL = -1,

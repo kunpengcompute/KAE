@@ -23,8 +23,8 @@
 #include <openssl/engine.h>
 #include <uadk/wd_cipher.h>
 #include <uadk/wd_sched.h>
-#include "uadk.h"
-#include "uadk_async.h"
+#include "v2/uadk.h"
+#include "v2/async/uadk_async.h"
 
 #define UADK_DO_SOFT         (-0xE0)
 #define CTX_SYNC_ENC		0

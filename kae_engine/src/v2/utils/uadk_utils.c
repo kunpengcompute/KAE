@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  */
-#include "uadk_utils.h"
+#include "v2/utils/uadk_utils.h"
 
 #if defined(__AARCH64_CMODEL_SMALL__) && __AARCH64_CMODEL_SMALL__
 
