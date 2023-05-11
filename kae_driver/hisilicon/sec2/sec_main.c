@@ -14,7 +14,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
 #include <linux/topology.h>
-#include <linux/uacce.h>
 
 #include "sec.h"
 
@@ -404,13 +403,9 @@ static const struct kernel_param_ops sec_uacce_mode_ops = {
 	.get = param_get_int,
 };
 
-/*
- * uacce_mode = 0 means sec only register to crypto,
- * uacce_mode = 1 means sec both register to crypto and uacce.
- */
 static u32 uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &sec_uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, UACCE_MODE_DESC);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 
 static const struct pci_device_id sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_SEC_PF) },
@@ -1180,23 +1175,6 @@ static void sec_probe_uninit(struct hisi_qm *qm)
 	hisi_qm_dev_err_uninit(qm);
 }
 
-static void sec_iommu_used_check(struct sec_dev *sec)
-{
-	struct iommu_domain *domain;
-	struct device *dev = &sec->qm.pdev->dev;
-
-	domain = iommu_get_domain_for_dev(dev);
-
-	/* Check if iommu is used */
-	sec->iommu_used = false;
-	if (domain) {
-		if (domain->type & __IOMMU_DOMAIN_PAGING)
-			sec->iommu_used = true;
-		dev_info(dev, "SMMU Opened, the iommu type = %u\n",
-			domain->type);
-	}
-}
-
 static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct sec_dev *sec;
@@ -1215,7 +1193,6 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	sec->ctx_q_num = ctx_q_num;
-	sec_iommu_used_check(sec);
 
 	ret = sec_probe_init(sec);
 	if (ret) {
@@ -1244,12 +1221,10 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 			"Failed to use kernel mode, qp not enough!\n");
 	}
 
-	if (qm->uacce) {
-		ret = uacce_register(qm->uacce);
-		if (ret) {
-			pci_err(pdev, "failed to register uacce (%d)!\n", ret);
-			goto err_alg_unregister;
-		}
+	ret = qm_register_uacce(qm);
+	if (ret) {
+		pci_err(pdev, "Failed to register uacce (%d)!\n", ret);
+		goto err_alg_unregister;
 	}
 
 	if (qm->fun_type == QM_HW_PF && vfs_num) {
