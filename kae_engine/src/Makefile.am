@@ -3,8 +3,8 @@ ACLOCAL_AMFLAGS = -I m4
 
 lib_LTLIBRARIES=kae.la
 
-kae_la_SOURCES=uadk_utils.c e_uadk.c uadk_cipher.c uadk_digest.c uadk_async.c \
-		uadk_rsa.c uadk_sm2.c uadk_pkey.c uadk_dh.c uadk_ec.c uadk_ecx.c \
+kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
+		v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c \
 		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
 kae_la_LIBADD=-ldl $(WD_LIBS) -lpthread
 kae_la_LDFLAGS=-module -version-number $(VERSION)
