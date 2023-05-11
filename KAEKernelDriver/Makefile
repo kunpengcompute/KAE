@@ -12,7 +12,7 @@ DIRS := $(shell find . -maxdepth 3 -type d)
 TARGET = $(foreach dir,$(DIRS),$(wildcard \
 	$(dir)/*.o) $(dir)/*.ko $(dir)/*.tmp_versions $(dir)/*.depend $(dir)/*.mod.c $(dir)/*.order $(dir)/*.symvers)
 
-defaul: 
+default: 
 	$(MAKE) -C $(KERNEL_PATH) M=$(shell pwd) modules \
 		CONFIG_CC_STACKPROTECTOR_STRONG=y \
 		CONFIG_UACCE=m \
@@ -46,7 +46,6 @@ uninstall:
 	modprobe -r hisi_zip
 	modprobe -r hisi_hpre
 	modprobe -r hisi_sec2
-	modprobe -r hisi_trng_v2
 	modprobe -r hisi_qm
 	modprobe -r uacce
 	rm -rf /lib/modules/`uname -r`/extra/uacce.ko
@@ -58,6 +57,20 @@ uninstall:
 	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
 	depmod -a
-
+nosva:
+	$(shell mkdir -p /lib/modules/`uname -r`/extra)
+	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/`uname -r`/extra \;)
+	depmod -a
+	$(shell if test -e /etc/modprobe.d/10-unsupported-modules.conf; then \
+			sed -i "s/^allow_unsupported_modules.*/allow_unsupported_modules 1/" /etc/modprobe.d/10-unsupported-modules.conf; \
+	fi)
+	-modprobe uacce
+	-modprobe hisi_qm
+	-modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
+	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
+	-modprobe hisi_zip  uacce_mode=2 pf_q_num=256
+	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
+	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
+	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 clean:
 	rm -rf $(TARGET) 
