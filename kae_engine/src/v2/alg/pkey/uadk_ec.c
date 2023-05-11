@@ -24,8 +24,8 @@
 #include <openssl/ec.h>
 #include <uadk/wd_ecc.h>
 #include <uadk/wd_sched.h>
-#include "uadk_pkey.h"
-#include "uadk.h"
+#include "v2/alg/pkey/uadk_pkey.h"
+#include "v2/uadk.h"
 
 #define ECC128BITS	128
 #define ECC192BITS	192

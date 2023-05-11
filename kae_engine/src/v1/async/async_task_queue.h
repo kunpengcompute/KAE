@@ -21,7 +21,7 @@
 #include <pthread.h>
 #include "async_callback.h"
 #include <uadk/v1/wd.h>
-#include "../../uadk_async.h"
+#include "../../v2/async/uadk_async.h"
 
 #include <semaphore.h>
 

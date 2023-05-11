@@ -26,9 +26,9 @@
 #include <uadk/wd_cipher.h>
 #include <uadk/wd_digest.h>
 #include <uadk/wd_sched.h>
-#include "uadk.h"
-#include "uadk_async.h"
-#include "uadk_utils.h"
+#include "v2/uadk.h"
+#include "v2/async/uadk_async.h"
+#include "v2/utils/uadk_utils.h"
 
 #define UADK_DO_SOFT	(-0xE0)
 #define CTX_SYNC	0

@@ -22,8 +22,8 @@
 #include <dlfcn.h>
 #include <openssl/engine.h>
 #include <uadk/wd.h>
-#include "uadk.h"
-#include "uadk_async.h"
+#include "v2/uadk.h"
+#include "v2/async/uadk_async.h"
 #include "utils/engine_log.h"
 #ifdef KAE
 #include "v1/uadk_v1.h"
