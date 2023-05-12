@@ -61,22 +61,17 @@ function build_engine_v1()
 function build_zlib()
 {
         cd ${SRC_PATH}/KAEZlib
-        sh setup.sh install
+        sh setup.sh install KAE2
 }
 function build_zlib_v1()
 {
         cd ${SRC_PATH}/KAEZlib
-        sh setup.sh install KAE2
+        sh setup.sh install
 }
 function zlib_clean()
 {
         cd ${SRC_PATH}/KAEZlib
         sh setup.sh uninstall
-}
-function build_zlib_v1()
-{
-        cd ${SRC_PATH}/KAEZstd
-        sh setup.sh install
 }
 function build_zstd()
 {
@@ -126,10 +121,11 @@ function main()
                         build_driver
                 fi
 	elif [ "$1" = "uadk" ];then
-		build_uadk
                 if [ "$2" = "clean" ];then
                         uadk_clean
-                fi
+                else
+			build_uadk
+		fi
 	elif [ "$1" = "engine" ];then
                 if [ "$2" = "v1" ];then
                         build_engine_v1
