@@ -14,13 +14,13 @@
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
 #include <linux/topology.h>
+#include "../../include_linux/uacce.h"
 
 #include "sec.h"
 
 #define SEC_VF_NUM			63
 #define SEC_QUEUE_NUM_V1		4096
 #define PCI_DEVICE_ID_HUAWEI_SEC_PF	0xa255
-#define PCI_DEVICE_ID_HUAWEI_SEC_VF    0xa256
 
 #define SEC_BD_ERR_CHK_EN0		0xEFFFFFFF
 #define SEC_BD_ERR_CHK_EN1		0x7ffff7fd
@@ -403,9 +403,13 @@ static const struct kernel_param_ops sec_uacce_mode_ops = {
 	.get = param_get_int,
 };
 
+/*
+ * uacce_mode = 0 means sec only register to crypto,
+ * uacce_mode = 1 means sec both register to crypto and uacce.
+ */
 static u32 uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &sec_uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
+MODULE_PARM_DESC(uacce_mode, UACCE_MODE_DESC);
 
 static const struct pci_device_id sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_SEC_PF) },
@@ -422,7 +426,6 @@ static void sec_set_endian(struct hisi_qm *qm)
 	reg &= ~(BIT(1) | BIT(0));
 	if (!IS_ENABLED(CONFIG_64BIT))
 		reg |= BIT(1);
-
 
 	if (!IS_ENABLED(CONFIG_CPU_LITTLE_ENDIAN))
 		reg |= BIT(0);
@@ -895,8 +898,7 @@ static int sec_debugfs_init(struct hisi_qm *qm)
 	qm->debug.sqe_mask_offset = SEC_SQE_MASK_OFFSET;
 	qm->debug.sqe_mask_len = SEC_SQE_MASK_LEN;
 
-	ret = hisi_qm_diff_regs_init(qm, sec_diff_regs,
-				ARRAY_SIZE(sec_diff_regs));
+	ret = hisi_qm_regs_debugfs_init(qm, sec_diff_regs, ARRAY_SIZE(sec_diff_regs));
 	if (ret) {
 		dev_warn(dev, "Failed to init SEC diff regs!\n");
 		goto debugfs_remove;
@@ -911,7 +913,7 @@ static int sec_debugfs_init(struct hisi_qm *qm)
 	return 0;
 
 failed_to_create:
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(sec_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(sec_diff_regs));
 debugfs_remove:
 	debugfs_remove_recursive(sec_debugfs_root);
 	return ret;
@@ -919,7 +921,7 @@ debugfs_remove:
 
 static void sec_debugfs_exit(struct hisi_qm *qm)
 {
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(sec_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(sec_diff_regs));
 
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
@@ -1080,7 +1082,7 @@ static int sec_set_qm_algs(struct hisi_qm *qm)
 	u64 alg_mask;
 	int i;
 
-	if (!qm->use_sva)
+	if (!qm->use_uacce)
 		return 0;
 
 	algs = devm_kzalloc(dev, SEC_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
@@ -1221,10 +1223,12 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 			"Failed to use kernel mode, qp not enough!\n");
 	}
 
-	ret = qm_register_uacce(qm);
-	if (ret) {
-		pci_err(pdev, "Failed to register uacce (%d)!\n", ret);
-		goto err_alg_unregister;
+	if (qm->uacce) {
+		ret = uacce_register(qm->uacce);
+		if (ret) {
+			pci_err(pdev, "failed to register uacce (%d)!\n", ret);
+			goto err_alg_unregister;
+		}
 	}
 
 	if (qm->fun_type == QM_HW_PF && vfs_num) {
