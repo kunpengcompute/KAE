@@ -799,48 +799,38 @@ static ssize_t isolate_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	if (!uacce->isolate)
-		return -EINVAL;
-
-	return sysfs_emit(buf, "%d\n", atomic_read(&uacce->isolate->is_isolate));
+	return sysfs_emit(buf, "%d\n", uacce->ops->get_isolate_state(uacce));
 }
 
-static ssize_t isolate_strategy_show(struct device *dev,
-				     struct device_attribute *attr, char *buf)
+static ssize_t isolate_strategy_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
+	u32 val;
 
-	if (!uacce->isolate)
-		return -EINVAL;
+	val = uacce->ops->isolate_err_threshold_read(uacce);
 
-	return sysfs_emit(buf, "%u\n", uacce->isolate->hw_err_isolate_hz);
+	return sysfs_emit(buf, "%u\n", val);
 }
 
-static ssize_t isolate_strategy_store(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
+static ssize_t isolate_strategy_store(struct device *dev, struct device_attribute *attr,
+				   const char *buf, size_t count)
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
-	unsigned long val = 0;
-
-#define MAX_ISOLATE_STRATEGY	65535
-
-	/* must be set by PF */
-	if (!uacce->isolate || uacce->is_vf)
-		return -EINVAL;
+	unsigned long val;
+	int ret;
 
 	if (kstrtoul(buf, 0, &val) < 0)
 		return -EINVAL;
 
-	if (val > MAX_ISOLATE_STRATEGY)
+	if (val > UACCE_MAX_ERR_THRESHOLD)
 		return -EINVAL;
 
 	if (atomic_read(&uacce->ref))
 		return -EBUSY;
 
-	uacce->isolate->hw_err_isolate_hz = val;
-	dev_info(uacce->parent,
-		"the value of isolate_strategy is set to %lu.\n", val);
+	ret = uacce->ops->isolate_err_threshold_write(uacce, val);
+	if (ret)
+		return ret;
 
 	return count;
 }
@@ -889,7 +879,7 @@ static DEVICE_ATTR_RO(isolate);
 static DEVICE_ATTR_RW(isolate_strategy);
 static DEVICE_ATTR_RO(dev_state);
 static DEVICE_ATTR_RO(numa_distance);
- 
+
 static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_api.attr,
 	&dev_attr_flags.attr,
@@ -915,6 +905,14 @@ static umode_t uacce_dev_is_visible(struct kobject *kobj,
 	    (!uacce->qf_pg_num[UACCE_QFRT_MMIO])) ||
 	    ((attr == &dev_attr_region_dus_size.attr) &&
 	    (!uacce->qf_pg_num[UACCE_QFRT_DUS])))
+		return 0;
+
+	if (attr == &dev_attr_isolate_strategy.attr &&
+	    (!uacce->ops->isolate_err_threshold_read &&
+	     !uacce->ops->isolate_err_threshold_write))
+		return 0;
+
+	if (attr == &dev_attr_isolate.attr && !uacce->ops->get_isolate_state)
 		return 0;
 
 	return attr->mode;

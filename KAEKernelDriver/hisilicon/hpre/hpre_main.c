@@ -72,7 +72,6 @@
 #define HPRE_REG_RD_TMOUT_US		1000
 #define HPRE_DBGFS_VAL_MAX_LEN		20
 #define PCI_DEVICE_ID_HUAWEI_HPRE_PF	0xa258
-#define PCI_DEVICE_ID_HUAWEI_HPRE_VF   0xa259
 #define HPRE_QM_USR_CFG_MASK		GENMASK(31, 1)
 #define HPRE_QM_AXI_CFG_MASK		GENMASK(15, 0)
 #define HPRE_QM_VFG_AX_MASK		GENMASK(7, 0)
@@ -366,7 +365,7 @@ static int hpre_set_qm_algs(struct hisi_qm *qm)
 	u32 alg_msk;
 	int i;
 
-	if (!qm->use_sva)
+	if (!qm->use_uacce)
 		return 0;
 
 	algs = devm_kzalloc(dev, HPRE_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
@@ -1101,8 +1100,7 @@ static int hpre_debugfs_init(struct hisi_qm *qm)
 
 	qm->debug.sqe_mask_offset = HPRE_SQE_MASK_OFFSET;
 	qm->debug.sqe_mask_len = HPRE_SQE_MASK_LEN;
-	ret = hisi_qm_diff_regs_init(qm, hpre_diff_regs,
-				ARRAY_SIZE(hpre_diff_regs));
+	ret = hisi_qm_regs_debugfs_init(qm, hpre_diff_regs, ARRAY_SIZE(hpre_diff_regs));
 	if (ret) {
 		dev_warn(dev, "Failed to init HPRE diff regs!\n");
 		goto debugfs_remove;
@@ -1121,7 +1119,7 @@ static int hpre_debugfs_init(struct hisi_qm *qm)
 	return 0;
 
 failed_to_create:
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(hpre_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hpre_diff_regs));
 debugfs_remove:
 	debugfs_remove_recursive(qm->debug.debug_root);
 	return ret;
@@ -1129,7 +1127,7 @@ debugfs_remove:
 
 static void hpre_debugfs_exit(struct hisi_qm *qm)
 {
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(hpre_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hpre_diff_regs));
 
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
@@ -1392,7 +1390,6 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = hpre_debugfs_init(qm);
 	if (ret)
 		dev_warn(&pdev->dev, "init debugfs fail!\n");
-
 
 	ret = hisi_qm_alg_register(qm, &hpre_devices);
 	if (ret < 0) {

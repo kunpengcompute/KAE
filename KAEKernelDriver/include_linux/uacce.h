@@ -12,6 +12,7 @@
 #define UACCE_NAME		"uacce"
 #define UACCE_MAX_REGION	3
 #define UACCE_MAX_NAME_SIZE	64
+#define UACCE_MAX_ERR_THRESHOLD	65535
 
 struct uacce_queue;
 struct uacce_device;
@@ -54,6 +55,9 @@ struct uacce_qfile_region {
  * @mask_notify: mask the task irq of queue
  * @mmap: mmap addresses of queue to user space
  * @ioctl: ioctl for user space users of the queue
+ * @get_isolate_state: get the device state after set the isolate strategy
+ * @isolate_err_threshold_write: stored the isolate error threshold to the device
+ * @isolate_err_threshold_read: read the isolate error threshold value from the device
  * @reset: reset the WD device
  * @reset_queue: reset the queue
  */
@@ -70,6 +74,9 @@ struct uacce_ops {
 		    struct uacce_qfile_region *qfr);
 	long (*ioctl)(struct uacce_queue *q, unsigned int cmd,
 		      unsigned long arg);
+	enum uacce_dev_state (*get_isolate_state)(struct uacce_device *uacce);
+	int (*isolate_err_threshold_write)(struct uacce_device *uacce, u32 num);
+	u32 (*isolate_err_threshold_read)(struct uacce_device *uacce);
 	enum uacce_dev_state (*get_dev_state)(struct uacce_device *uacce);
 };
 
@@ -88,6 +95,7 @@ struct uacce_interface {
 enum uacce_dev_state {
 	UACCE_DEV_ERR = -1,
 	UACCE_DEV_NORMAL,
+	UACCE_DEV_ISOLATE,
 };
 
 enum uacce_q_state {
@@ -137,8 +145,8 @@ struct uacce_queue {
  * @dev: dev of the uacce
  * @mutex: protects uacce operation
  * @priv: private pointer of the uacce
- * @ref: reference of the uacce
  * @queues: list of queues
+ * @ref: reference of the uacce
  * @inode: core vfs
  */
 struct uacce_device {

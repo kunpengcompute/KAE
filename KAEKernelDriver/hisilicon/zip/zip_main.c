@@ -12,10 +12,10 @@
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
 #include <linux/topology.h>
+#include "../../include_linux/uacce.h"
 #include "zip.h"
 
 #define PCI_DEVICE_ID_HUAWEI_ZIP_PF	0xa250
-#define PCI_DEVICE_ID_HUAWEI_ZIP_VF    0xa251
 
 #define HZIP_QUEUE_NUM_V1		4096
 
@@ -421,7 +421,7 @@ static int hisi_zip_set_qm_algs(struct hisi_qm *qm)
 	u32 alg_mask;
 	int i;
 
-	if (!qm->use_sva)
+	if (!qm->use_uacce)
 		return 0;
 
 	algs = devm_kzalloc(dev, HZIP_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
@@ -849,8 +849,7 @@ static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 	qm->debug.sqe_mask_offset = HZIP_SQE_MASK_OFFSET;
 	qm->debug.sqe_mask_len = HZIP_SQE_MASK_LEN;
 	qm->debug.debug_root = dev_d;
-	ret = hisi_qm_diff_regs_init(qm, hzip_diff_regs,
-				ARRAY_SIZE(hzip_diff_regs));
+	ret = hisi_qm_regs_debugfs_init(qm, hzip_diff_regs, ARRAY_SIZE(hzip_diff_regs));
 	if (ret) {
 		dev_warn(dev, "Failed to init ZIP diff regs!\n");
 		goto debugfs_remove;
@@ -869,7 +868,7 @@ static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 	return 0;
 
 failed_to_create:
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
 debugfs_remove:
 	debugfs_remove_recursive(hzip_debugfs_root);
 	return ret;
@@ -895,7 +894,7 @@ static void hisi_zip_debug_regs_clear(struct hisi_qm *qm)
 
 static void hisi_zip_debugfs_exit(struct hisi_qm *qm)
 {
-	hisi_qm_diff_regs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
+	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
 
 	debugfs_remove_recursive(qm->debug.debug_root);
 
@@ -1234,10 +1233,12 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_qm_stop;
 	}
 
-	ret = qm_register_uacce(qm);
-	if (ret) {
-		pci_err(pdev, "Failed to register uacce (%d)!\n", ret);
-		goto err_qm_alg_unregister;
+	if (qm->uacce) {
+		ret = uacce_register(qm->uacce);
+		if (ret) {
+			pci_err(pdev, "failed to register uacce (%d)!\n", ret);
+			goto err_qm_alg_unregister;
+		}
 	}
 
 	if (qm->fun_type == QM_HW_PF && vfs_num > 0) {
