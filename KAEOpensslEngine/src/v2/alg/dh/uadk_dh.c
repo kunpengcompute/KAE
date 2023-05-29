@@ -26,6 +26,7 @@
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
 #include "v2/async/uadk_async.h"
+#include "utils/engine_log.h"
 
 #define DH768BITS		768
 #define DH1024BITS		1024
@@ -89,6 +90,7 @@ struct dh_res_config {
 
 static int uadk_e_dh_soft_generate_key(DH *dh)
 {
+	US_DEBUG("uadk_e_dh_soft_generate_key start");
 	const DH_METHOD *uadk_dh_gen_soft = DH_OpenSSL();
 	int (*dh_soft_generate_key)(DH *dh);
 	int ret;
@@ -117,6 +119,7 @@ static int uadk_e_dh_soft_compute_key(unsigned char *key,
 				      const BIGNUM *pub_key,
 				      DH *dh)
 {
+	US_DEBUG("uadk_e_dh_soft_compute_key start");
 	int (*dh_soft_compute_key)(unsigned char *key, const BIGNUM *pub_key,
 				   DH *dh);
 	const DH_METHOD *uadk_dh_comp_soft = DH_OpenSSL();
@@ -206,6 +209,7 @@ static __u32 dh_pick_next_ctx(handle_t sched_ctx,
 
 static int uadk_e_dh_poll(void *ctx)
 {
+	US_DEBUG("uadk_e_dh_poll start");
 	__u64 rx_cnt = 0;
 	__u32 recv = 0;
 	int expt = 1;
@@ -297,6 +301,7 @@ static int uadk_e_dh_env_poll(void *ctx)
 
 static int uadk_e_wd_dh_env_init(struct uacce_dev *dev)
 {
+	US_DEBUG("uadk_e_wd_dh_env_init start");
 	int ret;
 
 	ret = uadk_e_set_env("WD_DH_CTX_NUM", dev->numa_id);
@@ -308,12 +313,13 @@ static int uadk_e_wd_dh_env_init(struct uacce_dev *dev)
 		return ret;
 
 	async_register_poll_fn(ASYNC_TASK_DH, uadk_e_dh_env_poll);
-
+	US_DEBUG("uadk_e_wd_dh_env_init finished");
 	return 0;
 }
 
 static int uadk_e_wd_dh_init(struct dh_res_config *config, struct uacce_dev *dev)
 {
+	US_DEBUG("uadk_e_wd_dh_init start");
 	struct wd_sched *sched = &config->sched.wd_sched;
 	struct wd_ctx_config *ctx_cfg;
 	int ret = 0;
@@ -350,6 +356,7 @@ static int uadk_e_wd_dh_init(struct dh_res_config *config, struct uacce_dev *dev
 
 	async_register_poll_fn(ASYNC_TASK_DH, uadk_e_dh_poll);
 
+	US_DEBUG("uadk_e_wd_dh_init finished");
 	return 0;
 
 free_ctx:
@@ -367,6 +374,7 @@ free_cfg:
 
 static int uadk_e_dh_init(void)
 {
+	US_DEBUG("uadk_e_dh_init start");
 	struct uacce_dev *dev;
 	int ret;
 
@@ -394,6 +402,7 @@ static int uadk_e_dh_init(void)
 		free(dev);
 	}
 
+	US_DEBUG("uadk_e_dh_init finished");
 	return UADK_E_INIT_SUCCESS;
 
 err_unlock:
@@ -535,17 +544,20 @@ static int dh_prepare_data(const int bits, const BIGNUM *g, DH *dh,
 	ret = check_dh_bit_useful(bits);
 	if (!ret) {
 		fprintf(stderr, "op size is not supported by uadk engine\n");
+		US_ERR("op size is not supported by uadk engine,then back to soft\n");
 		return UADK_E_FAIL;
 	}
 
 	*dh_sess = dh_get_eng_session(dh, bits, is_g2);
 	if (!(*dh_sess)) {
 		fprintf(stderr, "failed to get eng ctx\n");
+		US_ERR("get eng ctx fail then switch to soft!");
 		return UADK_E_FAIL;
 	}
 
 	ret = dh_try_get_priv_key(dh, priv_key);
 	if (!ret || !(*priv_key)) {
+		US_ERR("get priv key fail then switch to soft!");
 		dh_free_eng_session(*dh_sess);
 		return UADK_E_FAIL;
 	}
@@ -690,13 +702,14 @@ free_ag:
 
 static int dh_do_crypto(struct uadk_dh_sess *dh_sess)
 {
+	US_DEBUG("dh_do_crypto start!\n");
 	struct uadk_e_cb_info cb_param;
 	struct async_op op;
 	int idx, ret;
 
 	ret = async_setup_async_event_notification(&op);
 	if (!ret) {
-		printf("failed to setup async event notification.\n");
+		fprintf(stderr, "failed to setup async event notification.\n");
 		return UADK_E_FAIL;
 	}
 
@@ -774,8 +787,11 @@ static int uadk_e_dh_generate_key(DH *dh)
 		goto exe_soft;
 
 	DH_get0_pqg(dh, &p, &q, &g);
-	if (!p || !g || q)
+	if (!p || !g || q){
+		US_ERR("invalid g or p or q,then switch to soft");
 		goto exe_soft;
+	}
+
 
 	/* Get session and prepare private key */
 	ret = dh_prepare_data(bits, g, dh, &dh_sess, &priv_key);
@@ -806,11 +822,13 @@ static int uadk_e_dh_generate_key(DH *dh)
 	}
 
 	ret = dh_soft_set_pkey(dh, pub_key, priv_key);
-
+	
 free_sess:
 	dh_free_eng_session(dh_sess);
-	if (ret != UADK_DO_SOFT)
+	if (ret != UADK_DO_SOFT){
+		US_DEBUG("uadk_e_dh_generate_key successed");
 		return ret;
+	}
 exe_soft:
 	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return uadk_e_dh_soft_generate_key(dh);
@@ -835,8 +853,10 @@ static int uadk_e_dh_compute_key(unsigned char *key, const BIGNUM *pub_key,
 		goto exe_soft;
 
 	DH_get0_pqg(dh, &p, &q, &g);
-	if (!p || !g)
+	if (!p || !g){
+		US_ERR("invalid g or p");
 		goto exe_soft;
+	}
 
 	ret = dh_prepare_data(bits, g, dh, &dh_sess, &priv_key);
 	if (!ret) {
@@ -863,8 +883,10 @@ static int uadk_e_dh_compute_key(unsigned char *key, const BIGNUM *pub_key,
 
 free_sess:
 	dh_free_eng_session(dh_sess);
-	if (ret != UADK_DO_SOFT)
+	if (ret != UADK_DO_SOFT){
+		US_DEBUG("uadk_e_dh_compute_key successed");
 		return ret;
+	}
 exe_soft:
 	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return uadk_e_dh_soft_compute_key(key, pub_key, dh);
@@ -891,7 +913,7 @@ static DH_METHOD *uadk_e_get_dh_methods(void)
 	(void)DH_meth_set_generate_key(uadk_dh_method, uadk_e_dh_generate_key);
 	(void)DH_meth_set_compute_key(uadk_dh_method, uadk_e_dh_compute_key);
 	(void)DH_meth_set_bn_mod_exp(uadk_dh_method, uadk_e_dh_bn_mod_exp);
-
+	US_DEBUG("successed to set DH method");
 	return uadk_dh_method;
 }
 
@@ -906,6 +928,7 @@ static void uadk_e_delete_dh_meth(void)
 
 int uadk_e_bind_dh(ENGINE *e)
 {
+	US_DEBUG("uadk_e_bind_dh to set the implementation of the DH algorithm.");
 	return ENGINE_set_DH(e, uadk_e_get_dh_methods());
 }
 

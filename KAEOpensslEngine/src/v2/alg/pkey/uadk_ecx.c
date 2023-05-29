@@ -26,6 +26,7 @@
 #include <uadk/wd_sched.h>
 #include "v2/alg/pkey/uadk_pkey.h"
 #include "v2/uadk.h"
+#include "utils/engine_log.h"
 
 #define X25519_KEYLEN		32
 #define X448_KEYLEN		56

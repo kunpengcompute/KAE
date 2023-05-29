@@ -35,7 +35,7 @@
 
 void engine_init_child_at_fork_handler_v1(void)
 {
-	US_DEBUG("call engine_init_child_at_fork_handler");
+	US_DEBUG("call engine_init_child_at_fork_handler_v1");
 
 	if (g_sec_digests_qnode_pool)
 		g_sec_digests_qnode_pool->pool_use_num = 0;

@@ -117,31 +117,35 @@ int uadk_e_is_env_enabled(const char *alg_name)
 	int i = 0;
 
 	while (i < len) {
-		if (!strcmp(uadk_env_enabled[i].alg_name, alg_name))
+		if (!strcmp(uadk_env_enabled[i].alg_name, alg_name)){
 			return uadk_env_enabled[i].env_enabled;
+		}
 		i++;
 	}
-
 	return 0;
 }
 
 static void uadk_e_set_env_enabled(const char *alg_name, __u8 value)
 {
+	US_DEBUG("uadk_e_set_env_enabled satrt");
 	int len = ARRAY_SIZE(uadk_env_enabled);
 	int i = 0;
 
 	while (i < len) {
 		if (!strcmp(uadk_env_enabled[i].alg_name, alg_name)) {
 			uadk_env_enabled[i].env_enabled = value;
+			US_DEBUG("set %s env %s",alg_name ? "Enable":"Disable");
 			return;
 		}
 
 		i++;
 	}
+	US_DEBUG("%s is incorrect,Cannot set env enable or not",alg_name);
 }
 
 int uadk_e_set_env(const char *var_name, int numa_id)
 {
+	US_DEBUG("uadk_e_set_env start");
 	char env_string[ENV_STRING_LEN] = {0};
 	const char *var_s;
 	int ret;
@@ -152,13 +156,17 @@ int uadk_e_set_env(const char *var_name, int numa_id)
 		ret = snprintf(env_string, ENV_STRING_LEN, "%s%d%s%d",
 			       "sync:2@", numa_id,
 			       ",async:2@", numa_id);
-		if (ret < 0)
+		if (ret < 0){
+			US_ERR("uadk_e_set_env failed");
 			return ret;
-
+		}
 		ret = setenv(var_name, env_string, 1);
-		if (ret < 0)
+		if (ret < 0){
+			US_ERR("uadk_e_set_env failed");
 			return ret;
+		}
 	}
+	US_DEBUG("uadk_e_set_env successed");
 	return 0;
 }
 
@@ -175,21 +183,27 @@ static int uadk_engine_ctrl(ENGINE *e, int cmd, long i,
 
 	switch (cmd) {
 	case UADK_CMD_ENABLE_CIPHER_ENV:
+		US_DEBUG("%s cipher\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("cipher", i);
 		break;
 	case UADK_CMD_ENABLE_DIGEST_ENV:
+		US_DEBUG("%s digest\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("digest", i);
 		break;
 	case UADK_CMD_ENABLE_RSA_ENV:
+		US_DEBUG("%s rsa\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("rsa", i);
 		break;
 	case UADK_CMD_ENABLE_DH_ENV:
+		US_DEBUG("%s dh\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("dh", i);
 		break;
 	case UADK_CMD_ENABLE_ECC_ENV:
+		US_DEBUG("%s ecc\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("ecc", i);
 		break;
 	default:
+		US_WARN("CTRL command not implemented\n");
 		return 0;
 	}
 
@@ -271,6 +285,7 @@ static int uadk_finish(ENGINE *e)
 
 static void engine_init_child_at_fork_handler(void)
 {
+	US_DEBUG("call engine_init_child_at_fork_handler");
 	int ret;
 
 	ret = async_module_init();
@@ -281,94 +296,132 @@ static void engine_init_child_at_fork_handler(void)
 #ifdef KAE
 static void bind_fn_kae_alg(ENGINE *e)
 {
+	US_DEBUG("start bind_fn_kae_alg (bind v1 algs)");
 	int dev_num;
 
 	dev_num = wd_get_nosva_dev_num("cipher");
 	if (dev_num > 0) {
 		cipher_module_init();
-		if (!ENGINE_set_ciphers(e, sec_engine_ciphers))
+		if (!ENGINE_set_ciphers(e, sec_engine_ciphers)){
 			fprintf(stderr, "uadk bind cipher failed\n");
-		else
+		}else{
 			uadk_cipher_nosva = 1;
+			US_DEBUG("ENGINE_set_ciphers successed (bind v1 cipher)");
+		}
+	}else{
+		US_DEBUG("cipher use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
 
 	dev_num = wd_get_nosva_dev_num("digest");
 	if (dev_num > 0) {
 		digest_module_init();
-		if (!ENGINE_set_digests(e, sec_engine_digests))
+		if (!ENGINE_set_digests(e, sec_engine_digests)){
 			fprintf(stderr, "uadk bind digest failed\n");
-		else
+		}else{
 			uadk_digest_nosva = 1;
+			US_DEBUG("ENGINE_set_digests successed (bind v1 digest)");
+		}
+	}else{
+		US_DEBUG("digest use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
 
 	dev_num = wd_get_nosva_dev_num("rsa");
 	if (dev_num > 0) {
 		hpre_module_init();
-		if (!ENGINE_set_RSA(e, hpre_get_rsa_methods()))
+		if (!ENGINE_set_RSA(e, hpre_get_rsa_methods())){
 			fprintf(stderr, "uadk bind rsa failed\n");
-		else
+		}else{
 			uadk_rsa_nosva = 1;
+			US_DEBUG("ENGINE_set_RSA successed (bind v1 rsa)");
+		}
+	}else{
+		US_DEBUG("rsa use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
 
 	dev_num = wd_get_nosva_dev_num("dh");
 	if (dev_num > 0) {
 		hpre_module_dh_init();
-		if (!ENGINE_set_DH(e, hpre_get_dh_methods()))
+		if (!ENGINE_set_DH(e, hpre_get_dh_methods())){
 			fprintf(stderr, "uadk bind dh failed\n");
-		else
+		}else{
 			uadk_dh_nosva = 1;
+			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
+		}
+	}else{
+		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
 }
 #endif
 
 static void bind_fn_uadk_alg(ENGINE *e)
 {
+	US_DEBUG("start bind_fn_uadk_alg (bind v2 algs)");
 	struct uacce_dev *dev;
 
 	dev = wd_get_accel_dev("cipher");
 	if (dev) {
-		if (!uadk_e_bind_cipher(e))
+		if (!uadk_e_bind_cipher(e)){
 			fprintf(stderr, "uadk bind cipher failed\n");
-		else
+		}else{
 			uadk_cipher = 1;
+			US_DEBUG("uadk_e_bind_cipher successed (bind v2 cipher)");
+		}
 		free(dev);
+	}else{
+		US_DEBUG("cipher use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
 	dev = wd_get_accel_dev("digest");
 	if (dev) {
-		if (!uadk_e_bind_digest(e))
+		if (!uadk_e_bind_digest(e)){
 			fprintf(stderr, "uadk bind digest failed\n");
-		else
+		}else{
 			uadk_digest = 1;
+			US_DEBUG("uadk_e_bind_digest successed (bind v2 digest)");
+		}
 		free(dev);
+	}else{
+		US_DEBUG("digest use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
 	dev = wd_get_accel_dev("rsa");
 	if (dev) {
-		if (!uadk_e_bind_rsa(e))
+		if (!uadk_e_bind_rsa(e)){
 			fprintf(stderr, "uadk bind rsa failed\n");
-		else
+		}else{
 			uadk_rsa = 1;
+			US_DEBUG("uadk_e_bind_rsa successed (bind v2 rsa)");
+		}
 		free(dev);
+	}else{
+		US_DEBUG("rsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
 	dev = wd_get_accel_dev("dh");
 	if (dev) {
-		if (!uadk_e_bind_dh(e))
+		if (!uadk_e_bind_dh(e)){
 			fprintf(stderr, "uadk bind dh failed\n");
-		else
+		}else{
 			uadk_dh = 1;
+			US_DEBUG("uadk_e_bind_dh successed (bind v2 dh)");
+		}
 		free(dev);
+	}else{
+		US_DEBUG("dh use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
 	/* find an ecc device, no difference for sm2/ecdsa/ecdh/x25519/x448 */
 	dev = wd_get_accel_dev("ecdsa");
 	if (dev) {
-		if (!uadk_e_bind_ecc(e))
+		if (!uadk_e_bind_ecc(e)){
 			fprintf(stderr, "uadk bind ecc failed\n");
-		else
+		}else{
 			uadk_ecc = 1;
+			US_DEBUG("uadk_e_bind_ecc successed (bind v2 ecc)");
+		}
 		free(dev);
+	}else{
+		US_DEBUG("ecdsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 }
 

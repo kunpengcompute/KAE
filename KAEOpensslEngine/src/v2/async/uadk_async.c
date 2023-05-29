@@ -23,6 +23,7 @@
 #include <openssl/async.h>
 #include "v2/uadk.h"
 #include "v2/async/uadk_async.h"
+#include "utils/engine_log.h"
 
 static struct async_poll_queue poll_queue;
 
@@ -31,7 +32,9 @@ static async_recv_t async_recv_func[ASYNC_TASK_MAX];
 static void async_fd_cleanup(ASYNC_WAIT_CTX *ctx, const void *key,
 			     OSSL_ASYNC_FD readfd, void *custom)
 {
-	close(readfd);
+	if(close(readfd) != 0 ){
+		US_WARN("Faild to close fd:%d - error:%d\n ",readfd,errno);
+	}
 }
 
 int async_setup_async_event_notification(struct async_op *op)
@@ -42,21 +45,28 @@ int async_setup_async_event_notification(struct async_op *op)
 
 	memset(op, 0, sizeof(struct async_op));
 	op->job = ASYNC_get_current_job();
-	if (op->job == NULL)
+	if (op->job == NULL){
+		US_DEBUG("Could not obtain current async job\n");
 		return 1;
+	}
 
 	waitctx = ASYNC_get_wait_ctx(op->job);
-	if (waitctx == NULL)
+	if (waitctx == NULL){
+		US_ERR("current job has no waitctx");
 		return 0;
+	}
 
 	if (ASYNC_WAIT_CTX_get_fd(waitctx, engine_uadk_id,
 				  &efd, &custom) == 0) {
 		efd = eventfd(0, EFD_NONBLOCK);
-		if (efd == -1)
+		if (efd == -1){
+			US_ERR("edf error.");
 			return 0;
+		}
 
 		if (ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_uadk_id, efd,
 					       custom, async_fd_cleanup) == 0) {
+			US_ERR("set wait fd error.");
 			async_fd_cleanup(waitctx, engine_uadk_id, efd, NULL);
 			return 0;
 		}
@@ -75,26 +85,38 @@ int async_clear_async_event_notification(void)
 	void *custom = NULL;
 
 	job = ASYNC_get_current_job();
-	if (job == NULL)
+	if (job == NULL){
+		US_WARN("no async job.");
 		return 0;
+	}
+
 
 	waitctx = ASYNC_get_wait_ctx(job);
-	if (waitctx == NULL)
+	if (waitctx == NULL){
+		US_ERR("The job has no waitctx");
 		return 0;
+	}
 
-	if (ASYNC_WAIT_CTX_get_changed_fds(waitctx, NULL, &num_add_fds,
-					   NULL, &num_del_fds) == 0)
+
+	if (ASYNC_WAIT_CTX_get_changed_fds(waitctx, NULL, &num_add_fds,NULL, &num_del_fds) == 0){
+		US_ERR("no add fds");
 		return 0;
+	}
+
 
 	if (num_add_fds > 0) {
-		if (ASYNC_WAIT_CTX_get_fd(waitctx, engine_uadk_id,
-					  &efd, &custom) == 0)
+		if (ASYNC_WAIT_CTX_get_fd(waitctx, engine_uadk_id,&efd, &custom) == 0){
+			US_ERR("no fd ");
 			return 0;
+		}
 
 		async_fd_cleanup(waitctx, engine_uadk_id, efd, NULL);
 
-		if (ASYNC_WAIT_CTX_clear_fd(waitctx, engine_uadk_id) == 0)
+		if (ASYNC_WAIT_CTX_clear_fd(waitctx, engine_uadk_id) == 0){
+			US_ERR("clear fd error");
 			return 0;
+		}
+
 	}
 
 	return 1;
@@ -106,8 +128,11 @@ static void async_poll_task_free(void)
 	struct async_poll_task *task;
 
 	error = pthread_mutex_lock(&poll_queue.async_task_mutex);
-	if (error != 0)
+	if (error != 0){
+		US_ERR("lock mutex failed,errno=%d",errno);
 		return;
+	}
+
 
 	task = poll_queue.head;
 	if (task != NULL)
@@ -118,6 +143,8 @@ static void async_poll_task_free(void)
 	sem_destroy(&poll_queue.empty_sem);
 	sem_destroy(&poll_queue.full_sem);
 	pthread_mutex_destroy(&poll_queue.async_task_mutex);
+
+	US_DEBUG("async task free succ");
 }
 
 static int async_get_poll_task(int *id)
@@ -143,8 +170,11 @@ static struct async_poll_task *async_get_queue_task(void)
 	struct async_poll_task *task_queue;
 	int idx, ret;
 
-	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0)
+	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
+		US_ERR("lock queue mutex failed,errno:%d",errno);
 		return NULL;
+	}
+
 
 	ret = async_get_poll_task(&idx);
 	if (!ret)
@@ -155,19 +185,27 @@ static struct async_poll_task *async_get_queue_task(void)
 	poll_queue.is_recv = 0;
 
 err:
-	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0)
+	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0){
+		US_ERR("unlock queue mutex failed,errno:%d",errno);
 		return NULL;
+	}
 
-	if (cur_task && cur_task->op == NULL)
+
+	if (cur_task && cur_task->op == NULL){
+		US_ERR("get task failed");
 		return NULL;
+	}
 
+	US_DEBUG("get task end");
 	return cur_task;
 }
 
 void async_free_poll_task(int id, bool is_cb)
 {
-	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0)
+	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
+		US_ERR("lock mutex failed,errno=%d",errno);
 		return;
+	}
 
 	poll_queue.status[id] = 0;
 
@@ -178,6 +216,8 @@ void async_free_poll_task(int id, bool is_cb)
 		return;
 
 	(void)sem_post(&poll_queue.empty_sem);
+
+	US_DEBUG("async task free succ");
 }
 
 int async_get_free_task(int *id)
@@ -187,11 +227,17 @@ int async_get_free_task(int *id)
 	int idx, ret;
 	int cnt = 0;
 
-	if (sem_wait(&poll_queue.empty_sem) != 0)
+	if (sem_wait(&poll_queue.empty_sem) != 0){
+		US_ERR("wait empty sem failed,errno:%d",errno);
 		return 0;
+	}
 
-	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0)
+
+	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
+		US_ERR("lock queue mutex failed,errno:%d",errno);
 		return 0;
+	}
+
 
 	idx = poll_queue.sid;
 	while (poll_queue.status[idx]) {
@@ -211,14 +257,18 @@ int async_get_free_task(int *id)
 	ret = 1;
 
 out:
-	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0)
+	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0){
+		US_ERR("unlock queue mutex failed,errno:%d",errno);
 		return 0;
+	}
 
+	US_DEBUG("async_get_free_task successed");
 	return ret;
 }
 
 static int async_add_poll_task(void *ctx, struct async_op *op, enum task_type type, int id)
 {
+	US_DEBUG("start to add task to poll queue");
 	struct async_poll_task *task_queue;
 	struct async_poll_task *task;
 	int ret;
@@ -245,17 +295,24 @@ int async_pause_job(void *ctx, struct async_op *op, enum task_type type, int id)
 	int ret;
 
 	ret = async_add_poll_task(ctx, op, type, id);
-	if (ret == 0)
+	if (ret == 0){
+		US_ERR("async_add_poll_task failed");
 		return ret;
-
+	}
+		
 	waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)op->job);
-	if (waitctx == NULL)
+	if (waitctx == NULL){
+		US_ERR("errro. waitctx is null\n");
 		return 0;
+	}
+		
 
 	do {
-		if (ASYNC_pause_job() == 0)
+		if (ASYNC_pause_job() == 0){
+			US_ERR("Failed to pause the job\n");
 			return 0;
-
+		}
+			
 		ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_uadk_id, &efd, &custom);
 		if (ret <= 0)
 			continue;
@@ -280,8 +337,10 @@ int async_wake_job(ASYNC_JOB *job)
 	int ret;
 
 	waitctx = ASYNC_get_wait_ctx(job);
-	if (waitctx == NULL)
+	if (waitctx == NULL){
+		US_ERR("error. waitctx is NULL\n");
 		return 0;
+	}
 
 	ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_uadk_id, &efd, &custom);
 	if (ret > 0) {
@@ -289,6 +348,7 @@ int async_wake_job(ASYNC_JOB *job)
 			fprintf(stderr, "failed to write to fd: %d - error: %d\n", efd, errno);
 	}
 
+	US_DEBUG("- aysnc wake job success -");
 	return ret;
 }
 
@@ -314,6 +374,7 @@ static void *async_poll_process_func(void *args)
 				/* sem_wait is interrupted by interrupt, continue */
 				continue;
 			}
+			US_ERR("wait async full_sem failed,errno:%d",errno);
 		}
 
 		task = async_get_queue_task();
@@ -325,6 +386,9 @@ static void *async_poll_process_func(void *args)
 
 		op = task->op;
 		idx = op->idx;
+
+		US_DEBUG("async poll thread start to recv result");
+
 		ret = async_recv_func[task->type](task->ctx);
 		if (!poll_queue.is_recv && op->job) {
 			op->done = 1;
@@ -332,8 +396,10 @@ static void *async_poll_process_func(void *args)
 			async_wake_job(op->job);
 			async_free_poll_task(idx, 0);
 		}
+		US_DEBUG("process task done");
 	}
 
+	US_DEBUG("polling thread exit");
 	return NULL;
 }
 
@@ -342,10 +408,14 @@ int async_module_init(void)
 	pthread_t thread_id;
 	pthread_attr_t thread_attr;
 
+	US_DEBUG("init polling thread.");
+
 	memset(&poll_queue, 0, sizeof(struct async_poll_queue));
 
-	if (pthread_mutex_init(&(poll_queue.async_task_mutex), NULL) < 0)
+	if (pthread_mutex_init(&(poll_queue.async_task_mutex), NULL) < 0){
+		US_ERR("init queue mutex failed ,errno:%d",errno);
 		return 0;
+	}
 
 	poll_queue.head = malloc(sizeof(struct async_poll_task) * ASYNC_QUEUE_TASK_NUM);
 	if (poll_queue.head == NULL)
@@ -354,12 +424,16 @@ int async_module_init(void)
 	memset(poll_queue.head, 0,
 	       sizeof(struct async_poll_task) * ASYNC_QUEUE_TASK_NUM);
 
-	if (sem_init(&poll_queue.empty_sem, 0,
-		     ASYNC_QUEUE_TASK_NUM) != 0)
+	if (sem_init(&poll_queue.empty_sem, 0,ASYNC_QUEUE_TASK_NUM) != 0){
+		US_ERR("fail to init empty semaphore,errno=%d",errno);
 		goto err;
+	}
 
-	if (sem_init(&poll_queue.full_sem, 0, 0) != 0)
+	if (sem_init(&poll_queue.full_sem, 0, 0) != 0){
+		US_ERR("fail to init full semaphore, errno=%d",errno);
 		goto err;
+	}
+
 
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
@@ -369,9 +443,11 @@ int async_module_init(void)
 	poll_queue.thread_id = thread_id;
 	OPENSSL_atexit(async_poll_task_free);
 
+	US_DEBUG("async_module_init done");
 	return 1;
 
 err:
+	US_ERR("async_module_init failed!\n");
 	async_poll_task_free();
 	return 0;
 }
