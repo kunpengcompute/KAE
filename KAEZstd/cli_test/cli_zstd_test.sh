@@ -99,7 +99,6 @@ function main(){
         done
     done
 
-    # clear
 }
 
 main "$@"

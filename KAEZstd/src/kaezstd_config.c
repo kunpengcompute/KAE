@@ -18,6 +18,7 @@
 
 #include "kaezstd_common.h"
 #include "kaezstd_config.h"
+#include "kaezstd_log.h"
 
 #define CTX_SET_SIZE 4
 #define CTX_SET_NUM 1
@@ -61,7 +62,7 @@ static struct wd_sched *kaezstd_sched_init()
 
     sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
     if (!sched) {
-        WD_ERR("failed to alloc a sample_sched\n");
+        US_ERR("failed to alloc a sample_sched\n");
         return NULL;
     }
 
@@ -76,7 +77,7 @@ static struct wd_sched *kaezstd_sched_init()
             param.end = ctx_set_num * (i + 1) - 1;
             ret = wd_sched_rr_instance(sched, &param);
             if (ret < 0) {
-                WD_ERR("Fail to fill sched region.\n");
+                US_ERR("Fail to fill sched region.\n");
                 ret = KAE_ZSTD_SET_FAIL;
                 goto out_fill;
             }
@@ -100,7 +101,7 @@ static int kaezstd_init_ctx_config(Info* info, Options opts)
     ctx_config->ctx_num = ctx_num * 4;
     ctx_config->ctxs = calloc(1, ctx_num * 4 * sizeof(struct wd_ctx));
     if (!ctx_config->ctxs) {
-        WD_ERR("Not enough memory to allocate contexts.\n");
+        US_ERR("Not enough memory to allocate contexts.\n");
         ret = KAE_ZSTD_ALLOC_FAIL;
         return ret;
     }
@@ -108,7 +109,7 @@ static int kaezstd_init_ctx_config(Info* info, Options opts)
     for (i = 0; i < ctx_config->ctx_num; i++) {
         ctx_config->ctxs[i].ctx = wd_request_ctx(info->list->dev);
         if (!ctx_config->ctxs[i].ctx) {
-            WD_ERR("Fail to allocate context #%d\n", i);
+            US_ERR("Fail to allocate context #%d\n", i);
             ret = KAE_ZSTD_ALLOC_FAIL;
             goto out_ctx;
         }
@@ -125,7 +126,7 @@ static int kaezstd_init_ctx_config(Info* info, Options opts)
 
     ret = wd_comp_init(ctx_config, sched);
     if (ret) {
-        WD_ERR("fail to init comp.\n");
+        US_ERR("fail to init comp.\n");
         goto out_fill;
     }
 
@@ -160,7 +161,7 @@ struct uacce_dev_list *kaezstd_get_dev_list(Options opts)
 
     list = wd_get_accel_list("lz77_zstd");
     if (!list) {
-        WD_ERR("failed to get device list\n");
+        US_ERR("failed to get device list\n");
         return NULL;
     }
 
@@ -185,7 +186,7 @@ struct uacce_dev_list *kaezstd_get_dev_list(Options opts)
     }
 
     if (!p) {
-        WD_ERR("Request too much contexts: %d\n", total_ctx_num);
+        US_ERR("Request too much contexts: %d\n", total_ctx_num);
         goto out;
     }
 
@@ -210,7 +211,7 @@ int kaezstd_create_session(KaeZstdConfig *config)
     config->setup.op_type = WD_DIR_COMPRESS;
     config->sess = wd_comp_alloc_sess(&(config->setup));
     if (!(config->sess)) {
-        WD_ERR("failed to alloc comp sess!\n");
+        US_ERR("failed to alloc comp sess!\n");
         return KAE_ZSTD_ALLOC_FAIL;
     }
     config->req.src = calloc(1, REQ_SRCBUFF_LEN);
@@ -240,10 +241,11 @@ int kaezstd_init(ZSTD_CCtx* zc)
 {
     int ret;
     KaeZstdConfig *config = NULL;
-
+    kaezstd_debug_init_log();
+    US_DEBUG("Begin init KAE zstd.");
     config = (KaeZstdConfig*)malloc(sizeof(KaeZstdConfig));
     if (config == NULL) {
-        WD_ERR("failed to alloc config!\n");
+        US_ERR("failed to alloc config!\n");
         return KAE_ZSTD_INIT_FAIL;
     }
 
@@ -251,19 +253,19 @@ int kaezstd_init(ZSTD_CCtx* zc)
 
     config->info.list = kaezstd_get_dev_list(config->opts);
     if (!(config->info.list)) {
-        WD_ERR("failed to find devices!\n");
+        US_ERR("failed to find devices!\n");
         goto get_dev_list_fail;
     }
 
     ret = kaezstd_init_ctx_config(&(config->info), config->opts);
     if (ret) {
-        WD_ERR("failed to init ctx!\n");
+        US_ERR("failed to init ctx!\n");
         goto init_ctx_config_fail;
     }
 
     ret = kaezstd_create_session(config);
     if (ret) {
-        WD_ERR("failed to init session!\n");
+        US_ERR("failed to init session!\n");
         goto create_session_fail;
     }
 
@@ -297,4 +299,6 @@ void kaezstd_release(ZSTD_CCtx* zc)
     wd_comp_free_sess(config->sess);
 
     wd_free_list_accels(config->info.list);
+
+    kaezstd_debug_close_log();
 }
