@@ -17,6 +17,7 @@
 
 #include "kaezstd_common.h"
 #include "kaezstd_config.h"
+#include "kaezstd_log.h"
 
 void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
 {
@@ -28,7 +29,7 @@ void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
 int kaezstd_data_parsing(ZSTD_CCtx* zc, KaeZstdConfig* config)
 {
     if (config->tuple.litStart == NULL || config->tuple.sequencesStart == NULL) {
-        WD_ERR("config parameter invalid\n");
+        US_ERR("config parameter invalid\n");
         return KAE_ZSTD_INVAL_PARA;
     }
 
@@ -51,9 +52,9 @@ int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 {
     KaeZstdConfig *config = NULL;
     int ret;
-
+    US_DEBUG("KAE zstd compress.");
     if (zc == NULL || src == NULL || srcSize == 0) {
-        WD_ERR("compress parameter invalid\n");
+        US_ERR("compress parameter invalid\n");
         return KAE_ZSTD_INVAL_PARA;
     }
 
@@ -68,13 +69,13 @@ int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 
     ret = wd_do_comp_strm(config->sess, &(config->req));
     if (ret) {
-        WD_ERR("wd_do_comp_strm = %d\n", ret);
+        US_ERR("wd_do_comp_strm = %d\n", ret);
         return ret;
     }
 
     ret = kaezstd_data_parsing(zc, config);
     if (ret) {
-        WD_ERR("data_parsing = %d\n", ret);
+        US_ERR("data_parsing = %d\n", ret);
         return ret;
     }
 
