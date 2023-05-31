@@ -207,11 +207,24 @@ out:
 
 int kaezstd_create_session(KaeZstdConfig *config)
 {
+    struct sched_params *param = NULL;
+    param = (struct sched_params *)malloc(sizeof(struct sched_params));
+    if (param == NULL) {
+        US_ERR("failed to alloc param!\n");
+        return KAE_ZSTD_ALLOC_FAIL;
+    }
+    memset(param, 0, sizeof(struct sched_params));
+    memset(&config->req, 0, sizeof(struct wd_comp_req));
+    memset(&config->setup, 0, sizeof(struct wd_comp_sess_setup));
+    config->setup.sched_param = param;
     config->setup.alg_type = WD_LZ77_ZSTD;
     config->setup.op_type = WD_DIR_COMPRESS;
+    config->setup.win_sz = REQ_WINDOW_SIZE;
+    config->setup.comp_lv = REQ_COMPRESS_LEVEL;
     config->sess = wd_comp_alloc_sess(&(config->setup));
     if (!(config->sess)) {
         US_ERR("failed to alloc comp sess!\n");
+        free(param);
         return KAE_ZSTD_ALLOC_FAIL;
     }
     config->req.src = calloc(1, REQ_SRCBUFF_LEN);
