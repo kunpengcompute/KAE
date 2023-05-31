@@ -25,6 +25,7 @@
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
 #include "v2/async/uadk_async.h"
+#include "utils/engine_log.h"
 
 #define UADK_DO_SOFT         (-0xE0)
 #define CTX_SYNC_ENC		0
@@ -214,7 +215,7 @@ static const EVP_CIPHER *sec_ciphers_get_cipher_sw_impl(int n_id)
 			return (sec_ciphers_sw_table[i].get_cipher)();
 	}
 	fprintf(stderr, "invalid nid %d\n", n_id);
-
+	US_WARN("Invalid nid %d\n");
 	return (EVP_CIPHER *)NULL;
 }
 
@@ -269,7 +270,7 @@ static int uadk_e_cipher_sw_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 		priv->sw_ctx_data = NULL;
 		return 0;
 	}
-
+	US_DEBUG("uadk_e_cipher_sw_init success. ctx=%p", ctx);
 	return 1;
 }
 
@@ -316,14 +317,19 @@ static int uadk_e_cipher_soft_work(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	}
 
 	EVP_CIPHER_CTX_set_cipher_data(ctx, priv);
-
+	US_DEBUG("uadk engine sw impl do cipher success, ctx=%p", ctx);
 	return 1;
 }
 
 static int sec_ciphers_is_check_valid(struct cipher_priv_ctx *priv)
 {
-	return priv->req.in_bytes <= priv->switch_threshold ?
-			 0 : 1;
+	if(priv->req.in_bytes <= priv->switch_threshold){
+		US_DEBUG("small packet cipher offload, switch to soft cipher, in_bytes %d", (int)priv->req.in_bytes);
+		return 0;
+	}else{
+		US_DEBUG("sec ciphers checked valid");
+		return 1;
+	}
 }
 
 static void uadk_e_cipher_sw_cleanup(EVP_CIPHER_CTX *ctx)
@@ -335,6 +341,7 @@ static void uadk_e_cipher_sw_cleanup(EVP_CIPHER_CTX *ctx)
 		OPENSSL_free(priv->sw_ctx_data);
 		priv->sw_ctx_data = NULL;
 	}
+	US_DEBUG("uadk engine sw cleanup impl success, ctx=%p", ctx);
 }
 
 static int uadk_get_accel_platform(char *alg_name)
@@ -345,10 +352,13 @@ static int uadk_get_accel_platform(char *alg_name)
 	if (dev == NULL)
 		return 0;
 
-	if (!strcmp(dev->api, "hisi_qm_v2"))
+	if (!strcmp(dev->api, "hisi_qm_v2")){
 		platform = HW_V2;
-	else
+		US_DEBUG("accel platform is 920");
+	} else {
 		platform = HW_V3;
+		US_DEBUG("accel platform is 920B");
+	}
 	free(dev);
 
 	return 1;
@@ -375,10 +385,10 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		return size;
 	}
 
-	for (i = 0; i < size; i++) {
-		if (nid == cipher_nids[i])
-			break;
-	}
+	// for (i = 0; i < size; i++) {
+	// 	if (nid == cipher_nids[i])
+	// 		break;
+	// }
 
 	switch (nid) {
 	case NID_aes_128_cbc:
@@ -459,11 +469,17 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		break;
 	}
 
+	if(ret == 0){
+		US_DEBUG("nid = %d not support.", nid);
+	}else{
+		US_DEBUG("nid = %d support.", nid);
+	}
 	return ret;
 }
 
 static handle_t sched_single_init(handle_t h_sched_ctx, void *sched_param)
 {
+	US_DEBUG("sched_single_init start");
 	struct sched_params *param = (struct sched_params *)sched_param;
 	struct sched_params *skey;
 
@@ -474,25 +490,32 @@ static handle_t sched_single_init(handle_t h_sched_ctx, void *sched_param)
 	}
 
 	skey->type = param->type;
-
+	US_DEBUG("sucessed to alloc cipher sched key!\n");
 	return (handle_t)skey;
 }
 
 static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
 		void *sched_key, const int sched_mode)
 {
+	US_DEBUG("sched_single_pick_next_ctx start");
 	struct sched_params *key = (struct sched_params *)sched_key;
 
 	if (sched_mode) {
-		if (key->type == WD_CIPHER_ENCRYPTION)
+		if (key->type == WD_CIPHER_ENCRYPTION){
+			US_DEBUG("the next ctx is CTX_ASYNC_ENC");
 			return CTX_ASYNC_ENC;
-		else
+		}else{
+			US_DEBUG("the next ctx is CTX_ASYNC_DEC");
 			return CTX_ASYNC_DEC;
+		}
 	} else {
-		if (key->type == WD_CIPHER_ENCRYPTION)
+		if (key->type == WD_CIPHER_ENCRYPTION){
+			US_DEBUG("the next ctx is CTX_SYNC_ENC");
 			return CTX_SYNC_ENC;
-		else
+		}else{
+			US_DEBUG("the next ctx is CTX_SYNC_DEC");
 			return CTX_SYNC_DEC;
+		}
 	}
 }
 
@@ -504,6 +527,7 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 
 static int uadk_e_cipher_poll(void *ctx)
 {
+	US_DEBUG("uadk_e_cipher_poll start");
 	struct cipher_priv_ctx *priv = (struct cipher_priv_ctx *) ctx;
 	__u64 rx_cnt = 0;
 	__u32 recv = 0;
@@ -518,12 +542,16 @@ static int uadk_e_cipher_poll(void *ctx)
 
 	do {
 		ret = wd_cipher_poll_ctx(idx, expt, &recv);
-		if (!ret && recv == expt)
+		if (!ret && recv == expt){
+			US_DEBUG("wd_cipher_poll_ctx finished");
 			return 0;
-		else if (ret == -EAGAIN)
+		}else if (ret == -EAGAIN){
+			US_DEBUG("polling ctx");
 			rx_cnt++;
-		else
+		}else{
+			US_ERR("wd_cipher_poll_ctx error");
 			return -1;
+		}
 	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to recv msg: timeout!\n");
@@ -533,6 +561,7 @@ static int uadk_e_cipher_poll(void *ctx)
 
 static int uadk_e_cipher_env_poll(void *ctx)
 {
+	US_DEBUG("uadk_e_cipher_env_poll start");
 	__u64 rx_cnt = 0;
 	__u32 recv = 0;
 	/* Poll one packet currently */
@@ -541,18 +570,20 @@ static int uadk_e_cipher_env_poll(void *ctx)
 
 	do {
 		ret = wd_cipher_poll(expt, &recv);
-		if (ret < 0 || recv == expt)
+		if (ret < 0 || recv == expt){
+			US_DEBUG("uadk_e_cipher_env_poll finished");
 			return ret;
+		}
 		rx_cnt++;
 	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to poll msg: timeout!\n");
-
 	return -ETIMEDOUT;
 }
 
 static int uadk_e_wd_cipher_env_init(struct uacce_dev *dev)
 {
+	US_DEBUG("uadk_e_wd_cipher_env_init start");
 	int ret;
 
 	ret = uadk_e_set_env("WD_CIPHER_CTX_NUM", dev->numa_id);
@@ -565,11 +596,13 @@ static int uadk_e_wd_cipher_env_init(struct uacce_dev *dev)
 
 	async_register_poll_fn(ASYNC_TASK_CIPHER, uadk_e_cipher_env_poll);
 
+	US_DEBUG("uadk_e_wd_cipher_env_init finished");
 	return 0;
 }
 
 static int uadk_e_wd_cipher_init(struct uacce_dev *dev)
 {
+	US_DEBUG("uadk_e_wd_cipher_init start");
 	int ret, i, j;
 
 	engine.numa_id = dev->numa_id;
@@ -625,6 +658,7 @@ err_freectx:
 
 static int uadk_e_init_cipher(void)
 {
+	US_DEBUG("uadk_e_init_cipher start");
 	struct uacce_dev *dev;
 	int ret;
 
@@ -684,7 +718,8 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 
 	nid = EVP_CIPHER_CTX_nid(ctx);
 	priv->req.op_type = enc ? WD_CIPHER_ENCRYPTION : WD_CIPHER_DECRYPTION;
-
+	US_DEBUG("the operation type is %s",enc==0 ? "ENCRYPTION":"DECRYPTION");
+	
 	if (iv)
 		memcpy(priv->iv, iv, EVP_CIPHER_CTX_iv_length(ctx));
 
@@ -819,8 +854,11 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 		return 0;
 
 	ret = wd_do_cipher_sync(priv->sess, &priv->req);
-	if (ret)
+	if (ret){
+		US_DEBUG("wd_do_cipher_sync failed\n");
 		return 0;
+	}
+	US_DEBUG("do_cipher_sync successed\n");
 	return 1;
 }
 
@@ -855,6 +893,7 @@ static int do_cipher_async(struct cipher_priv_ctx *priv, struct async_op *op)
 	ret = async_pause_job(priv, op, ASYNC_TASK_CIPHER, idx);
 	if (!ret)
 		return 0;
+	US_DEBUG("do_cipher_async successed\n");
 	return 1;
 }
 
@@ -905,6 +944,7 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 			    const unsigned char *in, size_t inlen)
 {
+	US_DEBUG("async_setup_async_event_notification start,select do_cipher_sync or do_cipher_async\n");
 	struct cipher_priv_ctx *priv =
 		(struct cipher_priv_ctx *)EVP_CIPHER_CTX_get_cipher_data(ctx);
 	struct async_op op;
@@ -956,125 +996,156 @@ do { \
 		!EVP_CIPHER_meth_set_do_cipher(uadk_##name, cipher) || \
 		!EVP_CIPHER_meth_set_cleanup(uadk_##name, cleanup) || \
 		!EVP_CIPHER_meth_set_set_asn1_params(uadk_##name, set_params) || \
-		!EVP_CIPHER_meth_set_get_asn1_params(uadk_##name, get_params)) \
-		return 0; \
+		!EVP_CIPHER_meth_set_get_asn1_params(uadk_##name, get_params)) {\
+			US_DEBUG("failed to bind cipher:"#name);\
+			return 0; \
+		}\
 } while (0)
 
 static int bind_v2_cipher(void)
 {
+	US_DEBUG("start to bind_v2_cipher");
 	UADK_CIPHER_DESCR(aes_128_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_cbc");
 	UADK_CIPHER_DESCR(aes_192_cbc, 16, 24, 16, EVP_CIPH_CBC_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_192_cbc");
 	UADK_CIPHER_DESCR(aes_256_cbc, 16, 32, 16, EVP_CIPH_CBC_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_cbc");
 	UADK_CIPHER_DESCR(aes_128_ecb, 16, 16, 0, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_ecb");
 	UADK_CIPHER_DESCR(aes_192_ecb, 16, 24, 0, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_192_ecb");
 	UADK_CIPHER_DESCR(aes_256_ecb, 16, 32, 0, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_ecb");
 	UADK_CIPHER_DESCR(aes_128_xts, 1, 32, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_xts");
 	UADK_CIPHER_DESCR(aes_256_xts, 1, 64, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_xts");
 	UADK_CIPHER_DESCR(sm4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_cbc");
 	UADK_CIPHER_DESCR(des_ede3_cbc, 8, 24, 8, EVP_CIPH_CBC_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind des_ede3_cbc");
 	UADK_CIPHER_DESCR(des_ede3_ecb, 8, 24, 0, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind des_ede3_ecb");
 	UADK_CIPHER_DESCR(sm4_ecb, 16, 16, 16, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_ecb");
 	UADK_CIPHER_DESCR(sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_ofb128");
 	UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_cfb128");
 	UADK_CIPHER_DESCR(sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);    
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv); 
+	US_DEBUG("successed to bind sm4_ctr");    
 	return 0;
 }
 
 static int bind_v3_cipher(void)
 {
+	US_DEBUG("start to bind_v3_cipher");
 	UADK_CIPHER_DESCR(aes_128_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_ctr");
 	UADK_CIPHER_DESCR(aes_192_ctr, 1, 24, 16, EVP_CIPH_CTR_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_192_ctr");
 	UADK_CIPHER_DESCR(aes_256_ctr, 1, 32, 16, EVP_CIPH_CTR_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_ctr");
 	UADK_CIPHER_DESCR(aes_128_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_ofb128");
 	UADK_CIPHER_DESCR(aes_192_ofb128, 1, 24, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_192_ofb128");
 	UADK_CIPHER_DESCR(aes_256_ofb128, 1, 32, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_ofb128");
 	UADK_CIPHER_DESCR(aes_128_cfb128, 1, 16, 16, EVP_CIPH_CFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_128_cfb128");
 	UADK_CIPHER_DESCR(aes_192_cfb128, 1, 24, 16, EVP_CIPH_CFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_192_cfb128");
 	UADK_CIPHER_DESCR(aes_256_cfb128, 1, 32, 16, EVP_CIPH_CFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind aes_256_cfb128");
 	UADK_CIPHER_DESCR(sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_ofb128");
 	UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_cfb128");
 	UADK_CIPHER_DESCR(sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
 			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
+	US_DEBUG("successed to bind sm4_ctr");
     return 0;
 }
 
@@ -1086,12 +1157,14 @@ int uadk_e_bind_cipher(ENGINE *e)
 	if (!ret) {
 		fprintf(stderr, "failed to get accel hardware version.\n");
 		return 0;
+	}else{
+		US_DEBUG("uadk_get_accel_platform successed to get accel hardware version");
 	}
 
 	bind_v2_cipher();
 	if (platform > HW_V2)
 		bind_v3_cipher();
-
+	US_DEBUG("End of binding ciphers,Start to ENGINE_set_ciphers");
 	return ENGINE_set_ciphers(e, uadk_e_engine_ciphers);
 }
 

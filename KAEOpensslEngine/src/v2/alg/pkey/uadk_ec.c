@@ -26,6 +26,7 @@
 #include <uadk/wd_sched.h>
 #include "v2/alg/pkey/uadk_pkey.h"
 #include "v2/uadk.h"
+#include "utils/engine_log.h"
 
 #define ECC128BITS	128
 #define ECC192BITS	192
@@ -510,6 +511,7 @@ static ECDSA_SIG *ecdsa_do_sign(const unsigned char *dgst, int dlen,
 	wd_ecc_del_out(sess, req.dst);
 	wd_ecc_free_sess(sess);
 
+	US_DEBUG("ecdsa_do_sign successed");
 	return sig;
 
 uninit_iot:
@@ -518,6 +520,7 @@ uninit_iot:
 free_sess:
 	wd_ecc_free_sess(sess);
 do_soft:
+	US_ERR("ecdsa_do_sign failed,switch to execute openssl software calculation.\n");
 	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_sign(dgst, dlen, in_kinv, in_r, eckey);
 }
@@ -526,6 +529,7 @@ static int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
 		      unsigned char *sig, unsigned int *siglen,
 		      const BIGNUM *kinv, const BIGNUM *r, EC_KEY *eckey)
 {
+	US_DEBUG("ecdsa_sign start!\n");
 	ECDSA_SIG *s;
 
 	if (!dgst || dlen <= 0) {
@@ -698,6 +702,7 @@ static int ecdsa_do_verify(const unsigned char *dgst, int dlen,
 	wd_ecc_del_in(sess, req.src);
 	wd_ecc_free_sess(sess);
 
+	US_DEBUG("ecdsa_do_verify successed");
 	return ret;
 
 uninit_iot:
@@ -705,6 +710,7 @@ uninit_iot:
 free_sess:
 	wd_ecc_free_sess(sess);
 do_soft:
+	US_ERR("ecdsa_do_verify failed, switch to execute openssl software calculation.\n");
 	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_verify(dgst, dlen, sig, eckey);
 }
@@ -712,6 +718,7 @@ do_soft:
 static int ecdsa_verify(int type, const unsigned char *dgst, int dlen,
 			const unsigned char *sig, int siglen, EC_KEY *eckey)
 {
+	US_DEBUG("ecdsa_verify start\n");
 	const unsigned char *p = sig;
 	unsigned char *der = NULL;
 	int ret = -1;
@@ -1325,6 +1332,7 @@ static void ec_key_meth_set_ecdsa(EC_KEY_METHOD *meth)
 	EC_KEY_METHOD_set_verify(meth,
 				 ecdsa_verify,
 				 ecdsa_do_verify);
+	US_DEBUG("ec_key_meth_set_ecdsa successed!\n");
 }
 
 static void ec_key_meth_set_ecdh(EC_KEY_METHOD *meth)
@@ -1335,10 +1343,12 @@ static void ec_key_meth_set_ecdh(EC_KEY_METHOD *meth)
 
 	EC_KEY_METHOD_set_keygen(meth, ecc_generate_key);
 	EC_KEY_METHOD_set_compute_key(meth, ecdh_compute_key);
+	US_DEBUG("ec_key_meth_set_ecdh successed!\n");
 }
 
 static EC_KEY_METHOD *uadk_get_ec_methods(void)
-{
+{	
+	US_DEBUG("call uadk_get_ec_methods");
 	EC_KEY_METHOD *def_ec_method;
 
 	if (uadk_ec_method != NULL)

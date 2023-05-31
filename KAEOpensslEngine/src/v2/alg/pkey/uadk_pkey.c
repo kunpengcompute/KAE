@@ -21,6 +21,7 @@
 #include "v2/async/uadk_async.h"
 #include "v2/uadk.h"
 #include "v2/alg/pkey/uadk_pkey.h"
+#include "utils/engine_log.h"
 
 #define ECC_MAX_DEV_NUM		16
 #define CTX_ASYNC		1
@@ -277,6 +278,7 @@ static void uadk_wd_ecc_uninit(void)
 
 int uadk_ecc_crypto(handle_t sess, struct wd_ecc_req *req, void *usr)
 {
+	US_DEBUG("uadk_ecc_crypto start");
 	struct uadk_e_cb_info cb_param;
 	struct async_op op;
 	int idx, ret;
@@ -312,13 +314,18 @@ int uadk_ecc_crypto(handle_t sess, struct wd_ecc_req *req, void *usr)
 			goto err;
 		if (req->status)
 			return 0;
+		US_DEBUG("do ecc job async successed");
 	} else {
 		ret = wd_do_ecc_sync(sess, req);
-		if (ret < 0)
+		if (ret < 0){
+			US_DEBUG("do ecc job sync failed");
 			return 0;
+		}
+		US_DEBUG("do ecc job sync successed");
 	}
 	return 1;
 err:
+	US_DEBUG("do ecc job async failed");
 	(void)async_clear_async_event_notification();
 	return 0;
 }
@@ -500,9 +507,11 @@ bool uadk_support_algorithm(const char *alg)
 
 	if (list) {
 		wd_free_list_accels(list);
+		US_DEBUG("uadk support alg: %s", alg);
 		return true;
 	}
 
+	US_DEBUG("uadk not support alg: %s", alg);
 	return false;
 }
 
@@ -567,13 +576,16 @@ const EVP_PKEY_METHOD *get_openssl_pkey_meth(int nid)
 static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			  const int **nids, int nid)
 {
+	US_DEBUG("get_pkey_meths start\n");
 	int ret;
 
 	if (!pmeth) {
+		US_DEBUG("pmeth is NULL");
 		*nids = pkey_nids;
 		return ARRAY_SIZE(pkey_nids);
 	}
 
+	US_DEBUG("switch alg to create EVP_PKEY_METHOD by nids\n");
 	switch (nid) {
 	case EVP_PKEY_SM2:
 		ret = uadk_sm2_create_pmeth(&pkey_meth);
@@ -581,6 +593,7 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register sm2 pmeth.\n");
 			return 0;
 		}
+		US_DEBUG("successed to register sm2 pmeth.\n");
 		*pmeth = pkey_meth.sm2;
 		break;
 	case EVP_PKEY_EC:
@@ -589,6 +602,7 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register ec pmeth.\n");
 			return 0;
 		}
+		US_DEBUG("successed to register ec pmeth.\n");
 		*pmeth = pkey_meth.ec;
 		break;
 	case EVP_PKEY_X448:
@@ -597,6 +611,7 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register x448 pmeth.\n");
 			return 0;
 		}
+		US_DEBUG("successed to register x448 pmeth.\n");
 		*pmeth = pkey_meth.x448;
 		break;
 	case EVP_PKEY_X25519:
@@ -605,6 +620,7 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register x25519 pmeth.\n");
 			return 0;
 		}
+		US_DEBUG("successed to register x25519 pmeth.\n");
 		*pmeth = pkey_meth.x25519;
 		break;
 	default:
@@ -612,11 +628,13 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 		return 0;
 	}
 
+	US_DEBUG("successed to get_pkey_meths");
 	return 1;
 }
 
 static int uadk_ecc_bind_pmeth(ENGINE *e)
 {
+	US_DEBUG("uadk_e_bind_dh to set the implementation of the pkey method");
 	return ENGINE_set_pkey_meths(e, get_pkey_meths);
 }
 

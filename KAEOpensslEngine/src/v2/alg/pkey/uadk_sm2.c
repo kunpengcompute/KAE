@@ -25,6 +25,7 @@
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
 #include "v2/alg/pkey/uadk_pkey.h"
+#include "utils/engine_log.h"
 
 enum {
 	CTX_INIT_FAIL = -1,
