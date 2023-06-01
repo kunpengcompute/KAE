@@ -27,10 +27,10 @@ BN_bin2bn(dhtest_##bits, sizeof(dhtest_##bits), p_##bits); \
 dataset[bits] = DHData(bits, p_##bits, 2); \
 }
 
-#define INSTANTIATE_DH_CASE(bits) INSTANTIATE_TEST_CASE_P(BitLen##bits, \
+#define INSTANTIATE_DH_CASE(bits) INSTANTIATE_TEST_SUITE_P(BitLen##bits, \
                                                           DHTest, \
                                                           ::testing::ValuesIn(DHTest::GenerateData##bits()));
-#define INSTANTIATE_DSA_CASE(bits) INSTANTIATE_TEST_CASE_P(DSA_BitLen##bits, \
+#define INSTANTIATE_DSA_CASE(bits) INSTANTIATE_TEST_SUITE_P(DSA_BitLen##bits, \
                                                           DHTest, \
                                                           ::testing::ValuesIn(DHTest::GenerateDSAData##bits()));
 

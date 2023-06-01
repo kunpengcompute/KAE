@@ -207,21 +207,25 @@ static struct cipher_info cipher_info_table[] = {
 
 static const EVP_CIPHER *sec_ciphers_get_cipher_sw_impl(int n_id)
 {
+	US_DEBUG("sec_ciphers_get_cipher_sw_impl start\n");
 	int sec_cipher_sw_table_size = ARRAY_SIZE(sec_ciphers_sw_table);
 	int i;
 
 	for (i = 0; i < sec_cipher_sw_table_size; i++) {
-		if (n_id == sec_ciphers_sw_table[i].nid)
+		if (n_id == sec_ciphers_sw_table[i].nid){
+			US_DEBUG("sec_ciphers_get_cipher_sw_impl successed,nid is %d\n",n_id);
 			return (sec_ciphers_sw_table[i].get_cipher)();
+		}
 	}
 	fprintf(stderr, "invalid nid %d\n", n_id);
-	US_WARN("Invalid nid %d\n");
+	US_WARN("sec_ciphers_get_cipher_sw_impl failed,Invalid nid %d\n");
 	return (EVP_CIPHER *)NULL;
 }
 
 static int uadk_e_cipher_sw_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 				 const unsigned char *iv, int enc)
 {
+	US_DEBUG("uadk_e_cipher_sw_init start!\n");
 	/* Real implementation: Openssl soft arithmetic key initialization function */
 	struct cipher_priv_ctx *priv = NULL;
 	const EVP_CIPHER *sw_cipher = NULL;
@@ -277,6 +281,7 @@ static int uadk_e_cipher_sw_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 static int uadk_e_cipher_soft_work(EVP_CIPHER_CTX *ctx, unsigned char *out,
 				   const unsigned char *in, size_t inl)
 {
+	US_DEBUG("uadk_e_cipher_soft_work start!\n");
 	struct cipher_priv_ctx *priv = NULL;
 	const EVP_CIPHER *sw_cipher = NULL;
 	unsigned char *iv;
@@ -317,17 +322,18 @@ static int uadk_e_cipher_soft_work(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	}
 
 	EVP_CIPHER_CTX_set_cipher_data(ctx, priv);
-	US_DEBUG("uadk engine sw impl do cipher success, ctx=%p", ctx);
+	US_DEBUG("uadk_e_cipher_soft_work success, ctx=%p", ctx);
 	return 1;
 }
 
 static int sec_ciphers_is_check_valid(struct cipher_priv_ctx *priv)
 {
+	US_DEBUG("sec_ciphers_is_check_valid start\n");
 	if(priv->req.in_bytes <= priv->switch_threshold){
-		US_DEBUG("small packet cipher offload, switch to soft cipher, in_bytes %d", (int)priv->req.in_bytes);
+		US_DEBUG("small packet cipher offload, switch to soft cipher, in_bytes %d\n", (int)priv->req.in_bytes);
 		return 0;
 	}else{
-		US_DEBUG("sec ciphers checked valid");
+		US_DEBUG("sec ciphers checked valid\n");
 		return 1;
 	}
 }
@@ -367,6 +373,7 @@ static int uadk_get_accel_platform(char *alg_name)
 static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 				 const int **nids, int nid)
 {
+	US_DEBUG("call uadk_e_engine_ciphers to set cipher algs\n");
 	int ret = 1;
 	int *cipher_nids;
 	int size;
@@ -393,79 +400,104 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 	switch (nid) {
 	case NID_aes_128_cbc:
 		*cipher = uadk_aes_128_cbc;
+		US_DEBUG("nid is NID_aes_128_cbc\n");
 		break;
 	case NID_aes_192_cbc:
 		*cipher = uadk_aes_192_cbc;
+		US_DEBUG("nid is NID_aes_192_cbc\n");
 		break;
 	case NID_aes_256_cbc:
 		*cipher = uadk_aes_256_cbc;
+		US_DEBUG("nid is NID_aes_256_cbc\n");
 		break;
 	case NID_aes_128_ctr:
 		*cipher = uadk_aes_128_ctr;
+		US_DEBUG("nid is NID_aes_128_ctr\n");
 		break;
 	case NID_aes_192_ctr:
 		*cipher = uadk_aes_192_ctr;
+		US_DEBUG("nid is NID_aes_192_ctr\n");
 		break;
 	case NID_aes_256_ctr:
 		*cipher = uadk_aes_256_ctr;
+		US_DEBUG("nid is NID_aes_256_ctr\n");
 		break;
 	case NID_aes_128_ecb:
 		*cipher = uadk_aes_128_ecb;
+		US_DEBUG("nid is NID_aes_128_ecb\n");
 		break;
 	case NID_aes_192_ecb:
 		*cipher = uadk_aes_192_ecb;
+		US_DEBUG("nid is NID_aes_192_ecb\n");
 		break;
 	case NID_aes_256_ecb:
 		*cipher = uadk_aes_256_ecb;
+		US_DEBUG("nid is NID_aes_256_ecb\n");
 		break;
 	case NID_aes_128_xts:
 		*cipher = uadk_aes_128_xts;
+		US_DEBUG("nid is NID_aes_128_xts\n");
 		break;
 	case NID_aes_256_xts:
 		*cipher = uadk_aes_256_xts;
+		US_DEBUG("nid is NID_aes_256_xts\n");
 		break;
 	case NID_sm4_cbc:
 		*cipher = uadk_sm4_cbc;
+		US_DEBUG("nid is NID_sm4_cbc\n");
 		break;
 	case NID_sm4_ecb:
 		*cipher = uadk_sm4_ecb;
+		US_DEBUG("nid is NID_sm4_ecb\n");
 		break;
 	case NID_des_ede3_cbc:
 		*cipher = uadk_des_ede3_cbc;
+		US_DEBUG("nid is NID_des_ede3_cbc\n");
 		break;
 	case NID_des_ede3_ecb:
 		*cipher = uadk_des_ede3_ecb;
+		US_DEBUG("nid is NID_des_ede3_ecb\n");
 		break;
 	case NID_aes_128_ofb128:
 		*cipher = uadk_aes_128_ofb128;
+		US_DEBUG("nid is NID_aes_128_ofb128\n");
 		break;
 	case NID_aes_192_ofb128:
 		*cipher = uadk_aes_192_ofb128;
+		US_DEBUG("nid is NID_aes_192_ofb128\n");
 		break;
 	case NID_aes_256_ofb128:
 		*cipher = uadk_aes_256_ofb128;
+		US_DEBUG("nid is NID_aes_256_ofb128\n");
 		break;
 	case NID_aes_128_cfb128:
 		*cipher = uadk_aes_128_cfb128;
+		US_DEBUG("nid is NID_aes_128_cfb128\n");
 		break;
 	case NID_aes_192_cfb128:
 		*cipher = uadk_aes_192_cfb128;
+		US_DEBUG("nid is NID_aes_192_cfb128\n");
 		break;
 	case NID_aes_256_cfb128:
 		*cipher = uadk_aes_256_cfb128;
+		US_DEBUG("nid is NID_aes_256_cfb128\n");
 		break;
 	case NID_sm4_ofb128:
 		*cipher = uadk_sm4_ofb128;
+		US_DEBUG("nid is NID_sm4_ofb128\n");
 		break;
 	case NID_sm4_cfb128:
 		*cipher = uadk_sm4_cfb128;
+		US_DEBUG("nid is NID_sm4_cfb128\n");
 		break;
 	case NID_sm4_ctr:
 		*cipher = uadk_sm4_ctr;
+		US_DEBUG("nid is NID_sm4_ctr\n");
 		break;
 	default:
 		ret = 0;
 		*cipher = NULL;
+		US_DEBUG("nid is invalid\n");
 		break;
 	}
 
@@ -639,10 +671,13 @@ static int uadk_e_wd_cipher_init(struct uacce_dev *dev)
 	engine.sched.poll_policy = sched_single_poll_policy;
 	engine.sched.sched_init = sched_single_init;
 
-	ret = wd_cipher_init(&engine.ctx_cfg, &engine.sched);
-	if (ret)
-		goto err_freectx;
 
+	ret = wd_cipher_init(&engine.ctx_cfg, &engine.sched);
+	if (ret){
+		US_ERR("wd_cipher_init failed");
+		goto err_freectx;
+	}
+	US_DEBUG("uadk_e_wd_cipher_init successed\n");
 	async_register_poll_fn(ASYNC_TASK_CIPHER, uadk_e_cipher_poll);
 
 	return 0;
@@ -652,7 +687,7 @@ err_freectx:
 		wd_release_ctx(engine.ctx_cfg.ctxs[j].ctx);
 
 	free(engine.ctx_cfg.ctxs);
-
+	US_ERR("uadk_e_wd_cipher_init failed\n");
 	return ret;
 }
 
@@ -685,12 +720,14 @@ static int uadk_e_init_cipher(void)
 		free(dev);
 	}
 
+	US_DEBUG("uadk_e_init_cipher successed\n");
 	return 1;
 
 err_unlock:
 	pthread_spin_unlock(&engine.lock);
 	free(dev);
 	fprintf(stderr, "failed to init cipher(%d).\n", ret);
+	US_ERR("uadk_e_init_cipher failed\n");
 
 	return 0;
 }
@@ -706,6 +743,7 @@ static void cipher_priv_ctx_setup(struct cipher_priv_ctx *priv,
 static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 			      const unsigned char *iv, int enc)
 {
+	US_DEBUG("uadk_e_cipher_init start\n");
 	struct cipher_priv_ctx *priv =
 		(struct cipher_priv_ctx *)EVP_CIPHER_CTX_get_cipher_data(ctx);
 	int cipher_counts = ARRAY_SIZE(cipher_info_table);
@@ -733,6 +771,7 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 
 	if (i == cipher_counts) {
 		fprintf(stderr, "failed to setup the private ctx.\n");
+		US_ERR("uadk_e_cipher_init failed ,can't setup the private ctx\n");
 		return 0;
 	}
 
@@ -743,6 +782,7 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 	memcpy(priv->key, key, EVP_CIPHER_CTX_key_length(ctx));
 	priv->switch_threshold = SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT;
 
+	US_DEBUG("uadk_e_cipher_init successed \n");
 	return 1;
 }
 
@@ -844,6 +884,7 @@ static void uadk_cipher_update_priv_ctx(struct cipher_priv_ctx *priv)
 
 static int do_cipher_sync(struct cipher_priv_ctx *priv)
 {
+	US_DEBUG("do_cipher_sync start\n");
 	int ret;
 
 	if (unlikely(priv->switch_flag == UADK_DO_SOFT))
@@ -864,6 +905,7 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 
 static int do_cipher_async(struct cipher_priv_ctx *priv, struct async_op *op)
 {
+	US_DEBUG("do_cipher_async start\n");
 	struct uadk_e_cb_info cb_param;
 	int idx, ret;
 
@@ -944,7 +986,7 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 			    const unsigned char *in, size_t inlen)
 {
-	US_DEBUG("async_setup_async_event_notification start,select do_cipher_sync or do_cipher_async\n");
+	US_DEBUG("uadk_e_do_cipher start,select do_cipher_sync or do_cipher_async\n");
 	struct cipher_priv_ctx *priv =
 		(struct cipher_priv_ctx *)EVP_CIPHER_CTX_get_cipher_data(ctx);
 	struct async_op op;
@@ -969,13 +1011,17 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 			goto sync_err;
 	} else {
 		ret = do_cipher_async(priv, &op);
-		if (!ret)
+		if (!ret){
+			US_ERR("do_cipher_async failed\n");
 			goto out_notify;
+		}
 	}
 	uadk_cipher_update_priv_ctx(priv);
 
+	US_DEBUG("uadk_e_do_cipher successed\n");
 	return 1;
 sync_err:
+	US_ERR("do_cipher_sync failed , switch soft work");
 	ret = uadk_e_cipher_soft_work(ctx, out, in, inlen);
 	if (ret != 1)
 		fprintf(stderr, "do soft ciphers failed.\n");

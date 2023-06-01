@@ -50,7 +50,6 @@ all : deps $(TARGET)
 
 deps:
 	
-
 # Rules for producing the objects.
 objs : $(OBJS)
 %.o : %.c

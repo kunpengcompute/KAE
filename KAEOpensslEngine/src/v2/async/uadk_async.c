@@ -348,17 +348,18 @@ int async_wake_job(ASYNC_JOB *job)
 			fprintf(stderr, "failed to write to fd: %d - error: %d\n", efd, errno);
 	}
 
-	US_DEBUG("- aysnc wake job success -");
+	US_DEBUG("- aysnc wake job success -\n");
 	return ret;
 }
 
 void async_register_poll_fn(int type, async_recv_t func)
 {
+	US_DEBUG("async_register_poll_fn start\n");
 	if (type < 0 || type >= ASYNC_TASK_MAX) {
 		fprintf(stderr, "alg type is error, type= %d.\n", type);
 		return;
 	}
-
+	US_DEBUG("async_register_poll_fn successed\n");
 	async_recv_func[type] = func;
 }
 

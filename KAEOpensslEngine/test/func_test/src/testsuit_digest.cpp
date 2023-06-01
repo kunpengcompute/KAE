@@ -85,7 +85,7 @@ public:
 
 ENGINE* DigestAsyncTest::engine_ = NULL;
 
-INSTANTIATE_TEST_CASE_P(InitDigestAsyncTestData, 
+INSTANTIATE_TEST_SUITE_P(InitDigestAsyncTestData, 
     DigestAsyncTest, ::testing::ValuesIn(DigestAsyncTest::GenerateData()));
 
 static digest_ctx_t *init_digest_ctx(const char* name, int datalen)

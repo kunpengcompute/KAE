@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project>
+    <dependencies>
+        <dependency>
+            <artifactType>opensource</artifactType>
+            <artifactId>googletest</artifactId>
+            <version>1.11.0</version>
+            <package>googletest-release-1.11.0.zip</package>
+            <dest>gtest-download</dest>
+        </dependency>
+    </dependencies>
+</project>

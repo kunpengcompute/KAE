@@ -222,7 +222,7 @@ public:
 
 ENGINE* CipherAsyncTest::engine_ = NULL;
 
-INSTANTIATE_TEST_CASE_P(InitCipherAsyncTestData, 
+INSTANTIATE_TEST_SUITE_P(InitCipherAsyncTestData, 
     CipherAsyncTest, ::testing::ValuesIn(CipherAsyncTest::GenerateData()));
 
 

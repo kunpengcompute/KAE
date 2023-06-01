@@ -1,8 +1,5 @@
 #
 # Generic Makefile for C Program
-#
-# Date:   2019/7/4
-
 # Description:
 # compile for accelerator
 #
@@ -32,7 +29,7 @@ INCDIR += -I /usr/include/openssl
 # INCDIR += -I $(WORK_PATH)/../../uadk
 INCDIR += -I $(WORK_PATH)/../../uadk/include
 # INCDIR += -I /usr/include/gtest
-INCDIR += -I $(WORK_PATH)/../googletest-release-1.11.0/googletest/include
+INCDIR += -I $(WORK_PATH)/../../gtest-download/googletest-release-1.11.0/googletest/include
 
 # Include Libs.
 LIBDIR := -L/usr/local/lib
@@ -135,8 +132,8 @@ $(TARGET): $(OBJS)
 
 rebuild: clean all
 
-# clean :
-# 	@-$(RM) *.d *.a *.so $(TARGET)
-# 	@-$(RM)	
-# 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;
-# 	@echo all clean
+clean :
+	@-$(RM) *.d *.a *.so $(TARGET)
+	@-$(RM)	
+	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;
+	@echo all clean
