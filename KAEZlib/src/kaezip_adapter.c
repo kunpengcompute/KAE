@@ -48,7 +48,6 @@ static void uadk_get_accel_platform(void)
 int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int memLevel, int strategy,
                 const char *version, int stream_size)
 {
-    kaezip_debug_init_log();
     uadk_get_accel_platform();
 
     int ret = Z_ERRNO;
@@ -61,6 +60,8 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         break;
     case HW_V2:
+        strm->adler = 0;
+        level = (level <= 0 || level > 15) ? 1 : level;
         ret = wd_deflateInit2_(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         if (ret == Z_OK) {
             (void)wd_deflateReset(strm);
@@ -122,7 +123,6 @@ int kz_deflateEnd(z_streamp strm)
         break;
     }
     US_INFO("kz_deflateEnd return code is %d\n", ret);
-    kaezip_debug_close_log();
     return ret;
 }
 
@@ -152,7 +152,6 @@ int kz_deflateReset(z_streamp strm)
 /* -----------------------------------------------INFLATE----------------------------------------------- */
 int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size)
 {
-    kaezip_debug_init_log();
     uadk_get_accel_platform();
 
     int ret = Z_ERRNO;
@@ -165,6 +164,7 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
         ret = kz_inflateInit2_v1(strm, windowBits, version, stream_size);
         break;
     case HW_V2:
+        strm->adler = 0;
         ret = wd_inflateInit2_(strm, windowBits, version, stream_size);
         if (ret == Z_OK) {
             (void)wd_inflateReset(strm);
@@ -230,7 +230,6 @@ int kz_inflateEnd(z_streamp strm)
         break;
     }
     US_INFO("kz_inflateEnd return code is %d\n", ret);
-    kaezip_debug_close_log();
     return ret;
 }
 
