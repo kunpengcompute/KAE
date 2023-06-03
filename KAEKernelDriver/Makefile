@@ -1,8 +1,9 @@
-KERNEL_PATH := /lib/modules/`uname -r`/build
-KSP :=	$(shell if test -d /lib/modules/`uname -r`/source; then  \
-                    echo /lib/modules/`uname -r`/source; \
+KERNEL_VERSION_BY_BUILDENV :=`rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel | head -n 1`
+KERNEL_PATH := /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/build
+KSP :=	$(shell if test -d /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; then  \
+                    echo /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; \
 	        else  \
-                    echo /lib/modules/`uname -r`/build;  \
+                    echo /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/build;  \
                 fi)
 
 obj-m += uacce/
@@ -28,8 +29,8 @@ default:
 #	cp -f $(shell pwd)/include_uapi_linux/uacce.h $(KSP)/include/uapi/linux
 
 install:
-	$(shell mkdir -p /lib/modules/`uname -r`/extra)
-	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/`uname -r`/extra \;)
+	$(shell mkdir -p /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra)
+	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra \;)
 	depmod -a
 	$(shell if test -e /etc/modprobe.d/10-unsupported-modules.conf; then \
 		sed -i "s/^allow_unsupported_modules.*/allow_unsupported_modules 1/" /etc/modprobe.d/10-unsupported-modules.conf; \
@@ -48,18 +49,18 @@ uninstall:
 	modprobe -r hisi_sec2
 	modprobe -r hisi_qm
 	modprobe -r uacce
-	rm -rf /lib/modules/`uname -r`/extra/uacce.ko
-	rm -rf /lib/modules/`uname -r`/extra/hisi_qm.ko
-	rm -rf /lib/modules/`uname -r`/extra/hisi_sec2.ko
-	rm -rf /lib/modules/`uname -r`/extra/hisi_hpre.ko
-	rm -rf /lib/modules/`uname -r`/extra/hisi_zip.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/uacce.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_qm.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_sec2.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_hpre.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_zip.ko
 	rm -rf /etc/modprobe.d/hisi_sec2.conf
 	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
 	depmod -a
 nosva:
-	$(shell mkdir -p /lib/modules/`uname -r`/extra)
-	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/`uname -r`/extra \;)
+	$(shell mkdir -p /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra)
+	$(shell find . -name "*.ko" -exec cp -f {} /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra \;)
 	depmod -a
 	$(shell if test -e /etc/modprobe.d/10-unsupported-modules.conf; then \
 			sed -i "s/^allow_unsupported_modules.*/allow_unsupported_modules 1/" /etc/modprobe.d/10-unsupported-modules.conf; \
