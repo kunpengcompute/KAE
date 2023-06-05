@@ -20,7 +20,7 @@ void generate_random_data(char* data, long long length) {
     }
 }
 
-// gzip
+// zlib_case1
 TEST(ZlibTest, CompressAndDecompress_case1) {
     const char* input = "Hello, world!";
     const size_t input_size = strlen(input) + 1;
@@ -44,62 +44,64 @@ TEST(ZlibTest, CompressAndDecompress_case1) {
     delete[] output;
 }
 
-// gzip测试用例gzip
+// zlib_case2
 TEST(ZlibTest, CompressAndDecompress_case2) {
-  // 原始数据
-  const char* data = "Hello, world!";
-  const size_t data_len = strlen(data);
+    // 原始数据
+    const char* data = "Hello, world!";
+    const size_t data_len = strlen(data);
 
-  // 压缩数据
-  const size_t compressed_buf_size = compressBound(data_len);
-  char* compressed_buf = new char[compressed_buf_size];
-  uLongf compressed_len = compressed_buf_size;
-  int compress_ret = compress2((Bytef*)compressed_buf, &compressed_len, (const Bytef*)data, data_len, Z_BEST_COMPRESSION);
-  ASSERT_EQ(compress_ret, Z_OK);
+    // 压缩数据
+    const size_t compressed_buf_size = compressBound(data_len);
+    char* compressed_buf = new char[compressed_buf_size];
+    uLongf compressed_len = compressed_buf_size;
+    int compress_ret = compress2((Bytef*)compressed_buf, &compressed_len, (const Bytef*)data, data_len, Z_BEST_COMPRESSION);
+    ASSERT_EQ(compress_ret, Z_OK);
 
-  // 解压数据
-  const size_t decompressed_buf_size = data_len;
-  char* decompressed_buf = new char[decompressed_buf_size];
-  uLongf decompressed_len = decompressed_buf_size;
-  int decompress_ret = uncompress((Bytef*)decompressed_buf, &decompressed_len, (const Bytef*)compressed_buf, compressed_len);
-  ASSERT_EQ(decompress_ret, Z_OK);
+    // 解压数据
+    const size_t decompressed_buf_size = data_len;
+    char* decompressed_buf = new char[decompressed_buf_size];
+    uLongf decompressed_len = decompressed_buf_size;
+    int decompress_ret = uncompress((Bytef*)decompressed_buf, &decompressed_len, (const Bytef*)compressed_buf, compressed_len);
+    ASSERT_EQ(decompress_ret, Z_OK);
 
-  // 检查解压后的数据是否与原始数据相同
-  ASSERT_EQ(decompressed_len, data_len);
-  ASSERT_EQ(memcmp(decompressed_buf, data, data_len), 0);
+    // 检查解压后的数据是否与原始数据相同
+    ASSERT_EQ(decompressed_len, data_len);
+    ASSERT_EQ(memcmp(decompressed_buf, data, data_len), 0);
 
-  delete[] compressed_buf;
-  delete[] decompressed_buf;
+    delete[] compressed_buf;
+    delete[] decompressed_buf;
 }
 
+#ifdef KP920B
 TEST(ZlibTest, Deflate) {
-  const char* input = "Hello, world!";
-  const int input_size = strlen(input);
+    const char* input = "Hello, world!";
+    const int input_size = strlen(input);
 
-  // Allocate output buffer
-  const int output_size = compressBound(input_size);
-  char* output = new char[output_size];
+    // Allocate output buffer
+    const int output_size = compressBound(input_size);
+    char* output = new char[output_size];
 
-  // Compress input
-  z_stream stream;
-  stream.zalloc = Z_NULL;
-  stream.zfree = Z_NULL;
-  stream.opaque = Z_NULL;
-  stream.avail_in = input_size;
-  stream.next_in = (Bytef*)input;
-  stream.avail_out = output_size;
-  stream.next_out = (Bytef*)output;
-  deflateInit(&stream, Z_DEFAULT_COMPRESSION);
-  deflate(&stream, Z_FINISH);
-  deflateEnd(&stream);
+    // Compress input
+    z_stream stream;
+    stream.zalloc = Z_NULL;
+    stream.zfree = Z_NULL;
+    stream.opaque = Z_NULL;
+    stream.avail_in = input_size;
+    stream.next_in = (Bytef*)input;
+    stream.avail_out = output_size;
+    stream.next_out = (Bytef*)output;
+    deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -8, 8, Z_DEFAULT_STRATEGY);
+    deflate(&stream, Z_FINISH);
+    deflateEnd(&stream);
 
-  // Verify output
-  EXPECT_GT(stream.total_out, 0);
-  EXPECT_LT(stream.total_out, output_size);
+    // Verify output
+    EXPECT_GT(stream.total_out, 0);
+    EXPECT_LT(stream.total_out, output_size);
 
-  // Clean up
-  delete[] output;
+    // Clean up
+    delete[] output;
 }
+#endif
 
 // 大数据解压缩
 TEST(ZlibTest, CompressAndDecompressLargeData) {
@@ -113,9 +115,7 @@ TEST(ZlibTest, CompressAndDecompressLargeData) {
     for (int i = 0; i < input_size; i++) {
         input[i] = rand() % 256;
     }
-    // printf("原始数据：\n");
-    // PRINT_BUF(input, input_size);
-    // compress
+
     z_stream stream;
     stream.zalloc = Z_NULL;
     stream.zfree = Z_NULL;
@@ -151,70 +151,78 @@ TEST(ZlibTest, CompressAndDecompressLargeData) {
     delete[] buffer;
 }
 
-// gzip用例
+// 通用解压缩用例
 TEST(ZlibTest, CompressAndDecompress_gzip) {
-  std::string input = "Hello, world!";
-  std::string compressed;
-  std::string decompressed;
+    const int windowBitsArr[] = {-8, 15, 31};   // deflate, zlib, gzip
+    for (auto windowBit : windowBitsArr) {
+    #ifndef KP920B
+        if (windowBit < 0) {
+            continue;
+        }
+    #endif
+        std::string input = "Hello, world!";
+        std::string compressed;
+        std::string decompressed;
 
-  // 压缩数据
-  z_stream stream;
-  stream.zalloc = Z_NULL;
-  stream.zfree = Z_NULL;
-  stream.opaque = Z_NULL;
-  deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY);
-  stream.avail_in = input.size();
-  stream.next_in = (Bytef*)input.data();
-  do {
-    char buffer[1024];
-    stream.avail_out = sizeof(buffer);
-    stream.next_out = (Bytef*)buffer;
-    deflate(&stream, Z_FINISH);
-    compressed.append(buffer, sizeof(buffer) - stream.avail_out);
-  } while (stream.avail_out == 0);
-  deflateEnd(&stream);
+        // 压缩数据
+        z_stream stream;
+        stream.zalloc = Z_NULL;
+        stream.zfree = Z_NULL;
+        stream.opaque = Z_NULL;
+        deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, windowBit, 8, Z_DEFAULT_STRATEGY);
+        stream.avail_in = input.size();
+        stream.next_in = (Bytef*)input.data();
+        do {
+            char buffer[1024];
+            stream.avail_out = sizeof(buffer);
+            stream.next_out = (Bytef*)buffer;
+            deflate(&stream, Z_FINISH);
+            compressed.append(buffer, sizeof(buffer) - stream.avail_out);
+        } while (stream.avail_out == 0);
+        deflateEnd(&stream);
 
-  // 解压数据
-  stream.zalloc = Z_NULL;
-  stream.zfree = Z_NULL;
-  stream.opaque = Z_NULL;
-  inflateInit2(&stream, 31);
-  stream.avail_in = compressed.size();
-  stream.next_in = (Bytef*)compressed.data();
-  do {
-    char buffer[1024];
-    stream.avail_out = sizeof(buffer);
-    stream.next_out = (Bytef*)buffer;
-    inflate(&stream, Z_NO_FLUSH);
-    decompressed.append(buffer, sizeof(buffer) - stream.avail_out);
-  } while (stream.avail_out == 0);
-  inflateEnd(&stream);
+        // 解压数据
+        stream.zalloc = Z_NULL;
+        stream.zfree = Z_NULL;
+        stream.opaque = Z_NULL;
+        inflateInit2(&stream, windowBit);
+        stream.avail_in = compressed.size();
+        stream.next_in = (Bytef*)compressed.data();
+        do {
+            char buffer[1024];
+            stream.avail_out = sizeof(buffer);
+            stream.next_out = (Bytef*)buffer;
+            inflate(&stream, Z_NO_FLUSH);
+            decompressed.append(buffer, sizeof(buffer) - stream.avail_out);
+        } while (stream.avail_out == 0);
+        inflateEnd(&stream);
 
-  // 验证解压后的数据是否与原始数据相同
-  EXPECT_EQ(input, decompressed);
+        // 验证解压后的数据是否与原始数据相同
+        EXPECT_EQ(input, decompressed);
+    }
 }
 
 
 // 测试gzip格式压缩和解压缩能力
 TEST(ZlibTest, GzipCompressionAndDecompression_largedata_5G) {
-    const long long data_length = 1024 * 1024 * 1024 * 5; // 5G
+    const unsigned long long data_length = 1024 * 1024 * 1024 * 5; // 5G
     char* data = new char[data_length];
     generate_random_data(data, data_length);
 
     // 压缩数据
-    const long long compressed_data_length = compressBound(data_length);
+    const unsigned long long compressed_data_length = compressBound(data_length);
     char* compressed_data = new char[compressed_data_length];
     int result = compress2((Bytef*)compressed_data, (uLongf*)&compressed_data_length, (const Bytef*)data, data_length, Z_BEST_COMPRESSION);
     EXPECT_EQ(result, Z_OK);
 
     // 解压缩数据
-    const long long decompressed_data_length = data_length;
+    const unsigned long long decompressed_data_length = data_length;
     char* decompressed_data = new char[decompressed_data_length];
     result = uncompress((Bytef*)decompressed_data, (uLongf*)&decompressed_data_length, (const Bytef*)compressed_data, compressed_data_length);
     EXPECT_EQ(result, Z_OK);
 
     // 验证解压缩后的数据与原始数据一致
-    for (long long i = 0; i < data_length; i++) {
+    for (unsigned long long i = 0; i < data_length; i++) {
         EXPECT_EQ(data[i], decompressed_data[i]);
     }
 
