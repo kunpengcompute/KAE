@@ -1517,4 +1517,4 @@ module_exit(hpre_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_AUTHOR("Meng Yu <yumeng18@huawei.com>");
-MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator");
+MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.0");
