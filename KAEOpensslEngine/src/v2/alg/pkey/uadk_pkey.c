@@ -318,14 +318,14 @@ int uadk_ecc_crypto(handle_t sess, struct wd_ecc_req *req, void *usr)
 	} else {
 		ret = wd_do_ecc_sync(sess, req);
 		if (ret < 0){
-			US_DEBUG("do ecc job sync failed");
+			US_DEBUG("wd_do_ecc_sync failed");
 			return 0;
 		}
-		US_DEBUG("do ecc job sync successed");
+		US_DEBUG("wd_do_ecc_sync successed");
 	}
 	return 1;
 err:
-	US_DEBUG("do ecc job async failed");
+	US_DEBUG("wd_do_ecc_sync failed");
 	(void)async_clear_async_event_notification();
 	return 0;
 }
@@ -645,20 +645,23 @@ void uadk_e_ecc_lock_init(void)
 
 int uadk_e_bind_ecc(ENGINE *e)
 {
+	US_DEBUG("uadk_e_bind_ecc start.\n");
 	int ret;
 
 	ret = uadk_ecc_bind_pmeth(e);
 	if (!ret) {
 		fprintf(stderr, "failed to bind ecc pmeth\n");
+		US_ERR("failed to bind ecc pmeth\n");		
 		return ret;
 	}
 
 	ret = uadk_bind_ec(e);
 	if (!ret) {
 		fprintf(stderr, "failed to bind ec\n");
+		US_ERR("failed to bind ec\n");
 		return ret;
 	}
-
+	US_DEBUG("uadk_e_bind_ecc successed.\n");
 	return ret;
 }
 

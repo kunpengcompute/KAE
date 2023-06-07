@@ -721,9 +721,12 @@ uninit_iot:
 	wd_ecc_del_in(smctx->sess, req.src);
 	wd_ecc_del_out(smctx->sess, req.dst);
 do_soft:
-	if (ret != UADK_DO_SOFT)
+	if (ret != UADK_DO_SOFT){
+		US_DEBUG("sm2_sign successed!\n");
 		return ret;
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	}
+	fprintf(stderr, "sm2_sign failed, switch to execute openssl software calculation.\n");
+	US_ERR("sm2_sign failed, switch to execute openssl software calculation.\n");
 	return openssl_sign(ctx, sig, siglen, tbs, tbslen);
 }
 
@@ -787,8 +790,10 @@ static int sm2_verify(EVP_PKEY_CTX *ctx,
 	int ret;
 
 	ret = sm2_verify_check(ctx, sig, siglen, tbs, tbslen);
-	if (ret)
+	if (ret){
+		US_ERR("sm2_verify_check failed.\n");
 		goto do_soft;
+	}
 
 	if (smctx->init_status != CTX_INIT_SUCC) {
 		ret = UADK_DO_SOFT;
@@ -813,6 +818,7 @@ static int sm2_verify(EVP_PKEY_CTX *ctx,
 	ret = update_public_key(ctx);
 	if (ret) {
 		ret = UADK_DO_SOFT;
+		US_ERR("sm2_verify_check failed,switch to soft.\n");
 		goto uninit_iot;
 	}
 
@@ -820,16 +826,19 @@ static int sm2_verify(EVP_PKEY_CTX *ctx,
 	if (!ret) {
 		ret = UADK_DO_SOFT;
 		fprintf(stderr, "failed to uadk_ecc_crypto, ret = %d\n", ret);
+		US_ERR("uadk_ecc_crypto failed,switch to soft.\n");
 		goto uninit_iot;
 	}
 
 uninit_iot:
 	wd_ecc_del_in(smctx->sess, req.src);
 do_soft:
-	if (ret != UADK_DO_SOFT)
+	if (ret != UADK_DO_SOFT){
+		US_DEBUG("sm2_verify successed!\n");
 		return ret;
-
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	}
+	fprintf(stderr, "sm2_verify failed,switch to execute openssl software calculation.\n");
+	US_ERR("sm2_verify failed,switch to execute openssl software calculation.\n");
 	return openssl_verify(ctx, sig, siglen, tbs, tbslen);
 }
 
@@ -863,6 +872,7 @@ static int sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 			     unsigned char *out, size_t *outlen,
 			     const unsigned char *in, size_t inlen)
 {
+	US_DEBUG("sm2_encrypt_check started.\n");
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
 	EC_KEY *ec = EVP_PKEY_get0(p_key);
@@ -903,6 +913,7 @@ static int sm2_encrypt(EVP_PKEY_CTX *ctx,
 		       unsigned char *out, size_t *outlen,
 		       const unsigned char *in, size_t inlen)
 {
+
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 	struct wd_ecc_point *c1 = NULL;
 	struct wd_dtb *c2 = NULL;
@@ -912,8 +923,10 @@ static int sm2_encrypt(EVP_PKEY_CTX *ctx,
 	int ret;
 
 	ret = sm2_encrypt_check(ctx, out, outlen, in, inlen);
-	if (ret)
+	if (ret){
+		US_ERR("sm2_encrypt_check failed ,then switch to soft!\n");
 		goto do_soft;
+	}
 
 	if (smctx->init_status != CTX_INIT_SUCC) {
 		ret = UADK_DO_SOFT;
@@ -922,12 +935,15 @@ static int sm2_encrypt(EVP_PKEY_CTX *ctx,
 
 	memset(&req, 0, sizeof(req));
 	ret = sm2_encrypt_init_iot(smctx->sess, &req, (void *)in, inlen);
-	if (ret)
+	if (ret){
+		US_ERR("sm2_encrypt_init_iot failed , then switch to soft!\n");
 		goto do_soft;
+	}
 
 	ret = update_public_key(ctx);
 	if (ret) {
 		ret = UADK_DO_SOFT;
+		US_ERR("update_public_key failed , then switch to soft!\n");
 		goto uninit_iot;
 	}
 
@@ -935,6 +951,7 @@ static int sm2_encrypt(EVP_PKEY_CTX *ctx,
 	if (!ret) {
 		ret = UADK_DO_SOFT;
 		fprintf(stderr, "failed to uadk_ecc_crypto, ret = %d\n", ret);
+		US_ERR("uadk_ecc_crypto failed.\n");
 		goto uninit_iot;
 	}
 
@@ -1128,6 +1145,7 @@ static void sm2_cleanup(EVP_PKEY_CTX *ctx)
 
 static int sm2_init(EVP_PKEY_CTX *ctx)
 {
+	US_DEBUG("sm2_init started.\n");
 	struct sm2_ctx *smctx;
 	int ret;
 
@@ -1142,6 +1160,7 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 	ret = uadk_init_ecc();
 	if (ret) {
 		fprintf(stderr, "failed to uadk_init_ecc, ret = %d\n", ret);
+		US_ERR(""failed to uadk_init_ecc, ret = %d\n", ret");
 		smctx->init_status = CTX_INIT_FAIL;
 		goto end;
 	}
@@ -1149,11 +1168,13 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 	ret = sm2_update_sess(smctx);
 	if (ret) {
 		fprintf(stderr, "failed to update sess\n");
+		US_ERR("failed to update sess\n"");
 		smctx->init_status = CTX_INIT_FAIL;
 		goto end;
 	}
 
 	smctx->init_status = CTX_INIT_SUCC;
+	US_DEBUG("sm2_init successed.\n");
 end:
 	EVP_PKEY_CTX_set_data(ctx, smctx);
 	EVP_PKEY_CTX_set0_keygen_info(ctx, NULL, 0);
@@ -1563,15 +1584,19 @@ static int sm2_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src)
 
 int uadk_sm2_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 {
+	US_DEBUG("uadk_sm2_create_pmeth start.\n");
 	const EVP_PKEY_METHOD *openssl_meth;
 	EVP_PKEY_METHOD *meth;
 
-	if (pkey_meth->sm2)
+	if (pkey_meth->sm2){
+		US_DEBUG("have created EVP_PKEY_METHOD of sm2.\n");
 		return 1;
+	}
 
 	meth = EVP_PKEY_meth_new(EVP_PKEY_SM2, 0);
 	if (meth == NULL) {
 		fprintf(stderr, "failed to EVP_PKEY_meth_new\n");
+		US_ERR("failed to EVP_PKEY_meth_new\n");
 		return 0;
 	}
 
@@ -1593,7 +1618,8 @@ int uadk_sm2_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 	EVP_PKEY_meth_set_sign(meth, sm2_sign_init, sm2_sign);
 	EVP_PKEY_meth_set_verify(meth, sm2_verify_init, sm2_verify);
 	pkey_meth->sm2 = meth;
-
+	
+	US_DEBUG("uadk_sm2_create_pmeth successed.\n");
 	return 1;
 }
 
