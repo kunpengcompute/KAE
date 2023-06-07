@@ -2,6 +2,10 @@
 
 #include "func_common.h"
 
+extern "C" {
+    #include "kaezstd.h"
+}
+
 using namespace testing;
 
 // input @oBuff: 待压缩数据
@@ -58,6 +62,17 @@ TEST(functest_stream, size_level_thread)
             }
         }
     }
+}
+
+TEST(functest_version, kaezstd_version)
+{
+    KAEZstdVersion ver;
+    int ret = kaezstd_get_version(&ver);
+    EXPECT_EQ(ret, 0);
+    EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
+    EXPECT_STREQ(ver.productVersion, "23.0.RC2");
+    EXPECT_STREQ(ver.componentName, "KAEZstd");
+    EXPECT_STREQ(ver.componentVersion, "2.0.0");
 }
 
 // 主函数
