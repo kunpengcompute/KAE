@@ -25,13 +25,16 @@ add_subdirectory("${CMAKE_BINARY_DIR}/googletest-src"
 if(CMAKE_VERSION VERSION_LESS 2.8.11)
     include_directories("${gtest_SOURCE_DIR}/include"
                         "${gmock_SOURCE_DIR}/include"
-                        /usr/local/kaezip/include
+                        
     )
 endif()
 
-if(DEFINED ENV{KP920B})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DKP920B")
-endif()
+include_directories("
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include"
+    "/usr/local/kaezip/include"
+)
+
+find_library(KAEZIP_LIB kaezip PATHS "/usr/local/kaezip/lib")
 
 # 这里改成自己的运行文件
 add_executable(zlib_functest main.cpp
@@ -43,5 +46,6 @@ link_directories(/usr/local/kaezip/lib/)
 target_link_libraries(zlib_functest gtest
                                     gtest_main
                                     z
+                                    ${KAEZIP_LIB}
 )
 enable_testing()

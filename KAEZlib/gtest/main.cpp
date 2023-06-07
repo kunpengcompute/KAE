@@ -2,6 +2,9 @@
 #include <zlib.h>
 #include <string>
 #include <fstream>
+extern "C" {
+    #include "kaezip.h"
+}
 using namespace testing;
 
 void PRINT_BUF(char* buf, int size) {
@@ -72,8 +75,7 @@ TEST(ZlibTest, CompressAndDecompress_case2) {
     delete[] decompressed_buf;
 }
 
-#ifdef KP920B
-TEST(ZlibTest, Deflate) {
+TEST(ZlibTest, CompressAndDecompress_Deflate) {
     const char* input = "Hello, world!";
     const int input_size = strlen(input);
 
@@ -101,7 +103,6 @@ TEST(ZlibTest, Deflate) {
     // Clean up
     delete[] output;
 }
-#endif
 
 // 大数据解压缩
 TEST(ZlibTest, CompressAndDecompressLargeData) {
@@ -152,14 +153,9 @@ TEST(ZlibTest, CompressAndDecompressLargeData) {
 }
 
 // 通用解压缩用例
-TEST(ZlibTest, CompressAndDecompress_gzip) {
+TEST(ZlibTest, CompressAndDecompress_common) {
     const int windowBitsArr[] = {-8, 15, 31};   // deflate, zlib, gzip
     for (auto windowBit : windowBitsArr) {
-    #ifndef KP920B
-        if (windowBit < 0) {
-            continue;
-        }
-    #endif
         std::string input = "Hello, world!";
         std::string compressed;
         std::string decompressed;
@@ -203,8 +199,8 @@ TEST(ZlibTest, CompressAndDecompress_gzip) {
 }
 
 
-// 测试gzip格式压缩和解压缩能力
-TEST(ZlibTest, GzipCompressionAndDecompression_largedata_5G) {
+// 测试zlib格式压缩和解压缩能力
+TEST(ZlibTest, CompressionAndDecompression_largedata_5G) {
     const unsigned long long data_length = 1024 * 1024 * 1024 * 5; // 5G
     char* data = new char[data_length];
     generate_random_data(data, data_length);
@@ -294,6 +290,17 @@ TEST(ZlibTest, CompressAndDecompress) {
         ASSERT_EQ(decompressed_size, input_size);
         ASSERT_STREQ(decompressed, input);
     }
+}
+
+TEST(ZlibTest, VersionCheck)
+{
+    KAEZlibVersion ver;
+    int ret = kaezlib_get_version(&ver);
+    EXPECT_EQ(ret, 0);
+    EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
+    EXPECT_STREQ(ver.productVersion, "23.0.RC2");
+    EXPECT_STREQ(ver.componentName, "KAEZlib");
+    EXPECT_STREQ(ver.componentVersion, "2.0.0");
 }
 
 // 主函数
