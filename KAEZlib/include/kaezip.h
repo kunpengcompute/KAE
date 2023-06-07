@@ -24,6 +24,15 @@
 #define KAEZIP_H
 #include "zlib.h"
 
+#define VERSION_STRUCT_MAXLEN 100
+typedef struct {
+    char productName[VERSION_STRUCT_MAXLEN];
+    char productVersion[VERSION_STRUCT_MAXLEN];
+    char componentName[VERSION_STRUCT_MAXLEN];
+    char componentVersion[VERSION_STRUCT_MAXLEN];
+} KAEZlibVersion;
+extern int kaezlib_get_version(KAEZlibVersion* ver);
+
 extern int kz_get_devices(void);
 extern int kz_deflate(z_streamp strm, int flush);
 extern int kz_inflate(z_streamp strm, int flush);

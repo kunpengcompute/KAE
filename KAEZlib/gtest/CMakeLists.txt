@@ -28,6 +28,11 @@ if(CMAKE_VERSION VERSION_LESS 2.8.11)
                         /usr/local/kaezip/include
     )
 endif()
+
+if(DEFINED ENV{KP920B})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DKP920B")
+endif()
+
 # 这里改成自己的运行文件
 add_executable(zlib_functest main.cpp
 )
