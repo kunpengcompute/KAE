@@ -121,6 +121,7 @@ static inline void versionCpy(char s1[], const char s2[])
     while (i < VERSION_STRUCT_MAXLEN && (s1[i] = s2[i])) {
         ++i;
     }
+    s1[i] = '\0';
 }
 
 int kaezlib_get_version(KAEZlibVersion* ver)
@@ -128,8 +129,8 @@ int kaezlib_get_version(KAEZlibVersion* ver)
     if (ver == NULL) {
         return 1;
     }
-    versionCpy(ver->componentName, "Kunpeng Boostkit");
-    versionCpy(ver->componentVersion, "23.0.RC2");
+    versionCpy(ver->productName, "Kunpeng Boostkit");
+    versionCpy(ver->productVersion, "23.0.RC2");
     versionCpy(ver->componentName, "KAEZlib");
     versionCpy(ver->componentVersion, "2.0.0");
     return 0;
