@@ -250,6 +250,28 @@ void kaezstd_release_ctx(KaeZstdConfig *config)
     wd_sched_rr_release(config->info.sched);
 }
 
+static inline void versionCpy(char str1[], const char str2[])
+{
+    int i = 0;
+    while (str2[i] != '\0' && i < VERSION_STRUCT_LEN) {
+        str1[i] = str2[i];
+        i++;
+    }
+    str1[i] = '\0';
+}
+
+int kaezstd_get_version(KAEZstdVersion* ver)
+{
+    if (ver == NULL) {
+        return KAE_ZSTD_INVAL_PARA;
+    }
+    versionCpy(ver->productName, "Kunpeng Boostkit");
+    versionCpy(ver->productVersion, "23.0.RC2");
+    versionCpy(ver->componentName, "KAEZstd");
+    versionCpy(ver->componentVersion, "2.0.0");
+    return KAE_ZSTD_SUCC;
+}
+
 int kaezstd_init(ZSTD_CCtx* zc)
 {
     int ret;
