@@ -1346,4 +1346,4 @@ MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_AUTHOR("Longfang Liu <liulongfang@huawei.com>");
 MODULE_AUTHOR("Kai Ye <yekai13@huawei.com>");
 MODULE_AUTHOR("Wei Zhang <zhangwei375@huawei.com>");
-MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator");
+MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.0");
