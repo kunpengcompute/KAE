@@ -44,7 +44,7 @@ void ENGINE_LOG_LIMIT(int level, int times, int limit, const char *fmt, ...);
 #define US_WARN(fmt, args...)		ENGINE_LOG_LIMIT(KAE_WARNING, 3, 1, fmt, ##args)
 #define US_ERR(fmt, args...)		ENGINE_LOG_LIMIT(KAE_ERROR, 3, 1, fmt, ##args)
 #define US_INFO(fmt, args...)		ENGINE_LOG_LIMIT(KAE_INFO, 3, 1, fmt, ##args)
-#define US_DEBUG(fmt, args...)		ENGINE_LOG_LIMIT(KAE_DEBUG, 3, 1, fmt, ##args)
+#define US_DEBUG(fmt, args...)		ENGINE_LOG_LIMIT(KAE_DEBUG, 100, 1, fmt, ##args)
 #define US_WARN_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_WARNING, 3, 1, fmt, ##args)
 #define US_ERR_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_ERROR, 3, 1, fmt, ##args)
 #define US_INFO_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_INFO, 3, 1, fmt, ##args)
