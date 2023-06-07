@@ -25,7 +25,7 @@ typedef struct {
     char componentName[VERSION_STRUCT_LEN];
     char componentVersion[VERSION_STRUCT_LEN];
 }KAEZstdVersion;
-
+extern int kaezstd_get_version(KAEZstdVersion* ver);
 extern int kaezstd_init(ZSTD_CCtx* zc);
 extern void kaezstd_release(ZSTD_CCtx* zc);
 extern void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status);
