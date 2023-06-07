@@ -22,11 +22,19 @@ add_subdirectory("${CMAKE_BINARY_DIR}/googletest-src"
 # The gtest/gmock targets carry header search path dependencies
 # automatically when using CMake 2.8.11 or later. Otherwise we
 # have to add them here ourselves.
-if(CMAKE_VERSION VERSION_LESS 2.8.11)
-    include_directories("${gtest_SOURCE_DIR}/include"
+
+include_directories("${gtest_SOURCE_DIR}/include"
                         "${gmock_SOURCE_DIR}/include"
-    )
-endif()
+                        "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+
+find_library(KAEZSTD_LIB kaezstd PATHS "/usr/local/kaezstd/lib/")
+
+link_directories("/usr/local/kaezstd/lib/")
+
+
+
 # 这里改成自己的运行文件
 add_executable(zstd_functest main.cpp
                              func_common.cpp
@@ -35,5 +43,6 @@ add_executable(zstd_functest main.cpp
 target_link_libraries(zstd_functest gtest
                                     gtest_main
                                     zstd
+                                    ${KAEZSTD_LIB}
 )
 enable_testing()
