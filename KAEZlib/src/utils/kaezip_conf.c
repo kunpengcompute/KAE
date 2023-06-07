@@ -21,6 +21,7 @@
  *****************************************************************************/
 
 #include "kaezip_conf.h"
+#include "kaezip.h"
 
 int kaezip_drv_findsection(FILE *stream, const char *v_pszSection)
 {
@@ -111,4 +112,25 @@ int kaezip_drv_get_item(const char *config_file, const char *v_pszSection,
     fclose(stream);
 
     return retvalue;
+}
+
+
+static inline void versionCpy(char s1[], const char s2[])
+{
+    int i = 0;
+    while (i < VERSION_STRUCT_MAXLEN && (s1[i] = s2[i])) {
+        ++i;
+    }
+}
+
+int kaezlib_get_version(KAEZlibVersion* ver)
+{
+    if (ver == NULL) {
+        return 1;
+    }
+    versionCpy(ver->componentName, "Kunpeng Boostkit");
+    versionCpy(ver->componentVersion, "23.0.RC2");
+    versionCpy(ver->componentName, "KAEZlib");
+    versionCpy(ver->componentVersion, "2.0.0");
+    return 0;
 }
