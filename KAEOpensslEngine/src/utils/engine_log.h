@@ -30,6 +30,8 @@
 #define KAE_DEBUG_FILE_PATH_OLD "/var/log/kae.log.old"
 #define KAE_LOG_MAX_SIZE 209715200
 
+#define LOG_PRINT_NUM 20
+
 enum KAE_LOG_LEVEL {
 	KAE_NONE = 0,
 	KAE_ERROR,
@@ -41,10 +43,11 @@ enum KAE_LOG_LEVEL {
 void ENGINE_LOG_LIMIT(int level, int times, int limit, const char *fmt, ...);
 
 
-#define US_WARN(fmt, args...)		ENGINE_LOG_LIMIT(KAE_WARNING, 3, 1, fmt, ##args)
-#define US_ERR(fmt, args...)		ENGINE_LOG_LIMIT(KAE_ERROR, 3, 1, fmt, ##args)
-#define US_INFO(fmt, args...)		ENGINE_LOG_LIMIT(KAE_INFO, 3, 1, fmt, ##args)
-#define US_DEBUG(fmt, args...)		ENGINE_LOG_LIMIT(KAE_DEBUG, 100, 1, fmt, ##args)
+#define US_WARN(fmt, args...)		ENGINE_LOG_LIMIT(KAE_WARNING, LOG_PRINT_NUM, 1, fmt, ##args)
+#define US_ERR(fmt, args...)		ENGINE_LOG_LIMIT(KAE_ERROR, LOG_PRINT_NUM, 1, fmt, ##args)
+#define US_INFO(fmt, args...)		ENGINE_LOG_LIMIT(KAE_INFO, LOG_PRINT_NUM, 1, fmt, ##args)
+#define US_DEBUG(fmt, args...)		ENGINE_LOG_LIMIT(KAE_DEBUG, LOG_PRINT_NUM, 1, fmt, ##args)
+
 #define US_WARN_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_WARNING, 3, 1, fmt, ##args)
 #define US_ERR_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_ERROR, 3, 1, fmt, ##args)
 #define US_INFO_LIMIT(fmt, args...)	ENGINE_LOG_LIMIT(KAE_INFO, 3, 1, fmt, ##args)
