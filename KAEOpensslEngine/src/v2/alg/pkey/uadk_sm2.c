@@ -1160,7 +1160,7 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 	ret = uadk_init_ecc();
 	if (ret) {
 		fprintf(stderr, "failed to uadk_init_ecc, ret = %d\n", ret);
-		US_ERR(""failed to uadk_init_ecc, ret = %d\n", ret");
+		US_ERR("failed to uadk_init_ecc, ret = %d\n", ret);
 		smctx->init_status = CTX_INIT_FAIL;
 		goto end;
 	}
@@ -1168,7 +1168,7 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 	ret = sm2_update_sess(smctx);
 	if (ret) {
 		fprintf(stderr, "failed to update sess\n");
-		US_ERR("failed to update sess\n"");
+		US_ERR("failed to update sess\n");
 		smctx->init_status = CTX_INIT_FAIL;
 		goto end;
 	}
