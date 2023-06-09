@@ -26,6 +26,7 @@ add_subdirectory("${CMAKE_BINARY_DIR}/googletest-src"
 include_directories("${gtest_SOURCE_DIR}/include"
                         "${gmock_SOURCE_DIR}/include"
                         "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+                        "/usr/local/kaezstd/include/"
                         "${CMAKE_CURRENT_SOURCE_DIR}/../src"
 )
 
