@@ -1348,7 +1348,7 @@ static void ec_key_meth_set_ecdh(EC_KEY_METHOD *meth)
 
 static EC_KEY_METHOD *uadk_get_ec_methods(void)
 {	
-	US_DEBUG("call uadk_get_ec_methods");
+	US_DEBUG("uadk_get_ec_methods start.\n");
 	EC_KEY_METHOD *def_ec_method;
 
 	if (uadk_ec_method != NULL)

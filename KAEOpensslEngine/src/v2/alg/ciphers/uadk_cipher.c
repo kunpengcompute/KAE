@@ -1197,6 +1197,7 @@ static int bind_v3_cipher(void)
 
 int uadk_e_bind_cipher(ENGINE *e)
 {
+	US_DEBUG("uadk_e_bind_cipher start.\n");
 	int ret;
 
 	ret = uadk_get_accel_platform("cipher");
