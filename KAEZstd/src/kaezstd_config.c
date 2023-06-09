@@ -219,15 +219,7 @@ int kaezstd_create_session(KaeZstdConfig *config)
     config->setup.sched_param = param;
     config->setup.alg_type = WD_LZ77_ZSTD;
     config->setup.op_type = WD_DIR_COMPRESS;
-    config->setup.win_sz = REQ_WINDOW_SIZE;
-    config->setup.comp_lv = REQ_COMPRESS_LEVEL;
-    config->sess = wd_comp_alloc_sess(&(config->setup));
-    if (!(config->sess)) {
-        US_ERR("failed to alloc comp sess!\n");
-        free(param);
-        return KAE_ZSTD_ALLOC_FAIL;
-    }
-    config->req.src = calloc(1, REQ_SRCBUFF_LEN);
+    config->sess = (handle_t)0;
     config->req.dst = calloc(1, REQ_DSTBUFF_LEN);
     config->req.dst_len = REQ_DSTBUFF_LEN;
     config->req.op_type = WD_DIR_COMPRESS;
@@ -328,6 +320,8 @@ void kaezstd_release(ZSTD_CCtx* zc)
     }
 
     config = kaezstd_get_config(zc);
+
+    free(config->setup.sched_param);
 
     kaezstd_release_ctx(config);
 
