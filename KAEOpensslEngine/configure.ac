@@ -17,7 +17,7 @@ AM_CONDITIONAL([WD_KAE], [test "$enable_kae" = "yes"])
 
 AC_CHECK_HEADERS([openssl/engine.h])
 
-PKG_CHECK_MODULES(WD, libwd libwd_crypto, [with_wd=yes], [with_wd=no])
+PKG_CHECK_MODULES(WD, libwd libwd_crypto, [-L/usr/local/lib -L$(AM_LDFLAGS)], [with_wd=yes], [with_wd=no])
 AM_CONDITIONAL(HAVE_WD, [test "$with_wd" != "no"])
 
 PKG_CHECK_MODULES(libcrypto, libcrypto < 3.0 libcrypto >= 1.1,

@@ -38,11 +38,15 @@ INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib/common
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib/compress
+INCDIR += -I ${WORK_PATH}/../kae_build/head/
+INCDIR += -I ${WORK_PATH}/../kae_build/head/uadk
+INCDIR += -I ${WORK_PATH}/../kae_build/head/uadk/v1
 
 # Include Libs.
 LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64
 LIBDIR += -L/usr/lib
+LIBDIR += -L$(WORK_PATH)/../kae_build/lib/
 LIBS := -pthread -Wl,-rpath,/usr/local/lib -lwd -lwd_comp
 LIBS += -lc_nonshared
 
