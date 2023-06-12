@@ -11,17 +11,17 @@
 #include "kaezip_comp.h"
 #include "kaezip_log.h"
 
-// static z_stream g_init_strm = {0};
+static z_stream g_init_strm = {0};
 
-// static void __attribute((constructor)) wd_do_init_onlyone(void)
-// {
-// 	wd_deflateInit_(&g_init_strm, 1, NULL, 0);
-// }
+static void __attribute((constructor)) wd_do_init_onlyone(void)
+{
+	wd_deflateInit_(&g_init_strm, 1, NULL, 0);
+}
 
-// static void __attribute((destructor)) wd_do_uninit_onlyone(void)
-// {
-// 	wd_deflateEnd(&g_init_strm);
-// }
+static void __attribute((destructor)) wd_do_uninit_onlyone(void)
+{
+	wd_deflateEnd(&g_init_strm);
+}
 
 static int wd_check_params(struct wd_comp_req *req)
 {

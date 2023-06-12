@@ -29,23 +29,53 @@ if(CMAKE_VERSION VERSION_LESS 2.8.11)
     )
 endif()
 
-include_directories("
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include"
-    "/usr/local/kaezip/include"
-)
+option(USE_DEBUG "DEBUG MODE" OFF)
+if (USE_DEBUG)
+    message("---------DEBUG MODE ON---------")
+    add_definitions(-DZ_DEBUG)
+endif()
 
-find_library(KAEZIP_LIB kaezip PATHS "/usr/local/kaezip/lib")
+option(KP920B "KP920B PLATFORM" ON)
+if (KP920B)
+    message("---------KP920B ON---------")
+    add_definitions(-DKP920B)
+endif()
 
-# 这里改成自己的运行文件
-add_executable(zlib_functest main.cpp
-)
+option(PERF "DO PERF CASE" ON)
+if (PERF)
+    message("---------PERF ON---------")
+    add_definitions(-DPERF)
+endif()
 
-link_directories(/usr/local/kaezip/lib/)
+option(TEST_OPEN "TEST_OPEN PERF" OFF)
+if (TEST_OPEN)
+    message("---------TEST_OPEN ON---------")
+    add_definitions(-DTEST_OPEN)
+    include_directories("
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include"
+    )
+    add_executable(zlib_functest main.cpp)
+    target_link_libraries(zlib_functest gtest
+                                        gtest_main
+                                        z
+    )
+else()
+    include_directories("
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include"
+        "/usr/local/kaezip/include"
+    )
+    find_library(KAEZIP_LIB kaezip PATHS "/usr/local/kaezip/lib")
+    # 这里改成自己的运行文件
+    add_executable(zlib_functest main.cpp)
+    
+    link_directories(/usr/local/kaezip/lib/)
+    
+    # 链接库是必须的
+    target_link_libraries(zlib_functest gtest
+                                        gtest_main
+                                        z
+                                        ${KAEZIP_LIB}
+    )
+endif()
 
-# 链接库是必须的
-target_link_libraries(zlib_functest gtest
-                                    gtest_main
-                                    z
-                                    ${KAEZIP_LIB}
-)
 enable_testing()
