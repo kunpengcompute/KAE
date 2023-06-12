@@ -1,6 +1,75 @@
 #!/bin/sh
 set -e
 SRC_PATH=$(pwd)
+KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver
+KAE_UADK_DIR=${SRC_PATH}/uadk
+KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
+KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
+KAE_ZSTD_DIR=${SRC_PATH}/KAEZstd
+
+KAE_BUILD=${SRC_PATH}/kae_build/
+KAE_BUILD_LIB=${SRC_PATH}/kae_build/lib
+KAE_BUILD_HEAD=${SRC_PATH}/kae_build/head
+function build_all_comp_v2()
+{
+        if [ -d $KAE_BUILD ]; then
+                rm -rf $KAE_BUILD/*
+        else
+                mkdir $KAE_BUILD
+        fi
+
+        mkdir -p $KAE_BUILD_LIB
+        mkdir -p $KAE_BUILD_HEAD
+        # 编译Kernel
+        cd ${KAE_KERNEL_DIR}
+        make -j
+
+        cp ${KAE_KERNEL_DIR}/hisilicon/sec2/hisi_sec2.ko $KAE_BUILD_LIB
+        cp ${KAE_KERNEL_DIR}/hisilicon/hpre/hisi_hpre.ko $KAE_BUILD_LIB
+        cp ${KAE_KERNEL_DIR}/hisilicon/hisi_qm.ko $KAE_BUILD_LIB
+        cp ${KAE_KERNEL_DIR}/uacce/uacce.ko $KAE_BUILD_LIB
+        cp ${KAE_KERNEL_DIR}/hisilicon/zip/hisi_zip.ko $KAE_BUILD_LIB
+
+        # 编译uadk
+        cd $KAE_UADK_DIR
+        sh autogen.sh
+        sh conf.sh
+        make -j
+
+        cp ${KAE_UADK_DIR}/.libs/lib* $KAE_BUILD_LIB
+        mkdir -p $KAE_BUILD_HEAD/uadk
+        mkdir -p $KAE_BUILD_HEAD/uadk/v1
+        cp -r ${KAE_UADK_DIR}/include/* $KAE_BUILD_HEAD/uadk
+        
+        cp -r ${KAE_UADK_DIR}/v1/*.h $KAE_BUILD_HEAD/uadk/v1
+
+        # 编译openssl
+        cd $KAE_OPENSSL_DIR
+        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+        autoreconf -i
+        ./configure --libdir=/usr/local/lib/engines-1.1/
+        make -j
+
+        cp $KAE_OPENSSL_DIR/src/.libs/*kae*so* $KAE_BUILD_LIB
+
+        # 编译zlib
+        cd $KAE_ZLIB_DIR
+        sh setup.sh devbuild KAE2
+
+        cp $KAE_ZLIB_DIR/lib* $KAE_BUILD_LIB
+        cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD_LIB
+
+        # 编译zstd
+        cd $KAE_ZSTD_DIR
+        sh build.sh devbuild
+
+        cp $KAE_ZSTD_DIR/lib* $KAE_BUILD_LIB
+        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD_LIB
+        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdgrep $KAE_BUILD_LIB
+        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdless $KAE_BUILD_LIB
+        cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.so* $KAE_BUILD_LIB
+        cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.a $KAE_BUILD_LIB
+}
 function build_driver()
 {
         cd ${SRC_PATH}/KAEKernelDriver
@@ -87,6 +156,7 @@ function help()
 {
 	echo "build KAE"
 	echo "sh build.sh all -- install all component"
+        echo "sh build.sh buildallv2 -- build all component"
 	echo "sh build.sh driver -- install KAE SVA driver"
 	echo "sh build.sh driver v1 -- install KAE NoSVA driver"
 	echo "sh build.sh driver clean -- uninstall KAE driver"
@@ -155,7 +225,10 @@ function main()
                 engine_clean
                 zlib_clean
                 zstd_clean
-	else
+	        rm -rf $KAE_BUILD/*
+	elif [ "$1" = "buildallv2" ];then
+                build_all_comp_v2
+        else
 		help
 	fi
 }

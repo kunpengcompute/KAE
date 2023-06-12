@@ -34,6 +34,27 @@ function Target_zlib()
     make
 }
 
+function Dev_Build_kaezip()
+{
+    #Install_warpdrive
+    Target_zlib
+    cd "${SRC_PATH}"
+    if [ "$1" = "KAE2" ];then
+    	make clean && make KAE=KAE2
+    else
+	make clean && make KAE=KAE
+    fi
+    make
+    echo "build kaezip"
+
+    cd -
+    patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
+    ./configure  --prefix=/usr/local/kaezip
+    make KAEBUILDPATH=${SRC_PATH}/../kae_build
+    echo "build zlib success"
+}
+
+
 function Build_kaezip()
 {
     #Install_warpdrive
@@ -101,6 +122,9 @@ function Operate()
 {
     cd "${SRC_PATH}"/open_source
     case "$1" in 
+        devbuild)
+            Dev_Build_kaezip "$2"
+            ;;
         build)
             Build_kaezip "$2"
             ;;

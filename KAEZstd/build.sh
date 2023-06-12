@@ -29,6 +29,19 @@ function Build_kaezstd()
     echo "build zstd success"
 }
 
+function Dev_Build_kaezstd()
+{
+    Target_zlib
+    cd "${SRC_PATH}"
+	make clean && make
+    make 
+    echo "install kaezstd"
+
+    cd -
+    make -j KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAEZSTDPATH=${SRC_PATH}
+    echo "build zstd success"
+}
+
 function Install_kaezstd()
 {
     if [ -d "${SRC_PATH}"/open_source/zstd/ ]; then
@@ -66,6 +79,9 @@ function Operate()
 {
     cd "${SRC_PATH}"/open_source
     case "$1" in 
+        devbuild)
+            Dev_Build_kaezstd "$2"
+            ;;
         build)
             Build_kaezstd "$2"
             ;;

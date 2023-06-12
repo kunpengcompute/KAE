@@ -1,6 +1,12 @@
 VERSION = 2:0:0
 ACLOCAL_AMFLAGS = -I m4
 
+DEPSHEADDIR = $(CURDIR)/../../kae_build/head/
+WD_CFLAGS = -I$(DEPSHEADDIR)
+WD_CFLAGS += -I$(DEPSHEADDIR)/uadk
+WD_CFLAGS += -I$(DEPSHEADDIR)/uadk/v1
+AM_LDFLAGS = -L$(DEPSHEADDIR)/lib
+
 lib_LTLIBRARIES=kae.la
 
 kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
