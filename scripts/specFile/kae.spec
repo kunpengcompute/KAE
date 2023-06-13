@@ -8,7 +8,7 @@ ExclusiveOS:   linux
 BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel
+BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel
 Autoreq: no
 Autoprov: no
 
