@@ -72,6 +72,7 @@
 #define HPRE_REG_RD_TMOUT_US		1000
 #define HPRE_DBGFS_VAL_MAX_LEN		20
 #define PCI_DEVICE_ID_HUAWEI_HPRE_PF	0xa258
+#define PCI_DEVICE_ID_HUAWEI_HPRE_VF	0xa259
 #define HPRE_QM_USR_CFG_MASK		GENMASK(31, 1)
 #define HPRE_QM_AXI_CFG_MASK		GENMASK(15, 0)
 #define HPRE_QM_VFG_AX_MASK		GENMASK(7, 0)
@@ -118,7 +119,6 @@
 #define HPRE_DFX_CORE_LEN		0x43
 
 #define HPRE_DEV_ALG_MAX_LEN	256
-#define PCI_DEVICE_ID_HUAWEI_HPRE_VF	0xa259
 
 static const char hpre_name[] = "hisi_hpre";
 static struct dentry *hpre_debugfs_root;
