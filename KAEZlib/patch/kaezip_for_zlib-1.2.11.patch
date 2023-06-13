@@ -456,8 +456,8 @@ diff -Naru zlib-1.2.11/Makefile.in zlib-1.2.11_new/Makefile.in
  SFLAGS=-O
  LDFLAGS=
 +
-+KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I. -DCONF_KAEZIP
-+KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -L$(KAEBUILDPATH)/lib -Wl,-rpath,/usr/local/kaezip/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -lkaezip -lwd -lwd_comp
++KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I$(KAEZLIBPATH)/include -I. -DCONF_KAEZIP
++KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -L$(KAEBUILDPATH)/lib -L$(KAEZLIBPATH) -Wl,-rpath,/usr/local/kaezip/lib:/usr/local/lib:$(KAEBUILDPATH)/lib:$(KAEZLIBPATH) -l:libkaezip.so.2.0.0 -lwd -lwd_comp
 +CFLAGS+=$(KAEZIP_CFLAGS)
 +SFLAGS+=$(KAEZIP_CFLAGS)
 +LDFLAGS+=$(KAEZIP_LDFLAGS)
