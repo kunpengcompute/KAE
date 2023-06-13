@@ -54,7 +54,7 @@ void ENGINE_LOG_LIMIT(int level, int times, int limit, const char *fmt, ...);
         }                                                                                               \
         if (ftell(g_kaezstd_debug_log_file) > KAE_LOG_MAX_SIZE) {                                           \
             kaezstd_save_log(g_kaezstd_debug_log_file);                                                         \
-            ftruncate(g_kaezstd_debug_log_file->_fileno, 0);                                                \
+            if(ftruncate(g_kaezstd_debug_log_file->_fileno, 0));                                                \
             fseek(g_kaezstd_debug_log_file, 0, SEEK_SET);                                                   \
         }                                                                                               \
             pthread_mutex_unlock(&g_kaezstd_debug_file_mutex);                                                  \
