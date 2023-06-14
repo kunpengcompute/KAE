@@ -9,6 +9,7 @@ BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
 BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel
+ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
 
@@ -491,7 +492,7 @@ fi
 
 
 %changelog
-* Tue Jun 03 2022 jinbinhua <liuyang645@huawei.com> 2.0.0-2
+* Wed Jun 14 2023 liuyang <liuyang645@huawei.com> 2.0.0-2
 - Second Spec Version Include kunpeng accelerator engine Code
 
 * Tue Jan 07 2020 jinbinhua <jinbinhua@huawei.com> 1.2.7-1
