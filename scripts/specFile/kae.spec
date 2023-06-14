@@ -9,6 +9,7 @@ BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
 BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel
+ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
 
@@ -410,13 +411,13 @@ fi
 %post zip
 echo "installing post zip..."
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
-    ln -sf /usr/local/kaezip/lib/libkaezip.so.1.3.11    /usr/local/kaezip/lib/libkaezip.so
-    ln -sf /usr/local/kaezip/lib/libkaezip.so.1.3.11    /usr/local/kaezip/lib/libkaezip.so.0
+    ln -sf /usr/local/kaezip/lib/libkaezip.so.2.0.0    /usr/local/kaezip/lib/libkaezip.so
+    ln -sf /usr/local/kaezip/lib/libkaezip.so.2.0.0    /usr/local/kaezip/lib/libkaezip.so.0
     ln -sf /usr/local/kaezip/lib/libz.so.%{zlib_version}    /usr/local/kaezip/lib/libz.so
     ln -sf /usr/local/kaezip/lib/libz.so.%{zlib_version}    /usr/local/kaezip/lib/libz.so.1
 
-    ln -sf /usr/local/kaezstd/lib/libkaezstd.so.0.0.1      /usr/local/kaezstd/lib/libkaezstd.so
-    ln -sf /usr/local/kaezstd/lib/libkaezstd.so.0.0.1      /usr/local/kaezstd/lib/libkaezstd.so.0
+    ln -sf /usr/local/kaezstd/lib/libkaezstd.so.2.0.0      /usr/local/kaezstd/lib/libkaezstd.so
+    ln -sf /usr/local/kaezstd/lib/libkaezstd.so.2.0.0      /usr/local/kaezstd/lib/libkaezstd.so.0
     ln -sf /usr/local/kaezstd/lib/libzstd.so.%{zstd_version}    /usr/local/kaezstd/lib/libzstd.so
     ln -sf /usr/local/kaezstd/lib/libzstd.so.%{zstd_version}    /usr/local/kaezstd/lib/libzstd.so.1
 
@@ -451,7 +452,7 @@ fi
 
 %package openssl
 Summary: KAE Openssl Package
-Requires:kae-driver
+Requires:kae-driver, openssl-devel
 Autoreq: no
 Autoprov: no
 
@@ -491,7 +492,7 @@ fi
 
 
 %changelog
-* Tue Jun 03 2022 jinbinhua <liuyang645@huawei.com> 2.0.0-2
+* Wed Jun 14 2023 liuyang <liuyang645@huawei.com> 2.0.0-2
 - Second Spec Version Include kunpeng accelerator engine Code
 
 * Tue Jan 07 2020 jinbinhua <jinbinhua@huawei.com> 1.2.7-1
