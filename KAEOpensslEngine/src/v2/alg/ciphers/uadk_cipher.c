@@ -92,9 +92,6 @@ static int cipher_hw_v2_nids[] = {
 	NID_des_ede3_cbc,
 	NID_des_ede3_ecb,
 	NID_sm4_ecb,
-	NID_sm4_cfb128,
-	NID_sm4_ofb128,
-	NID_sm4_ctr,
 	0,
 };
 
@@ -326,18 +323,6 @@ static int uadk_e_cipher_soft_work(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	return 1;
 }
 
-static int sec_ciphers_is_check_valid(struct cipher_priv_ctx *priv)
-{
-	US_DEBUG("sec_ciphers_is_check_valid start\n");
-	if(priv->req.in_bytes <= priv->switch_threshold){
-		US_DEBUG("small packet cipher offload, switch to soft cipher, in_bytes %d\n", (int)priv->req.in_bytes);
-		return 0;
-	}else{
-		US_DEBUG("sec ciphers checked valid\n");
-		return 1;
-	}
-}
-
 static void uadk_e_cipher_sw_cleanup(EVP_CIPHER_CTX *ctx)
 {
 	struct cipher_priv_ctx *priv =
@@ -392,10 +377,10 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		return size;
 	}
 
-	// for (i = 0; i < size; i++) {
-	// 	if (nid == cipher_nids[i])
-	// 		break;
-	// }
+	for (i = 0; i < size; i++) {
+		if (nid == cipher_nids[i])
+			break;
+	}
 
 	switch (nid) {
 	case NID_aes_128_cbc:
@@ -501,11 +486,6 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		break;
 	}
 
-	if(ret == 0){
-		US_DEBUG("nid = %d not support.", nid);
-	}else{
-		US_DEBUG("nid = %d support.", nid);
-	}
 	return ret;
 }
 

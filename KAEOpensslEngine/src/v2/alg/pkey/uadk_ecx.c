@@ -95,7 +95,6 @@ static int x25519_init(EVP_PKEY_CTX *ctx)
 		fprintf(stderr, "failed to alloc x25519 ctx\n");
 		return UADK_E_FAIL;
 	}
-	memset(x25519_ctx, 0, sizeof(struct ecx_ctx));
 
 	setup.alg = "x25519";
 	setup.key_bits = X25519_KEYBITS;

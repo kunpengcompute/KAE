@@ -237,7 +237,7 @@ static int digest_soft_update(struct digest_priv_ctx *md_ctx, const void *data, 
 
 	digest_md = uadk_e_digests_soft_md(e_nid);
 	if (unlikely(digest_md == NULL)) {
-		printf("switch to soft:don't support by sec engine.\n");
+		fprintf(stderr, "switch to soft: don't support by sec engine.\n");
 		return  0;
 	}
 
