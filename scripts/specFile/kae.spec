@@ -39,13 +39,12 @@ mkdir -p ${RPM_BUILD_ROOT}/etc/modprobe.d
 install -b -m644 %{kae_driver_path}/uacce/uacce.ko              ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
 install -b -m644 %{kae_driver_path}/hisilicon/hisi_qm.ko        ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
 install -b -m644 %{kae_driver_path}/hisilicon/sec2/hisi_sec2.ko ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
-install -b -m644 %{kae_driver_path}/conf/hisi_sec2.conf         ${RPM_BUILD_ROOT}/etc/modprobe.d/
 install -b -m644 %{kae_driver_path}/hisilicon/hpre/hisi_hpre.ko ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
-install -b -m644 %{kae_driver_path}/conf/hisi_hpre.conf         ${RPM_BUILD_ROOT}/etc/modprobe.d/
 install -b -m644 %{kae_driver_path}/hisilicon/zip/hisi_zip.ko   ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
+
+install -b -m644 %{kae_driver_path}/conf/hisi_sec2.conf         ${RPM_BUILD_ROOT}/etc/modprobe.d/
+install -b -m644 %{kae_driver_path}/conf/hisi_hpre.conf         ${RPM_BUILD_ROOT}/etc/modprobe.d/
 install -b -m644 %{kae_driver_path}/conf/hisi_zip.conf          ${RPM_BUILD_ROOT}/etc/modprobe.d/
-#install -b -m644 %{kae_driver_path}/hisilicon/rde/hisi_rde.ko   ${RPM_BUILD_ROOT}/lib/modules/%{kernel_version}/extra
-#install -b -m644 %{kae_driver_path}/conf/hisi_rde.conf          ${RPM_BUILD_ROOT}/etc/modprobe.d/
 
 mkdir -p ${RPM_BUILD_ROOT}/usr/lib64
 install -b -m755 %{kae_uadk_path}/.libs/libwd_comp.so.2.4.0               ${RPM_BUILD_ROOT}/usr/lib64
@@ -56,27 +55,27 @@ install -b -m755 %{kae_uadk_path}/.libs/libhisi_sec.so.2.4.0              ${RPM_
 install -b -m755 %{kae_uadk_path}/.libs/libhisi_zip.so.2.4.0              ${RPM_BUILD_ROOT}/usr/lib64
 mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
 mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/hisi_qm_udrv.h                       ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd.h                                 ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_aead.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_alg_common.h                      ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_cipher.h                          ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_comp.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_dh.h                              ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_digest.h                          ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_ecc.h                             ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_ecc_curve.h                       ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_rsa.h                             ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_sched.h                           ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/wd_util.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/uacce.h                              ${RPM_BUILD_ROOT}/usr/include/uadk
-install -b -m755 %{kae_uadk_path}/include/drv/wd_aead_drv.h                    ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_cipher_drv.h                  ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_comp_drv.h                    ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_dh_drv.h                      ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_digest_drv.h                  ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_ecc_drv.h                     ${RPM_BUILD_ROOT}/usr/include/uadk/drv
-install -b -m755 %{kae_uadk_path}/include/drv/wd_rsa_drv.h                     ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/hisi_qm_udrv.h                       ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd.h                                 ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_aead.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_alg_common.h                      ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_cipher.h                          ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_comp.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_dh.h                              ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_digest.h                          ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_ecc.h                             ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_ecc_curve.h                       ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_rsa.h                             ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_sched.h                           ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/wd_util.h                            ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/uacce.h                              ${RPM_BUILD_ROOT}/usr/include/uadk
+install -b -m644 %{kae_uadk_path}/include/drv/wd_aead_drv.h                    ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_cipher_drv.h                  ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_comp_drv.h                    ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_dh_drv.h                      ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_digest_drv.h                  ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_ecc_drv.h                     ${RPM_BUILD_ROOT}/usr/include/uadk/drv
+install -b -m644 %{kae_uadk_path}/include/drv/wd_rsa_drv.h                     ${RPM_BUILD_ROOT}/usr/include/uadk/drv
 
 mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
 mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/include
@@ -85,11 +84,11 @@ mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/share/man/man3
 install -b -m755 %{name}-%{version}/KAEZlib/libkaezip.so.2.0.0                                      ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
 install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/libz.so.%{zlib_version} ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
 install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/libz.a                  ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
-install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.pc                 ${RPM_BUILD_ROOT}/usr/local/kaezip/lib/pkgconfig
-install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.3                  ${RPM_BUILD_ROOT}/usr/local/kaezip/share/man/man3
-install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.h                  ${RPM_BUILD_ROOT}/usr/local/kaezip/include
-install -b -m755 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zconf.h                 ${RPM_BUILD_ROOT}/usr/local/kaezip/include
-install -b -m755 %{name}-%{version}/KAEZlib/include/kaezip.h                                         ${RPM_BUILD_ROOT}/usr/local/kaezip/include
+install -b -m644 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.pc                 ${RPM_BUILD_ROOT}/usr/local/kaezip/lib/pkgconfig
+install -b -m644 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.3                  ${RPM_BUILD_ROOT}/usr/local/kaezip/share/man/man3
+install -b -m644 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zlib.h                  ${RPM_BUILD_ROOT}/usr/local/kaezip/include
+install -b -m644 %{name}-%{version}/KAEZlib/open_source/zlib-%{zlib_version}/zconf.h                 ${RPM_BUILD_ROOT}/usr/local/kaezip/include
+install -b -m644 %{name}-%{version}/KAEZlib/include/kaezip.h                                         ${RPM_BUILD_ROOT}/usr/local/kaezip/include
 
 mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
 mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
@@ -99,12 +98,11 @@ mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/share/man/man3
 install -b -m755 %{name}-%{version}/KAEZstd/libkaezstd.so.2.0.0                                      ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
 install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/libzstd.so.%{zstd_version}          ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
 install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/libzstd.a                           ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
-install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/libzstd.pc                          ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib/pkgconfig
-#install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zlib.3                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/share/man/man3
-install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zstd.h                              ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
-install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zdict.h                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
-install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zstd_errors.h                       ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
-install -b -m755 %{name}-%{version}/KAEZstd/include/kaezstd.h                                        ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
+install -b -m644 %{name}-%{version}/KAEZstd/open_source/zstd/lib/libzstd.pc                          ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib/pkgconfig
+install -b -m644 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zstd.h                              ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
+install -b -m644 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zdict.h                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
+install -b -m644 %{name}-%{version}/KAEZstd/open_source/zstd/lib/zstd_errors.h                       ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
+install -b -m644 %{name}-%{version}/KAEZstd/include/kaezstd.h                                        ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
 install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/programs/zstdless                       ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
 install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/programs/zstdgrep                       ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
 install -b -m755 %{name}-%{version}/KAEZstd/open_source/zstd/programs/zstd                           ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
@@ -130,11 +128,12 @@ This package kae_driver library.
 /lib/modules/%{kernel_version}/extra/uacce.ko
 /lib/modules/%{kernel_version}/extra/hisi_qm.ko
 /lib/modules/%{kernel_version}/extra/hisi_sec2.ko
-%config(noreplace) /etc/modprobe.d/hisi_sec2.conf
 /lib/modules/%{kernel_version}/extra/hisi_hpre.ko
-%config(noreplace) /etc/modprobe.d/hisi_hpre.conf
 /lib/modules/%{kernel_version}/extra/hisi_zip.ko
 %config(noreplace) /etc/modprobe.d/hisi_zip.conf
+%config(noreplace) /etc/modprobe.d/hisi_sec2.conf
+%config(noreplace) /etc/modprobe.d/hisi_hpre.conf
+
 %defattr(755,root,root)
 /usr/lib64/libwd.so.2.4.0
 /usr/lib64/libwd_comp.so.2.4.0
@@ -365,18 +364,17 @@ This package kaezip library.
 %files zip
 %defattr(755,root,root)
 /usr/local/kaezip/lib/libkaezip.so.2.0.0
-/usr/local/kaezip/include/kaezip.h
 /usr/local/kaezip/lib/libz.so.%{zlib_version}
-%defattr(644,root,root)
 /usr/local/kaezip/lib/libz.a
+%defattr(644,root,root)
 /usr/local/kaezip/lib/pkgconfig/zlib.pc
 /usr/local/kaezip/share/man/man3/zlib.3
 /usr/local/kaezip/include/zlib.h
 /usr/local/kaezip/include/zconf.h
+/usr/local/kaezip/include/kaezip.h
 
 %defattr(755,root,root)
 /usr/local/kaezstd/lib/libkaezstd.so.2.0.0
-/usr/local/kaezstd/include/kaezstd.h
 /usr/local/kaezstd/lib/libzstd.so.%{zstd_version}
 /usr/local/kaezstd/bin/zstdless
 /usr/local/kaezstd/bin/zstdgrep
@@ -388,6 +386,7 @@ This package kaezip library.
 /usr/local/kaezstd/include/zstd.h
 /usr/local/kaezstd/include/zdict.h
 /usr/local/kaezstd/include/zstd_errors.h
+/usr/local/kaezstd/include/kaezstd.h
 
 
 %pre zip
