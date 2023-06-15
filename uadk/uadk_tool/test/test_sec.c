@@ -12,11 +12,12 @@
 #include <getopt.h>
 #include <numa.h>
 
-#include "test_hisi_sec.h"
-#include "wd_cipher.h"
-#include "wd_digest.h"
-#include "wd_aead.h"
-#include "wd_sched.h"
+#include "sec_template_tv.h"
+#include "test_sec.h"
+#include "include/wd_cipher.h"
+#include "include/wd_digest.h"
+#include "include/wd_aead.h"
+#include "include/wd_sched.h"
 
 #define SEC_TST_PRT printf
 #define HW_CTX_SIZE (24 * 1024)
@@ -26,6 +27,7 @@
 #define SVA_THREADS	64
 #define USE_CTX_NUM	64
 #define BYTES_TO_MB	20
+#define SEC_ARGV_OFFSET	3
 
 #define SCHED_SINGLE "sched_single"
 #define SCHED_NULL_CTX_SIZE	4
@@ -57,6 +59,7 @@ static unsigned int g_use_env;
 static unsigned int g_ctxnum;
 static unsigned int g_data_fmt = WD_FLAT_BUF;
 static unsigned int g_sgl_num = 0;
+static unsigned int g_init;
 static pthread_spinlock_t lock = 0;
 
 static struct hash_testvec g_long_hash_tv;
@@ -81,6 +84,36 @@ enum digest_type {
 	LOCAL_AES_GMAC_192,
 	LOCAL_AES_GMAC_256,
 	LOCAL_AES_XCBC_MAC_96,
+};
+
+char *digest_names[MAX_ALGO_PER_TYPE] = {
+	"sm3",
+	"md5",
+	"sha1",
+	"sha256",
+	"sha224",
+	"sha384",
+	"sha512",
+	"sha512-224",
+	"sha512-256",
+	"cmac(aes)",
+	"gmac(aes)", /* --digest 10: test aes-gmac-128 */
+	"gmac(aes)", /* --digest 11: test aes-gmac-192 */
+	"gmac(aes)", /* --digest 12: test aes-gmac-256 */
+	"xcbc-mac-96(aes)",
+	"xcbc-prf-128(aes)",
+	"ccm(aes)", /* --digest 15: for error alg test */
+};
+
+char *aead_names[MAX_ALGO_PER_TYPE] = {
+	"ccm(aes)",
+	"gcm(aes)",
+	"authenc(hmac(sha256),cbc(aes))",
+	"ccm(sm4)",
+	"gcm(sm4)",
+	"authenc(hmac(sha256),cbc(sm4))",
+	"sm3", /*--aead 6: for error alg test */
+	"authenc(hmac(sha3),cbc(aes))", /* --aead 7: for error alg test */
 };
 
 struct sva_bd {
@@ -136,6 +169,7 @@ struct test_sec_option {
 	__u32 stream_mode;
 	__u32 sgl_num;
 	__u32 use_env;
+	__u32 init;
 };
 
 //static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -645,21 +679,6 @@ static void uninit_config(void)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
-}
-
-static void digest_uninit_config(void)
-{
-	int i;
-
-	if (g_use_env) {
-		wd_digest_env_uninit();
-		return;
-	}
-
-	wd_digest_uninit();
-	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
-		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
-	free(g_ctx_cfg.ctxs);
 }
 
 static int test_sec_cipher_sync_once(void)
@@ -1398,7 +1417,7 @@ static __u32 sched_digest_pick_next_ctx(handle_t h_sched_ctx,
 	return 0;
 }
 
-static int init_digest_ctx_config(int type, int mode)
+static int digest_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
 	struct wd_sched sched;
@@ -1446,6 +1465,108 @@ out:
 	free(g_ctx_cfg.ctxs);
 
 	return ret;
+}
+
+static int digest_init2(int type, int mode)
+{
+	struct wd_ctx_nums *ctx_set_num;
+	struct wd_ctx_params cparams;
+	int ret;
+
+	if (g_testalg >= MAX_ALGO_PER_TYPE)
+		return -WD_EINVAL;
+
+	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return -WD_ENOMEM;
+	}
+
+	cparams.op_type_num = 1;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
+
+	if (mode == CTX_MODE_SYNC)
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+
+	if (mode == CTX_MODE_ASYNC)
+		ctx_set_num->async_ctx_num = g_ctxnum;
+
+	ret = wd_digest_init2_(digest_names[g_testalg], 0, 0, &cparams);
+	if (ret)
+		goto out_freebmp;
+
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
+}
+
+static int init_digest_ctx_config(int type, int mode)
+{
+	int ret = -1;
+
+	switch (g_init) {
+	case 0:
+	case 1:
+		SEC_TST_PRT("uadk entry init1!\n");
+		ret = digest_init1(type, mode);
+		break;
+	case 2:
+		SEC_TST_PRT("uadk entry init2!\n");
+		ret = digest_init2(type, mode);
+		break;
+	default:
+		SEC_TST_PRT("unsupported init-type%u!\n", g_init);
+		break;
+	}
+
+	return ret;
+}
+
+static void digest_uninit1(void)
+{
+	int i;
+
+	if (g_use_env) {
+		wd_digest_env_uninit();
+		return;
+	}
+
+	wd_digest_uninit();
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+	free(g_ctx_cfg.ctxs);
+}
+
+static void digest_uninit2(void)
+{
+	wd_digest_uninit2();
+}
+
+static void digest_uninit_config(void)
+{
+	switch (g_init) {
+	case 0:
+	case 1:
+		digest_uninit1();
+		break;
+	case 2:
+		digest_uninit2();
+		break;
+	default:
+		SEC_TST_PRT("unsupported uninit-type%u!\n", g_init);
+	}
 }
 
 int get_digest_resource(struct hash_testvec **alg_tv, int* alg, int* mode)
@@ -2548,7 +2669,7 @@ static __u32 sched_aead_pick_next_ctx(handle_t h_sched_ctx,
 	return 0;
 }
 
-static int init_aead_ctx_config(int type, int mode)
+static int aead_init1(int type, int mode)
 {
 	struct uacce_dev_list *list;
 	struct wd_sched sched;
@@ -2598,7 +2719,74 @@ out:
 	return ret;
 }
 
-static void aead_uninit_config(void)
+static int aead_init2(int type, int mode)
+{
+	struct wd_ctx_nums *ctx_set_num;
+	struct wd_ctx_params cparams;
+	int ret;
+
+	if (g_testalg >= MAX_ALGO_PER_TYPE)
+		return -WD_EINVAL;
+
+	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return -WD_ENOMEM;
+	}
+
+	cparams.op_type_num = 1;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
+
+	if (mode == CTX_MODE_SYNC)
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+
+	if (mode == CTX_MODE_ASYNC)
+		ctx_set_num->async_ctx_num = g_ctxnum;
+
+	ret = wd_aead_init2_(aead_names[g_testalg], 0, 0, &cparams);
+	if (ret)
+		goto out_freebmp;
+
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
+}
+
+static int init_aead_ctx_config(int type, int mode)
+{
+	int ret = -1;
+
+	switch (g_init) {
+	case 0:
+	case 1:
+		SEC_TST_PRT("uadk entry init1!\n");
+		ret = aead_init1(type, mode);
+		break;
+	case 2:
+		SEC_TST_PRT("uadk entry init2!\n");
+		ret = aead_init2(type, mode);
+		break;
+	default:
+		SEC_TST_PRT("unsupported aead init-type%u!\n", g_init);
+		break;
+	}
+
+	return ret;
+}
+
+static void aead_uninit1(void)
 {
 	int i;
 
@@ -2611,6 +2799,26 @@ static void aead_uninit_config(void)
 	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 	free(g_ctx_cfg.ctxs);
+}
+
+static void aead_uninit2(void)
+{
+	wd_aead_uninit2();
+}
+
+static void aead_uninit_config(void)
+{
+	switch (g_init) {
+	case 0:
+	case 1:
+		aead_uninit1();
+		break;
+	case 2:
+		aead_uninit2();
+		break;
+	default:
+		SEC_TST_PRT("unsupported aead uninit-type%u!\n", g_init);
+	}
 }
 
 int get_aead_resource(struct aead_testvec **alg_tv,
@@ -2850,7 +3058,7 @@ static int sec_aead_sync_once(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3164,7 +3372,7 @@ static int sec_aead_async_once(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3377,7 +3585,7 @@ static int sec_aead_sync_multi(void)
 		goto out_iv;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -3581,7 +3789,7 @@ static int sec_aead_async_multi(void)
 		goto out;
 	}
 	if (setup.cmode == WD_CIPHER_GCM)
-		iv_len = GCM_BLOCK_SIZE;
+		iv_len = GCM_IV_SIZE;
 	else
 		iv_len = AES_BLOCK_SIZE;
 	req.iv_bytes = iv_len;
@@ -4013,13 +4221,13 @@ out_thr:
 static void print_help(void)
 {
 	SEC_TST_PRT("NAME\n");
-	SEC_TST_PRT("	test_hisi_sec: test wd sec function,etc\n");
+	SEC_TST_PRT("	uadk_tool test --m sec: test wd sec function,etc\n");
 	SEC_TST_PRT("USAGE\n");
-	SEC_TST_PRT("    test_hisi_sec [--cipher] [--digest] [--aead] [--perf]\n");
-	SEC_TST_PRT("    test_hisi_sec [--optype] [--pktlen] [--keylen] [--times]\n");
-	SEC_TST_PRT("    test_hisi_sec [--multi] [--sync] [--async] [--help]\n");
-	SEC_TST_PRT("    test_hisi_sec [--block] [--blknum] [--ctxnum]\n");
-	SEC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./test_hisi_sec xxxx\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--cipher] [--digest] [--aead] [--perf]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--optype] [--pktlen] [--keylen] [--times]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--multi] [--sync] [--async] [--help]\n");
+	SEC_TST_PRT("    uadk_tool test --m sec [--block] [--blknum] [--ctxnum]\n");
+	SEC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_tool test --m sec xxxx\n");
 	SEC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	SEC_TST_PRT("DESCRIPTION\n");
 	SEC_TST_PRT("    [--cipher ]:\n");
@@ -4060,17 +4268,19 @@ static void print_help(void)
 	SEC_TST_PRT("        the number of QP queues used by the entire test task\n");
 	SEC_TST_PRT("    [--stream]:\n");
 	SEC_TST_PRT("        set the steam mode for digest\n");
+	SEC_TST_PRT("    [--sglnum]:\n");
+	SEC_TST_PRT("        the number of scatterlist number used by the entire test task\n");
 	SEC_TST_PRT("    [--help]  = usage\n");
 	SEC_TST_PRT("Example\n");
-	SEC_TST_PRT("    ./test_hisi_sec --cipher 0 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --cipher 0 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 1\n");
-	SEC_TST_PRT("    ./test_hisi_sec --digest 0 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --digest 0 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
-	SEC_TST_PRT("    ./test_hisi_sec --digest 1 --sync --optype 0\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --digest 1 --sync --optype 0\n");
 	SEC_TST_PRT("--pktlen 16 --keylen 16 --times 1 --multi 2 --stream\n");
-	SEC_TST_PRT("    ./test_hisi_sec --perf --sync --pktlen 1024 --block 1024\n");
+	SEC_TST_PRT("    ./uadk_tool test --m sec --perf --sync --pktlen 1024 --block 1024\n");
 	SEC_TST_PRT("--blknum 100000 --times 10000 --multi 1 --ctxnum 1\n");
-	SEC_TST_PRT("UPDATE:2022-06-29\n");
+	SEC_TST_PRT("UPDATE:2022-12-16\n");
 }
 
 static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *option)
@@ -4079,6 +4289,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 	int c;
 
 	static struct option long_options[] = {
+		{"help",      no_argument,       0,  0},
 		{"cipher",    required_argument, 0,  1},
 		{"digest",    required_argument, 0,  2},
 		{"aead",      required_argument, 0,  3},
@@ -4096,7 +4307,7 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 		{"stream",    no_argument,       0,  15},
 		{"sglnum",    required_argument, 0,  16},
 		{"use_env",   no_argument,       0,  17},
-		{"help",      no_argument,       0,  18},
+		{"init",      required_argument, 0,  18},
 		{0, 0, 0, 0}
 	};
 
@@ -4106,6 +4317,9 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 			break;
 
 		switch (c) {
+		case 0:
+			print_help();
+			exit(-1);
 		case 1:
 			option->algclass = CIPHER_CLASS;
 			option->algtype = strtol(optarg, NULL, 0);
@@ -4161,8 +4375,8 @@ static void test_sec_cmd_parse(int argc, char *argv[], struct test_sec_option *o
 			option->use_env = 1;
 			break;
 		case 18:
-			print_help();
-			exit(-1);
+			option->init = strtol(optarg, NULL, 0);
+			break;
 		default:
 			SEC_TST_PRT("bad input parameter, exit\n");
 			print_help();
@@ -4212,7 +4426,7 @@ static int test_sec_option_convert(struct test_sec_option *option)
 	g_data_fmt = option->sgl_num ? WD_SGL_BUF : WD_FLAT_BUF;
 	g_sgl_num = option->sgl_num;
 	g_stream = option->stream_mode;
-
+	g_init = option->init;
 	SEC_TST_PRT("set global times is %lld\n", g_times);
 
 	g_thread_num = option->xmulti ? option->xmulti : 1;
@@ -4335,7 +4549,7 @@ static int test_sec_run(__u32 sync_mode, __u32 alg_class)
 	return ret;
 }
 
-int main(int argc, char *argv[])
+int test_sec_entry(int argc, char *argv[])
 {
 	struct test_sec_option option = {0};
 	int ret = 0;
@@ -4343,14 +4557,14 @@ int main(int argc, char *argv[])
 	SEC_TST_PRT("this is a hisi sec test.\n");
 
 	g_thread_num = 1;
-	if (!argv[1]) {
+	if (!argv[1 + SEC_ARGV_OFFSET])
 		return test_sec_default_case();
-	}
 
 	test_sec_cmd_parse(argc, argv, &option);
 	ret = test_sec_option_convert(&option);
 	if (ret)
 		return ret;
+
 	if (option.algclass == PERF_CLASS)
 		return sec_sva_test();
 

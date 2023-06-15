@@ -23,6 +23,7 @@
 #include <openssl/engine.h>
 #include <openssl/md5.h>
 #include <openssl/evp.h>
+#include <openssl/sha.h>
 #include <uadk/wd_cipher.h>
 #include <uadk/wd_digest.h>
 #include <uadk/wd_sched.h>
@@ -44,6 +45,9 @@
 
 #define SM3_DIGEST_LENGTH	32
 #define SM3_CBLOCK		64
+#define SHA1_CBLOCK		64
+#define SHA224_CBLOCK		64
+#define SHA384_CBLOCK		128
 #define SM3_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (512)
 #define MD5_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (8 * 1024)
 #define SHA_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (512)
@@ -128,13 +132,13 @@ static struct digest_threshold_table digest_pkt_threshold_table[] = {
 };
 
 static struct digest_info digest_info_table[] = {
-	{NID_md5, WD_DIGEST_NORMAL, WD_DIGEST_MD5, 16},
-	{NID_sm3, WD_DIGEST_NORMAL, WD_DIGEST_SM3, 32},
-	{NID_sha1, WD_DIGEST_NORMAL, WD_DIGEST_SHA1, 20},
-	{NID_sha224, WD_DIGEST_NORMAL, WD_DIGEST_SHA224, 28},
-	{NID_sha256, WD_DIGEST_NORMAL, WD_DIGEST_SHA256, 32},
-	{NID_sha384, WD_DIGEST_NORMAL, WD_DIGEST_SHA384, 48},
-	{NID_sha512, WD_DIGEST_NORMAL, WD_DIGEST_SHA512, 64},
+	{NID_md5, WD_DIGEST_NORMAL, WD_DIGEST_MD5, MD5_DIGEST_LENGTH},
+	{NID_sm3, WD_DIGEST_NORMAL, WD_DIGEST_SM3, SM3_DIGEST_LENGTH},
+	{NID_sha1, WD_DIGEST_NORMAL, WD_DIGEST_SHA1, SHA_DIGEST_LENGTH},
+	{NID_sha224, WD_DIGEST_NORMAL, WD_DIGEST_SHA224, SHA224_DIGEST_LENGTH},
+	{NID_sha256, WD_DIGEST_NORMAL, WD_DIGEST_SHA256, SHA256_DIGEST_LENGTH},
+	{NID_sha384, WD_DIGEST_NORMAL, WD_DIGEST_SHA384, SHA384_DIGEST_LENGTH},
+	{NID_sha512, WD_DIGEST_NORMAL, WD_DIGEST_SHA512, SHA512_DIGEST_LENGTH},
 };
 
 static EVP_MD *uadk_md5;
@@ -191,11 +195,18 @@ static uint32_t sec_digest_get_sw_threshold(int n_id)
 	return 0;
 }
 
-static int digest_soft_init(EVP_MD_CTX *ctx, uint32_t e_nid)
+static int digest_soft_init(struct digest_priv_ctx *md_ctx)
 {
-	US_DEBUG("digest_soft_init start!\n");
+	uint32_t e_nid = md_ctx->e_nid;
 	const EVP_MD *digest_md = NULL;
+	EVP_MD_CTX *ctx = NULL;
 	int ctx_len;
+
+	/* Allocate a soft ctx for hardware engine */
+	if (md_ctx->soft_ctx == NULL)
+		md_ctx->soft_ctx = EVP_MD_CTX_new();
+
+	ctx = md_ctx->soft_ctx;
 
 	digest_md = uadk_e_digests_soft_md(e_nid);
 	if (unlikely(digest_md == NULL)) {
@@ -213,24 +224,36 @@ static int digest_soft_init(EVP_MD_CTX *ctx, uint32_t e_nid)
 	return EVP_MD_meth_get_init(digest_md)(ctx);
 }
 
-static int digest_soft_update(EVP_MD_CTX *ctx, uint32_t e_nid,
-				const void *data, size_t len)
+static int digest_soft_update(struct digest_priv_ctx *md_ctx, const void *data, size_t len)
 {
+	EVP_MD_CTX *ctx = md_ctx->soft_ctx;
+	uint32_t e_nid = md_ctx->e_nid;
 	const EVP_MD *digest_md = NULL;
+
+	if (!ctx) {
+		fprintf(stderr, "failed to get soft ctx.\n");
+		return 0;
+	}
 
 	digest_md = uadk_e_digests_soft_md(e_nid);
 	if (unlikely(digest_md == NULL)) {
-		fprintf(stderr, "switch to soft:don't support by sec engine.\n");
+		fprintf(stderr, "switch to soft: don't support by sec engine.\n");
 		return  0;
 	}
 
 	return EVP_MD_meth_get_update(digest_md)(ctx, data, len);
 }
 
-static int digest_soft_final(EVP_MD_CTX *ctx, uint32_t e_nid, unsigned char *digest)
+static int digest_soft_final(struct digest_priv_ctx *md_ctx, unsigned char *digest)
 {
-	US_DEBUG("call digest_soft_final");
+	EVP_MD_CTX *ctx = md_ctx->soft_ctx;
 	const EVP_MD *digest_md = NULL;
+	uint32_t e_nid = md_ctx->e_nid;
+
+	if (!ctx) {
+		fprintf(stderr, "failed to get soft ctx.\n");
+		return 0;
+	}
 
 	digest_md = uadk_e_digests_soft_md(e_nid);
 	if (unlikely(digest_md == NULL)) {
@@ -262,16 +285,12 @@ static void digest_soft_cleanup(struct digest_priv_ctx *md_ctx)
 static int uadk_e_digest_soft_work(struct digest_priv_ctx *md_ctx, int len,
 				   unsigned char *digest)
 {
-	if (md_ctx->soft_ctx == NULL)
-		md_ctx->soft_ctx = EVP_MD_CTX_new();
-
-	(void)digest_soft_init(md_ctx->soft_ctx, md_ctx->e_nid);
+	(void)digest_soft_init(md_ctx);
 
 	if (len != 0)
-		(void)digest_soft_update(md_ctx->soft_ctx, md_ctx->e_nid,
-				md_ctx->data, len);
+		(void)digest_soft_update(md_ctx, md_ctx->data, len);
 
-	(void)digest_soft_final(md_ctx->soft_ctx, md_ctx->e_nid, digest);
+	(void)digest_soft_final(md_ctx, digest);
 
 	digest_soft_cleanup(md_ctx);
 
@@ -501,6 +520,16 @@ static void digest_priv_ctx_setup(struct digest_priv_ctx *priv,
 	priv->req.out_bytes = out_len;
 }
 
+static void digest_priv_ctx_cleanup(struct digest_priv_ctx *priv)
+{
+	/* Ensure that private variable values are initialized */
+	priv->state = SEC_DIGEST_INIT;
+	priv->last_update_bufflen = 0;
+	priv->switch_threshold = 0;
+	priv->switch_flag = 0;
+}
+
+
 static int uadk_e_digest_init(EVP_MD_CTX *ctx)
 {
 	US_DEBUG("uadk_e_digest_init start");
@@ -512,11 +541,9 @@ static int uadk_e_digest_init(EVP_MD_CTX *ctx)
 	int ret, i;
 
 	/* Allocate a soft ctx for hardware engine */
-	if (priv->soft_ctx == NULL)
-		priv->soft_ctx = EVP_MD_CTX_new();
 	priv->e_nid = nid;
 
-	priv->state = SEC_DIGEST_INIT;
+	digest_priv_ctx_cleanup(priv);
 	ret = uadk_e_init_digest();
 	if (unlikely(!ret)) {
 		priv->switch_flag = UADK_DO_SOFT;
@@ -560,7 +587,7 @@ static int uadk_e_digest_init(EVP_MD_CTX *ctx)
 
 soft_init:
 	US_DEBUG("switch to soft");
-	return digest_soft_init(priv->soft_ctx, priv->e_nid);
+	return digest_soft_init(priv);
 }
 
 static void digest_update_out_length(EVP_MD_CTX *ctx)
@@ -627,14 +654,13 @@ do_soft_digest:
 			&& priv->data
 			&& priv->last_update_bufflen != 0) {
 		priv->switch_flag = UADK_DO_SOFT;
-		digest_soft_init(priv->soft_ctx, priv->e_nid);
-		ret = digest_soft_update(priv->soft_ctx, priv->e_nid,
-			priv->data, priv->last_update_bufflen);
+				(void)digest_soft_init(priv);
+		ret = digest_soft_update(priv, priv->data, priv->last_update_bufflen);
 		if (ret != 1)
 			return ret;
 
-		return digest_soft_update(priv->soft_ctx, priv->e_nid,
-			tmpdata, left_len);
+		return digest_soft_update(priv, tmpdata, left_len);
+
 	}
 
 	fprintf(stderr, "do soft digest failed during updating!\n");
@@ -659,7 +685,7 @@ static int uadk_e_digest_update(EVP_MD_CTX *ctx, const void *data, size_t data_l
 	return digest_update_inner(ctx, data, data_len);
 
 soft_update:
-	return digest_soft_update(priv->soft_ctx, priv->e_nid, data, data_len);
+	return digest_soft_update(priv, data, data_len);
 }
 
 static void async_cb(struct wd_digest_req *req, void *data)
@@ -765,7 +791,7 @@ static int uadk_e_digest_final(EVP_MD_CTX *ctx, unsigned char *digest)
 	if (op.job == NULL) {
 		/* Synchronous, only the synchronous mode supports soft computing */
 		if (unlikely(priv->switch_flag == UADK_DO_SOFT)) {
-			ret = digest_soft_final(priv->soft_ctx, priv->e_nid, digest);
+			ret = digest_soft_final(priv, digest);
 			digest_soft_cleanup(priv);
 			goto clear;
 		}
@@ -779,7 +805,6 @@ static int uadk_e_digest_final(EVP_MD_CTX *ctx, unsigned char *digest)
 			goto clear;
 	}
 	memcpy(digest, priv->req.out, priv->req.out_bytes);
-	priv->last_update_bufflen = 0;
 
 	return 1;
 
@@ -877,36 +902,36 @@ int uadk_e_bind_digest(ENGINE *e)
 			  uadk_e_digest_final, uadk_e_digest_cleanup,
 			  uadk_e_digest_copy);
 	US_DEBUG("successed to bind sm3");
-	UADK_DIGEST_DESCR(sha1, sha1WithRSAEncryption, 20,
-			  EVP_MD_FLAG_FIPS, 64,
+	UADK_DIGEST_DESCR(sha1, sha1WithRSAEncryption, SHA_DIGEST_LENGTH,
+			  EVP_MD_FLAG_FIPS, SHA1_CBLOCK,
 			  sizeof(EVP_MD *) + sizeof(struct digest_priv_ctx),
 			  uadk_e_digest_init, uadk_e_digest_update,
 			  uadk_e_digest_final, uadk_e_digest_cleanup,
 			  uadk_e_digest_copy);
 	US_DEBUG("successed to bind sha1");
-	UADK_DIGEST_DESCR(sha224, sha224WithRSAEncryption, 28,
-			  EVP_MD_FLAG_FIPS, 64,
+	UADK_DIGEST_DESCR(sha224, sha224WithRSAEncryption, SHA224_DIGEST_LENGTH,
+			  EVP_MD_FLAG_FIPS, SHA224_CBLOCK,
 			  sizeof(EVP_MD *) + sizeof(struct digest_priv_ctx),
 			  uadk_e_digest_init, uadk_e_digest_update,
 			  uadk_e_digest_final, uadk_e_digest_cleanup,
 			  uadk_e_digest_copy);
 	US_DEBUG("successed to bind sha224");
-	UADK_DIGEST_DESCR(sha256, sha256WithRSAEncryption, 32,
-			  EVP_MD_FLAG_FIPS, 64,
+	UADK_DIGEST_DESCR(sha256, sha256WithRSAEncryption, SHA256_DIGEST_LENGTH,
+			  EVP_MD_FLAG_FIPS, SHA256_CBLOCK,
 			  sizeof(EVP_MD *) + sizeof(struct digest_priv_ctx),
 			  uadk_e_digest_init, uadk_e_digest_update,
 			  uadk_e_digest_final, uadk_e_digest_cleanup,
 			  uadk_e_digest_copy);
 	US_DEBUG("successed to bind sha256");
-	UADK_DIGEST_DESCR(sha384, sha384WithRSAEncryption, 48,
-			  EVP_MD_FLAG_FIPS, 128,
+	UADK_DIGEST_DESCR(sha384, sha384WithRSAEncryption, SHA384_DIGEST_LENGTH,
+			  EVP_MD_FLAG_FIPS, SHA384_CBLOCK,
 			  sizeof(EVP_MD *) + sizeof(struct digest_priv_ctx),
 			  uadk_e_digest_init, uadk_e_digest_update,
 			  uadk_e_digest_final, uadk_e_digest_cleanup,
 			  uadk_e_digest_copy);
 	US_DEBUG("successed to bind sha384");
-	UADK_DIGEST_DESCR(sha512, sha512WithRSAEncryption, 64,
-			  EVP_MD_FLAG_FIPS, 128,
+	UADK_DIGEST_DESCR(sha512, sha512WithRSAEncryption, SHA512_DIGEST_LENGTH,
+			  EVP_MD_FLAG_FIPS, SHA512_CBLOCK,
 			  sizeof(EVP_MD *) + sizeof(struct digest_priv_ctx),
 			  uadk_e_digest_init, uadk_e_digest_update,
 			  uadk_e_digest_final, uadk_e_digest_cleanup,

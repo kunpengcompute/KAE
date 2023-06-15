@@ -214,7 +214,7 @@ static void br_free(struct wd_mm_br *br, void *va)
 		return;
 	}
 
-	return br->free(br->usr, va);
+	br->free(br->usr, va);
 }
 
 static __u32 get_hw_keysize(__u32 ksz)
@@ -270,7 +270,7 @@ static void init_dtb_param(void *dtb, char *start,
 {
 	struct wd_dtb *tmp = dtb;
 	char *pos = start;
-	int i = 0;
+	__u32 i = 0;
 
 	while (i++ < num) {
 		tmp->data = pos;
@@ -894,7 +894,7 @@ static int fill_user_curve_cfg(struct wcrypto_ecc_curve *param,
 	}
 
 	if (unlikely(!param->p.dsize ||
-		param->p.dsize > BITS_TO_BYTES(setup->key_bits))) {
+		param->p.dsize > (__u32)BITS_TO_BYTES(setup->key_bits))) {
 		WD_ERR("fill curve cfg:dsize %u error!\n", param->p.dsize);
 		return -WD_EINVAL;
 	}
@@ -1068,7 +1068,7 @@ static void init_ctx_cookies(struct wcrypto_ecc_ctx *ctx,
 	__u32 hsz = get_hw_keysize(ctx->key_size);
 	struct q_info *qinfo = ctx->q->qinfo;
 	struct wcrypto_ecc_cookie *cookie;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx->pool.cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
@@ -1660,7 +1660,7 @@ int wcrypto_do_ecxdh(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECXDH_GEN_KEY &&
 		opdata->op_type != WCRYPTO_ECXDH_COMPUTE_KEY)) {
-		WD_ERR("do ecxdh: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do ecxdh: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -1699,7 +1699,7 @@ static void get_sign_out_params(struct wcrypto_ecc_out *out,
 void wcrypto_get_ecdsa_sign_out_params(struct wcrypto_ecc_out *out,
 				       struct wd_dtb **r, struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 
@@ -1717,7 +1717,7 @@ static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
 
 static bool is_all_zero(struct wd_dtb *p)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < p->bsize; i++) {
 		if (p->data[i])
@@ -2173,7 +2173,7 @@ int wcrypto_do_ecdsa(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 
 	if (unlikely(opdata->op_type != WCRYPTO_ECDSA_SIGN &&
 	    opdata->op_type != WCRYPTO_ECDSA_VERIFY)) {
-		WD_ERR("do ecdsa: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do ecdsa: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 
@@ -2218,7 +2218,7 @@ void wcrypto_get_sm2_sign_out_params(struct wcrypto_ecc_out *out,
 				       struct wd_dtb **r,
 				       struct wd_dtb **s)
 {
-	return get_sign_out_params(out, r, s);
+	get_sign_out_params(out, r, s);
 }
 
 struct wcrypto_ecc_out *wcrypto_new_sm2_kg_out(void *ctx)
@@ -2463,7 +2463,7 @@ int wcrypto_do_sm2(void *ctx, struct wcrypto_ecc_op_data *opdata, void *tag)
 		opdata->op_type != WCRYPTO_SM2_KG &&
 		opdata->op_type != WCRYPTO_SM2_ENCRYPT &&
 		opdata->op_type != WCRYPTO_SM2_DECRYPT)) {
-		WD_ERR("do sm2: op_type = %hhu error!\n", opdata->op_type);
+		WD_ERR("do sm2: op_type = %d error!\n", opdata->op_type);
 		return -WD_EINVAL;
 	}
 

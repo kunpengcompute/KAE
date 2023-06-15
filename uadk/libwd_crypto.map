@@ -2,6 +2,9 @@ UADK_CRYPTO_2.0 {
 global:
 	wd_cipher_init;
 	wd_cipher_uninit;
+	wd_cipher_init2;
+	wd_cipher_init2_;
+	wd_cipher_uninit2;
 	wd_cipher_alloc_sess;
 	wd_cipher_free_sess;
 	wd_cipher_set_key;
@@ -20,6 +23,9 @@ global:
 
 	wd_aead_init;
 	wd_aead_uninit;
+	wd_aead_init2;
+	wd_aead_init2_;
+	wd_aead_uninit2;
 	wd_aead_alloc_sess;
 	wd_aead_free_sess;
 	wd_aead_set_ckey;
@@ -42,6 +48,9 @@ global:
 
 	wd_digest_init;
 	wd_digest_uninit;
+	wd_digest_init2;
+	wd_digest_init2_;
+	wd_digest_uninit2;
 	wd_digest_alloc_sess;
 	wd_digest_free_sess;
 	wd_do_digest_sync;
@@ -81,6 +90,9 @@ global:
 	wd_rsa_set_kg_out_psz;
 	wd_rsa_init;
 	wd_rsa_uninit;
+	wd_rsa_init2;
+	wd_rsa_init2_;
+	wd_rsa_uninit2;
 	wd_rsa_alloc_sess;
 	wd_rsa_free_sess;
 	wd_do_rsa_async;
@@ -109,6 +121,9 @@ global:
 	wd_dh_poll;
 	wd_dh_init;
 	wd_dh_uninit;
+	wd_dh_init2;
+	wd_dh_init2_;
+	wd_dh_uninit2;
 	wd_dh_env_init;
 	wd_dh_env_uninit;
 	wd_dh_ctx_num_init;
@@ -154,6 +169,9 @@ global:
 	wd_ecdsa_get_sign_out_params;
 	wd_ecc_init;
 	wd_ecc_uninit;
+	wd_ecc_init2;
+	wd_ecc_init2_;
+	wd_ecc_uninit2;
 	wd_ecc_alloc_sess;
 	wd_ecc_free_sess;
 	wd_ecc_poll;

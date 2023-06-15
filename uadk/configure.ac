@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.4], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.5], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -91,7 +91,6 @@ AC_CONFIG_FILES([Makefile
 		 lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
 		 test/Makefile
 		 test/hisi_hpre_test/Makefile
-		 test/hisi_sec_test/Makefile
 		 test/hisi_zip_test/Makefile
 		 uadk_tool/Makefile
 		 sample/Makefile

@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include "wd.h"
+#include "wd_alg.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,13 @@ extern "C" {
 #define MAX_STR_LEN		256
 #define CTX_TYPE_INVALID	9999
 #define POLL_TIME		1000
+
+enum alg_task_type {
+	TASK_MIX = 0x0,
+	TASK_HW,
+	TASK_INSTR,
+	TASK_MAX_TYPE,
+};
 
 enum wd_ctx_mode {
 	CTX_MODE_SYNC = 0,
@@ -92,14 +100,15 @@ struct wd_ctx_internal {
 	handle_t ctx;
 	__u8 op_type;
 	__u8 ctx_mode;
+	__u16 sqn;
 	pthread_spinlock_t lock;
 };
 
 struct wd_ctx_config_internal {
 	__u32 ctx_num;
+	int shmid;
 	struct wd_ctx_internal *ctxs;
 	void *priv;
-	int pid;
 	bool epoll_en;
 	unsigned long *msg_cnt;
 };
@@ -128,6 +137,9 @@ struct wd_sched {
 	int (*poll_policy)(handle_t h_sched_ctx, __u32 expect, __u32 *count);
 	handle_t h_sched_ctx;
 };
+
+typedef int (*wd_alg_init)(struct wd_ctx_config *config, struct wd_sched *sched);
+typedef int (*wd_alg_poll_ctx)(__u32 idx, __u32 expt, __u32 *count);
 
 struct wd_datalist {
 	void *data;

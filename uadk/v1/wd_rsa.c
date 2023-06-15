@@ -178,7 +178,7 @@ static int kg_in_param_check(void *ctx, struct wd_dtb *e,
 		return -WD_EINVAL;
 	}
 
-	kg_in_size = GEN_PARAMS_SZ(c->key_size);
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
 	if (unlikely(br->get_bufsize &&
 	    br->get_bufsize(br->usr) < (kg_in_size + sizeof(*kg_in)))) {
 		WD_ERR("Blk_size < need_size<0x%lx>.\n", (kg_in_size + sizeof(*kg_in)));
@@ -202,7 +202,7 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 		return NULL;
 
 	br = &c->setup.br;
-	kg_in_size = GEN_PARAMS_SZ(c->key_size);
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
 	kg_in = br->alloc(br->usr, kg_in_size + sizeof(*kg_in));
 	if (unlikely(!kg_in)) {
 		WD_ERR("ctx br->alloc kg_in memory fail!\n");
@@ -215,7 +215,7 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 	kg_in->qbytes = q->dsize;
 	kg_in->e = (void *)kg_in->data;
 	kg_in->p = (void *)kg_in->e + c->key_size;
-	kg_in->q = (void *)kg_in->p + CRT_PARAM_SZ(c->key_size);
+	kg_in->q = (void *)((uintptr_t)kg_in->p + CRT_PARAM_SZ(c->key_size));
 
 	memcpy(kg_in->e, e->data, e->dsize);
 	memcpy(kg_in->p, p->data, p->dsize);
@@ -285,7 +285,7 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	if (c->setup.is_crt)
 		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
 	else
-		kg_out_size = GEN_PARAMS_SZ(c->key_size);
+		kg_out_size = (int)GEN_PARAMS_SZ(c->key_size);
 
 	br = &c->setup.br;
 	if (unlikely(!br->alloc)) {
@@ -310,8 +310,8 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	kg_out->size = (__u32)kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
-		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
-		kg_out->dp = kg_out->dq + CRT_PARAM_SZ(kz);
+		kg_out->dq = (void *)((uintptr_t)kg_out->qinv + CRT_PARAM_SZ(kz));
+		kg_out->dp = (void *)((uintptr_t)kg_out->dq + CRT_PARAM_SZ(kz));
 	}
 
 	return kg_out;
@@ -430,11 +430,11 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	struct wd_mm_br *br = &setup->br;
 	struct wcrypto_rsa_prikey2 *pkey2;
 	struct wcrypto_rsa_prikey1 *pkey1;
-	int len;
+	__u32 len;
 
 	if (setup->is_crt) {
 		len = sizeof(struct wcrypto_rsa_prikey) +
-			CRT_PARAMS_SZ(ctx->key_size);
+			(__u32)CRT_PARAMS_SZ(ctx->key_size);
 		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
 			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
 			return -WD_ENOMEM;
@@ -449,7 +449,7 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 		init_pkey2(pkey2, ctx->key_size);
 	} else {
 		len = sizeof(struct wcrypto_rsa_prikey) +
-			GEN_PARAMS_SZ(ctx->key_size);
+			(__u32)GEN_PARAMS_SZ(ctx->key_size);
 		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
 			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
 			return -WD_ENOMEM;
@@ -464,7 +464,7 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 		init_pkey1(pkey1, ctx->key_size);
 	}
 
-	len = sizeof(struct wcrypto_rsa_pubkey) + GEN_PARAMS_SZ(ctx->key_size);
+	len = sizeof(struct wcrypto_rsa_pubkey) + (__u32)GEN_PARAMS_SZ(ctx->key_size);
 	if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
 		br->free(br->usr, ctx->prikey);
 		WD_ERR("Blk_size < need_size<0x%x>.\n", len);
@@ -500,7 +500,8 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 {
 	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_ctx *ctx;
-	int i, ret;
+	__u32 i;
+	int ret;
 
 	ctx = calloc(1, sizeof(struct wcrypto_rsa_ctx));
 	if (!ctx)

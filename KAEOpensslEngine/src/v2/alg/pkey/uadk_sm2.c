@@ -33,6 +33,11 @@ enum {
 	CTX_INIT_SUCC
 };
 
+enum {
+	MD_UNCHANGED,
+	MD_CHANGED
+};
+
 typedef struct {
 	/* Key and paramgen group */
 	EC_GROUP *gen_group;
@@ -52,6 +57,10 @@ struct sm2_ctx {
 	const EC_POINT *pubkey;
 	BIGNUM *order;
 	int init_status;
+	/* The nid of digest method */
+	int md_nid;
+	/* The update status of digest method, changed (1), not changed (0) */
+	int md_update_status;
 };
 
 typedef struct sm2_ciphertext {
@@ -165,7 +174,6 @@ static int sm2_update_sess(struct sm2_ctx *smctx)
 		0x72, 0x03, 0xdf, 0x6b, 0x21, 0xc6, 0x05, 0x2b,
 		0x53, 0xbb, 0xf4, 0x09, 0x39, 0xd5, 0x41, 0x23
 	};
-	int nid_hash = smctx->ctx.md ? EVP_MD_type(smctx->ctx.md) : NID_sm3;
 	struct wd_ecc_sess_setup setup;
 	handle_t sess;
 	BIGNUM *order;
@@ -175,12 +183,13 @@ static int sm2_update_sess(struct sm2_ctx *smctx)
 	setup.alg = "sm2";
 
 	if (smctx->ctx.md) {
+		/* Set hash method */
 		setup.hash.cb = compute_hash;
 		setup.hash.usr = (void *)smctx->ctx.md;
-		type = get_hash_type(nid_hash);
+		type = get_hash_type(smctx->md_nid);
 		if (type < 0) {
 			fprintf(stderr, "uadk not support hash nid %d\n",
-				nid_hash);
+				smctx->md_nid);
 			return -EINVAL;
 		}
 		setup.hash.type = type;
@@ -193,9 +202,11 @@ static int sm2_update_sess(struct sm2_ctx *smctx)
 	if (!sess) {
 		fprintf(stderr, "failed to alloc sess\n");
 		BN_free(order);
+		smctx->init_status = CTX_INIT_FAIL;
 		return -EINVAL;
 	}
 
+	/* Free old session before setting new session */
 	if (smctx->sess)
 		wd_ecc_free_sess(smctx->sess);
 
@@ -711,6 +722,11 @@ static int sm2_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 	}
 
 	wd_sm2_get_sign_out_params(req.dst, &r, &s);
+	if (!r || !s) {
+		ret = UADK_DO_SOFT;
+		goto uninit_iot;
+	}
+
 	ret = sign_bin_to_ber(NULL, r, s, sig, siglen);
 	if (ret)
 		goto uninit_iot;
@@ -957,6 +973,11 @@ static int sm2_encrypt(EVP_PKEY_CTX *ctx,
 
 	md = (smctx->ctx.md == NULL) ? EVP_sm3() : smctx->ctx.md;
 	wd_sm2_get_enc_out_params(req.dst, &c1, &c2, &c3);
+	if (!c1 || !c2 || !c3) {
+		ret = UADK_DO_SOFT;
+		goto uninit_iot;
+	}
+
 	ret = cipher_bin_to_ber(md, c1, c2, c3, out, outlen);
 	if (ret)
 		goto uninit_iot;
@@ -1047,6 +1068,11 @@ static int sm2_get_plaintext(struct wd_ecc_req *req,
 	struct wd_dtb *ptext = NULL;
 
 	wd_sm2_get_dec_out_params(req->dst, &ptext);
+	if (!ptext) {
+		fprintf(stderr, "failed to get ptext\n");
+		return -EINVAL;
+	}
+
 	if (*outlen < ptext->dsize) {
 		fprintf(stderr, "outlen(%lu) < (%u)\n", *outlen, ptext->dsize);
 		return -EINVAL;
@@ -1149,26 +1175,22 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 	struct sm2_ctx *smctx;
 	int ret;
 
-	smctx = malloc(sizeof(*smctx));
+	smctx = calloc(1, sizeof(*smctx));
 	if (!smctx) {
 		fprintf(stderr, "failed to alloc sm2 ctx\n");
 		return 0;
 	}
 
-	memset(smctx, 0, sizeof(*smctx));
+	ret = uadk_e_ecc_get_support_state(SM2_SUPPORT);
+	if (!ret) {
+		fprintf(stderr, "sm2 is not supported\n");
+		return 0;
+	}
 
 	ret = uadk_init_ecc();
 	if (ret) {
 		fprintf(stderr, "failed to uadk_init_ecc, ret = %d\n", ret);
 		US_ERR("failed to uadk_init_ecc, ret = %d\n", ret);
-		smctx->init_status = CTX_INIT_FAIL;
-		goto end;
-	}
-
-	ret = sm2_update_sess(smctx);
-	if (ret) {
-		fprintf(stderr, "failed to update sess\n");
-		US_ERR("failed to update sess\n");
 		smctx->init_status = CTX_INIT_FAIL;
 		goto end;
 	}
@@ -1210,6 +1232,7 @@ static int sm2_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 	EC_GROUP *group;
+	int md_nid;
 
 	if (!smctx) {
 		fprintf(stderr, "smctx not set.\n");
@@ -1225,29 +1248,35 @@ static int sm2_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
 		}
 		EC_GROUP_free(smctx->ctx.gen_group);
 		smctx->ctx.gen_group = group;
-		return 1;
+		goto set_data;
 	case EVP_PKEY_CTRL_EC_PARAM_ENC:
 		if (smctx->ctx.gen_group == NULL) {
 			fprintf(stderr, "no parameters set\n");
 			return 0;
 		}
 		EC_GROUP_set_asn1_flag(smctx->ctx.gen_group, p1);
-		return 1;
+		goto set_data;
 	case EVP_PKEY_CTRL_MD:
-		smctx->ctx.md = p2;
-		if (smctx->init_status != CTX_INIT_SUCC)
-			return 1;
+		if (!p2)
+			smctx->ctx.md = EVP_sm3();
+		else
+			smctx->ctx.md = p2;
 
-		if (sm2_update_sess(smctx)) {
-			fprintf(stderr, "failed to set MD\n");
-			return 0;
+		md_nid = EVP_MD_type(smctx->ctx.md);
+		if (md_nid == smctx->md_nid) {
+			smctx->md_update_status = MD_UNCHANGED;
+		} else {
+			smctx->md_update_status = MD_CHANGED;
+			smctx->md_nid = md_nid;
 		}
-		return 1;
+		goto set_data;
 	case EVP_PKEY_CTRL_GET_MD:
 		*(const EVP_MD **)p2 = smctx->ctx.md;
 		return 1;
 	case EVP_PKEY_CTRL_SET1_ID:
-		return sm2_set_ctx_id(smctx, p1, p2);
+		if (sm2_set_ctx_id(smctx, p1, p2))
+			goto set_data;
+		return 0;
 	case EVP_PKEY_CTRL_GET1_ID:
 		memcpy(p2, smctx->ctx.id, smctx->ctx.id_len);
 		return 1;
@@ -1261,6 +1290,14 @@ static int sm2_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
 		fprintf(stderr, "sm2 ctrl type = %d error\n", type);
 		return UADK_E_INVALID;
 	}
+set_data:
+	if (smctx->init_status == CTX_INIT_SUCC && smctx->md_update_status)
+		if (sm2_update_sess(smctx))
+			return 0;
+
+	EVP_PKEY_CTX_set_data(ctx, smctx);
+	return 1;
+
 }
 
 static int sm2_ctrl_str(EVP_PKEY_CTX *ctx,
@@ -1603,7 +1640,7 @@ int uadk_sm2_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 	openssl_meth = get_openssl_pkey_meth(EVP_PKEY_SM2);
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 
-	if (!uadk_support_algorithm("sm2")) {
+	if (!uadk_e_ecc_get_support_state(SM2_SUPPORT)) {
 		pkey_meth->sm2 = meth;
 		return 1;
 	}

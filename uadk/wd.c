@@ -19,17 +19,19 @@
 #include <sched.h>
 
 #include "wd.h"
-
+#include "wd_alg.h"
 #define SYS_CLASS_DIR			"/sys/class/uacce"
+#define FILE_MAX_SIZE			(8 << 20)
 
 enum UADK_LOG_LEVEL {
-	LOG_NONE = 0,
+	WD_LOG_NONE = 0,
 	WD_LOG_ERROR,
 	WD_LOG_INFO,
 	WD_LOG_DEBUG,
+	WD_LOG_INVALID,
 };
 
-static int uadk_log_level;
+static int uadk_log_level = WD_LOG_INVALID;
 
 struct wd_ctx_h {
 	int fd;
@@ -52,6 +54,9 @@ static void wd_parse_log_level(void)
 	char *file_contents;
 	FILE *in_file;
 
+	if (uadk_log_level == WD_LOG_INVALID)
+		uadk_log_level = WD_LOG_NONE;
+
 	in_file = fopen(syslog_file, "r");
 	if (!in_file) {
 		WD_ERR("failed to open the rsyslog.conf file.\n");
@@ -60,6 +65,11 @@ static void wd_parse_log_level(void)
 
 	if (stat(syslog_file, &file_info) == -1) {
 		WD_ERR("failed to get file information.\n");
+		goto close_file;
+	}
+
+	if (file_info.st_size > FILE_MAX_SIZE) {
+		WD_ERR("failed to check rsyslog.conf size.\n");
 		goto close_file;
 	}
 
@@ -151,14 +161,16 @@ static int get_int_attr(struct uacce_dev *dev, const char *attr, int *val)
 static int get_str_attr(struct uacce_dev *dev, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int ret;
+	__u32 ret;
+	int size;
 
-	ret = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
-	if (ret < 0) {
+	size = get_raw_attr(dev->dev_root, attr, buf, buf_sz);
+	if (size < 0) {
 		buf[0] = '\0';
-		return ret;
+		return size;
 	}
 
+	ret = size;
 	if (ret == buf_sz)
 		ret--;
 
@@ -190,7 +202,7 @@ int wd_is_isolate(struct uacce_dev *dev)
 	int value = 0;
 	int ret;
 
-	if (!dev || !dev->dev_root)
+	if (!dev || !strlen(dev->dev_root))
 		return -WD_EINVAL;
 
 	ret = access_attr(dev->dev_root, "isolate", F_OK);
@@ -244,6 +256,12 @@ static int get_dev_info(struct uacce_dev *dev)
 	if (ret < 0)
 		return ret;
 
+	/* Special processing is performed when NUMA is not configured */
+	if (dev->numa_id < 0) {
+		WD_INFO("numa node of the device is not configured, set it to 0!\n");
+		dev->numa_id = 0;
+	}
+
 	ret = get_str_attr(dev, "api", dev->api, WD_NAME_SIZE);
 	if (ret < 0)
 		return ret;
@@ -258,8 +276,6 @@ static struct uacce_dev *read_uacce_sysfs(const char *dev_name)
 
 	if (!dev_name)
 		return NULL;
-
-	wd_parse_log_level();
 
 	dev = calloc(1, sizeof(struct uacce_dev));
 	if (!dev)
@@ -343,7 +359,7 @@ out:
 
 static void wd_ctx_init_qfrs_offs(struct wd_ctx_h *ctx)
 {
-	memcpy(&ctx->qfrs_offs, &ctx->dev->qfrs_offs,
+	memcpy(ctx->qfrs_offs, ctx->dev->qfrs_offs,
 	       sizeof(ctx->qfrs_offs));
 }
 
@@ -606,6 +622,7 @@ int wd_get_avail_ctx(struct uacce_dev *dev)
 static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 {
 	char dev_path[MAX_DEV_NAME_LEN] = {0};
+	__u32 size;
 	int ret;
 
 	ret = snprintf(dev_path, MAX_DEV_NAME_LEN, "%s/%s",
@@ -621,7 +638,8 @@ static int get_dev_alg_name(const char *d_name, char *dev_alg_name, size_t sz)
 		return ret;
 	}
 
-	if (ret == sz)
+	size = ret;
+	if (size == sz)
 		dev_alg_name[sz - 1] = '\0';
 
 	return 0;
@@ -752,6 +770,9 @@ struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
 		p = p->next;
 	}
 
+	if (dev == WD_ERR_PTR(-WD_ENODEV))
+		WD_ERR("no available device was found in numa %d!\n", numa_id);
+
 	return dev;
 }
 
@@ -865,12 +886,36 @@ void wd_get_version(void)
 
 bool wd_need_debug(void)
 {
-	return uadk_log_level >= WD_LOG_DEBUG;
+	switch (uadk_log_level) {
+	case WD_LOG_NONE:
+	case WD_LOG_ERROR:
+	case WD_LOG_INFO:
+		return false;
+	case WD_LOG_DEBUG:
+		return true;
+	case WD_LOG_INVALID:
+		wd_parse_log_level();
+		return uadk_log_level >= WD_LOG_DEBUG;
+	default:
+		return false;
+	}
 }
 
 bool wd_need_info(void)
 {
-	return uadk_log_level >= WD_LOG_INFO;
+	switch (uadk_log_level) {
+	case WD_LOG_NONE:
+	case WD_LOG_ERROR:
+		return false;
+	case WD_LOG_INFO:
+	case WD_LOG_DEBUG:
+		return true;
+	case WD_LOG_INVALID:
+		wd_parse_log_level();
+		return uadk_log_level >= WD_LOG_INFO;
+	default:
+		return false;
+	}
 }
 
 char *wd_ctx_get_dev_name(handle_t h_ctx)
@@ -882,3 +927,57 @@ char *wd_ctx_get_dev_name(handle_t h_ctx)
 
 	return ctx->dev_name;
 }
+
+void wd_release_alg_cap(struct wd_capability *head)
+{
+	struct wd_capability *cap_pnext = head;
+	struct wd_capability *cap_node;
+
+	while (cap_pnext) {
+		cap_node = cap_pnext;
+		cap_pnext = cap_pnext->next;
+		free(cap_node);
+	}
+
+	if (head)
+		free(head);
+}
+
+struct wd_capability *wd_get_alg_cap(void)
+{
+	struct wd_alg_list *head = wd_get_alg_head();
+	struct wd_alg_list *pnext = head->next;
+	struct wd_capability *cap_head = NULL;
+	struct wd_capability *cap_pnext = NULL;
+	struct wd_capability *cap_node;
+
+	while (pnext) {
+		cap_node = calloc(1, sizeof(struct wd_capability));
+		if (!cap_node) {
+			WD_ERR("fail to alloc wd capability head\n");
+			goto alloc_err;
+		}
+
+		strcpy(cap_node->alg_name, pnext->alg_name);
+		strcpy(cap_node->drv_name, pnext->drv_name);
+		cap_node->available = pnext->available;
+		cap_node->priority = pnext->priority;
+		cap_node->calc_type = pnext->calc_type;
+		cap_node->next = NULL;
+
+		pnext = pnext->next;
+		if (!cap_pnext) {
+			cap_head = cap_node;
+			cap_pnext = cap_node;
+		}
+		cap_pnext->next = cap_node;
+		cap_pnext = cap_node;
+	}
+
+	return cap_head;
+
+alloc_err:
+	wd_release_alg_cap(cap_head);
+	return NULL;
+}
+

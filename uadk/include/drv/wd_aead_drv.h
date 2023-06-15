@@ -55,41 +55,22 @@ struct wd_aead_msg {
 	__u8 *iv;
 	/* input auth iv pointer */
 	__u8 aiv[MAX_IV_SIZE];
+	/* input auth iv pointer for stream mode */
+	__u8 aiv_stream[AIV_STREAM_LEN];
 	/* input data pointer */
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
 	/* mac */
 	__u8 *mac;
+	/* mac data pointer for decrypto as stream mode */
+	__u8 mac_bak[AES_BLOCK_SIZE];
+	/* total of data for stream mode */
+	__u64 long_data_len;
+	enum wd_aead_msg_state msg_state;
 };
 
-struct wd_aead_driver {
-	const char	*drv_name;
-	const char	*alg_name;
-	__u32	drv_ctx_size;
-	int	(*init)(struct wd_ctx_config_internal *config, void *priv);
-	void	(*exit)(void *priv);
-	int	(*aead_send)(handle_t ctx, void *aead_msg);
-	int	(*aead_recv)(handle_t ctx, void *aead_msg);
-};
-
-void wd_aead_set_driver(struct wd_aead_driver *drv);
-struct wd_aead_driver *wd_aead_get_driver(void);
 struct wd_aead_msg *wd_aead_get_msg(__u32 idx, __u32 tag);
-
-#ifdef WD_STATIC_DRV
-#define WD_AEAD_SET_DRIVER(drv)					      \
-struct wd_aead_driver *wd_aead_get_driver(void)			\
-{									\
-	return &drv;							\
-}
-#else
-#define WD_AEAD_SET_DRIVER(drv)				              \
-static void __attribute__((constructor)) set_aead_driver(void)		      \
-{									      \
-	wd_aead_set_driver(&(drv));					      \
-}
-#endif
 
 #ifdef __cplusplus
 }

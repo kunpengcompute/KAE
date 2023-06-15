@@ -27,7 +27,7 @@
 #define UADK_ECC_MAX_KEY_BYTES		66
 #define UADK_ECC_CV_PARAM_NUM		6
 #define SM2_KEY_BYTES			32
-#define UADK_OCTET_STRING		4
+#define UADK_OCTET_STRING		0x04
 #define UADK_ECC_PUBKEY_PARAM_NUM	2
 #define UADK_ECC_PADDING		7
 #define UADK_ECDH_CV_NUM		8
@@ -38,6 +38,15 @@
 #define GET_MS_BYTE(n)			((n) >> 8)
 #define GET_LS_BYTE(n)			((n) & 0xFF)
 #define DGST_SHIFT_NUM(n)		(8 - ((n) & 0x7))
+#define ECC_TYPE			5
+
+enum {
+	SM2_SUPPORT,
+	ECDSA_SUPPORT,
+	ECDH_SUPPORT,
+	X25519_SUPPORT,
+	X448_SUPPORT
+};
 
 struct uadk_pkey_meth {
 	EVP_PKEY_METHOD *sm2;
@@ -74,6 +83,6 @@ int uadk_x25519_create_pmeth(struct uadk_pkey_meth *pkey_meth);
 void uadk_x25519_delete_pmeth(struct uadk_pkey_meth *pkey_meth);
 int uadk_bind_ec(ENGINE *e);
 int uadk_e_ecc_get_numa_id(void);
-
+int uadk_e_ecc_get_support_state(int alg_tag);
 
 #endif
