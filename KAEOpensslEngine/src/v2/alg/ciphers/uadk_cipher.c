@@ -65,7 +65,7 @@ struct cipher_priv_ctx {
 	void *sw_ctx_data;
 	/* Crypto small packet offload threshold */
 	size_t switch_threshold;
-	int update_iv;
+	bool update_iv;
 };
 
 struct cipher_info {
@@ -849,14 +849,12 @@ static void uadk_cipher_update_priv_ctx(struct cipher_priv_ctx *priv)
 	int i;
 
 	switch (priv->setup.mode) {
+	case WD_CIPHER_CFB:
 	case WD_CIPHER_CBC:
 		if (priv->req.op_type == WD_CIPHER_ENCRYPTION)
-			memcpy(priv->iv, priv->req.dst + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
+			memcpy(priv->iv, priv->req.dst + offset, iv_bytes);
 		else
-			memcpy(priv->iv, priv->req.src  + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-
+			memcpy(priv->iv, priv->req.src  + offset, iv_bytes);
 		break;
 	case WD_CIPHER_OFB:
 		for (i = 0; i < IV_LEN; i++) {
@@ -864,15 +862,6 @@ static void uadk_cipher_update_priv_ctx(struct cipher_priv_ctx *priv)
 			       *((unsigned char *)priv->req.dst + offset + i);
 		}
 		memcpy(priv->iv, K, iv_bytes);
-		break;
-	case WD_CIPHER_CFB:
-		if (priv->req.op_type == WD_CIPHER_ENCRYPTION)
-			memcpy(priv->iv, priv->req.dst + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-		else
-			memcpy(priv->iv, priv->req.src + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-
 		break;
 	case WD_CIPHER_CTR:
 		ctr_iv_inc(priv->iv, priv->req.in_bytes >> CTR_MODE_LEN_SHIFT);
@@ -890,8 +879,7 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 	if (unlikely(priv->switch_flag == UADK_DO_SOFT))
 		return 0;
 
-	ret = sec_ciphers_is_check_valid(priv);
-	if (!ret)
+	if (priv->switch_threshold >= priv->req.in_bytes)
 		return 0;
 
 	ret = wd_do_cipher_sync(priv->sess, &priv->req);
@@ -1109,23 +1097,7 @@ static int bind_v2_cipher(void)
 	UADK_CIPHER_DESCR(sm4_ecb, 16, 16, 16, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_ecb");
-	UADK_CIPHER_DESCR(sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_ofb128");
-	UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_cfb128");
-	UADK_CIPHER_DESCR(sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv); 
-	US_DEBUG("successed to bind sm4_ctr");    
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);   
 	return 0;
 }
 
