@@ -78,13 +78,19 @@ static int x25519_init(EVP_PKEY_CTX *ctx)
 	struct ecx_ctx *x25519_ctx;
 	int ret;
 
+	ret = uadk_e_ecc_get_support_state(X25519_SUPPORT);
+	if (!ret) {
+		fprintf(stderr, "x25519 is not supported\n");
+		return UADK_E_FAIL;
+	}
+
 	ret = uadk_init_ecc();
 	if (ret) {
 		fprintf(stderr, "failed to uadk_init_ecc, ret = %d\n", ret);
 		return UADK_E_FAIL;
 	}
 
-	x25519_ctx = malloc(sizeof(struct ecx_ctx));
+	x25519_ctx = calloc(1, sizeof(struct ecx_ctx));
 	if (!x25519_ctx) {
 		fprintf(stderr, "failed to alloc x25519 ctx\n");
 		return UADK_E_FAIL;
@@ -129,19 +135,24 @@ static int x448_init(EVP_PKEY_CTX *ctx)
 	struct ecx_ctx *x448_ctx;
 	int ret;
 
+	ret = uadk_e_ecc_get_support_state(X448_SUPPORT);
+	if (!ret) {
+		fprintf(stderr, "x448 is not supported\n");
+		return UADK_E_FAIL;
+	}
+
 	ret = uadk_init_ecc();
 	if (ret) {
 		fprintf(stderr, "failed to do uadk_init_ecc, ret = %d\n", ret);
 		return UADK_E_FAIL;
 	}
 
-	x448_ctx = malloc(sizeof(struct ecx_ctx));
+	x448_ctx = calloc(1, sizeof(struct ecx_ctx));
 	if (!x448_ctx) {
 		fprintf(stderr, "failed to alloc x448 ctx\n");
 	        return UADK_E_FAIL;
 	}
 
-	memset(x448_ctx, 0, sizeof(struct ecx_ctx));
 	setup.alg = "x448";
 	setup.key_bits = X448_KEYBITS;
 	params.numa_id = uadk_e_ecc_get_numa_id();
@@ -288,9 +299,14 @@ static int ecx_keygen_set_pkey(EVP_PKEY *pkey, struct ecx_ctx *ecx_ctx,
 	int key_size = ecx_ctx->key_size;
 	int ret;
 
-	wd_ecxdh_get_out_params(req->dst, &pubkey);
 	if (key_size > ECX_MAX_KEYLEN) {
 		fprintf(stderr, "invalid key size, key_size = %d\n", key_size);
+		return UADK_E_FAIL;
+	}
+
+	wd_ecxdh_get_out_params(req->dst, &pubkey);
+	if (!pubkey) {
+		fprintf(stderr, "failed to get pubkey\n");
 		return UADK_E_FAIL;
 	}
 
@@ -800,7 +816,7 @@ int uadk_x25519_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 
-	if (!uadk_support_algorithm("x25519")) {
+	if (!uadk_e_ecc_get_support_state(X25519_SUPPORT)) {
 		pkey_meth->x25519 = meth;
 		return UADK_E_SUCCESS;
 	}
@@ -841,7 +857,7 @@ int uadk_x448_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 
-	if (!uadk_support_algorithm("x448")) {
+	if (!uadk_e_ecc_get_support_state(X448_SUPPORT)) {
 		pkey_meth->x448 = meth;
 		return UADK_E_SUCCESS;
 	}
