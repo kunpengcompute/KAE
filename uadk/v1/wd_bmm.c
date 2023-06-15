@@ -188,12 +188,12 @@ static int usr_pool_init(struct wd_blkpool *p)
 	struct wd_blkpool_setup *sp = &p->setup;
 	__u32 blk_size = sp->block_size;
 	struct wd_blk_hd *hd = NULL;
-	int i;
+	__u32 i;
 
 	p->act_start = (void *)ALIGN((uintptr_t)p->usr_mem_start,
 				     sp->align_size);
 	for (i = 0; i < sp->block_num; i++) {
-		hd = p->act_start + (p->act_hd_sz + p->act_blk_sz) * i;
+		hd = (void *)((uintptr_t)p->act_start + (p->act_hd_sz + p->act_blk_sz) * i);
 		hd->blk = (void *)((uintptr_t)hd + p->act_hd_sz);
 		hd->blk_dma = sp->br.iova_map(sp->br.usr, hd->blk, blk_size);
 		if (!hd->blk_dma) {

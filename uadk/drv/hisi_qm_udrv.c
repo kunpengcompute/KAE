@@ -265,6 +265,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 		return ret;
 	}
 	q_info->sqn = qp_ctx.id;
+	config->sqn = qp_ctx.id;
 
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_INFO, &qp_cfg);
 	if (ret < 0) {
@@ -643,7 +644,7 @@ static struct hisi_sgl *hisi_qm_align_sgl(const void *sgl, __u32 sge_num)
 
 static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
 {
-	int i;
+	__u32 i;
 
 	if (pool->sgl) {
 		for (i = 0; i < pool->sgl_num; i++)
@@ -661,7 +662,8 @@ static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
 handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 {
 	struct hisi_sgl_pool *sgl_pool;
-	int i, ret;
+	int ret;
+	__u32 i;
 
 	if (!sgl_num || !sge_num || sge_num > HISI_SGE_NUM_IN_SGL) {
 		WD_ERR("failed to create sgl_pool, sgl_num=%u, sge_num=%u!\n",
@@ -826,7 +828,7 @@ void *hisi_qm_get_hw_sgl(handle_t sgl_pool, struct wd_datalist *sgl)
 	struct hisi_sgl_pool *pool = (struct hisi_sgl_pool *)sgl_pool;
 	struct wd_datalist *tmp = sgl;
 	struct hisi_sgl *head, *next, *cur;
-	int i = 0;
+	__u32 i = 0;
 
 	if (!pool || !sgl) {
 		WD_ERR("invalid: hw sgl pool or sgl is NULL!\n");

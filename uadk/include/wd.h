@@ -29,6 +29,7 @@ extern "C" {
 #define LINUX_PRTDIR_SIZE		2
 #define WD_CTX_CNT_NUM			1024
 #define WD_IPC_KEY			0x500011
+#define CRYPTO_MAX_ALG_NAME		128
 
 /* Required compiler attributes */
 #define likely(x)       __builtin_expect(!!(x), 1)
@@ -77,6 +78,7 @@ typedef void (*wd_log)(const char *format, ...);
 #define	WD_SUCCESS			0
 #define	WD_STREAM_END			1
 #define	WD_STREAM_START			2
+#define	WD_SOFT_COMPUTING		3
 #define	WD_EIO				EIO
 #define	WD_EAGAIN			EAGAIN
 #define	WD_ENOMEM			ENOMEM
@@ -118,22 +120,23 @@ struct wd_dtb {
 	__u32 bsize;
 };
 
+/* Members should be exactly 8-byte aligned */
 struct uacce_dev {
 	/* sysfs node content */
 	/* flag: SVA */
 	int flags;
+	int numa_id;
 	/* HW context type */
 	char api[WD_NAME_SIZE];
 	/* dev supported algorithms */
 	char algs[MAX_ATTR_STR_SIZE];
-	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 	/* sysfs path with dev name */
 	char dev_root[PATH_STR_SIZE];
 
 	/* dev path in devfs */
 	char char_dev_path[MAX_DEV_NAME_LEN];
 
-	int numa_id;
+	unsigned long qfrs_offs[UACCE_QFRT_MAX];
 };
 
 struct uacce_dev_list {
@@ -577,6 +580,23 @@ bool wd_need_debug(void);
  * wd_need_info() - Get the info flag from rsyslog.cnf
  */
 bool wd_need_info(void);
+
+struct wd_capability {
+	char	alg_name[CRYPTO_MAX_ALG_NAME];
+	char	drv_name[CRYPTO_MAX_ALG_NAME];
+	bool	available;
+	int	priority;
+	int	calc_type;
+
+	struct wd_capability *next;
+};
+
+/**
+ * wd_get_alg_cap() - Get the algorithm information supported
+ * in the current system.
+ */
+struct wd_capability *wd_get_alg_cap(void);
+void wd_release_alg_cap(struct wd_capability *head);
 
 #ifdef __cplusplus
 }

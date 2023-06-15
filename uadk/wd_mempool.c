@@ -230,8 +230,10 @@ static struct bitmap *create_bitmap(int bits)
 
 static void destroy_bitmap(struct bitmap *bm)
 {
-	free(bm->map);
-	free(bm);
+	if (bm) {
+		free(bm->map);
+		free(bm);
+	}
 }
 
 static unsigned long _find_next_bit(unsigned long *map, unsigned long bits,
@@ -273,8 +275,9 @@ static void set_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
-	unsigned long *p = map + BIT_WORD(pos);
+	unsigned long *p;
 
+	p = (void *)((uintptr_t)map + BIT_WORD(pos) * sizeof(unsigned long));
 	*p |= mask;
 }
 
@@ -282,14 +285,15 @@ static void clear_bit(struct bitmap *bm, unsigned int pos)
 {
 	unsigned long *map = bm->map;
 	unsigned long mask = BIT_MASK(pos);
-	unsigned long *p = map + BIT_WORD(pos);
+	unsigned long *p;
 
+	p = (void *)((uintptr_t)map + BIT_WORD(pos) * sizeof(unsigned long));
 	*p &= ~mask;
 }
 
 static int test_bit(struct bitmap *bm, unsigned int nr)
 {
-	unsigned long *p = bm->map + BIT_WORD(nr);
+	unsigned long *p = (void *)((uintptr_t)bm->map + BIT_WORD(nr) * sizeof(unsigned long));
 	unsigned long mask = BIT_MASK(nr);
 
 	return !(*p & mask);
@@ -375,7 +379,7 @@ static void free_mem_to_mempool_nolock(struct blkpool *bp)
 	struct mempool *mp = bp->mp;
 	struct memzone *iter;
 	size_t blks;
-	int i;
+	__u32 i;
 
 	while ((iter = TAILQ_LAST(&bp->mz_list, memzone_list))) {
 		for (i = iter->begin; i <= iter->end; i++)
@@ -421,7 +425,7 @@ static int alloc_block_from_mempool(struct mempool *mp,
 
 	do {
 		pos_first = find_next_zero_bit(mp->bitmap, pos_last);
-		if (pos_first == mp->bitmap->bits) {
+		if ((__u32)pos_first == mp->bitmap->bits) {
 			WD_ERR("failed to find free block from mempool!\n");
 			return -WD_ENOMEM;
 		}
@@ -534,7 +538,7 @@ static int init_blkpool_elem(struct blkpool *bp)
 {
 	struct memzone *iter;
 	int idx = 0;
-	int i;
+	__u32 i;
 
 	bp->blk_elem = calloc(bp->depth, sizeof(void *));
 	if (!bp->blk_elem) {
@@ -644,14 +648,13 @@ static int get_value_from_sysfs(const char *path, ssize_t path_size)
 		goto err_read;
 	}
 
-	close(fd);
-
 	ret = strtol(buf, NULL, 10);
 	if (errno == ERANGE) {
 		WD_ERR("failed to strtol %s, out of range!\n", buf);
 		goto err_read;
 	}
 
+	close(fd);
 	return ret;
 
 err_read:
@@ -793,7 +796,7 @@ static int mbind_memory(void *addr, size_t size, int node)
 	unsigned long node_mask;
 	int ret = 0;
 
-	node_mask = 1U << (unsigned int)node;
+	node_mask = 1UL << (unsigned int)node;
 	ret = mbind(addr, size, MPOL_BIND, &node_mask, max_node, 0);
 	if (ret < 0) {
 		WD_ERR("failed to mbind memory, ret is %d!\n", ret);
@@ -891,8 +894,10 @@ static int init_mempool(struct mempool *mp)
 
 static void uninit_mempool(struct mempool *mp)
 {
-	destroy_bitmap(mp->bitmap);
-	mp->bitmap = NULL;
+	if (mp->bitmap) {
+		destroy_bitmap(mp->bitmap);
+		mp->bitmap = NULL;
+	}
 }
 
 handle_t wd_mempool_create(size_t size, int node)

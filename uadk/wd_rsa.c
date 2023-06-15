@@ -74,45 +74,53 @@ static struct wd_rsa_setting {
 	enum wd_status status;
 	struct wd_ctx_config_internal config;
 	struct wd_sched sched;
-	void *sched_ctx;
-	const struct wd_rsa_driver *driver;
+	struct wd_async_msg_pool pool;
+	struct wd_alg_driver *driver;
 	void *priv;
 	void *dlhandle;
-	struct wd_async_msg_pool pool;
+	void *dlh_list;
 } wd_rsa_setting;
 
 struct wd_env_config wd_rsa_env_config;
+static struct wd_init_attrs wd_rsa_init_attrs;
 
-#ifdef WD_STATIC_DRV
-static void wd_rsa_set_static_drv(void)
+static void wd_rsa_close_driver(void)
 {
-	wd_rsa_setting.driver = wd_rsa_get_driver();
-	if (!wd_rsa_setting.driver)
-		WD_ERR("failed to get rsa driver!\n");
-}
-#else
-static void __attribute__((constructor)) wd_rsa_open_driver(void)
-{
-	wd_rsa_setting.dlhandle = dlopen("libhisi_hpre.so", RTLD_NOW);
 	if (!wd_rsa_setting.dlhandle)
-		WD_ERR("failed to open libhisi_hpre.so, %s\n", dlerror());
-}
-
-static void __attribute__((destructor)) wd_rsa_close_driver(void)
-{
-	if (wd_rsa_setting.dlhandle)
-		dlclose(wd_rsa_setting.dlhandle);
-}
-#endif
-
-void wd_rsa_set_driver(struct wd_rsa_driver *drv)
-{
-	if (!drv) {
-		WD_ERR("invalid: rsa drv is NULL!\n");
 		return;
+
+	wd_release_drv(wd_rsa_setting.driver);
+	dlclose(wd_rsa_setting.dlhandle);
+	wd_rsa_setting.dlhandle = NULL;
+}
+
+static int wd_rsa_open_driver(void)
+{
+	struct wd_alg_driver *driver = NULL;
+	char lib_path[PATH_MAX];
+	const char *alg_name = "rsa";
+	int ret;
+
+	ret = wd_get_lib_file_path("libhisi_hpre.so", lib_path, false);
+	if (ret)
+		return ret;
+
+	wd_rsa_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
+	if (!wd_rsa_setting.dlhandle) {
+		WD_ERR("failed to open libhisi_hpre.so, %s!\n", dlerror());
+		return -WD_EINVAL;
 	}
 
-	wd_rsa_setting.driver = drv;
+	driver = wd_request_drv(alg_name, false);
+	if (!driver) {
+		wd_rsa_close_driver();
+		WD_ERR("failed to get %s driver support!\n", alg_name);
+		return -WD_EINVAL;
+	}
+
+	wd_rsa_setting.driver = driver;
+
+	return 0;
 }
 
 static void wd_rsa_clear_status(void)
@@ -120,38 +128,22 @@ static void wd_rsa_clear_status(void)
 	wd_alg_clear_init(&wd_rsa_setting.status);
 }
 
-int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
+static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	void *priv;
-	bool flag;
 	int ret;
-
-	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
-
-	flag = wd_alg_try_init(&wd_rsa_setting.status);
-	if (!flag)
-		return 0;
-
-	ret = wd_init_param_check(config, sched);
-	if (ret)
-		goto out_clear_init;
 
 	ret = wd_set_epoll_en("WD_RSA_EPOLL_EN",
 			      &wd_rsa_setting.config.epoll_en);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_ctx_config(&wd_rsa_setting.config, config);
 	if (ret < 0)
-		goto out_clear_init;
+		return ret;
 
 	ret = wd_init_sched(&wd_rsa_setting.sched, sched);
 	if (ret < 0)
 		goto out_clear_ctx_config;
-
-#ifdef WD_STATIC_DRV
-	wd_rsa_set_static_drv();
-#endif
 
 	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_rsa_setting.pool,
@@ -160,34 +152,71 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret < 0)
 		goto out_clear_sched;
 
-	/* initialize ctx related resources in specific driver */
-	priv = calloc(1, wd_rsa_setting.driver->drv_ctx_size);
-	if (!priv) {
-		ret = -WD_ENOMEM;
+	ret = wd_alg_init_driver(&wd_rsa_setting.config,
+				 wd_rsa_setting.driver,
+				 &wd_rsa_setting.priv);
+	if (ret)
 		goto out_clear_pool;
-	}
-
-	wd_rsa_setting.priv = priv;
-	ret = wd_rsa_setting.driver->init(&wd_rsa_setting.config, priv,
-					  wd_rsa_setting.driver->alg_name);
-	if (ret < 0) {
-		WD_ERR("failed to init rsa driver, ret = %d!\n", ret);
-		goto out_free_priv;
-	}
-
-	wd_alg_set_init(&wd_rsa_setting.status);
 
 	return 0;
 
-out_free_priv:
-	free(priv);
-	wd_rsa_setting.priv = NULL;
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
 out_clear_sched:
 	wd_clear_sched(&wd_rsa_setting.sched);
 out_clear_ctx_config:
 	wd_clear_ctx_config(&wd_rsa_setting.config);
+	return ret;
+}
+
+static int wd_rsa_common_uninit(void)
+{
+	if (!wd_rsa_setting.priv) {
+		WD_ERR("invalid: repeat uninit rsa!\n");
+		return -WD_EINVAL;
+	}
+
+	/* uninit async request pool */
+	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
+
+	/* unset config, sched, driver */
+	wd_clear_sched(&wd_rsa_setting.sched);
+	wd_alg_uninit_driver(&wd_rsa_setting.config,
+			     wd_rsa_setting.driver,
+			     &wd_rsa_setting.priv);
+
+	return 0;
+}
+
+int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
+{
+	bool flag;
+	int ret;
+
+	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
+
+	flag = wd_alg_try_init(&wd_rsa_setting.status);
+	if (!flag)
+		return -WD_EEXIST;
+
+	ret = wd_init_param_check(config, sched);
+	if (ret)
+		goto out_clear_init;
+
+	ret = wd_rsa_open_driver();
+	if (ret)
+		goto out_clear_init;
+
+	ret = wd_rsa_common_init(config, sched);
+	if (ret)
+		goto out_close_driver;
+
+	wd_alg_set_init(&wd_rsa_setting.status);
+
+	return 0;
+
+out_close_driver:
+	wd_rsa_close_driver();
 out_clear_init:
 	wd_alg_clear_init(&wd_rsa_setting.status);
 	return ret;
@@ -195,22 +224,121 @@ out_clear_init:
 
 void wd_rsa_uninit(void)
 {
-	if (!wd_rsa_setting.priv) {
-		WD_ERR("invalid: repeat uninit rsa!\n");
+	int ret;
+
+	ret = wd_rsa_common_uninit();
+	if (ret)
 		return;
+
+	wd_rsa_close_driver();
+	wd_alg_clear_init(&wd_rsa_setting.status);
+}
+
+int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
+{
+	struct wd_ctx_nums rsa_ctx_num[WD_RSA_GENKEY] = {0};
+	struct wd_ctx_params rsa_ctx_params = {0};
+	int ret = -WD_EINVAL;
+	bool flag;
+
+	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
+
+	flag = wd_alg_try_init(&wd_rsa_setting.status);
+	if (!flag)
+		return -WD_EEXIST;
+
+	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
+	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
+		WD_ERR("invalid: input param is wrong!\n");
+		goto out_clear_init;
 	}
 
-	/* driver uninit */
-	wd_rsa_setting.driver->exit(wd_rsa_setting.priv);
-	free(wd_rsa_setting.priv);
-	wd_rsa_setting.priv = NULL;
+	if (strcmp(alg, "rsa")) {
+		WD_ERR("invalid: the alg %s not support!\n", alg);
+		goto out_clear_init;
+	}
 
-	/* uninit async request pool */
-	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
+	/*
+	 * Driver lib file path could set by env param.
+	 * than open tham by wd_dlopen_drv()
+	 * default dir in the /root/lib/xxx.so and then dlopen
+	 */
+	wd_rsa_setting.dlh_list = wd_dlopen_drv(NULL);
+	if (!wd_rsa_setting.dlh_list) {
+		WD_ERR("failed to open driver lib files!\n");
+		goto out_clear_init;
+	}
 
-	/* unset config, sched, driver */
-	wd_clear_sched(&wd_rsa_setting.sched);
-	wd_clear_ctx_config(&wd_rsa_setting.config);
+	while (ret) {
+		memset(&wd_rsa_setting.config, 0, sizeof(struct wd_ctx_config_internal));
+
+		/* Get alg driver and dev name */
+		wd_rsa_setting.driver = wd_alg_drv_bind(task_type, alg);
+		if (!wd_rsa_setting.driver) {
+			WD_ERR("failed to bind a valid driver!\n");
+			ret = -WD_EINVAL;
+			goto out_dlopen;
+		}
+
+		rsa_ctx_params.ctx_set_num = rsa_ctx_num;
+		ret = wd_ctx_param_init(&rsa_ctx_params, ctx_params,
+					wd_rsa_setting.driver, WD_RSA_TYPE, WD_RSA_GENKEY);
+		if (ret) {
+			if (ret == -WD_EAGAIN) {
+				wd_disable_drv(wd_rsa_setting.driver);
+				wd_alg_drv_unbind(wd_rsa_setting.driver);
+				continue;
+			}
+			goto out_driver;
+		}
+
+		wd_rsa_init_attrs.alg = alg;
+		wd_rsa_init_attrs.sched_type = sched_type;
+		wd_rsa_init_attrs.driver = wd_rsa_setting.driver;
+		wd_rsa_init_attrs.ctx_params = &rsa_ctx_params;
+		wd_rsa_init_attrs.alg_init = wd_rsa_common_init;
+		wd_rsa_init_attrs.alg_poll_ctx = wd_rsa_poll_ctx;
+		ret = wd_alg_attrs_init(&wd_rsa_init_attrs);
+		if (ret) {
+			if (ret == -WD_ENODEV) {
+				wd_disable_drv(wd_rsa_setting.driver);
+				wd_alg_drv_unbind(wd_rsa_setting.driver);
+				wd_ctx_param_uninit(&rsa_ctx_params);
+				continue;
+			}
+			WD_ERR("failed to init alg attrs!\n");
+			goto out_params_uninit;
+		}
+	}
+
+	wd_alg_set_init(&wd_rsa_setting.status);
+	wd_ctx_param_uninit(&rsa_ctx_params);
+
+	return 0;
+
+out_params_uninit:
+	wd_ctx_param_uninit(&rsa_ctx_params);
+out_driver:
+	wd_alg_drv_unbind(wd_rsa_setting.driver);
+out_dlopen:
+	wd_dlclose_drv(wd_rsa_setting.dlh_list);
+out_clear_init:
+	wd_alg_clear_init(&wd_rsa_setting.status);
+	return ret;
+}
+
+void wd_rsa_uninit2(void)
+{
+	int ret;
+
+	ret = wd_rsa_common_uninit();
+	if (ret)
+		return;
+
+	wd_alg_attrs_uninit(&wd_rsa_init_attrs);
+	wd_alg_drv_unbind(wd_rsa_setting.driver);
+	wd_dlclose_drv(wd_rsa_setting.dlh_list);
+	wd_rsa_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_rsa_setting.status);
 }
 
@@ -256,7 +384,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 		}
 
 		if (unlikely(req->dst_bytes != sess->key_size)) {
-			WD_ERR("invalid: req dst bytes %hu is error!\n", req->dst_bytes);
+			WD_ERR("invalid: req dst bytes %u is error!\n", req->dst_bytes);
 			return -WD_EINVAL;
 		}
 	}
@@ -289,7 +417,7 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	memset(&msg, 0, sizeof(struct wd_rsa_msg));
@@ -335,7 +463,6 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (ret)
 		return ret;
 
-	wd_dfx_msg_cnt(config->msg_cnt, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
 	mid = wd_get_msg_from_pool(&wd_rsa_setting.pool, idx, (void **)&msg);
@@ -355,6 +482,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	}
 
+	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_rsa_env_config, idx);
 	if (ret)
 		goto fail_with_msg;
@@ -489,7 +617,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 		return NULL;
 	}
 
-	kg_in_size = GEN_PARAMS_SZ(c->key_size);
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
 	kg_in = malloc(kg_in_size + sizeof(*kg_in));
 	if (!kg_in) {
 		WD_ERR("failed to malloc kg_in memory!\n");
@@ -502,7 +630,7 @@ struct wd_rsa_kg_in *wd_rsa_new_kg_in(handle_t sess, struct wd_dtb *e,
 	kg_in->qbytes = q->dsize;
 	kg_in->e = (void *)kg_in->data;
 	kg_in->p = (void *)kg_in->e + c->key_size;
-	kg_in->q = (void *)kg_in->p + CRT_PARAM_SZ(c->key_size);
+	kg_in->q = (void *)((uintptr_t)kg_in->p + CRT_PARAM_SZ(c->key_size));
 
 	memcpy(kg_in->e, e->data, e->dsize);
 	memcpy(kg_in->p, p->data, p->dsize);
@@ -564,9 +692,9 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	}
 
 	if (c->setup.is_crt)
-		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
+		kg_out_size = (int)CRT_GEN_PARAMS_SZ(c->key_size);
 	else
-		kg_out_size = GEN_PARAMS_SZ(c->key_size);
+		kg_out_size = (int)GEN_PARAMS_SZ(c->key_size);
 
 	kg_out = malloc(kg_out_size + sizeof(*kg_out));
 	if (!kg_out) {
@@ -581,8 +709,8 @@ struct wd_rsa_kg_out *wd_rsa_new_kg_out(handle_t sess)
 	kg_out->size = kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
-		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
-		kg_out->dp = kg_out->dq + CRT_PARAM_SZ(kz);
+		kg_out->dq = (void *)((uintptr_t)kg_out->qinv + CRT_PARAM_SZ(kz));
+		kg_out->dp = (void *)((uintptr_t)kg_out->dq + CRT_PARAM_SZ(kz));
 	}
 
 	return kg_out;
@@ -629,19 +757,19 @@ void wd_rsa_get_kg_out_crt_params(struct wd_rsa_kg_out *kout,
 		return;
 	}
 
-	if (qinv && kout->qinv) {
+	if (kout->qinv) {
 		qinv->bsize = CRT_PARAM_SZ(kout->key_size);
 		qinv->dsize = kout->qinvbytes;
 		qinv->data = (void *)kout->qinv;
 	}
 
-	if (dq && kout->dq) {
+	if (kout->dq) {
 		dq->bsize = CRT_PARAM_SZ(kout->key_size);
 		dq->dsize = kout->dqbytes;
 		dq->data = (void *)kout->dq;
 	}
 
-	if (dp && kout->dp) {
+	if (kout->dp) {
 		dp->bsize = CRT_PARAM_SZ(kout->key_size);
 		dp->dsize = kout->dpbytes;
 		dp->data = (void *)kout->dp;
@@ -710,7 +838,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 
 	if (setup->is_crt) {
 		len = sizeof(struct wd_rsa_prikey) +
-			CRT_PARAMS_SZ(sess->key_size);
+			(int)CRT_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey2!\n");
@@ -721,7 +849,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 		init_pkey2(pkey2, sess->key_size);
 	} else {
 		len = sizeof(struct wd_rsa_prikey) +
-			GEN_PARAMS_SZ(sess->key_size);
+			(int)GEN_PARAMS_SZ(sess->key_size);
 		sess->prikey = malloc(len);
 		if (!sess->prikey) {
 			WD_ERR("failed to alloc sess prikey1!\n");
@@ -733,7 +861,7 @@ static int create_sess_key(struct wd_rsa_sess_setup *setup,
 	}
 
 	len = sizeof(struct wd_rsa_pubkey) +
-		GEN_PARAMS_SZ(sess->key_size);
+		(int)GEN_PARAMS_SZ(sess->key_size);
 	sess->pubkey = malloc(len);
 	if (!sess->pubkey) {
 		free(sess->prikey);
@@ -1129,7 +1257,7 @@ int wd_rsa_env_init(struct wd_sched *sched)
 
 void wd_rsa_env_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_rsa_env_config, &wd_rsa_ops);
+	wd_alg_env_uninit(&wd_rsa_env_config, &wd_rsa_ops);
 }
 
 int wd_rsa_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
@@ -1147,7 +1275,7 @@ int wd_rsa_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 
 void wd_rsa_ctx_num_uninit(void)
 {
-	return wd_alg_env_uninit(&wd_rsa_env_config, &wd_rsa_ops);
+	wd_alg_env_uninit(&wd_rsa_env_config, &wd_rsa_ops);
 }
 
 int wd_rsa_get_env_param(__u32 node, __u32 type, __u32 mode,

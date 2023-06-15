@@ -13,7 +13,7 @@
 
 #define ZLIB_HEADER			"\x78\x9c"
 #define ZLIB_HEADER_SZ			2
-
+#define ZIP_CTX_Q_NUM_DEF		1
 /*
  * We use a extra field for gzip block length. So the fourth byte is \x04.
  * This is necessary because our software don't know the size of block when
@@ -771,13 +771,14 @@ static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
 	}
 }
 
-static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
+static int hisi_zip_init(void *conf, void *priv)
 {
+	struct wd_ctx_config_internal *config = conf;
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
-	int i;
+	__u32 i, j;
 
 	if (!config->ctx_num) {
 		WD_ERR("invalid: zip init config ctx num is 0!\n");
@@ -798,14 +799,15 @@ static int hisi_zip_init(struct wd_ctx_config_internal *config, void *priv)
 		h_qp = hisi_qm_alloc_qp(&qm_priv, h_ctx);
 		if (unlikely(!h_qp))
 			goto out;
+		config->ctxs[i].sqn = qm_priv.sqn;
 	}
 
 	hisi_zip_sqe_ops_adapt(h_qp);
 
 	return 0;
 out:
-	for (; i >= 0; i--) {
-		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
+	for (j = 0; j < i; j++) {
+		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
 	return -WD_EINVAL;
@@ -816,7 +818,7 @@ static void hisi_zip_exit(void *priv)
 	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct wd_ctx_config_internal *config = &zip_ctx->config;
 	handle_t h_qp;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
@@ -1055,14 +1057,51 @@ static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
 	return parse_zip_sqe(qp, &sqe, recv_msg);
 }
 
-struct wd_comp_driver hisi_zip = {
-	.drv_name		= "hisi_zip",
-	.alg_name		= "zlib\ngzip\ndeflate\nlz77_zstd",
-	.drv_ctx_size		= sizeof(struct hisi_zip_ctx),
-	.init			= hisi_zip_init,
-	.exit			= hisi_zip_exit,
-	.comp_send		= hisi_zip_comp_send,
-	.comp_recv		= hisi_zip_comp_recv,
+#define GEN_ZIP_ALG_DRIVER(zip_alg_name) \
+{\
+	.drv_name = "hisi_zip",\
+	.alg_name = (zip_alg_name),\
+	.calc_type = UADK_ALG_HW,\
+	.priority = 100,\
+	.priv_size = sizeof(struct hisi_zip_ctx),\
+	.queue_num = ZIP_CTX_Q_NUM_DEF,\
+	.op_type_num = 2,\
+	.fallback = 0,\
+	.init = hisi_zip_init,\
+	.exit = hisi_zip_exit,\
+	.send = hisi_zip_comp_send,\
+	.recv = hisi_zip_comp_recv,\
+}
+
+static struct wd_alg_driver zip_alg_driver[] = {
+	GEN_ZIP_ALG_DRIVER("zlib"),
+	GEN_ZIP_ALG_DRIVER("gzip"),
+
+	GEN_ZIP_ALG_DRIVER("deflate"),
+	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
 };
 
-WD_COMP_SET_DRIVER(hisi_zip);
+static void __attribute__((constructor)) hisi_zip_probe(void)
+{
+	int alg_num = ARRAY_SIZE(zip_alg_driver);
+	int i, ret;
+
+	WD_INFO("Info: register ZIP alg drivers!\n");
+
+	for (i = 0; i < alg_num; i++) {
+		ret = wd_alg_driver_register(&zip_alg_driver[i]);
+		if (ret && ret != -WD_ENODEV)
+			WD_ERR("Error: register ZIP %s failed!\n",
+				zip_alg_driver[i].alg_name);
+	}
+}
+
+static void __attribute__((destructor)) hisi_zip_remove(void)
+{
+	int alg_num = ARRAY_SIZE(zip_alg_driver);
+	int i;
+
+	WD_INFO("Info: unregister ZIP alg drivers!\n");
+	for (i = 0; i < alg_num; i++)
+		wd_alg_driver_unregister(&zip_alg_driver[i]);
+}

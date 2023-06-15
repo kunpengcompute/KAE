@@ -20,28 +20,28 @@ endif	# WITH_LOG_FILE
 # y = minor
 # z = revision
 MAJOR = 2
-MINOR = 4
+MINOR = 5
 REVISION = 0
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
-DAY = 12
-MONTH = Dec
-YEAR = 2022
+DAY = 1
+MONTH = June
+YEAR = 2023
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
 AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
 
 pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_comp.h include/wd_dh.h include/wd_digest.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
-		  include/wd_ecc.h include/wd_sched.h
+		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
-			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h v1/wd_comp.h
+			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
 		libhisi_hpre.la libhisi_sec.la
 
-libwd_la_SOURCES=wd.c wd_mempool.c wd.h		\
+libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
 		 v1/wd_rng.c v1/wd_rng.h	\
 		 v1/wd_rsa.c v1/wd_rsa.h	\
@@ -78,7 +78,8 @@ libwd_crypto_la_SOURCES=wd_cipher.c wd_cipher.h wd_cipher_drv.h \
 			wd.c wd.h
 
 libhisi_sec_la_SOURCES=drv/hisi_sec.c drv/hisi_qm_udrv.c \
-		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h
+		lib/crypto/aes.c lib/crypto/galois.c \
+		hisi_qm_udrv.h wd_cipher_drv.h wd_aead_drv.h aes.h galois.h
 
 libhisi_hpre_la_SOURCES=drv/hisi_hpre.c drv/hisi_qm_udrv.c \
 		hisi_qm_udrv.h wd_hpre_drv.h
@@ -86,7 +87,7 @@ if WD_STATIC_DRV
 AM_CFLAGS += -DWD_STATIC_DRV
 AM_CFLAGS += -DWD_NO_LOG
 
-libwd_la_LIBADD = $(libwd_la_OBJECTS) -lnuma
+libwd_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 
 libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_DEPENDENCIES = libwd.la
@@ -108,7 +109,7 @@ UADK_COMP_SYMBOL= -Wl,--version-script,$(top_srcdir)/libwd_comp.map
 UADK_V1_SYMBOL= -Wl,--version-script,$(top_srcdir)/v1/libwd.map
 
 libwd_la_LDFLAGS=$(UADK_VERSION) $(UADK_WD_SYMBOL) $(UADK_V1_SYMBOL)
-libwd_la_LIBADD= -lnuma
+libwd_la_LIBADD= -ldl -lnuma
 
 libwd_comp_la_LIBADD= -lwd -ldl -lnuma
 libwd_comp_la_LDFLAGS=$(UADK_VERSION) $(UADK_COMP_SYMBOL)
@@ -118,8 +119,9 @@ libwd_crypto_la_LIBADD= -lwd -ldl -lnuma
 libwd_crypto_la_LDFLAGS=$(UADK_VERSION) $(UADK_CRYPTO_SYMBOL)
 libwd_crypto_la_DEPENDENCIES= libwd.la
 
-libhisi_zip_la_LIBADD= -ldl
+libhisi_zip_la_LIBADD= -lwd -ldl
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
+libhisi_zip_la_DEPENDENCIES= libwd.la
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)

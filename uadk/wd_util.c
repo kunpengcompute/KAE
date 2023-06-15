@@ -5,6 +5,8 @@
  */
 
 #define _GNU_SOURCE
+#include <dirent.h>
+#include <dlfcn.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
@@ -19,9 +21,12 @@
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
 #define PRIVILEGE_FLAG			600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
+#define MAX(a, b)			((a) > (b) ? (a) : (b))
 
 #define WD_INIT_SLEEP_UTIME		1000
 #define WD_INIT_RETRY_TIMES		10000
+
+#define DEF_DRV_LIB_FILE		"libwd.so"
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -42,6 +47,16 @@ static const char *comp_ctx_type[2][2] = {
 
 /* define two ctx mode here for cipher and other alg */
 static const char *ctx_type[2][1] = { {"sync:"}, {"async:"} };
+
+static const char *wd_env_name[WD_TYPE_MAX] = {
+	"WD_COMP_CTX_NUM",
+	"WD_CIPHER_CTX_NUM",
+	"WD_DIGEST_CTX_NUM",
+	"WD_AEAD_CTX_NUM",
+	"WD_RSA_CTX_NUM",
+	"WD_DH_CTX_NUM",
+	"WD_ECC_CTX_NUM",
+};
 
 struct async_task {
 	__u32 idx;
@@ -64,6 +79,76 @@ struct async_task_queue {
 	int (*alg_poll_ctx)(__u32, __u32, __u32 *);
 };
 
+struct drv_lib_list {
+	void *dlhandle;
+	struct drv_lib_list *next;
+};
+
+struct acc_alg_item {
+	char *name;
+	char *algtype;
+};
+
+static struct acc_alg_item alg_options[] = {
+	{"zlib", "zlib"},
+	{"gzip", "gzip"},
+	{"deflate", "deflate"},
+	{"lz77_zstd", "lz77_zstd"},
+
+	{"rsa", "rsa"},
+	{"dh", "dh"},
+	{"ecdh", "ecdh"},
+	{"x25519", "x25519"},
+	{"x448", "x448"},
+	{"ecdsa", "ecdsa"},
+	{"sm2", "sm2"},
+
+	{"ecb(aes)", "cipher"},
+	{"cbc(aes)", "cipher"},
+	{"xts(aes)", "cipher"},
+	{"ofb(aes)", "cipher"},
+	{"cfb(aes)", "cipher"},
+	{"ctr(aes)", "cipher"},
+	{"cbc-cs1(aes)", "cipher"},
+	{"cbc-cs2(aes)", "cipher"},
+	{"cbc-cs3(aes)", "cipher"},
+	{"ecb(sm4)", "cipher"},
+	{"xts(sm4)", "cipher"},
+	{"cbc(sm4)", "cipher"},
+	{"ofb(sm4)", "cipher"},
+	{"cfb(sm4)", "cipher"},
+	{"ctr(sm4)", "cipher"},
+	{"cbc-cs1(sm4)", "cipher"},
+	{"cbc-cs2(sm4)", "cipher"},
+	{"cbc-cs3(sm4)", "cipher"},
+	{"ecb(des)", "cipher"},
+	{"cbc(des)", "cipher"},
+	{"ecb(des3_ede)", "cipher"},
+	{"cbc(des3_ede)", "cipher"},
+
+	{"ccm(aes)", "aead"},
+	{"gcm(aes)", "aead"},
+	{"ccm(sm4)", "aead"},
+	{"gcm(sm4)", "aead"},
+	{"authenc(hmac(sha256),cbc(aes))", "aead"},
+	{"authenc(hmac(sha256),cbc(sm4))", "aead"},
+
+	{"sm3", "digest"},
+	{"md5", "digest"},
+	{"sha1", "digest"},
+	{"sha256", "digest"},
+	{"sha224", "digest"},
+	{"sha384", "digest"},
+	{"sha512", "digest"},
+	{"sha512-224", "digest"},
+	{"sha512-256", "digest"},
+	{"cmac(aes)", "digest"},
+	{"gmac(aes)", "digest"},
+	{"xcbc-mac-96(aes)", "digest"},
+	{"xcbc-prf-128(aes)", "digest"},
+	{"", ""}
+};
+
 static void clone_ctx_to_internal(struct wd_ctx *ctx,
 				  struct wd_ctx_internal *ctx_in)
 {
@@ -72,97 +157,68 @@ static void clone_ctx_to_internal(struct wd_ctx *ctx,
 	ctx_in->ctx_mode = ctx->ctx_mode;
 }
 
-static int get_shared_memory_id(__u32 numsize)
+static int wd_shm_create(struct wd_ctx_config_internal *in)
 {
-	int shm;
+	int shm_size = sizeof(unsigned long) * WD_CTX_CNT_NUM;
+	void *ptr;
+	int shmid;
 
-	shm = shmget(WD_IPC_KEY, sizeof(unsigned long) * numsize,
-		IPC_CREAT | PRIVILEGE_FLAG);
-	if (shm < 0) {
-		WD_ERR("failed to get shared memory id.\n");
+	if (!wd_need_info())
+		return 0;
+
+	shmid = shmget(WD_IPC_KEY, shm_size, IPC_CREAT | PRIVILEGE_FLAG);
+	if (shmid < 0) {
+		WD_ERR("failed to get shared memory id(%d).\n", errno);
 		return -WD_EINVAL;
 	}
 
-	return shm;
-}
-
-static unsigned long *wd_shared_create(__u32 numsize)
-{
-	bool need_info = wd_need_info();
-	void *ptr;
-	int shm;
-
-	if (!need_info)
-		return NULL;
-
-	if (numsize > WD_CTX_CNT_NUM) {
-		WD_ERR("invalid: input parameter is err!\n");
-		return NULL;
-	}
-
-	shm = get_shared_memory_id(numsize);
-	if (shm < 0)
-		return NULL;
-
-	ptr = shmat(shm, NULL, 0);
+	ptr = shmat(shmid, NULL, 0);
 	if (ptr == (void *)-1) {
-		WD_ERR("failed to get shared memory addr.\n");
-		return NULL;
+		WD_ERR("failed to get shared memory addr(%d).\n", errno);
+		return -WD_EINVAL;
 	}
 
-	memset(ptr, 0, sizeof(unsigned long) * numsize);
+	memset(ptr, 0, shm_size);
 
-	return ptr;
+	in->shmid = shmid;
+	in->msg_cnt = ptr;
+
+	return 0;
 }
 
-static void wd_shared_delete(__u32 numsize)
+static void wd_shm_delete(struct wd_ctx_config_internal *in)
 {
-	bool need_info = wd_need_info();
-	int shm;
-
-	if (!need_info)
-		return;
-
-	if (numsize > WD_CTX_CNT_NUM) {
-		WD_ERR("invalid: input parameter is err!\n");
-		return;
-	}
-
-	shm = get_shared_memory_id(numsize);
-	if (shm < 0)
+	if (!wd_need_info())
 		return;
 
 	/* deleted shared memory */
-	shmctl(shm, IPC_RMID, NULL);
+	shmctl(in->shmid, IPC_RMID, NULL);
+
+	in->shmid = 0;
+	in->msg_cnt = NULL;
 }
 
 int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 		       struct wd_ctx_config *cfg)
 {
-	bool need_info = wd_need_info();
 	struct wd_ctx_internal *ctxs;
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	if (!cfg->ctx_num) {
 		WD_ERR("invalid: ctx_num is 0!\n");
 		return -WD_EINVAL;
 	}
 
-	/* ctx could only be invoked once for one process. */
-	if (in->ctx_num && in->pid == getpid()) {
-		WD_ERR("ctx have initialized.\n");
-		return -WD_EEXIST;
-	}
-
-	in->msg_cnt = wd_shared_create(WD_CTX_CNT_NUM);
-	if (!in->msg_cnt && need_info)
-		return -WD_EINVAL;
+	ret = wd_shm_create(in);
+	if (ret)
+		return ret;
 
 	ctxs = calloc(1, cfg->ctx_num * sizeof(struct wd_ctx_internal));
 	if (!ctxs) {
 		WD_ERR("failed to alloc memory for internal ctxs!\n");
-		wd_shared_delete(WD_CTX_CNT_NUM);
-		return -WD_ENOMEM;
+		ret = -WD_ENOMEM;
+		goto err_shm_del;
 	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
@@ -181,7 +237,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	in->ctxs = ctxs;
-	in->pid = getpid();
 	in->priv = cfg->priv;
 	in->ctx_num = cfg->ctx_num;
 
@@ -190,9 +245,9 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 err_out:
 	for (j = 0; j < i; j++)
 		pthread_spin_destroy(&ctxs[j].lock);
-
-	wd_shared_delete(WD_CTX_CNT_NUM);
 	free(ctxs);
+err_shm_del:
+	wd_shm_delete(in);
 	return ret;
 }
 
@@ -228,21 +283,19 @@ void wd_clear_sched(struct wd_sched *in)
 
 void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < in->ctx_num; i++)
 		pthread_spin_destroy(&in->ctxs[i].lock);
 
 	in->priv = NULL;
 	in->ctx_num = 0;
-	in->pid = 0;
 	if (in->ctxs) {
 		free(in->ctxs);
 		in->ctxs = NULL;
 	}
 
-	wd_shared_delete(WD_CTX_CNT_NUM);
-	in->msg_cnt = NULL;
+	wd_shm_delete(in);
 }
 
 void wd_memset_zero(void *data, __u32 size)
@@ -292,7 +345,8 @@ static void uninit_msg_pool(struct msg_pool *pool)
 int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
 			       __u32 msg_num, __u32 msg_size)
 {
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	pool->pool_num = pool_num;
 
@@ -319,7 +373,7 @@ err:
 
 void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < pool->pool_num; i++)
 		uninit_msg_pool(&pool->pools[i]);
@@ -351,7 +405,7 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	struct msg_pool *p = &pool->pools[ctx_idx];
 	__u32 msg_num = p->msg_num;
 	__u32 msg_size = p->msg_size;
-	int cnt = 0;
+	__u32 cnt = 0;
 	__u32 idx = p->tail;
 
 	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
@@ -407,9 +461,9 @@ void dump_env_info(struct wd_env_config *config)
 			continue;
 
 		ctx_table = config_numa->ctx_table;
-		WD_ERR("-> %s: %d: sync num: %lu\n", __func__, i,
+		WD_ERR("-> %s: %d: sync num: %u\n", __func__, i,
 		       config_numa->sync_ctx_num);
-		WD_ERR("-> %s: %d: async num: %lu\n", __func__, i,
+		WD_ERR("-> %s: %d: async num: %u\n", __func__, i,
 		       config_numa->async_ctx_num);
 		for (j = 0; j < CTX_MODE_MAX; j++)
 			for (k = 0; k < config_numa->op_type_num; k++) {
@@ -464,9 +518,7 @@ static __u16 wd_get_dev_numa(struct uacce_dev_list *head,
 	__u16 numa_num = 0;
 
 	while (list) {
-		if (list->dev->numa_id < 0) {
-			list->dev->numa_id = 0;
-		} else if (list->dev->numa_id >= size) {
+		if (list->dev->numa_id >= size) {
 			WD_ERR("invalid: numa id is %d!\n", list->dev->numa_id);
 			return 0;
 		}
@@ -586,8 +638,7 @@ free_numa_dev_num:
 
 static int is_number(const char *str)
 {
-	size_t len;
-	int i;
+	size_t i, len;
 
 	if (!str)
 		return 0;
@@ -913,7 +964,8 @@ static int wd_parse_env(struct wd_env_config *config)
 {
 	const struct wd_config_variable *var;
 	const char *var_s;
-	int ret, i;
+	int ret;
+	__u32 i;
 
 	for (i = 0; i < config->table_size; i++) {
 		var = config->table + i;
@@ -921,8 +973,8 @@ static int wd_parse_env(struct wd_env_config *config)
 		var_s = secure_getenv(var->name);
 		if (!var_s || !strlen(var_s)) {
 			var_s = var->def_val;
-			WD_ERR("no %s environment variable! Use default: %s\n",
-			       var->name, var->def_val);
+			WD_INFO("no %s environment variable! Use default: %s\n",
+				var->name, var->def_val);
 		}
 
 		ret = var->parse_fn(config, var_s);
@@ -984,10 +1036,10 @@ static void wd_uninit_env_config(struct wd_env_config *config)
 	config->table = NULL;
 }
 
-static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
+static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, __u32 idx)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
-	int i;
+	__u32 i;
 
 	for (i = 0; i < config->op_type_num; i++) {
 		if ((idx >= ctx_table[CTX_MODE_SYNC][i].begin) &&
@@ -999,10 +1051,10 @@ static __u8 get_ctx_mode(struct wd_env_config_per_numa *config, int idx)
 }
 
 static int get_op_type(struct wd_env_config_per_numa *config,
-		       int idx, __u8 ctx_mode)
+		       __u32 idx, __u8 ctx_mode)
 {
 	struct wd_ctx_range **ctx_table = config->ctx_table;
-	int i;
+	__u32 i;
 
 	if (config->op_type_num == 1)
 		return 0;
@@ -1039,11 +1091,12 @@ static handle_t request_ctx_on_numa(struct wd_env_config_per_numa *config)
 }
 
 static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
-			 struct wd_ctx_config *ctx_config, int start)
+			 struct wd_ctx_config *ctx_config, __u32 start)
 {
 	int ctx_num = config->sync_ctx_num + config->async_ctx_num;
 	handle_t h_ctx;
-	int i, j, ret;
+	__u32 i, j;
+	int ret;
 
 	if (!ctx_num)
 		return 0;
@@ -1073,7 +1126,7 @@ free_ctx:
 	return ret;
 }
 
-static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, int ctx_num)
+static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, __u32 ctx_num)
 {
 	__u32 i;
 
@@ -1085,8 +1138,8 @@ static int wd_alloc_ctx(struct wd_env_config *config)
 {
 	struct wd_env_config_per_numa *config_numa;
 	struct wd_ctx_config *ctx_config;
-	int ctx_num = 0, start = 0, ret = 0;
-	int i;
+	__u32 i, ctx_num = 0, start = 0;
+	int ret;
 
 	config->ctx_config = calloc(1, sizeof(*ctx_config));
 	if (!config->ctx_config)
@@ -1228,8 +1281,7 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	struct wd_ctx_range **ctx_table;
 	struct async_task_queue *head;
 	unsigned long offset = 0;
-	int num = 0;
-	int i;
+	__u32 i, num = 0;
 
 	FOREACH_NUMA(i, config, config_numa) {
 		num += config_numa->sync_ctx_num + config_numa->async_ctx_num;
@@ -1779,6 +1831,487 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 }
 
+static void wd_get_alg_type(const char *alg_name, char *alg_type)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(alg_options); i++) {
+		if (strcmp(alg_name, alg_options[i].name) == 0) {
+			(void)strcpy(alg_type, alg_options[i].algtype);
+			break;
+		}
+	}
+}
+
+/**
+ * There are many other .so files in this file directory (/root/lib/),
+ * and it is necessary to screen out valid uadk driver files
+ * through this function.
+ */
+static int file_check_valid(char *lib_file)
+{
+#define FILE_HEAD_SZ	4
+#define FILE_TAIL_SZ	4
+	int file_len = strlen(lib_file);
+	char file_head[FILE_HEAD_SZ] = "lib";
+	char file_tail[FILE_TAIL_SZ] = ".so";
+	int i, j;
+
+	/* Lib file name is libxx_xxx.so */
+	for (i = 0; i < FILE_HEAD_SZ - 1; i++) {
+		if (lib_file[i] != file_head[i])
+			return -EINVAL;
+	}
+
+	for (i = file_len - (FILE_TAIL_SZ - 1), j = 0;
+	      i < file_len && j < FILE_TAIL_SZ; i++, j++) {
+		if (lib_file[i] != file_tail[j])
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int wd_alg_init_fallback(struct wd_alg_driver *fb_driver)
+{
+	if (!fb_driver->init) {
+		WD_ERR("soft acc driver have no init interface.\n");
+		return -WD_EINVAL;
+	}
+
+	fb_driver->init(NULL, NULL);
+
+	return 0;
+}
+
+static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
+{
+	if (!fb_driver->exit) {
+		WD_ERR("soft acc driver have no exit interface.\n");
+		return;
+	}
+
+	fb_driver->exit(NULL);
+}
+
+int wd_alg_init_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv)
+{
+	void *priv;
+	int ret;
+
+	/* Init ctx related resources in specific driver */
+	priv = calloc(1, driver->priv_size);
+	if (!priv)
+		return -WD_ENOMEM;
+
+	if (!driver->init) {
+		driver->fallback = 0;
+		WD_ERR("driver have no init interface.\n");
+		ret = -WD_EINVAL;
+		goto err_alloc;
+	}
+
+	ret = driver->init(config, priv);
+	if (ret < 0) {
+		WD_ERR("driver init failed.\n");
+		goto err_alloc;
+	}
+
+	if (driver->fallback) {
+		ret = wd_alg_init_fallback((struct wd_alg_driver *)driver->fallback);
+		if (ret) {
+			driver->fallback = 0;
+			WD_ERR("soft alg driver init failed.\n");
+		}
+	}
+	*drv_priv = priv;
+
+	return 0;
+
+err_alloc:
+	free(priv);
+	return ret;
+}
+
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv)
+{
+	void *priv = *drv_priv;
+
+	driver->exit(priv);
+	/* Ctx config just need clear once */
+	if (driver->calc_type == UADK_ALG_HW)
+		wd_clear_ctx_config(config);
+
+	if (driver->fallback)
+		wd_alg_uninit_fallback((struct wd_alg_driver *)driver->fallback);
+
+	if (priv) {
+		free(priv);
+		*drv_priv = NULL;
+	}
+}
+
+void wd_dlclose_drv(void *dlh_list)
+{
+	struct drv_lib_list *dlhead = (struct drv_lib_list *)dlh_list;
+	struct drv_lib_list *dlnode;
+
+	if (!dlhead) {
+		WD_INFO("driver so file list is empty.\n");
+		return;
+	}
+
+	while (dlhead) {
+		dlnode = dlhead;
+		dlhead = dlhead->next;
+		dlclose(dlnode->dlhandle);
+		free(dlnode);
+	}
+}
+
+static void add_lib_to_list(struct drv_lib_list *head,
+				  struct drv_lib_list *node)
+{
+	struct drv_lib_list *tmp = head;
+
+	while (tmp->next)
+		tmp = tmp->next;
+
+	tmp->next = node;
+}
+
+static int wd_set_ctx_nums(struct wd_ctx_params *ctx_params, struct uacce_dev_list *list,
+			   const char *section, __u32 op_type_num, int is_comp)
+{
+	struct wd_ctx_nums *ctxs = ctx_params->ctx_set_num;
+	int ret, ctx_num, node;
+	struct uacce_dev *dev;
+	char *ctx_section;
+	const char *type;
+	__u32 i, j;
+
+	ctx_section = index(section, ':');
+	if (!ctx_section) {
+		WD_ERR("invalid: ctx section got wrong format: %s!\n", section);
+		return -WD_EINVAL;
+	}
+	ctx_section++;
+	ret = parse_num_on_numa(ctx_section, &ctx_num, &node);
+	if (ret)
+		return ret;
+
+	/* If the number of ctxs is set to 0, skip the configuration */
+	if (!ctx_num)
+		return 0;
+
+	dev = wd_find_dev_by_numa(list, node);
+	if (WD_IS_ERR(dev))
+		return -WD_ENODEV;
+
+	for (i = 0; i < CTX_MODE_MAX; i++) {
+		for (j = 0; j < op_type_num; j++) {
+			type = is_comp ? comp_ctx_type[i][j] : ctx_type[i][0];
+			if (strncmp(section, type, strlen(type)))
+				continue;
+
+			/* If there're multiple configurations, use the maximum ctx number */
+			if (!i)
+				ctxs[j].sync_ctx_num = MAX(ctxs[j].sync_ctx_num, (__u32)ctx_num);
+			else
+				ctxs[j].async_ctx_num = MAX(ctxs[j].async_ctx_num, (__u32)ctx_num);
+
+			/* enable a node here, all enabled nodes share the same configuration */
+			numa_bitmask_setbit(ctx_params->bmp, node);
+			return 0;
+		}
+	}
+
+	return -WD_EINVAL;
+}
+
+static int wd_env_set_ctx_nums(const char *alg_name, const char *name, const char *var_s,
+			       struct wd_ctx_params *ctx_params, __u32 op_type_num)
+{
+	char alg_type[CRYPTO_MAX_ALG_NAME];
+	char *left, *section, *start;
+	struct uacce_dev_list *list;
+	int is_comp;
+	int ret = 0;
+
+	/* COMP environment variable's format is different, mark it */
+	is_comp = strncmp(name, "WD_COMP_CTX_NUM", strlen(name)) ? 0 : 1;
+	if (is_comp && op_type_num > ARRAY_SIZE(comp_ctx_type))
+		return -WD_EINVAL;
+
+	start = strdup(var_s);
+	if (!start)
+		return -WD_ENOMEM;
+
+	wd_get_alg_type(alg_name, alg_type);
+	list = wd_get_accel_list(alg_type);
+	if (!list) {
+		WD_ERR("failed to get devices!\n");
+		free(start);
+		return -WD_ENODEV;
+	}
+
+	left = start;
+	while ((section = strsep(&left, ","))) {
+		ret = wd_set_ctx_nums(ctx_params, list, section, op_type_num, is_comp);
+		if (ret < 0)
+			break;
+	}
+
+	wd_free_list_accels(list);
+	free(start);
+	return ret;
+}
+
+void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params)
+{
+	numa_free_nodemask(ctx_params->bmp);
+}
+
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
+		      struct wd_ctx_params *user_ctx_params,
+		      struct wd_alg_driver *driver,
+		      enum wd_type type, int max_op_type)
+{
+	const char *env_name = wd_env_name[type];
+	const char *var_s;
+	int i, ret;
+
+	ctx_params->bmp = numa_allocate_nodemask();
+	if (!ctx_params->bmp) {
+		WD_ERR("fail to allocate nodemask.\n");
+		return -WD_ENOMEM;
+	}
+
+	var_s = secure_getenv(env_name);
+	if (var_s && strlen(var_s)) {
+		/* environment variable has the highest priority */
+		ret = wd_env_set_ctx_nums(driver->alg_name, env_name, var_s,
+					  ctx_params, max_op_type);
+		if (ret) {
+			WD_ERR("fail to init ctx nums from %s!\n", env_name);
+			numa_free_nodemask(ctx_params->bmp);
+			return ret;
+		}
+	} else {
+		/* environment variable is not set, try to use user_ctx_params first */
+		if (user_ctx_params) {
+			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
+			ctx_params->op_type_num = user_ctx_params->op_type_num;
+			if (ctx_params->op_type_num > (__u32)max_op_type) {
+				WD_ERR("fail to check user op type numbers.\n");
+				numa_free_nodemask(ctx_params->bmp);
+				return -WD_EINVAL;
+			}
+
+			return 0;
+		}
+
+		/* user_ctx_params is also not set, use driver's defalut queue_num */
+		numa_bitmask_setall(ctx_params->bmp);
+		for (i = 0; i < driver->op_type_num; i++) {
+			ctx_params->ctx_set_num[i].sync_ctx_num = driver->queue_num;
+			ctx_params->ctx_set_num[i].async_ctx_num = driver->queue_num;
+		}
+	}
+
+	ctx_params->op_type_num = driver->op_type_num;
+	if (ctx_params->op_type_num > (__u32)max_op_type) {
+		WD_ERR("fail to check driver op type numbers.\n");
+		numa_free_nodemask(ctx_params->bmp);
+		return -WD_EAGAIN;
+	}
+
+	return 0;
+}
+
+static void dladdr_empty(void)
+{
+}
+
+int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
+{
+	char file_path[PATH_MAX] = {0};
+	char path[PATH_MAX];
+	Dl_info file_info;
+	int len, rc, i;
+
+	/* Get libwd.so file's system path */
+	rc = dladdr(dladdr_empty, &file_info);
+	if (!rc) {
+		WD_ERR("fail to get lib file path.\n");
+		return -WD_EINVAL;
+	}
+	strncpy(file_path, file_info.dli_fname, PATH_MAX - 1);
+
+	/* Clear the file path's tail file name */
+	len = strlen(file_path) - 1;
+	for (i = len; i >= 0; i--) {
+		if (file_path[i] == '/') {
+			memset(&file_path[i], 0, PATH_MAX - i);
+			break;
+		}
+	}
+
+	if (is_dir) {
+		(void)snprintf(lib_path, PATH_MAX, "%s", file_path);
+		return 0;
+	}
+
+	len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, lib_file);
+	if (len < 0)
+		return -WD_EINVAL;
+
+	if (realpath(lib_path, path) == NULL) {
+		WD_ERR("%s: no such file or directory!\n", path);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
+void *wd_dlopen_drv(const char *cust_lib_dir)
+{
+	typedef int (*alg_ops)(struct wd_alg_driver *drv);
+	struct drv_lib_list *node, *head = NULL;
+	char lib_dir_path[PATH_MAX] = {0};
+	char lib_path[PATH_MAX] = {0};
+	struct dirent *lib_dir;
+	alg_ops dl_func = NULL;
+	DIR *wd_dir;
+	int ret;
+
+	if (!cust_lib_dir) {
+		ret = wd_get_lib_file_path(NULL, lib_dir_path, true);
+		if (ret)
+			return NULL;
+	} else {
+		(void)snprintf(lib_path, PATH_MAX, "%s/%s", cust_lib_dir, DEF_DRV_LIB_FILE);
+		ret = access(lib_path, F_OK);
+		if (ret)
+			return NULL;
+
+		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
+	}
+
+	wd_dir = opendir(lib_dir_path);
+	if (!wd_dir) {
+		WD_ERR("UADK driver lib dir: %s not exist!\n", lib_dir_path);
+		return NULL;
+	}
+
+	while ((lib_dir = readdir(wd_dir)) != NULL) {
+		if (!strncmp(lib_dir->d_name, ".", LINUX_CRTDIR_SIZE) ||
+		    !strncmp(lib_dir->d_name, "..", LINUX_PRTDIR_SIZE))
+			continue;
+
+		ret = file_check_valid(lib_dir->d_name);
+		if (ret)
+			continue;
+
+		node = calloc(1, sizeof(*node));
+		if (!node)
+			goto free_list;
+
+		ret = snprintf(lib_path, PATH_MAX, "%s/%s", lib_dir_path, lib_dir->d_name);
+		if (ret < 0)
+			goto free_node;
+
+		node->dlhandle = dlopen(lib_path, RTLD_NODELETE | RTLD_NOW);
+		if (!node->dlhandle) {
+			free(node);
+			/* there are many other files need to skip */
+			continue;
+		}
+
+		dl_func = dlsym(node->dlhandle, "wd_alg_driver_register");
+		if (dl_func == NULL) {
+			dlclose(node->dlhandle);
+			free(node);
+			continue;
+		}
+
+		if (!head)
+			head = node;
+		else
+			add_lib_to_list(head, node);
+	}
+	closedir(wd_dir);
+
+	return (void *)head;
+
+free_node:
+	free(node);
+free_list:
+	closedir(wd_dir);
+	wd_dlclose_drv(head);
+	return NULL;
+}
+
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
+{
+	struct wd_alg_driver *set_driver = NULL;
+	struct wd_alg_driver *drv;
+
+	/* Get alg driver and dev name */
+	switch (task_type) {
+	case TASK_INSTR:
+		drv = wd_request_drv(alg_name, true);
+		if (!drv) {
+			WD_ERR("no soft %s driver support\n", alg_name);
+			return NULL;
+		}
+		set_driver = drv;
+		set_driver->fallback = 0;
+		break;
+	case TASK_HW:
+	case TASK_MIX:
+		drv = wd_request_drv(alg_name, false);
+		if (!drv) {
+			WD_ERR("no HW %s driver support\n", alg_name);
+			return NULL;
+		}
+		set_driver = drv;
+		set_driver->fallback = 0;
+		if (task_type == TASK_MIX) {
+			drv = wd_request_drv(alg_name, true);
+			if (!drv) {
+				set_driver->fallback = 0;
+				WD_ERR("no soft %s driver support\n", alg_name);
+			} else {
+				set_driver->fallback = (handle_t)drv;
+				WD_ERR("successful to get soft driver\n");
+			}
+		}
+		break;
+	default:
+		WD_ERR("task type error.\n");
+		return NULL;
+	}
+
+	return set_driver;
+}
+
+void wd_alg_drv_unbind(struct wd_alg_driver *drv)
+{
+	struct wd_alg_driver *fb_drv = NULL;
+
+	if (!drv)
+		return;
+
+	fb_drv = (struct wd_alg_driver *)drv->fallback;
+	if (fb_drv)
+		wd_release_drv(fb_drv);
+	wd_release_drv(drv);
+}
+
 bool wd_alg_try_init(enum wd_status *status)
 {
 	enum wd_status expected;
@@ -1789,8 +2322,10 @@ bool wd_alg_try_init(enum wd_status *status)
 		expected = WD_UNINIT;
 		ret = __atomic_compare_exchange_n(status, &expected, WD_INITING, true,
 						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
-		if (expected == WD_INIT)
+		if (expected == WD_INIT) {
+			WD_ERR("The algorithm has been initialized!\n");
 			return false;
+		}
 		usleep(WD_INIT_SLEEP_UTIME);
 		if (!(++count % WD_INIT_RETRY_TIMES))
 			WD_ERR("The algorithm initizalite has been waiting for %ds!\n",
@@ -1864,13 +2399,17 @@ out_free_list:
 }
 
 static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *list,
-			   int idx, int numa_id, int op_type)
+			   __u32 idx, int numa_id, __u32 op_type)
 {
 	struct wd_ctx_nums ctx_nums = attrs->ctx_params->ctx_set_num[op_type];
 	__u32 ctx_set_num = ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num;
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct uacce_dev *dev;
-	int i;
+	__u32 i;
+
+	/* If the ctx set number is 0, the initialization is skipped. */
+	if (!ctx_set_num)
+		return 0;
 
 	dev = wd_find_dev_by_numa(list, numa_id);
 	if (WD_IS_ERR(dev))
@@ -1895,7 +2434,7 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 
 static void wd_release_ctx_set(struct wd_ctx_config *ctx_config)
 {
-	int i;
+	__u32 i;
 
 	for (i = 0; i < ctx_config->ctx_num; i++)
 		if (ctx_config->ctxs[i].ctx) {
@@ -1908,16 +2447,18 @@ static int wd_instance_sched_set(struct wd_sched *sched, struct wd_ctx_nums ctx_
 				 int idx, int numa_id, int op_type)
 {
 	struct sched_params sparams;
-	int i, ret = 0;
+	int i, end, ret = 0;
 
 	for (i = 0; i < CTX_MODE_MAX; i++) {
 		sparams.numa_id = numa_id;
 		sparams.type = op_type;
 		sparams.mode = i;
 		sparams.begin = idx + ctx_nums.sync_ctx_num * i;
-		sparams.end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
-		if (sparams.begin > sparams.end)
+		end = idx - 1 + ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num * i;
+		if (end < 0 || sparams.begin > (__u32)end)
 			continue;
+
+		sparams.end = end;
 		ret = wd_sched_rr_instance(sched, &sparams);
 		if (ret)
 			goto out;
@@ -1932,10 +2473,9 @@ static int wd_init_ctx_and_sched(struct wd_init_attrs *attrs, struct bitmask *bm
 {
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
 	__u32 op_type_num = ctx_params->op_type_num;
-	int max_node = numa_max_node() + 1;
+	int i, ret, max_node = numa_max_node() + 1;
 	struct wd_ctx_nums ctx_nums;
-	int i, j, ret;
-	int idx = 0;
+	__u32 j, idx = 0;
 
 	for (i = 0; i < max_node; i++) {
 		if (!numa_bitmask_isbitset(bmp, i))
@@ -1960,11 +2500,22 @@ free_ctxs:
 	return ret;
 }
 
-int wd_alg_pre_init(struct wd_init_attrs *attrs)
+static void wd_init_device_nodemask(struct uacce_dev_list *list, struct bitmask *bmp)
+{
+	struct uacce_dev_list *p = list;
+
+	numa_bitmask_clearall(bmp);
+	while (p) {
+		numa_bitmask_setbit(bmp, p->dev->numa_id);
+		p = p->next;
+	}
+}
+
+static int wd_alg_ctx_init(struct wd_init_attrs *attrs)
 {
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct wd_ctx_params *ctx_params = attrs->ctx_params;
-	struct bitmask *used_bmp, *bmp = ctx_params->bmp;
+	struct bitmask *used_bmp = ctx_params->bmp;
 	struct uacce_dev_list *list, *used_list = NULL;
 	__u32 ctx_set_num, op_type_num;
 	int numa_cnt, ret;
@@ -1978,7 +2529,7 @@ int wd_alg_pre_init(struct wd_init_attrs *attrs)
 	op_type_num = ctx_params->op_type_num;
 	ctx_set_num = wd_get_ctx_numbers(*ctx_params, op_type_num);
 	if (!ctx_set_num || !op_type_num) {
-		WD_ERR("invalid: ctx_set_num is %d, op_type_num is %d!\n",
+		WD_ERR("invalid: ctx_set_num is %u, op_type_num is %u!\n",
 		       ctx_set_num, op_type_num);
 		ret = -WD_EINVAL;
 		goto out_freelist;
@@ -1989,26 +2540,20 @@ int wd_alg_pre_init(struct wd_init_attrs *attrs)
 	 * filter the devices in the selected numa node, and the second
 	 * thing is to obtain the distribution of devices.
 	 */
-	if (bmp) {
-		used_list = wd_get_usable_list(list, bmp);
-		if (WD_IS_ERR(used_list)) {
-			ret = WD_PTR_ERR(used_list);
-			WD_ERR("failed to get usable devices(%d)!\n", ret);
-			goto out_freelist;
-		}
+	used_list = wd_get_usable_list(list, used_bmp);
+	if (WD_IS_ERR(used_list)) {
+		ret = WD_PTR_ERR(used_list);
+		WD_ERR("failed to get usable devices(%d)!\n", ret);
+		goto out_freelist;
 	}
 
-	used_bmp = wd_create_device_nodemask(used_list ? used_list : list);
-	if (WD_IS_ERR(used_bmp)) {
-		ret = WD_PTR_ERR(used_bmp);
-		goto out_freeusedlist;
-	}
+	wd_init_device_nodemask(used_list, used_bmp);
 
 	numa_cnt = numa_bitmask_weight(used_bmp);
 	if (!numa_cnt) {
 		ret = numa_cnt;
 		WD_ERR("invalid: bmp is clear!\n");
-		goto out_freenodemask;
+		goto out_freeusedlist;
 	}
 
 	ctx_config->ctx_num = ctx_set_num * numa_cnt;
@@ -2016,21 +2561,145 @@ int wd_alg_pre_init(struct wd_init_attrs *attrs)
 	if (!ctx_config->ctxs) {
 		ret = -WD_ENOMEM;
 		WD_ERR("failed to alloc ctxs!\n");
-		goto out_freenodemask;
+		goto out_freeusedlist;
 	}
 
-	ret = wd_init_ctx_and_sched(attrs, used_bmp, used_list ? used_list : list);
+	ret = wd_init_ctx_and_sched(attrs, used_bmp, used_list);
 	if (ret)
 		free(ctx_config->ctxs);
 
-out_freenodemask:
-	wd_free_device_nodemask(used_bmp);
-
 out_freeusedlist:
 	wd_free_list_accels(used_list);
-
 out_freelist:
 	wd_free_list_accels(list);
 
 	return ret;
+}
+
+static void wd_alg_ctx_uninit(struct wd_ctx_config *ctx_config)
+{
+	__u32 i;
+
+	for (i = 0; i < ctx_config->ctx_num; i++)
+		if (ctx_config->ctxs[i].ctx) {
+			wd_release_ctx(ctx_config->ctxs[i].ctx);
+			ctx_config->ctxs[i].ctx = 0;
+	}
+
+	free(ctx_config->ctxs);
+}
+
+int wd_alg_attrs_init(struct wd_init_attrs *attrs)
+{
+	wd_alg_poll_ctx alg_poll_func = attrs->alg_poll_ctx;
+	wd_alg_init alg_init_func = attrs->alg_init;
+	__u32 sched_type = attrs->sched_type;
+	struct wd_ctx_config *ctx_config = NULL;
+	struct wd_sched *alg_sched = NULL;
+	char alg_type[CRYPTO_MAX_ALG_NAME];
+	char *alg = attrs->alg;
+	int driver_type = UADK_ALG_HW;
+	int ret;
+
+	if (!attrs->ctx_params)
+		return -WD_EINVAL;
+
+	if (attrs->driver)
+		driver_type = attrs->driver->calc_type;
+
+	switch (driver_type) {
+	case UADK_ALG_SOFT:
+	case UADK_ALG_CE_INSTR:
+		/* No need to	alloc resource */
+		if (sched_type != SCHED_POLICY_NONE)
+			return -WD_EINVAL;
+
+		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_NONE, 1, 1, alg_poll_func);
+		if (!alg_sched) {
+			WD_ERR("fail to alloc scheduler\n");
+			return -WD_EINVAL;
+		}
+		attrs->sched = alg_sched;
+
+		ret = wd_sched_rr_instance(alg_sched, NULL);
+		if (ret) {
+			WD_ERR("fail to instance scheduler\n");
+			goto out_freesched;
+		}
+		break;
+	case UADK_ALG_SVE_INSTR:
+		/* Todo lock cpu core */
+		if (sched_type != SCHED_POLICY_SINGLE)
+			return -WD_EINVAL;
+
+		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_SINGLE, 1, 1, alg_poll_func);
+		if (!alg_sched) {
+			WD_ERR("fail to alloc scheduler\n");
+			return -WD_EINVAL;
+		}
+		attrs->sched = alg_sched;
+
+		ret = wd_sched_rr_instance(alg_sched, NULL);
+		if (ret) {
+			WD_ERR("fail to instance scheduler\n");
+			goto out_freesched;
+		}
+		break;
+	case UADK_ALG_HW:
+		wd_get_alg_type(alg, alg_type);
+		attrs->alg = alg_type;
+
+		ctx_config = calloc(1, sizeof(*ctx_config));
+		if (!ctx_config) {
+			WD_ERR("fail to alloc ctx config\n");
+			return -WD_ENOMEM;
+		}
+		attrs->ctx_config = ctx_config;
+
+		alg_sched = wd_sched_rr_alloc(sched_type, attrs->ctx_params->op_type_num,
+						  numa_max_node() + 1, alg_poll_func);
+		if (!alg_sched) {
+			WD_ERR("fail to instance scheduler\n");
+			ret = -WD_EINVAL;
+			goto out_ctx_config;
+		}
+		attrs->sched = alg_sched;
+
+		ret = wd_alg_ctx_init(attrs);
+		if (ret) {
+			WD_ERR("fail to init ctx\n");
+			goto out_freesched;
+		}
+
+		ret = alg_init_func(ctx_config, alg_sched);
+		if (ret)
+			goto out_pre_init;
+		break;
+	default:
+		WD_ERR("driver type error: %d\n", driver_type);
+		return -WD_EINVAL;
+	}
+
+	return 0;
+
+out_pre_init:
+	wd_alg_ctx_uninit(ctx_config);
+out_freesched:
+	wd_sched_rr_release(alg_sched);
+out_ctx_config:
+	if (ctx_config)
+		free(ctx_config);
+	return ret;
+}
+
+void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
+{
+	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	struct wd_sched *alg_sched = attrs->sched;
+
+	if (ctx_config) {
+		wd_alg_ctx_uninit(ctx_config);
+		free(ctx_config);
+	}
+	wd_sched_rr_release(alg_sched);
 }

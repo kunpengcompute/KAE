@@ -29,6 +29,17 @@ enum wd_status {
 	WD_INIT,
 };
 
+enum wd_type {
+	WD_COMP_TYPE = 0,
+	WD_CIPHER_TYPE,
+	WD_DIGEST_TYPE,
+	WD_AEAD_TYPE,
+	WD_RSA_TYPE,
+	WD_DH_TYPE,
+	WD_ECC_TYPE,
+	WD_TYPE_MAX,
+};
+
 struct wd_async_msg_pool {
 	struct msg_pool *pools;
 	__u32 pool_num;
@@ -42,17 +53,9 @@ struct wd_ctx_range {
 
 struct wd_env_config_per_numa {
 	/* Config begin */
-	unsigned long node;
-	unsigned long sync_ctx_num;
-	unsigned long async_ctx_num;
-	/*
-	 * Define which polling thread to poll each async ctx, polling thread
-	 * number stars from 0.
-	 *
-	 * async_ctx_poll: 0, 0, 0, 1, 1, means polling thread 0 polls async
-	 * ctx 0, 1, 2, polling thread 1 polls async ctx 3, 4.
-	 */
-	unsigned long *async_ctx_poll;
+	int node;
+	__u32 sync_ctx_num;
+	__u32 async_ctx_num;
 
 	/*
 	 * +---------+-----------------+---------------+
@@ -117,9 +120,12 @@ struct wd_msg_handle {
 struct wd_init_attrs {
 	__u32 sched_type;
 	char *alg;
+	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
 	struct wd_ctx_config *ctx_config;
+	wd_alg_init alg_init;
+	wd_alg_poll_ctx alg_poll_ctx;
 };
 
 /*
@@ -415,29 +421,92 @@ static inline void wd_alg_clear_init(enum wd_status *status)
 }
 
 /**
- * wd_alg_pre_init() - Request the ctxs and initialize the sched_domain
+ * wd_ctx_param_init() - Initialize the current device driver according
+ *			to the obtained queue resource and the applied driver.
+ * @ctx_params: wd_ctx_params to be initialized.
+ * @user_ctx_params: user input wd_ctx_params.
+ * @driver: device driver for the current algorithm application.
+ * @type: algorithm type.
+ * @max_op_type: algorithm max operation type.
+ *
+ * Return 0 if succeed and other error number if fail.
+ */
+int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
+		      struct wd_ctx_params *user_ctx_params,
+		      struct wd_alg_driver *driver,
+		      enum wd_type type, int max_op_type);
+
+void wd_ctx_param_uninit(struct wd_ctx_params *ctx_params);
+
+/**
+ * wd_alg_attrs_init() - Request the ctxs and initialize the sched_domain
  *                     with the given devices list, ctxs number and numa mask.
  * @attrs: the algorithm initialization parameters.
  *
  * Return device if succeed and other error number if fail.
  */
-int wd_alg_pre_init(struct wd_init_attrs *attrs);
+int wd_alg_attrs_init(struct wd_init_attrs *attrs);
+void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
+
+/**
+ * wd_alg_drv_bind() - Request the ctxs and initialize the sched_domain
+ *                     with the given devices list, ctxs number and numa mask.
+ * @task_type: the type of task specified by the current algorithm.
+ * @alg_name: the name of the algorithm specified by the task.
+ *
+ * Return device driver if succeed and other NULL if fail.
+ */
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name);
+void wd_alg_drv_unbind(struct wd_alg_driver *drv);
+
+/**
+ * wd_alg_init_driver() - Initialize the current device driver according
+ *			to the obtained queue resource and the applied driver.
+ * @config: device resources requested by the current algorithm.
+ * @driver: device driver for the current algorithm application.
+ * @drv_priv: the parameter pointer of the current device driver.
+ *
+ * Return 0 if succeed and other error number if fail.
+ */
+int wd_alg_init_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv);
+void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
+	struct wd_alg_driver *driver, void **drv_priv);
+
+/**
+ * wd_dlopen_drv() - Open the dynamic library file of the device driver.
+ * @cust_lib_dir: the file path of the dynamic library file.
+ */
+void *wd_dlopen_drv(const char *cust_lib_dir);
+void wd_dlclose_drv(void *dlh_list);
+
+/**
+ * wd_get_lib_file_path() - Find the path of the dynamic library file in
+ *			the current system.
+ * @lib_file: the name of the library file.
+ * @lib_path: the found dynamic library file path.
+ * @is_dir: Specify whether to query the file dir or the file path.
+ */
+int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
- * @msg: Shared memory addr.
+ * @config: Ctx configuration in global setting.
  * @numSize: Number of elements.
  * @index: Indicates the CTX index.
  */
-static inline void wd_dfx_msg_cnt(unsigned long *msg, __u32 numsize, __u32 idx)
+static inline void wd_dfx_msg_cnt(struct wd_ctx_config_internal *config,
+				  __u32 numsize, __u32 idx)
 {
+	__u16 sqn;
 	bool ret;
 
 	ret = wd_need_info();
 	if (idx > numsize || !ret)
 		return;
 
-	msg[idx]++;
+	sqn = config->ctxs[idx].sqn;
+	config->msg_cnt[sqn]++;
 }
 
 #ifdef __cplusplus
