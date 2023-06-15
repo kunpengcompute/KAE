@@ -47,6 +47,11 @@ enum task_type {
 	ASYNC_TASK_MAX
 };
 
+enum poll_state {
+	DISABLE_ASYNC_POLLING,
+	ENABLE_ASYNC_POLLING
+};
+
 struct async_poll_task {
 	enum task_type type;
 	void *ctx;
