@@ -761,6 +761,7 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 
 	memcpy(priv->key, key, EVP_CIPHER_CTX_key_length(ctx));
 	priv->switch_threshold = SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT;
+	US_INFO("init switch_threshold=%d\n",SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT);
 
 	US_DEBUG("uadk_e_cipher_init successed \n");
 	return 1;
@@ -856,11 +857,15 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 	US_DEBUG("do_cipher_sync start\n");
 	int ret;
 
-	if (unlikely(priv->switch_flag == UADK_DO_SOFT))
+	if (unlikely(priv->switch_flag == UADK_DO_SOFT)){
+		US_INFO("do_cipher_sync failed,priv->switch_flag == UADK_DO_SOFT");
 		return 0;
+	}
 
-	if (priv->switch_threshold >= priv->req.in_bytes)
+	if (priv->switch_threshold >= priv->req.in_bytes){
+		US_INFO("do_cipher_sync failed,%d >= %d",priv->switch_threshold,priv->req.in_bytes);
 		return 0;
+	}
 
 	ret = wd_do_cipher_sync(priv->sess, &priv->req);
 	if (ret){
