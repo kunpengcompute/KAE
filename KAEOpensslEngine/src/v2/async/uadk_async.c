@@ -139,7 +139,7 @@ static void async_poll_task_free(void)
 
 	error = pthread_mutex_lock(&poll_queue.async_task_mutex);
 	if (error != 0){
-		US_ERR("lock mutex failed,errno=%d",errno);
+		US_ERR("async_poll_task_free:lock mutex failed,errno=%d",errno);
 		return;
 	}
 
@@ -214,7 +214,7 @@ err:
 void async_free_poll_task(int id, bool is_cb)
 {
 	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("lock mutex failed,errno=%d",errno);
+		US_ERR("async_free_poll_task:lock mutex failed,errno=%d",errno);
 		return;
 	}
 
