@@ -41,107 +41,6 @@ void kaezstd_set_config(ZSTD_CCtx* zc, KaeZstdConfig* config)
     }
 }
 
-static int lib_poll_func(__u32 pos, __u32 expect, __u32 *count)
-{
-    int ret;
-
-    ret = wd_comp_poll_ctx(pos, expect, count);
-    if (ret < 0) {
-        return ret;
-    }
-    return 0;
-}
-
-static struct wd_sched *kaezstd_sched_init()
-{
-    int ctx_set_num = CTX_SET_NUM;
-    int ret;
-    int i, j;
-    struct sched_params param;
-    struct wd_sched *sched;
-
-    sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, 2, lib_poll_func);
-    if (!sched) {
-        US_ERR("failed to alloc a sample_sched\n");
-        return NULL;
-    }
-
-    sched->name = "sched_rr";
-
-    for (i = 0; i < CTX_SET_SIZE; i++) {
-        for (j = CTX_SET_NUM * i; j < CTX_SET_NUM * (i + 1); j++) {
-            param.mode = i / 2;
-            param.type = i % 2;
-            param.numa_id = 0;
-            param.begin = ctx_set_num * i;
-            param.end = ctx_set_num * (i + 1) - 1;
-            ret = wd_sched_rr_instance(sched, &param);
-            if (ret < 0) {
-                US_ERR("Fail to fill sched region.\n");
-                ret = KAE_ZSTD_SET_FAIL;
-                goto out_fill;
-            }
-        }
-    }
-    return sched;
-
-out_fill:
-    wd_sched_rr_release(sched);
-    return NULL;
-}
-
-static int kaezstd_init_ctx_config(Info* info, Options opts)
-{
-    struct wd_ctx_config *ctx_config = &(info->ctx_config);
-    int ctx_num = opts.ctx_num;
-    int ret;
-    int i, j;
-
-    memset(ctx_config, 0, sizeof(struct wd_ctx_config));
-    ctx_config->ctx_num = ctx_num * 4;
-    ctx_config->ctxs = calloc(1, ctx_num * 4 * sizeof(struct wd_ctx));
-    if (!ctx_config->ctxs) {
-        US_ERR("Not enough memory to allocate contexts.\n");
-        ret = KAE_ZSTD_ALLOC_FAIL;
-        return ret;
-    }
-
-    for (i = 0; i < ctx_config->ctx_num; i++) {
-        ctx_config->ctxs[i].ctx = wd_request_ctx(info->list->dev);
-        if (!ctx_config->ctxs[i].ctx) {
-            US_ERR("Fail to allocate context #%d\n", i);
-            ret = KAE_ZSTD_ALLOC_FAIL;
-            goto out_ctx;
-        }
-        ctx_config->ctxs[i].op_type = i % 2;
-        ctx_config->ctxs[i].ctx_mode = i / 2;
-    }
-
-    struct wd_sched *sched = kaezstd_sched_init();
-    if (!sched) {
-        ret = -WD_EINVAL;
-        goto out_ctx;
-    }
-    info->sched = sched;
-
-    ret = wd_comp_init(ctx_config, sched);
-    if (ret) {
-        US_ERR("fail to init comp.\n");
-        goto out_fill;
-    }
-
-    return ret;
-out_fill:
-    wd_sched_rr_release(sched);
-
-out_ctx:
-    for (j = 0; j < i; j++)
-        wd_release_ctx(ctx_config->ctxs[j].ctx);
-    free(ctx_config->ctxs);
-
-    return ret;
-}
-
 void kaezstd_options_init(KaeZstdConfig *config)
 {
     config->opts.ctx_num = KAEZSTD_DEFAULT_CTX_NUM;
@@ -204,10 +103,74 @@ out:
 
     return NULL;
 }
+// level 8\9 win 0-4
+static void Compression_level_conversion(int reqlevel, int* kae_lev, int* kae_win)
+{
+    if (reqlevel >= 0 && reqlevel <=3) {
+        * kae_lev = 8;
+        * kae_win = 0;
+        return;
+    } else if (reqlevel >= 4 && reqlevel<=5) {
+        * kae_lev = 8;
+        * kae_win = 1;
+        return;
+    } else if (reqlevel >= 6 && reqlevel<=7) {
+        * kae_lev = 8;
+        * kae_win = 2;
+        return;
+    } else if (reqlevel >= 8 && reqlevel<=9) {
+        * kae_lev = 8;
+        * kae_win = 3;
+        return;
+    } else if (reqlevel >= 10 && reqlevel<=11) {
+        * kae_lev = 8;
+        * kae_win = 4;
+        return;
+    } else if (reqlevel >= 12 && reqlevel<=13) {
+        * kae_lev = 9;
+        * kae_win = 0;
+        return;
+    } else if (reqlevel >= 14 && reqlevel<=15) {
+        * kae_lev = 9;
+        * kae_win = 1;
+        return;
+    } else if (reqlevel >= 16 && reqlevel<=17) {
+        * kae_lev = 9;
+        * kae_win = 2;
+        return;
+    } else if (reqlevel >= 18 && reqlevel<=19) {
+        * kae_lev = 9;
+        * kae_win = 3;
+        return;
+    } else {
+        * kae_lev = 9;
+        * kae_win = 4;
+        return;
+    }
+}
+
+int kaezstd_get_level_by_env()
+{
+    char *zstd_str = getenv("KAE_ZSTD_LEVEL");
+    if (zstd_str == NULL) {
+        US_ERR("KAE_ZSTD_LEVEL is NULL\n");
+        return 1;
+    }
+    int zstd_val = atoi(zstd_str);
+    if (zstd_val < 1 || zstd_val > 22) {
+        US_ERR("KAE_ZSTD_LEVEL value out of range ：%d ", zstd_val);
+        return 1;
+    }
+    US_DEBUG("KAE_ZSTD_LEVEL value is ：%d ", zstd_val);
+    return zstd_val;
+}
 
 int kaezstd_create_session(KaeZstdConfig *config)
 {
     struct sched_params *param = NULL;
+    int kaeLev, kaeWin, reqlevel;
+    reqlevel = kaezstd_get_level_by_env();
+    Compression_level_conversion(reqlevel, &kaeLev, &kaeWin);
     param = (struct sched_params *)malloc(sizeof(struct sched_params));
     if (param == NULL) {
         US_ERR("failed to alloc param!\n");
@@ -219,27 +182,23 @@ int kaezstd_create_session(KaeZstdConfig *config)
     config->setup.sched_param = param;
     config->setup.alg_type = WD_LZ77_ZSTD;
     config->setup.op_type = WD_DIR_COMPRESS;
+    config->setup.win_sz  = kaeWin;
+    config->setup.comp_lv = kaeLev;
     config->sess = (handle_t)0;
+    config->sess = wd_comp_alloc_sess(&(config->setup));
+    if (!(config->sess)) {
+        US_ERR("failed to alloc comp sess!\n");
+        return KAE_ZSTD_ALLOC_FAIL;
+    }
+    config->req.src = calloc(1, REQ_SRCBUFF_LEN);
     config->req.dst = calloc(1, REQ_DSTBUFF_LEN);
     config->req.dst_len = REQ_DSTBUFF_LEN;
     config->req.op_type = WD_DIR_COMPRESS;
     config->req.data_fmt = WD_FLAT_BUF;
     config->req.priv = &(config->tuple);
     config->tuple.bstatus = TUPLE_STATUS_COMPRESS;
-
+    US_DEBUG("[DEBUG] sess level is : %d; win is %d, algtype is %d.", config->setup.comp_lv, config->setup.win_sz, config->setup.alg_type);
     return 0;
-}
-
-void kaezstd_release_ctx(KaeZstdConfig *config)
-{
-    int i;
-
-    for (i = 0; i < config->info.ctx_config.ctx_num; i++)
-        wd_release_ctx(config->info.ctx_config.ctxs[i].ctx);
-
-    free(config->info.ctx_config.ctxs);
-
-    wd_sched_rr_release(config->info.sched);
 }
 
 static inline void versionCpy(char str1[], const char str2[])
@@ -264,6 +223,69 @@ int kaezstd_get_version(KAEZstdVersion* ver)
     return KAE_ZSTD_SUCC;
 }
 
+# define KAEZSTD_CTX_SET_NUM 1
+static int kaezstd_alg_init2(void)
+{
+    struct wd_ctx_nums *ctx_set_num;
+	struct wd_ctx_params cparams;
+	int ret, i;
+
+	ctx_set_num = calloc(KAEZSTD_CTX_SET_NUM, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return KAE_ZSTD_ALLOC_FAIL;
+	}
+
+	cparams.op_type_num = KAEZSTD_CTX_SET_NUM;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = KAE_ZSTD_INIT_FAIL;
+		goto out_freectx;
+	}
+
+    numa_bitmask_clearall(cparams.bmp);
+
+    int cpu = sched_getcpu();
+    if (cpu >= 0 && cpu <= 39) {
+        numa_bitmask_setbit(cparams.bmp, 0);
+        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 0.", cpu);
+    } else if (cpu >= 40 && cpu <= 79) {
+        numa_bitmask_setbit(cparams.bmp, 1); 
+        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 1.", cpu);
+    } else if (cpu >= 80 && cpu <= 119) {
+        numa_bitmask_setbit(cparams.bmp, 2); 
+        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 2.", cpu);
+    } else if (cpu >= 120 && cpu <= 159) {
+        numa_bitmask_setbit(cparams.bmp, 3); 
+        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 3.", cpu);
+    } else {
+        numa_bitmask_setall(cparams.bmp);
+        US_DEBUG("[DEBUG] now cpu id is :%d. numa is all.", cpu);
+    }
+
+	for (i = 0; i < 1; i++)
+		ctx_set_num[i].sync_ctx_num = KAEZSTD_CTX_SET_NUM;
+
+	ret = wd_comp_init2_("lz77_zstd", 0, 1, &cparams);
+	if (ret && ret != WD_EEXIST) {
+        WD_ERR("failed to init wd_comp_init2_ ret is :%d!\n", ret);
+		ret = KAE_ZSTD_INIT_FAIL;
+		goto out_freebmp;
+	} else if (ret == WD_EEXIST) {
+        ret = KAE_ZSTD_SUCC;
+    }
+
+out_freebmp:
+	numa_free_nodemask(cparams.bmp);
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
+}
+
 int kaezstd_init(ZSTD_CCtx* zc)
 {
     int ret;
@@ -284,10 +306,10 @@ int kaezstd_init(ZSTD_CCtx* zc)
         goto get_dev_list_fail;
     }
 
-    ret = kaezstd_init_ctx_config(&(config->info), config->opts);
+    ret = kaezstd_alg_init2();
     if (ret) {
-        US_ERR("failed to init ctx!\n");
-        goto init_ctx_config_fail;
+        US_ERR("failed to kaezstd_alg_init2!\n");
+        goto create_session_fail;
     }
 
     ret = kaezstd_create_session(config);
@@ -301,9 +323,6 @@ int kaezstd_init(ZSTD_CCtx* zc)
     return ret;
 
 create_session_fail:
-   kaezstd_release_ctx(config);
-
-init_ctx_config_fail:
     wd_free_list_accels(config->info.list);
 
 get_dev_list_fail:
@@ -322,8 +341,6 @@ void kaezstd_release(ZSTD_CCtx* zc)
     config = kaezstd_get_config(zc);
 
     free(config->setup.sched_param);
-
-    kaezstd_release_ctx(config);
 
     wd_comp_free_sess(config->sess);
 

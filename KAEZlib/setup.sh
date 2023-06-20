@@ -71,7 +71,7 @@ function Build_kaezip()
     cd -
     patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
     ./configure  --prefix=/usr/local/kaezip
-    make
+    make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}
     echo "build zlib success"
 }
 

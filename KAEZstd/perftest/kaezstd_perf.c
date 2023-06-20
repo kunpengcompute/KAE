@@ -73,13 +73,9 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
     if (inbuf == NULL) {
         return;
     }
-
-    // 初始化
-    resources const ress = CompressCreateResources(inbuf, streamLen);
-
+    printf("generate input num done!\n");
     pid_t pidChild = 0;
     struct timeval start, stop;
-    gettimeofday(&start, NULL);
     for (int i = 0; i < multi; i++) {
         pidChild = fork();
         if (pidChild == 0) {
@@ -89,7 +85,13 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
         }
     }
 
+    if (pidChild > 0) {
+        gettimeofday(&start, NULL);
+    }
+
     if (pidChild == 0) {
+        // 初始化
+        resources const ress = CompressCreateResources(inbuf, streamLen);
         for (int i = 0; i < loopTimes; ++i) {
             /* Compress using the context.
             * If you need more control over parameters, use the advanced API:
@@ -99,6 +101,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
                 ress.buffIn, ress.buffInSize, cLevel);
             CHECK_ZSTD(cSize);
         }
+        FreeResources(ress);
     }
 
     if (pidChild > 0) {
@@ -125,7 +128,6 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
 
-    FreeResources(ress);
 }
 
 static resources CompressStream2CreateResources(int cLevel, int nbThreads)
@@ -135,6 +137,7 @@ static resources CompressStream2CreateResources(int cLevel, int nbThreads)
     ress.buffOutSize= ZSTD_CStreamOutSize();  /* can always flush a full block */
     ress.buffIn = malloc_orDie(ress.buffInSize);
     ress.buffOut= malloc_orDie(ress.buffOutSize);
+    // 创建ZSTD压缩上下文
     ress.cctx = ZSTD_createCCtx();
     CHECK(ress.cctx != NULL, "ZSTD_createCCtx() failed!");
 
@@ -144,7 +147,7 @@ static resources CompressStream2CreateResources(int cLevel, int nbThreads)
      */
     CHECK_ZSTD( ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_compressionLevel, cLevel) );
     CHECK_ZSTD( ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_checksumFlag, 1) );
-    ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_nbWorkers, nbThreads);
+    // ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_nbWorkers, nbThreads);
     return ress;
 }
 
@@ -161,7 +164,7 @@ static void DoMultiCompressStream2(resources ress, uint8_t *inbuf, int streamLen
      * The parameters are sticky, so we keep the compression level and extra
      * parameters that we set in createResources_orDie().
      */
-    CHECK_ZSTD( ZSTD_CCtx_reset(ress.cctx, ZSTD_reset_session_only) );
+    // CHECK_ZSTD( ZSTD_CCtx_reset(ress.cctx, ZSTD_reset_session_only) );
 
     size_t const toRead = ress.buffInSize;
     size_t read;
@@ -191,13 +194,13 @@ static void DoMultiCompressStream2(resources ress, uint8_t *inbuf, int streamLen
 
 void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, int nbThreads)
 {
-    // 生成随机输入
-    uint8_t *inbuf = CompressInputGet(streamLen);
-    if (inbuf == NULL) {
-        return;
-    }
+    // // 生成随机输入
+    // uint8_t *inbuf = CompressInputGet(streamLen);
+    // if (inbuf == NULL) {
+    //     return;
+    // }
 
-    resources const ress = CompressStream2CreateResources(cLevel, nbThreads);
+    // resources const ress = CompressStream2CreateResources(cLevel, nbThreads);
 
     pid_t pidChild = 0;
     struct timeval start, stop;
@@ -212,9 +215,19 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, 
     }
 
     if (pidChild == 0) {
+        // 生成随机输入
+        uint8_t *inbuf = CompressInputGet(streamLen);
+        if (inbuf == NULL) {
+            return;
+        }
+        
+        resources const ress = CompressStream2CreateResources(cLevel, nbThreads);
+        CHECK_ZSTD( ZSTD_CCtx_reset(ress.cctx, ZSTD_reset_session_only) );
         for (int i = 0; i < loopTimes; ++i) {
             DoMultiCompressStream2(ress, inbuf, streamLen);
         }
+
+        FreeResources(ress);
     }
     
     if (pidChild > 0) {
@@ -241,7 +254,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, 
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
 
-    FreeResources(ress);
+    // FreeResources(ress);
 }
 
 static void Usage(void)
