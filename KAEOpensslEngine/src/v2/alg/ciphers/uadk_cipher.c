@@ -994,7 +994,7 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	US_DEBUG("uadk_e_do_cipher successed\n");
 	return 1;
 sync_err:
-	US_ERR("do_cipher_sync failed , switch soft work");
+	US_WARN("do_cipher_sync failed , switch soft work");
 	ret = uadk_e_cipher_soft_work(ctx, out, in, inlen);
 	if (ret != 1)
 		fprintf(stderr, "do soft ciphers failed.\n");
