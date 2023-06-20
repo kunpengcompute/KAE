@@ -761,6 +761,7 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 
 	memcpy(priv->key, key, EVP_CIPHER_CTX_key_length(ctx));
 	priv->switch_threshold = SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT;
+	US_INFO("init switch_threshold=%d\n",SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT);
 
 	US_DEBUG("uadk_e_cipher_init successed \n");
 	return 1;
@@ -856,11 +857,15 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 	US_DEBUG("do_cipher_sync start\n");
 	int ret;
 
-	if (unlikely(priv->switch_flag == UADK_DO_SOFT))
+	if (unlikely(priv->switch_flag == UADK_DO_SOFT)){
+		US_DEBUG("do_cipher_sync failed,priv->switch_flag == UADK_DO_SOFT");
 		return 0;
+	}
 
-	if (priv->switch_threshold >= priv->req.in_bytes)
+	if (priv->switch_threshold >= priv->req.in_bytes){
+		US_DEBUG("do_cipher_sync failed,%d >= %d",priv->switch_threshold,priv->req.in_bytes);
 		return 0;
+	}
 
 	ret = wd_do_cipher_sync(priv->sess, &priv->req);
 	if (ret){
@@ -980,7 +985,7 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	} else {
 		ret = do_cipher_async(priv, &op);
 		if (!ret){
-			US_ERR("do_cipher_async failed\n");
+			US_DEBUG("do_cipher_async failed\n");
 			goto out_notify;
 		}
 	}
@@ -989,7 +994,7 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	US_DEBUG("uadk_e_do_cipher successed\n");
 	return 1;
 sync_err:
-	US_ERR("do_cipher_sync failed , switch soft work");
+	US_WARN("do_cipher_sync failed , switch soft work");
 	ret = uadk_e_cipher_soft_work(ctx, out, in, inlen);
 	if (ret != 1)
 		fprintf(stderr, "do soft ciphers failed.\n");
