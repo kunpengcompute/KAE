@@ -139,7 +139,6 @@ static void async_poll_task_free(void)
 
 	error = pthread_mutex_lock(&poll_queue.async_task_mutex);
 	if (error != 0){
-		US_ERR("async_poll_task_free:lock mutex failed,errno=%d",errno);
 		return;
 	}
 
@@ -182,7 +181,6 @@ static struct async_poll_task *async_get_queue_task(void)
 	int idx, ret;
 
 	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("lock queue mutex failed,errno:%d",errno);
 		return NULL;
 	}
 
@@ -197,7 +195,6 @@ static struct async_poll_task *async_get_queue_task(void)
 
 err:
 	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("unlock queue mutex failed,errno:%d",errno);
 		return NULL;
 	}
 
@@ -214,7 +211,6 @@ err:
 void async_free_poll_task(int id, bool is_cb)
 {
 	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("async_free_poll_task:lock mutex failed,errno=%d",errno);
 		return;
 	}
 
@@ -245,7 +241,6 @@ int async_get_free_task(int *id)
 
 
 	if (pthread_mutex_lock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("lock queue mutex failed,errno:%d",errno);
 		return 0;
 	}
 
@@ -269,7 +264,6 @@ int async_get_free_task(int *id)
 
 out:
 	if (pthread_mutex_unlock(&poll_queue.async_task_mutex) != 0){
-		US_ERR("unlock queue mutex failed,errno:%d",errno);
 		return 0;
 	}
 

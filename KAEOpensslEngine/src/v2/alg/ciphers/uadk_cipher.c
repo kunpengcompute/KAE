@@ -858,12 +858,12 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 	int ret;
 
 	if (unlikely(priv->switch_flag == UADK_DO_SOFT)){
-		US_INFO("do_cipher_sync failed,priv->switch_flag == UADK_DO_SOFT");
+		US_DEBUG("do_cipher_sync failed,priv->switch_flag == UADK_DO_SOFT");
 		return 0;
 	}
 
 	if (priv->switch_threshold >= priv->req.in_bytes){
-		US_INFO("do_cipher_sync failed,%d >= %d",priv->switch_threshold,priv->req.in_bytes);
+		US_DEBUG("do_cipher_sync failed,%d >= %d",priv->switch_threshold,priv->req.in_bytes);
 		return 0;
 	}
 
@@ -985,7 +985,7 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	} else {
 		ret = do_cipher_async(priv, &op);
 		if (!ret){
-			US_ERR("do_cipher_async failed\n");
+			US_DEBUG("do_cipher_async failed\n");
 			goto out_notify;
 		}
 	}
