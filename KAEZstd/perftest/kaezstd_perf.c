@@ -11,6 +11,9 @@
 #include <string.h>
 #include <errno.h>
 #include <zstd.h>      // presumes zstd library is installed
+#define __USE_GNU
+#include <sched.h>
+#include <pthread.h>
 
 #include "common.h"
 
@@ -68,17 +71,14 @@ static void FreeResources(resources ress)
 // 块压缩：一次性将所有输入都输入压缩
 void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbThreads)
 {
-    // 生成随机输入
-    uint8_t *inbuf = CompressInputGet(streamLen);
-    if (inbuf == NULL) {
-        return;
-    }
-    printf("generate input num done!\n");
     pid_t pidChild = 0;
     struct timeval start, stop;
+    int core_id;
     for (int i = 0; i < multi; i++) {
         pidChild = fork();
         if (pidChild == 0) {
+            //子进程
+            core_id = i + 35; //开始绑核的cpuid
             break;
         } else if (pidChild < 0) {
             printf("%s fork failed\n", __func__);
@@ -90,6 +90,24 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
     }
 
     if (pidChild == 0) {
+        // 绑核操作
+        cpu_set_t cpuSet;
+        CPU_ZERO(&cpuSet); // 清空cpuSet
+        // 将进程绑定到第0个CPU内核
+        CPU_SET(core_id, &cpuSet);
+
+        // 设置CPU亲和性
+        if (sched_setaffinity(0, sizeof(cpuSet), &cpuSet) == -1) {
+            fprintf(stderr, "Failed to set CPU affinity\n");
+            return ;
+        }
+
+        // 生成随机输入
+        uint8_t *inbuf = CompressInputGet(streamLen);
+        if (inbuf == NULL) {
+            return;
+        }
+
         // 初始化
         resources const ress = CompressCreateResources(inbuf, streamLen);
         for (int i = 0; i < loopTimes; ++i) {

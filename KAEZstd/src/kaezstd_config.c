@@ -248,22 +248,14 @@ static int kaezstd_alg_init2(void)
     numa_bitmask_clearall(cparams.bmp);
 
     int cpu = sched_getcpu();
-    if (cpu >= 0 && cpu <= 39) {
-        numa_bitmask_setbit(cparams.bmp, 0);
-        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 0.", cpu);
-    } else if (cpu >= 40 && cpu <= 79) {
-        numa_bitmask_setbit(cparams.bmp, 1); 
-        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 1.", cpu);
-    } else if (cpu >= 80 && cpu <= 119) {
-        numa_bitmask_setbit(cparams.bmp, 2); 
-        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 2.", cpu);
-    } else if (cpu >= 120 && cpu <= 159) {
-        numa_bitmask_setbit(cparams.bmp, 3); 
-        US_DEBUG("[DEBUG] now cpu id is :%d. numa is 3.", cpu);
-    } else {
-        numa_bitmask_setall(cparams.bmp);
-        US_DEBUG("[DEBUG] now cpu id is :%d. numa is all.", cpu);
+    int node = numa_node_of_cpu(cpu);
+
+    struct uacce_dev *dev = wd_get_accel_dev("lz77_zstd");//获取支持某种算法的最亲和的设备
+    if (dev == NULL) {
+        goto out_freebmp;
     }
+    numa_bitmask_setbit(cparams.bmp, dev->numa_id); 
+    US_DEBUG("cpu is %d, numa_niode_of_cpu is %d, dev-numaid is %d\n", cpu, node, dev->numa_id);
 
 	for (i = 0; i < 1; i++)
 		ctx_set_num[i].sync_ctx_num = KAEZSTD_CTX_SET_NUM;
