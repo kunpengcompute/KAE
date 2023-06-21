@@ -8,6 +8,7 @@
 #include "kaezip.h"
 #include "wd_comp.h"
 #include "kaezip_adapter.h"
+#include "kaezip_init.h"
 #include "kaezip_comp.h"
 #include "kaezip_deflate.h"
 #include "kaezip_inflate.h"
@@ -44,26 +45,6 @@ static void uadk_get_accel_platform(void)
     g_platform = HW_NONE;
 }
 
-static int kz_exdata_init(z_streamp strm)
-{
-    kaezip_exdata *kz_exdata = malloc(sizeof(kaezip_exdata));
-    if (unlikely(!kz_exdata)) {
-        US_ERR("kz_exdata malloc failed!\n");
-        return -1;
-    }
-    memset(kz_exdata, 0, sizeof(kaezip_exdata));
-    strm->opaque = kz_exdata;
-    return 0;
-}
-
-static void kz_exdata_uninit(z_streamp strm)
-{
-    if (strm->opaque) {
-        free(strm->opaque);
-        strm->opaque = NULL;
-    }
-}
-
 /* -----------------------------------------------DEFLATE----------------------------------------------- */
 int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int memLevel, int strategy,
                 const char *version, int stream_size)
@@ -80,17 +61,17 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         break;
     case HW_V2:
+        strm->adler = 0;
         level = (level <= 0 || level > 15) ? 1 : level;
-        ret = wd_deflate_init(strm, level, windowBit);
+        ret = kz_deflate_init(strm, level, windowBit);
         if (ret == Z_OK) {
-            (void)wd_deflate_reset(strm);
-            (void)kz_exdata_init(strm);
+            (void)kz_deflate_reset(strm);
         }
         break;
     default:
         break;
     }
-    US_DEBUG("kz_deflateInit2 level %d, windowBit %d, return code is %d\n", level, windowBit, ret);
+    US_INFO("kz_deflateInit2 return code is %d\n", ret);
     return ret;
 }
 
@@ -114,12 +95,12 @@ int kz_deflate(z_streamp strm, int flush)
         }
         break;
     case HW_V2:
-        ret = wd_deflate_v2(strm, flush);   //  implement in src/v2
+        ret = kz_deflate_v2(strm, flush);   //  implement in src/v2
         break;
     default:
         break;
     }
-    US_DEBUG("kz_deflate flush is %d, return code is %d\n", flush, ret);
+    US_INFO("kz_deflate return code is %d\n", ret);
     return ret;
 }
 
@@ -137,13 +118,12 @@ int kz_deflateEnd(z_streamp strm)
         ret = kz_deflateEnd_v1(strm);
         break;
     case HW_V2:
-        ret = wd_deflate_end(strm);
-        kz_exdata_uninit(strm);
+        ret = kz_deflate_end(strm);
         break;
     default:
         break;
     }
-    US_DEBUG("kz_deflateEnd return code is %d\n\n", ret);
+    US_INFO("kz_deflateEnd return code is %d\n", ret);
     return ret;
 }
 
@@ -161,12 +141,12 @@ int kz_deflateReset(z_streamp strm)
         ret = kz_deflateReset_v1(strm);
         break;
     case HW_V2:
-        ret = wd_deflate_reset(strm);
+        ret = kz_deflate_reset(strm);
         break;
     default:
         break;
     }
-    US_DEBUG("kz_deflateReset return code is %d\n", ret);
+    US_INFO("kz_deflateReset return code is %d\n", ret);
     return ret;
 }
 
@@ -186,16 +166,15 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
         break;
     case HW_V2:
         strm->adler = 0;
-        ret = wd_inflate_init(strm, windowBits);
+        ret = kz_inflate_init(strm, windowBits);
         if (ret == Z_OK) {
-            (void)wd_inflate_reset(strm);
-            (void)kz_exdata_init(strm);
+            (void)kz_inflate_reset(strm);
         }
         break;
     default:
         break;
     }
-    US_DEBUG("kz_inflateInit2 windowBit %d, return code is %d\n", windowBits, ret);
+    US_INFO("kz_inflateInit2 return code is %d\n", ret);
     return ret;
 }
 
@@ -223,12 +202,12 @@ int kz_inflate(z_streamp strm, int flush)
         }
         break;
     case HW_V2:
-        ret = wd_inflate_v2(strm, flush);
+        ret = kz_inflate_v2(strm, flush);
         break;
     default:
         break;
     }
-    US_DEBUG("kz_inflate flush %d, return code is %d\n", flush, ret);
+    US_INFO("kz_inflate return code is %d\n", ret);
     return ret;
 }
 
@@ -246,13 +225,12 @@ int kz_inflateEnd(z_streamp strm)
         ret = kz_inflateEnd_v1(strm);
         break;
     case HW_V2:
-        ret = wd_inflate_end(strm);
-        kz_exdata_uninit(strm);
+        ret = kz_inflate_end(strm);
         break;
     default:
         break;
     }
-    US_DEBUG("kz_inflateEnd return code is %d\n", ret);
+    US_INFO("kz_inflateEnd return code is %d\n", ret);
     return ret;
 }
 
@@ -270,11 +248,11 @@ int kz_inflateReset(z_streamp strm)
         ret = kz_inflateReset_v1(strm);
         break;
     case HW_V2:
-        ret = wd_inflate_reset(strm);
+        ret = kz_inflate_reset(strm);
         break;
     default:
         break;
     }
-    US_DEBUG("kz_inflateReset return code is %d\n", ret);
+    US_INFO("kz_inflateReset return code is %d\n", ret);
     return ret;
 }

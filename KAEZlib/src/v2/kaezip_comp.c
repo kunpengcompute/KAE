@@ -5,164 +5,150 @@
  * @Date: 2023-05-09
 */
 
+#include "zlib.h"
 #include "wd.h"
 #include "wd_comp.h"
-#include "wd_zlibwrapper.h"
 #include "kaezip_comp.h"
 #include "kaezip_log.h"
 
-static z_stream g_init_strm = {0};
-
-static void __attribute((constructor)) wd_do_init_onlyone(void)
+static int kz_check_params(struct wd_comp_req *req)
 {
-	wd_deflate_init(&g_init_strm, 1, 12);
+	if (unlikely(!req)) {
+		US_ERR("invalid: req is NULL!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(!req->src || !req->dst)) {
+		US_ERR("invalid: src or dst is NULL!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(!req->src_len)) {
+		return Z_STREAM_END;
+	}
+	if (unlikely(!req->dst_len)) {
+		US_ERR("invalid: dst_len is 0!\n");
+		return -WD_EINVAL;
+	}
+	return WD_SUCCESS;
 }
 
-static void __attribute((destructor)) wd_do_uninit_onlyone(void)
+static int kz_zlib_do_comp_implement(handle_t h_sess, struct wd_comp_req *req, __u32 *borrowd_dst_len,
+	__u64 *used_in, __u64 *used_out)
 {
-	wd_deflate_end(&g_init_strm);
-}
-
-static int wd_checkAndSet_remainData(z_streamp strm, int flush)
-{
-	kaezip_exdata *kz_exdata = (kaezip_exdata*)strm->opaque;
-	if (!kz_exdata) {
-		US_ERR("kaezip_exdata is NULL!\n");
+	int ret = kz_check_params(req);
+	if (unlikely(ret)) {
+		return ret;
 	}
-
-	unsigned int remain_len = kz_exdata->remain;
-	US_DEBUG("remain data has %u Bytes\n", remain_len);
-	if (remain_len != 0) {
-		if (strm->avail_out < remain_len) {
-			US_ERR("buffer error! no more avail_out!\n");
-			return 0;
-		}
-		memcpy(strm->avail_out + strm->total_out, kz_exdata->output_buffer, kz_exdata->last_comp_out_len);
-		strm->avail_out -= remain_len;
-		strm->total_out += kz_exdata->last_comp_out_len;
-	} else if (strm->avail_in == 0 && flush != Z_FINISH) {
-		US_ERR("buffer error! no more avail_in!\n");
-		return 0;
-	}
-	return 1;
-}
-
-static int wd_zlib_do_implement(handle_t h_sess, struct wd_comp_req *req, kaezip_exdata *kz_exdata)
-{
-	if (unlikely(!req || !kz_exdata)) {
-		US_ERR("req or kz_exdata NULL!\n");
-		return Z_ERRNO;
-	}
-	unsigned int total_avail_in  = req->src_len;
-	unsigned int total_avail_out = req->dst_len;
+	__u32 total_avail_in  = req->src_len;
+	__u32 total_avail_out = req->dst_len;
 
 	struct wd_comp_req strm_req;
 	memcpy(&strm_req, req, sizeof(struct wd_comp_req));
-	strm_req.dst = kz_exdata->output_buffer;
+	req->src_len = 0;
+	req->dst_len = 0;
+	*used_in = *used_out = 0;
+	void *tmp_dst_buffer = malloc(OUTPUT_CHUNK_V2);
+	if (!tmp_dst_buffer) {
+		return -WD_EINVAL;
+	}
+	strm_req.dst = tmp_dst_buffer;
+
+	// 该接口至多压缩/解压缩(u32_max)个字节，若超过, 则重复调用
+	// 因此需根据req->last判断是否为最后一个大块
+	int is_real_last = req->last;
 	strm_req.last = 0;
 	do {
-		strm_req.src_len = (total_avail_in > INPUT_CHUNK_V2 ? INPUT_CHUNK_V2 : total_avail_in);
+		strm_req.src_len = total_avail_in > INPUT_CHUNK_V2 ? INPUT_CHUNK_V2 : total_avail_in;
 		strm_req.dst_len = OUTPUT_CHUNK_V2;
-		unsigned int orig_src_len = strm_req.src_len;
-		unsigned int orig_dst_len = strm_req.dst_len;
-		if (strm_req.op_type == WD_DIR_COMPRESS && req->last && total_avail_in <= INPUT_CHUNK_V2) {
-			strm_req.last = 1;
+		__u32 orig_src_len = strm_req.src_len;
+		__u32 orig_dst_len = OUTPUT_CHUNK_V2;
+
+		if (strm_req.op_type == WD_DIR_COMPRESS) {
+			if (is_real_last && total_avail_in <= INPUT_CHUNK_V2) {
+				strm_req.last = 1;
+			}
 		}
 
-		int ret = wd_do_comp_strm(h_sess, &strm_req);
-		if (unlikely(ret < 0 || strm_req.status == WD_IN_EPARA )) {
-			US_ERR("wd_do_comp_strm, invaild or incomplete data! ret = %d, status = %d\n", ret, strm_req.status);
-			US_DEBUG("src_len : %u/%u, dst_len : %u/%u\n", 
-				orig_src_len, strm_req.src_len, orig_dst_len, strm_req.dst_len);
-			return ret;
+		ret = wd_do_comp_strm(h_sess, &strm_req);
+		if (strm_req.status == WD_IN_EPARA || unlikely(ret < 0)) {
+			US_ERR("wd_do_comp_strm, invalid or incomplete data! ret = %d, status = %d\n", ret, strm_req.status);
+			US_DEBUG("src_len : %u/%u, dst_len : %u/%u\n\n", orig_src_len, strm_req.src_len,
+				orig_dst_len, strm_req.dst_len);
+			free(tmp_dst_buffer);
+			return Z_STREAM_ERROR;
 		}
 		if (strm_req.dst_len > total_avail_out) {
-			US_WARN("no more avail out space! need more %u Bytes!\n", kz_exdata->remain);
-			US_DEBUG("src_len : %u/%u, dst_len : %u/%u\n", 
-				orig_src_len, strm_req.src_len, orig_dst_len, strm_req.dst_len);
-			kz_exdata->remain = strm_req.dst_len - total_avail_out;
-			kz_exdata->last_comp_in_len  = strm_req.src_len;
-			kz_exdata->last_comp_out_len = strm_req.dst_len;
-			kz_exdata->chunk_total_in   += strm_req.src_len;
-			break;
+			*borrowd_dst_len = strm_req.dst_len - total_avail_out;
+			total_avail_out = strm_req.dst_len;
+			US_ERR("no more avail out space! borrowed dst len is %u\n", *borrowd_dst_len);
+			US_DEBUG("src_len : %u/%u, dst_len : %u/%u\n\n", orig_src_len, strm_req.src_len,
+				orig_dst_len, strm_req.dst_len);
 		}
 
-		kz_exdata->chunk_total_out += strm_req.dst_len;
+		*used_out += strm_req.dst_len;
 		memcpy(req->dst, strm_req.dst, strm_req.dst_len);
 		req->dst += strm_req.dst_len;
 		total_avail_out -= strm_req.dst_len;
 
-		kz_exdata->chunk_total_in += strm_req.src_len;
+		*used_in += strm_req.src_len;
 		strm_req.src += strm_req.src_len;
 		total_avail_in -= strm_req.src_len;
 	} while ((total_avail_in != 0) && (total_avail_out != 0));
 
+	free(tmp_dst_buffer);
 	req->status = strm_req.status;
-	return Z_OK;
+	return 0;
 }
 
-static int wd_zlib_do_request_v2(z_streamp strm, int flush, enum wd_comp_op_type type)
+static int kz_zlib_do_request_v2(z_streamp strm, int flush, enum wd_comp_op_type type)
 {
-	if (unlikely(!strm)) {
-		US_ERR("strm NULL!\n");
+	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_NO_FLUSH && flush != Z_FINISH)) {
+		US_ERR("invalid: flush is %d!\n", flush);
 		return Z_STREAM_ERROR;
 	}
-	if (!wd_checkAndSet_remainData(strm, flush)) {
-		return Z_BUF_ERROR;
-	}
-
-	flush = (flush == Z_NO_FLUSH ? Z_SYNC_FLUSH : flush);
-	if (unlikely(flush != Z_SYNC_FLUSH && flush != Z_FINISH)) {
-		US_ERR("invalid : flush is %d\n", flush);
-		return Z_STREAM_ERROR;
-	}
-
-	unsigned int src_len = strm->avail_in;
-	unsigned int dst_len = strm->avail_out;
-	struct wd_comp_req req = {0};
-	req.src      = (void*)(strm->next_in + strm->total_in);
-	req.src_len  = src_len;
-	req.dst      = (void*)(strm->next_out + strm->total_out);
-	req.src_len  = dst_len;
-	req.op_type  = type;
-	req.data_fmt = WD_FLAT_BUF;
-	req.last     = (flush == Z_FINISH ? 1 : 0);
-	US_DEBUG("before %s, strm->avail_in = %u, strm->avail_out = %u, strm->total_in = %llu, strm->total_out = %llu, is_last_chunk = %u\n",
-		type ? "decompress" : "compress", strm->avail_in, strm->avail_out, strm->total_in, strm->total_out, req.last);
-	
-	/********************************/
-	kaezip_exdata *kz_exdata = (kaezip_exdata*)strm->opaque;
-	memset(kz_exdata, 0, sizeof(kaezip_exdata));
 	handle_t h_sess = strm->reserved;
-	int ret = wd_zlib_do_implement(h_sess, &req, kz_exdata);
-	if (unlikely(ret)) {
-		US_ERR("failed to do %s, ret is %d\n", type ? "decompress" : "compress", ret);
-		return Z_STREAM_ERROR;
-	}
-	/********************************/
+	struct wd_comp_req req = {0};
 
-	strm->avail_in   = src_len - kz_exdata->chunk_total_in;
-	strm->avail_out  = (kz_exdata->remain == 0) ? dst_len - kz_exdata->chunk_total_out : 0;
-	strm->total_in  += kz_exdata->chunk_total_in;
-	strm->total_out += kz_exdata->chunk_total_out;
-	US_DEBUG("after %s, strm->avail_in = %u, strm->avail_out = %u, strm->total_in = %llu, strm->total_out = %llu, is_last_chunk = %u\n",
-		type ? "decompress" : "compress", strm->avail_in, strm->avail_out, strm->total_in, strm->total_out, req.last);
-	
-	if (type == WD_DIR_COMPRESS && flush == Z_FINISH && 
-		kz_exdata->chunk_total_in == src_len && kz_exdata->remain == 0) {
-		ret = Z_STREAM_END;
-	} else if (type == WD_DIR_DECOMPRESS && req.status == WD_STREAM_END && kz_exdata->remain == 0) {
+	__u32 borrowed_dst_len = strm->adler;
+	__u32 src_len = strm->avail_in;
+	__u32 dst_len = strm->avail_out > borrowed_dst_len ? strm->avail_out - borrowed_dst_len : 0;
+	US_DEBUG("borrowed dst len is %u, avail_in is %u, avail_out is %u\n",
+		borrowed_dst_len, src_len, dst_len);
+
+	req.src = (void*)(strm->next_in + strm->total_in);
+	req.src_len = src_len;
+	req.dst = (void*)(strm->next_out + strm->total_out);
+	req.dst_len = dst_len;
+	req.op_type = type;
+	req.data_fmt = WD_FLAT_BUF;
+	req.last = (flush == Z_FINISH) ? 1 : 0;
+
+	borrowed_dst_len = 0;
+	__u64 used_in;
+	__u64 used_out;
+	int ret = kz_zlib_do_comp_implement(h_sess, &req, &borrowed_dst_len, &used_in, &used_out);
+	if (unlikely(ret)) {
+		US_ERR("failed to do un/compress(%d)!\n", ret);
+		return ret;
+	}
+
+	strm->adler = borrowed_dst_len;
+	strm->avail_in  = src_len - used_in;
+	strm->avail_out = (strm->adler == 0) ? dst_len - used_out : 0;
+	strm->total_in  += used_in;
+	strm->total_out += used_out;
+	US_DEBUG("strm->total_in is %lu, strm->total_out is %lu\n\n", strm->total_in, strm->total_out);
+	if ((flush == Z_FINISH && used_in == src_len) || (req.status == 1)) {
 		ret = Z_STREAM_END;
 	}
 	return ret;
 }
 
-int wd_deflate_v2(z_streamp strm, int flush)
+int kz_deflate_v2(z_streamp strm, int flush)
 {
-    return wd_zlib_do_request_v2(strm, flush, WD_DIR_COMPRESS);
+    return kz_zlib_do_request_v2(strm, flush, WD_DIR_COMPRESS);
 }
 
-int wd_inflate_v2(z_streamp strm, int flush)
+int kz_inflate_v2(z_streamp strm, int flush)
 {
-    return wd_zlib_do_request_v2(strm, flush, WD_DIR_DECOMPRESS);
+    return kz_zlib_do_request_v2(strm, flush, WD_DIR_DECOMPRESS);
 }
