@@ -11,7 +11,7 @@ all: kaezip_perf
 objects = kaezip_perf.c
 
 kaezip_perf : $(objects)
-	gcc $(CFLAGS) $(LDFLAGS) $(INCDIR) -o kaezip_perf $(objects)
+	gcc $(CFLAGS) $(LDFLAGS) $(INCDIR) -Wl,-rpath=/usr/local/kaezip/lib -o kaezip_perf $(objects)
 
 .PHONY : clean
 clean :

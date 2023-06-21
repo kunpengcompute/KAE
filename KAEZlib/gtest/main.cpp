@@ -154,7 +154,7 @@ static void common_test(int windowBits, int level, bool is_pref = false, ofstrea
 // data_size less than 64K case(deflate, zlib, gzip)
 TEST(ZlibTest, CompressAndDecompress_SmallCase)
 {
-    uLong input_size = 1024UL * 1024 * 48; // 48k
+    uLong input_size = 1024UL * 48; // 48k
     Bytef *input = new Bytef[input_size];
     ASSERT_NE(input, nullptr);
     generate_random_data(input, input_size);
