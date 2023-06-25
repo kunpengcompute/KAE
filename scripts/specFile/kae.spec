@@ -47,12 +47,12 @@ install -b -m644 %{kae_driver_path}/conf/hisi_hpre.conf         ${RPM_BUILD_ROOT
 install -b -m644 %{kae_driver_path}/conf/hisi_zip.conf          ${RPM_BUILD_ROOT}/etc/modprobe.d/
 
 mkdir -p ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libwd_comp.so.2.4.0               ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libwd_crypto.so.2.4.0             ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libwd.so.2.4.0                    ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libhisi_hpre.so.2.4.0             ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libhisi_sec.so.2.4.0              ${RPM_BUILD_ROOT}/usr/lib64
-install -b -m755 %{kae_uadk_path}/.libs/libhisi_zip.so.2.4.0              ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libwd_comp.so.2.5.0               ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libwd_crypto.so.2.5.0             ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libwd.so.2.5.0                    ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libhisi_hpre.so.2.5.0             ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libhisi_sec.so.2.5.0              ${RPM_BUILD_ROOT}/usr/lib64
+install -b -m755 %{kae_uadk_path}/.libs/libhisi_zip.so.2.5.0              ${RPM_BUILD_ROOT}/usr/lib64
 mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
 mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
 install -b -m644 %{kae_uadk_path}/include/hisi_qm_udrv.h                       ${RPM_BUILD_ROOT}/usr/include/uadk
@@ -135,12 +135,12 @@ This package kae_driver library.
 %config(noreplace) /etc/modprobe.d/hisi_hpre.conf
 
 %defattr(755,root,root)
-/usr/lib64/libwd.so.2.4.0
-/usr/lib64/libwd_comp.so.2.4.0
-/usr/lib64/libwd_crypto.so.2.4.0
-/usr/lib64/libhisi_hpre.so.2.4.0
-/usr/lib64/libhisi_sec.so.2.4.0
-/usr/lib64/libhisi_zip.so.2.4.0
+/usr/lib64/libwd.so.2.5.0
+/usr/lib64/libwd_comp.so.2.5.0
+/usr/lib64/libwd_crypto.so.2.5.0
+/usr/lib64/libhisi_hpre.so.2.5.0
+/usr/lib64/libhisi_sec.so.2.5.0
+/usr/lib64/libhisi_zip.so.2.5.0
 /usr/lib64/libhisi_hpre.so.2
 /usr/lib64/libhisi_sec.so.2
 /usr/lib64/libhisi_zip.so.2
@@ -215,23 +215,23 @@ fi
 echo "installing driver..."
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     cd /usr/lib64
-    ln -sf libwd.so.2.4.0 libwd.so
-    ln -sf libwd.so.2.4.0 libwd.so.1
+    ln -sf libwd.so.2.5.0 libwd.so
+    ln -sf libwd.so.2.5.0 libwd.so.1
 
-    ln -sf libwd_comp.so.2.4.0 libwd_comp.so
-    ln -sf libwd_comp.so.2.4.0 libwd_comp.so.1
+    ln -sf libwd_comp.so.2.5.0 libwd_comp.so
+    ln -sf libwd_comp.so.2.5.0 libwd_comp.so.1
 
-    ln -sf libwd_crypto.so.2.4.0 libwd_crypto.so
-    ln -sf libwd_crypto.so.2.4.0 libwd_crypto.so.1
+    ln -sf libwd_crypto.so.2.5.0 libwd_crypto.so
+    ln -sf libwd_crypto.so.2.5.0 libwd_crypto.so.1
 
-    ln -sf libhisi_hpre.so.2.4.0 libhisi_hpre.so
-    ln -sf libhisi_hpre.so.2.4.0 libhisi_hpre.so.1
+    ln -sf libhisi_hpre.so.2.5.0 libhisi_hpre.so
+    ln -sf libhisi_hpre.so.2.5.0 libhisi_hpre.so.1
 
-    ln -sf libhisi_sec.so.2.4.0 libhisi_sec.so
-    ln -sf libhisi_sec.so.2.4.0 libhisi_sec.so.1
+    ln -sf libhisi_sec.so.2.5.0 libhisi_sec.so
+    ln -sf libhisi_sec.so.2.5.0 libhisi_sec.so.1
 
-    ln -sf libhisi_zip.so.2.4.0 libhisi_zip.so
-    ln -sf libhisi_zip.so.2.4.0 libhisi_zip.so.1
+    ln -sf libhisi_zip.so.2.5.0 libhisi_zip.so
+    ln -sf libhisi_zip.so.2.5.0 libhisi_zip.so.1
 fi
 /sbin/ldconfig
 

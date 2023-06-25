@@ -58,7 +58,7 @@ function run_test() {
     # 压缩测试
     TIMEFORMAT='%R %U %S'
     echo "$exe -$compression_level $filename -o $filename.zst"
-    compress_time=$(time ($exe -$compression_level $filename -o $filename.zst >/dev/null) 2>&1)
+    compress_time=$(time (KAE_ZSTD_LEVEL=$compression_level $exe -$compression_level $filename -o $filename.zst >/dev/null) 2>&1)
     real_time=$(echo $compress_time | awk '{print $(NF-2)}')
     user_time=$(echo $compress_time | awk '{print $(NF-1)}')
     sys_time=$(echo $compress_time | awk '{print $(NF-0)}')

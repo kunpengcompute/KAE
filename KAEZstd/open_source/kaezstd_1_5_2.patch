@@ -173,7 +173,7 @@ diff -uprN zstd/lib/libzstd.mk ./open_source/zstd/lib/libzstd.mk
  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
  
 +KAEZSTD_CFLAGS=-I/usr/local/kaezstd/include -I$(KAEZSTDPATH)/include -I. -I../lib -DCONF_KAEZSTD
-+KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -lkaezstd
++KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.0.0
 +CFLAGS+=$(KAEZSTD_CFLAGS)
 +LDFLAGS+=$(KAEZSTD_LDFLAGS)
  ifndef ALREADY_APPENDED_NOEXECSTACK
