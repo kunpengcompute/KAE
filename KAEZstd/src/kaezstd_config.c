@@ -252,6 +252,7 @@ static int kaezstd_alg_init2(void)
 
     struct uacce_dev *dev = wd_get_accel_dev("lz77_zstd");//获取支持某种算法的最亲和的设备
     if (dev == NULL) {
+        ret = KAE_ZSTD_INIT_FAIL;
         goto out_freebmp;
     }
     numa_bitmask_setbit(cparams.bmp, dev->numa_id); 
