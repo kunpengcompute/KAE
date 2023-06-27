@@ -63,7 +63,7 @@ enum KAE_LOG_LEVEL {
                 g_log_level[LEVEL], __FILE__, __LINE__, __func__, ##args);                              \
         } else {                                                                                        \
             fprintf(g_kae_debug_log_file, "[%s][%s:%d:%s()] " fmt "\n",                                 \
-                g_log_level_[LEVEL], __FILE__, __LINE__, __func__, ##args);                              \
+                g_log_level[LEVEL], __FILE__, __LINE__, __func__, ##args);                              \
         }                                                                                               \
         if (ftell(g_kae_debug_log_file) > KAE_LOG_MAX_SIZE) {                                           \
             kae_save_log(g_kae_debug_log_file);                                                         \
