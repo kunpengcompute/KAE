@@ -914,8 +914,10 @@ static int do_cipher_async(struct cipher_priv_ctx *priv, struct async_op *op)
 
 static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 {
+	__u32 cipher_counts = ARRAY_SIZE(cipher_info_table);	
 	struct sched_params params = {0};
-	int ret;
+	int nid, ret;
+	__u32 i;
 
 	priv->req.iv_bytes = EVP_CIPHER_CTX_iv_length(ctx);
 	priv->req.iv = priv->iv;
@@ -943,7 +945,23 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 	/* Use the default numa parameters */
 	params.numa_id = -1;
 	priv->setup.sched_param = &params;
+
 	if (!priv->sess) {
+		nid = EVP_CIPHER_CTX_nid(ctx);
+
+		for (i = 0; i < cipher_counts; i++) {
+			if (nid == cipher_info_table[i].nid) {
+				cipher_priv_ctx_setup(priv, cipher_info_table[i].alg,
+					cipher_info_table[i].mode, cipher_info_table[i].out_bytes);
+				break;
+			}
+		}
+
+		if (i == cipher_counts) {
+			fprintf(stderr, "failed to setup the private ctx.\n");
+			return;
+		}
+
 		priv->sess = wd_cipher_alloc_sess(&priv->setup);
 		if (!priv->sess)
 			fprintf(stderr, "uadk failed to alloc session!\n");
@@ -952,6 +970,7 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 	ret = wd_cipher_set_key(priv->sess, priv->key, EVP_CIPHER_CTX_key_length(ctx));
 	if (ret) {
 		wd_cipher_free_sess(priv->sess);
+		priv->sess = 0;
 		fprintf(stderr, "uadk failed to set key!\n");
 	}
 }
@@ -983,6 +1002,14 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 		if (!ret)
 			goto sync_err;
 	} else {
+		/*
+		 * If the length of the input data
+		 * does not reach to hardware computing threshold,
+		 * directly switch to soft cipher.
+		 */
+		if (priv->req.in_bytes <= priv->switch_threshold)
+			goto sync_err;
+
 		ret = do_cipher_async(priv, &op);
 		if (!ret){
 			US_DEBUG("do_cipher_async failed\n");
