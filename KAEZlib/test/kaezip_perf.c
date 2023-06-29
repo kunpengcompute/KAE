@@ -12,6 +12,40 @@
 #include <string.h>
 #include <errno.h>
 
+static uLong read_inputFile(const char* fileName, void** input)
+{
+    FILE* sourceFile = fopen(fileName, "r");
+    if (sourceFile == NULL) {
+        fprintf(stderr, "%s not exist!\n", fileName);
+        return 0;
+    }
+    int fd = fileno(sourceFile);
+    struct stat fs;
+    (void)fstat(fd, &fs);
+
+    uLong input_size = fs.st_size;
+    *input = malloc(input_size * sizeof(Bytef));
+    if (*input == NULL) {
+        return 0;
+    }
+    (void)fread(*input, 1, input_size, sourceFile);
+    fclose(sourceFile);
+
+    return input_size;
+}
+
+// static size_t write_outputFile(const char* outFileName, void* output, uLong output_size)
+// {
+//     FILE* outputFile = fopen(outFileName, "w");
+//     if (!outputFile) {
+//         fprintf(stderr, "%s create failed!\n", outFileName);
+//         return 0;
+//     }
+//     size_t count = fwrite(output, sizeof(Bytef), output_size, outputFile);
+//     fclose(outputFile);
+//     return count;
+// }
+
 uint8_t *get_compress_input(size_t input_sz)
 {
     uint8_t *inbuf = (uint8_t *)malloc(input_sz * sizeof(uint8_t));
@@ -29,9 +63,9 @@ uint8_t *get_compress_input(size_t input_sz)
     return inbuf;
 }
 
-uint32_t *get_decompress_input(size_t input_sz, uLong *pblen)
+uint8_t *get_decompress_input(size_t input_sz, uLong *pblen)
 {
-    uint32_t *inbuf = (uint32_t *)malloc(input_sz * sizeof(uint32_t));
+    uint8_t *inbuf = (uint8_t *)malloc(input_sz * sizeof(uint8_t));
     if (inbuf == NULL) {
         return NULL;
     }
@@ -40,11 +74,11 @@ uint32_t *get_decompress_input(size_t input_sz, uLong *pblen)
     srand((unsigned int)time(NULL));
     int i = 0;
     for (i = 0; i < input_sz; i++) {
-        inbuf[i] = (uint32_t)rand() % 254 + 1;
+        inbuf[i] = (uint8_t)rand() % 254 + 1;
     }
 
     uLong blen = compressBound(input_sz);
-    uint32_t *outbuf = (uint32_t *)malloc(blen * sizeof(uint32_t));
+    uint8_t *outbuf = (uint8_t *)malloc(blen * sizeof(uint8_t));
     memset(outbuf, 0, blen);
     int cret = compress2((Bytef *)outbuf, (uLongf *)&blen, (Bytef *)inbuf, (uLong)input_sz, 1);
     if (cret != Z_OK && cret != Z_BUF_ERROR) {
@@ -57,11 +91,15 @@ uint32_t *get_decompress_input(size_t input_sz, uLong *pblen)
     return outbuf;
 }
 
-int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int compress, 
+int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, int compress, 
     void* output, uLong output_sz, void* inbuf, uLong blen)
 {
     int i, j, err;
+    int ret = 0;
     pid_t pid_child = 0;
+    fflush(stdout);
+    fflush(stderr);
+
     struct timeval start, stop;
     gettimeofday(&start, NULL);
     for (i = 0; i < multi; i++) {
@@ -76,16 +114,15 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int
         strm.zalloc   = (alloc_func)0;
         strm.zfree    = (free_func)0;
         strm.opaque   = (voidpf)0;
-        strm.next_in  = (z_const Bytef*) inbuf;
-        strm.next_out = output;
         if (compress) {
-            (void)deflateInit2_(&strm, 1, Z_DEFLATED, windowBits, 0, Z_DEFAULT_STRATEGY, NULL, 0);
+            (void)deflateInit2_(&strm, 1, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY, "1.2.11", sizeof(z_stream));
         } else {
-            (void)inflateInit2_(&strm, windowBits, NULL, 0);
+            (void)inflateInit2_(&strm, windowBits, "1.2.11", sizeof(z_stream));
         }
 
         for (j = 0; j < loop_times; j++) {
-            int ret = -1;
+            strm.next_in  = (z_const Bytef*) inbuf;
+            strm.next_out = output;
             if (compress) {
                 blen = compressBound(stream_len);
                 // ret = compress2((Bytef *)output, (uLongf *)&blen, (Bytef *)inbuf, (uLong)stream_len, 1);
@@ -94,11 +131,17 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int
                 strm.avail_out = blen;
                 err = deflate(&strm, Z_FINISH);
                 ret = (err == Z_STREAM_END ? Z_OK : err);
+                if (j == loop_times - 1) {
+                    output_sz = strm.total_out;
+                    double compress_rate = 100.0 * output_sz / stream_len;
+                    fprintf(stdout, "compress_size is %luB = %.3lfMB, compress_rate is %.3lf%%\n",
+                        output_sz, 1.0 * output_sz / (1 << 20), compress_rate);
+                }
                 deflateReset(&strm);
                 /***********************************************/
                 if (ret != Z_OK && ret != Z_BUF_ERROR) {
-                    printf("compres error, ret = %d\n", ret);
-                    return -1;
+                    fprintf(stderr, "compres error, ret = %d\n", ret);
+                    goto free_init;
                 }
             } else {
                 // ret = uncompress((Bytef *)output, &output_sz, (const Bytef *)inbuf, blen);
@@ -107,15 +150,20 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int
                 strm.avail_out = output_sz;
                 err = inflate(&strm, Z_FINISH);
                 ret = (err == Z_STREAM_END ? Z_OK : err);
+                if (j == loop_times - 1) {
+                    output_sz = strm.total_out;
+                    fprintf(stdout, "uncompress_size is %luB = %.3lfMB\n",
+                        output_sz, 1.0 * output_sz / (1 << 20));
+                }
                 inflateReset(&strm);
                 /***********************************************/
                 if (ret < 0) {
                     printf("uncompres error, ret = %d\n", ret);
-                    return -1;
+                    goto free_init;
                 }
             }
         }
-
+free_init:
         if (compress) {
             (void)deflateEnd(&strm);
         } else {
@@ -124,7 +172,7 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int
     }
     
     if (pid_child > 0) {
-        int ret = -1;
+        ret = -1;
         while (1) {
             ret = wait(NULL);
             if (ret == -1) {
@@ -145,19 +193,27 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int windowBits, int
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
 
-    return 0;
+    return ret;
 }
 
-int do_compress_perf(int multi, int stream_len, int loop_times, int windowBits)
+int do_compress_perf(const char* in_filename, int multi, uLong stream_len, int loop_times, int windowBits)
 {
-    uint8_t *inbuf = get_compress_input(stream_len);
-    if (inbuf == NULL) {
+    void *inbuf = NULL;
+    if (in_filename) {
+        fprintf(stdout, "compress filename : %s\n", in_filename);
+        stream_len = read_inputFile(in_filename, &inbuf);
+    } else {
+        inbuf = get_compress_input(stream_len);
+    }
+    if (!inbuf) {
+        fprintf(stderr, "inbuf is NULL!\n");
         return -1;
     }
+    fprintf(stdout, "input_size is %luB\n", stream_len);
     
     uLong blen = compressBound(stream_len);
     uLong output_sz = blen;
-    uint8_t *outbuf = (uint8_t *)malloc(output_sz * sizeof(uint8_t));
+    void *outbuf = malloc(output_sz * sizeof(uint8_t));
     if (outbuf == NULL) {
         return -1;
     }
@@ -165,33 +221,39 @@ int do_compress_perf(int multi, int stream_len, int loop_times, int windowBits)
 
     int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, 1, outbuf, output_sz, inbuf, blen);
 
-    free(inbuf); 
-    inbuf = NULL;
-    free(outbuf); 
-    outbuf = NULL;
+    free(inbuf);
+    free(outbuf);
     return ret;
 }
 
-int do_decompress_perf(int multi, int stream_len, int loop_times, int windowBits)
+int do_decompress_perf(const char* in_filename, int multi, int stream_len, int loop_times, int windowBits)
 {   
     uLong blen = 0;
-    uint32_t *inbuf = get_decompress_input(stream_len, &blen);
+    void *inbuf = NULL;
+    if (in_filename) {
+        fprintf(stdout, "uncompress filename : %s\n", in_filename);
+        stream_len = read_inputFile(in_filename, &inbuf);
+        blen = stream_len;
+    } else {
+        inbuf = get_decompress_input(stream_len, &blen);
+    }
     if (inbuf == NULL) {
+        fprintf(stderr, "inbuf is NULL!\n");
         return -1;
     }
+    fprintf(stdout, "input_size is %luB\n", blen);
 
-    uLong output_sz = stream_len;
-    uint32_t *output = malloc(output_sz * sizeof(uint32_t));
+    uLong output_sz = in_filename ? blen * 8 : stream_len;
+    void *output = malloc(output_sz * sizeof(uint8_t));
     if (output == NULL) {
         return -1;
     }
+    memset(output, 0, output_sz);
 
     int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, 0, output, output_sz, inbuf, blen);
 
     free(inbuf); 
-    inbuf = NULL;
     free(output);
-    output = NULL;
     return ret;
 }
 
@@ -229,12 +291,14 @@ void usage(void)
 int main(int argc, char **argv)
 {
     int o = 0;
-    const char *optstring = "dm:l:n:w:h";
+    const char *optstring = "dm:l:n:w:f:o:h";
     int multi = 2;
-    int stream_len = 1024;
+    uLong stream_len = 1024;
     int loop_times = 1000;
     int compress = 1;
     int windowBits = 8;
+    char input_filename[128] = {0};
+    char output_filename[128] = {0};
     while ((o = getopt(argc, argv, optstring)) != -1) {
         if(optstring == NULL) continue;
         switch (o) {
@@ -253,6 +317,12 @@ int main(int argc, char **argv)
             case 'd':
                 compress = 0;
                 break;
+            case 'f':
+                strcpy(input_filename, optarg);
+                break;
+            case 'o':
+                strcpy(output_filename, optarg);
+                break;
             case 'h':
                 usage();
                 return 0;
@@ -264,13 +334,15 @@ int main(int argc, char **argv)
         printf("\ndefault input parameter used\n");
     } 
 
-    printf("kaezip perf parameter: multi process %d, stream length: %d(KB), loop times: %d, windowBits : %d\n", 
+    printf("kaezip perf parameter: multi process %d, stream length: %lu(KB), loop times: %d, windowBits : %d\n", 
         multi, stream_len, loop_times, windowBits);
 
-    stream_len = 1024 * stream_len;
+    const char* in_filename  = input_filename[0] == 0 ? NULL : input_filename;
+    // const char* out_filename = output_filename[0]== 0 ? NULL : output_filename;
+    stream_len *= 1024;
     if (compress) {
-        return do_compress_perf(multi, stream_len, loop_times, windowBits);
+        return do_compress_perf(in_filename, multi, stream_len, loop_times, windowBits);
     } else {
-        return do_decompress_perf(multi, stream_len, loop_times, windowBits);
+        return do_decompress_perf(in_filename, multi, stream_len, loop_times, windowBits);
     }
 }

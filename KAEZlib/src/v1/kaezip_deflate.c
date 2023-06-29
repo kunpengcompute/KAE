@@ -221,7 +221,7 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
         return KAEZIP_FAILED;
     }
 
-    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, flush %d", 
+    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, flush %d\n", 
         strm->avail_in, strm->avail_out, kaezip_ctx->consumed, kaezip_ctx->produced, 
         kaezip_ctx->remain, kaezip_ctx->status, flush);
 

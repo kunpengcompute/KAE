@@ -37,7 +37,7 @@ static uLong read_inputFile(const char* fileName, void** input)
 int do_multi_perf(int multi, int stream_len, int loop_times, int compress, 
     void* output, uLong output_sz, void* inbuf, uLong blen)
 {
-    int i,j;
+    int i, j, err;
     pid_t pid_child = 0;
     struct timeval start, stop;
     gettimeofday(&start, NULL);
@@ -49,28 +49,54 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int compress,
     }
     
     if (pid_child == 0) {
-        for(j = 0;j < loop_times;j++)
-        {
+        z_stream strm;
+        strm.zalloc   = (alloc_func)0;
+        strm.zfree    = (free_func)0;
+        strm.opaque   = (voidpf)0;
+        if (compress) {
+            (void)deflateInit2_(&strm, 1, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY, "1.2.11", sizeof(z_stream));
+        } else {
+            (void)inflateInit2_(&strm, windowBits, "1.2.11", sizeof(z_stream));
+        }
+
+        for (j = 0; j < loop_times; j++) {
             int ret = -1;
+            strm.next_in  = (z_const Bytef*) inbuf;
+            strm.next_out = output;
             if (compress) {
                 blen = compressBound(stream_len);
-                ret = compress2((Bytef *)output, (uLongf *)&blen, (Bytef *)inbuf, (uLong)stream_len, 1);
+                // ret = compress2((Bytef *)output, (uLongf *)&blen, (Bytef *)inbuf, (uLong)stream_len, 1);
+                /***********************************************/
+                strm.avail_in  = stream_len;
+                strm.avail_out = blen;
+                err = deflate(&strm, Z_FINISH);
+                ret = (err == Z_STREAM_END ? Z_OK : err);
+                deflateReset(&strm);
+                /***********************************************/
                 if (ret != Z_OK && ret != Z_BUF_ERROR) {
                     printf("compres error, ret = %d\n", ret);
                     return -1;
                 }
             } else {
-                ret = uncompress((Bytef *)output, &output_sz, (const Bytef *)inbuf, blen);
+                // ret = uncompress((Bytef *)output, &output_sz, (const Bytef *)inbuf, blen);
+                /***********************************************/
+                strm.avail_in  = blen;
+                strm.avail_out = output_sz;
+                err = inflate(&strm, Z_FINISH);
+                ret = (err == Z_STREAM_END ? Z_OK : err);
+                inflateReset(&strm);
+                /***********************************************/
                 if (ret < 0) {
                     printf("uncompres error, ret = %d\n", ret);
                     return -1;
                 }
             }
         }
+
         if (compress) {
-            uLong compress_size = blen;
-            printf("after compress2, compress_size is %luB = %.3lfMB, compress_rate is %.3lf%%\n", 
-                compress_size, 1.0 * compress_size / (1 << 20), 100.0 * compress_size / stream_len);
+            (void)deflateEnd(&strm);
+        } else {
+            (void)inflateEnd(&strm);
         }
     }
     
@@ -92,7 +118,7 @@ int do_multi_perf(int multi, int stream_len, int loop_times, int compress,
         gettimeofday(&stop, NULL);
         uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
         float speed1 = 1000000.0 / time1 * loop_times * multi * stream_len / (1 << 30);
-        printf("\nkaezip %s perf result:\n", compress ? "compress" : "decompress");
+        printf("kaezip %s perf result:\n", compress ? "compress" : "decompress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
 

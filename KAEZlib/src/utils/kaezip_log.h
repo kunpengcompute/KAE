@@ -30,7 +30,7 @@
 
 #define KAEZIP_DEBUG_FILE_PATH   "/var/log/kaezip.log"
 #define KAEZIP_DEBUG_FILE_PATH_OLD "/var/log/kaezip.log.old"
-#define KAE_LOG_MAX_SIZE 209715200
+#define KAE_LOG_MAX_SIZE (256 * 1024 * 1024)
 
 extern FILE *g_kaezip_debug_log_file;
 extern pthread_mutex_t g_kaezip_debug_file_mutex;
