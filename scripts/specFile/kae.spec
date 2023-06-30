@@ -13,7 +13,7 @@ ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
 
-%define kernel_version %(rpm -q kernel-devel | sed 's/kernel-devel-//;s/\.[a-zA-Z0-9]*$//')
+%define kernel_version %(rpm -q kernel-devel | sed 's/kernel-devel-//')
 %define kae_build_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/kae_build
 %define kae_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}
 %define kae_driver_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/KAEKernelDriver
