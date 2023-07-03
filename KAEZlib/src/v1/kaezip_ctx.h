@@ -22,6 +22,7 @@
 
 #ifndef KAEZIP_CTX_H
 #define KAEZIP_CTX_H
+#include <sys/time.h>
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
 
@@ -47,6 +48,19 @@ struct wcrypto_end_block {
     unsigned int     data_len;
     unsigned int     remain;
     unsigned int     b_set;
+};
+
+struct user_comp_tag_info {
+    int cpu_id;
+    pid_t tid;
+    int alg_type;
+};
+
+#define FLAG_NUM (10)
+struct kaezip_async_sleep_info {
+    struct timespec ns_sleep;
+    int flag[FLAG_NUM];
+    int index;
 };
 
 struct kaezip_ctx {
