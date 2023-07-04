@@ -111,13 +111,21 @@ err:
 static __u32 cb_consumed;
 static __u32 cb_produced;
 static __u32 cb_status;
+static __u8  cb_stream_pos;
+static __u8  cb_flush;
+static __u32 cb_isize;
+static __u32 cb_checksum;
 
 void kaezip_callback(const void *msg, void *tag)
 {
     const struct wcrypto_comp_msg *respmsg = msg;
-    cb_consumed = respmsg->in_cons;
-    cb_produced = respmsg->produced;
-    cb_status   = respmsg->status;
+    cb_consumed   = respmsg->in_cons;
+    cb_produced   = respmsg->produced;
+    cb_status     = respmsg->status;
+    cb_stream_pos = respmsg->stream_pos;
+    cb_flush      = respmsg->flush_type;
+    cb_isize      = respmsg->isize;
+    cb_checksum   = respmsg->checksum;
 }
 
 static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int comp_optype)
@@ -268,7 +276,7 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
         } else if (ret > 0) {
             break;
         }
-    } while (++loop_times > 0);
+    } while (++loop_times < KAE_ASYNC_MAX_RECV_TIMES);
     US_DEBUG("rate is %lf, sleep_time is %ldns, loop_times is %d, cb_status is %u",
         rate, sleep_info.ns_sleep.tv_nsec, loop_times, cb_status);
 
@@ -285,12 +293,13 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
     }
     sleep_info.index = (sleep_info.index + 1) % FLAG_NUM;
 
-    op_data->consumed = cb_consumed;
-    op_data->produced = cb_produced;
-    op_data->status   = cb_status;
-    if (kz_ctx->comp_type == WCRYPTO_INFLATE && op_data->status == WD_VERIFY_ERR) {
-        op_data->status = WCRYPTO_DECOMP_END;
-    }
+    op_data->consumed   = cb_consumed;
+    op_data->produced   = cb_produced;
+    op_data->status     = cb_status;
+    op_data->stream_pos = cb_stream_pos;
+    op_data->flush      = cb_flush;
+    op_data->isize      = cb_isize;
+    op_data->checksum   = cb_checksum;
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
         op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;

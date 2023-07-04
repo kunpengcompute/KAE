@@ -56,6 +56,7 @@ struct user_comp_tag_info {
     int alg_type;
 };
 
+#define KAE_ASYNC_MAX_RECV_TIMES (2000000)
 #define FLAG_NUM (10)
 struct kaezip_async_sleep_info {
     struct timespec ns_sleep;
