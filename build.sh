@@ -196,6 +196,11 @@ function main()
                 else
                         build_driver
                 fi
+        elif [ "$1" = "allv1" ];then
+                build_driver_v1
+                build_uadk
+                build_engine_v1
+                build_zlib_v1
 	elif [ "$1" = "uadk" ];then
                 if [ "$2" = "clean" ];then
                         uadk_clean
