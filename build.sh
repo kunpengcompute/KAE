@@ -155,7 +155,8 @@ function zstd_clean()
 function help()
 {
 	echo "build KAE"
-	echo "sh build.sh all -- install all component"
+	echo "sh build.sh all -- install all component [v2]"
+        echo "sh build.sh allv1 -- install all component [v1]"
         echo "sh build.sh buildallv2 -- build all component"
 	echo "sh build.sh driver -- install KAE SVA driver"
 	echo "sh build.sh driver v1 -- install KAE NoSVA driver"
@@ -181,6 +182,11 @@ function main()
                 build_engine
                 build_zlib
                 build_zstd
+        elif [ "$1" = "allv1" ];then
+                build_driver_v1
+                build_uadk
+                build_engine_v1
+                build_zlib_v1
 	elif [ "$1" = "driver" ];then
                 echo "build driver"
                 if [ "$2" = "v1" ];then
