@@ -174,6 +174,9 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
 	case WCRYPTO_CIPHER_XTS:
 		sqe->type2.c_mode = C_MODE_XTS;
 		break;
+	case WCRYPTO_CIPHER_CTR:
+		sqe->type2.c_mode = C_MODE_CTR;
+		break;
 	default:
 		WD_ERR("Invalid cipher alg type!\n");
 		ret = -WD_EINVAL;
