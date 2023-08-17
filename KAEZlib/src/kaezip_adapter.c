@@ -50,6 +50,11 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
                 const char *version, int stream_size)
 {
     uadk_get_accel_platform();
+    //  level 0 just memcpy, use zlib-open
+    if (level == 0) {
+        strm->reserved = 9527;  // mark this strm is level 0
+        return lz_deflateInit2_(strm, 0, metho, windowBit, memLevel, strategy, version, stream_size);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
@@ -78,6 +83,9 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
 int kz_deflate(z_streamp strm, int flush)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_deflate(strm, flush);
+    }
 
     int ret = Z_ERRNO;
     unsigned long kaezip_ctx;
@@ -107,6 +115,9 @@ int kz_deflate(z_streamp strm, int flush)
 int kz_deflateEnd(z_streamp strm)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_deflateEnd(strm);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
@@ -130,6 +141,9 @@ int kz_deflateEnd(z_streamp strm)
 int kz_deflateReset(z_streamp strm)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_deflateReset(strm);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
@@ -154,6 +168,9 @@ int kz_deflateReset(z_streamp strm)
 int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_inflateInit2_(strm, windowBits, version, stream_size);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
@@ -181,6 +198,9 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
 int kz_inflate(z_streamp strm, int flush)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_inflate(strm, flush);
+    }
 
     int ret = Z_ERRNO;
     int alg_type;
@@ -214,6 +234,9 @@ int kz_inflate(z_streamp strm, int flush)
 int kz_inflateEnd(z_streamp strm)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_inflateEnd(strm);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
@@ -237,6 +260,9 @@ int kz_inflateEnd(z_streamp strm)
 int kz_inflateReset(z_streamp strm)
 {
     uadk_get_accel_platform();
+    if (strm->reserved == 9527) {
+        return lz_inflateReset(strm);
+    }
 
     int ret = Z_ERRNO;
     switch (g_platform)
