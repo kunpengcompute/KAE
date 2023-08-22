@@ -125,9 +125,6 @@ static int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize, int leve
 	static const int GZIP_MIN_WBITS = 24;
 	static const int DEFLATE_MAX_WBITS = -8;
 	static const int DEFLATE_MIN_WBITS = -15;
-	static const int WBINS_ZLIB_4K = 11;
-	static const int WBINS_GZIP_4K = 27;
-	static const int WBINS_DEFLATE_4K = -12;
 	//	windowbits only for algorithm type
 	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
 		*alg = WD_ZLIB;
