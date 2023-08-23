@@ -62,7 +62,11 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         break;
     case HW_V2:
         strm->adler = 0;
-        level = (level <= 0 || level > 15) ? 1 : level;
+        if (level <= 0) {
+            level = 1;
+        } else if (level > 9) {
+            level = 9;
+        }
         ret = kz_deflate_init(strm, level, windowBit);
         if (ret == Z_OK) {
             (void)kz_deflate_reset(strm);

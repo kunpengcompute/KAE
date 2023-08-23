@@ -50,6 +50,7 @@ static int kz_zlib_do_comp_implement(handle_t h_sess, struct wd_comp_req *req, _
 	if (!tmp_dst_buffer) {
 		return -WD_EINVAL;
 	}
+	memset(tmp_dst_buffer, 1, OUTPUT_CHUNK_V2);
 	strm_req.dst = tmp_dst_buffer;
 
 	// 该接口至多压缩/解压缩(u32_max)个字节，若超过, 则重复调用

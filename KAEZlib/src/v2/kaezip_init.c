@@ -31,18 +31,24 @@ struct kz_zlibwrapper_config {
 
 static pthread_mutex_t kz_zlib_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct kz_zlibwrapper_config zlib_config = {0};
+static int device_numaid[0x10] = {0};
 
 static int kz_getzlib_device_num(void)
 {
-	int num = 0;
+	static int num = 0;
+	if (num > 0) {
+		return num;
+	}
 	struct uacce_dev_list* zlib_list = wd_get_accel_list("zlib");
 	if (zlib_list) {
 		struct uacce_dev_list* p = zlib_list;
 		do {
-			num++;
+			US_INFO("dev%d numa id is %d\n", num, p->dev->numa_id);
+			device_numaid[num++] = p->dev->numa_id;
 			p = p->next;
 		} while (p);
 	}
+	wd_free_list_accels(zlib_list);
 	US_INFO("zlib device num is %d\n", num);
 	return num;
 }
@@ -83,7 +89,7 @@ static int kz_zlib_uadk_init(void)
 		US_ERR("no zlib device!\n");
 		return Z_ERRNO;
 	}
-	numa_bitmask_setbit(cparams.bmp, the_pid % zlib_device_num);
+	numa_bitmask_setbit(cparams.bmp, device_numaid[the_pid % zlib_device_num]);
 
 	for (i = 0; i < WD_DIR_MAX; i++)
 		ctx_set_num[i].sync_ctx_num = WD_DIR_MAX;
@@ -111,7 +117,7 @@ static void kz_zlib_uadk_uninit(void)
 	zlib_config.status = WD_ZLIB_UNINIT;
 }
 
-static int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
+static int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize, int level)
 {
 	static const int ZLIB_MAX_WBITS = 15;
 	static const int ZLIB_MIN_WBITS = 8;
@@ -119,21 +125,27 @@ static int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize)
 	static const int GZIP_MIN_WBITS = 24;
 	static const int DEFLATE_MAX_WBITS = -8;
 	static const int DEFLATE_MIN_WBITS = -15;
-	static const int WBINS_ZLIB_4K = 11;
-	static const int WBINS_GZIP_4K = 27;
-	static const int WBINS_DEFLATE_4K = -12;
-
+	//	windowbits only for algorithm type
 	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
 		*alg = WD_ZLIB;
-		*windowsize = max(windowbits - WBINS_ZLIB_4K, WD_COMP_WS_4K);
 	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
 		*alg = WD_GZIP;
-		*windowsize = max(windowbits - WBINS_GZIP_4K, WD_COMP_WS_4K);
 	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
 		*alg = WD_DEFLATE;
-		*windowsize = max(windowbits - WBINS_DEFLATE_4K, WD_COMP_WS_4K);
 	} else {
 		return Z_STREAM_ERROR;
+	}
+	//	level for only compress rate
+	if (level <= 2) {
+		*windowsize = WD_COMP_WS_4K;
+	} else if (level <= 4) {
+		*windowsize = WD_COMP_WS_8K;
+	} else if (level <= 6) {
+		*windowsize = WD_COMP_WS_16K;
+	} else if (level <= 8) {
+		*windowsize = WD_COMP_WS_24K;
+	} else {
+		*windowsize = WD_COMP_WS_32K;
 	}
 
 	return Z_OK;
@@ -146,7 +158,7 @@ static int kz_zlib_alloc_sess(z_streamp strm, int level, int windowbits, enum wd
 	int windowsize, alg, ret;
 	handle_t h_sess;
 
-	ret = kz_zlib_analy_alg(windowbits, &alg, &windowsize);
+	ret = kz_zlib_analy_alg(windowbits, &alg, &windowsize, level);
 	if (ret < 0) {
 		US_ERR("invalid: windowbits is %d!\n", windowbits);
 		return ret;
@@ -248,7 +260,7 @@ int kz_deflate_end(z_streamp strm)
 }
 
 /* ===   Decompression   === */
-int kz_inflate_init(z_streamp strm, int  windowbits)
+int kz_inflate_init(z_streamp strm, int windowbits)
 {
 	pthread_atfork(NULL, NULL, kz_zlib_unlock);
 	return kz_zlib_init(strm, 0, windowbits, WD_DIR_DECOMPRESS);
