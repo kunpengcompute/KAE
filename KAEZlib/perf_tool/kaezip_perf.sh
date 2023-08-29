@@ -13,7 +13,7 @@ compression_level="1 2 3 4 5 6 7 8 9"
 
 # 测试文件名称
 # test_file_name="itemdata"
-BASE_TESTDATA_ADD="/home/zip_test_data/"
+BASE_TESTDATA_ADD="../../../KAE/scripts/compressTestDataset/"
 test_file_name="itemdata ooffice osdb samba webster xml x-ray"
 
 # 测试函数
@@ -35,10 +35,9 @@ function run_test() {
 
     # echo "./kaezip_perf -f $filename -n 5 -l $compression_level"
     RESDATA=$(./$exe -f ${BASE_TESTDATA_ADD}${filename} -n $LOOPTIME -l $compression_level)
-
-    COMPRESS_SPEED=$(echo $RESDATA | awk '{print $(27)}')
-    UNCOMPRESS_SPEED=$(echo $RESDATA | awk '{print $(43)}')
-    COMPRESS_RATE=$(echo $RESDATA | awk '{print $(32)}')
+    COMPRESS_SPEED=$(echo $RESDATA | awk '{print $(28)}')
+    UNCOMPRESS_SPEED=$(echo $RESDATA | awk '{print $(45)}')
+    COMPRESS_RATE=$(echo $RESDATA | awk '{print $(33)}')
 
     echo $exe $filename $compression_level $COMPRESS_SPEED $UNCOMPRESS_SPEED $COMPRESS_RATE >> $RESFILE
 
