@@ -35,9 +35,9 @@ function run_test() {
 
     # echo "./kaezip_perf -f $filename -n 5 -l $compression_level"
     RESDATA=$(./$exe -f ${BASE_TESTDATA_ADD}${filename} -n $LOOPTIME -l $compression_level)
-    COMPRESS_SPEED=$(echo $RESDATA | awk '{print $(28)}')
-    UNCOMPRESS_SPEED=$(echo $RESDATA | awk '{print $(45)}')
-    COMPRESS_RATE=$(echo $RESDATA | awk '{print $(33)}')
+    COMPRESS_SPEED=$(echo $RESDATA | awk '{print $(16)}')
+    UNCOMPRESS_SPEED=$(echo $RESDATA | awk '{print $(33)}')
+    COMPRESS_RATE=$(echo $RESDATA | awk '{print $(21)}')
 
     echo $exe $filename $compression_level $COMPRESS_SPEED $UNCOMPRESS_SPEED $COMPRESS_RATE >> $RESFILE
 
