@@ -74,6 +74,50 @@ function build_all_comp_sva()
         cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.a $KAE_BUILD_LIB
 }
 
+function build_rpm()
+{
+    if [ -d $KAE_BUILD ]; then
+            rm -rf $KAE_BUILD/*
+    else
+            mkdir $KAE_BUILD
+    fi
+    local KERNEL_VERSION_BY_BUILDENV=`rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel | head -n 1`
+
+    # 编译
+    build_driver
+    build_uadk
+    build_engine
+    build_zlib
+    build_zstd
+    ## copy driver
+    mkdir -p $KAE_BUILD/driver
+
+    cp /lib/modules/$KERNEL_VERSION_BY_BUILDENV/extra/*.ko $KAE_BUILD/driver
+    cp /etc/modprobe.d/*.conf $KAE_BUILD/driver
+
+    ## copy uadk
+    mkdir -p $KAE_BUILD/uadk/include
+    mkdir -p $KAE_BUILD/uadk/include/drv
+    mkdir -p $KAE_BUILD/uadk/lib
+
+    cp $KAE_UADK_DIR/include/*.h                       $KAE_BUILD/uadk/include
+    cp $KAE_UADK_DIR/include/drv/*.h                   $KAE_BUILD/uadk/include/drv
+    cp -r $KAE_UADK_DIR/.libs/*so*                     $KAE_BUILD/uadk/lib
+
+    ## copy opensslengine
+    mkdir -p $KAE_BUILD/KAEOpensslEngine/lib
+    cp -r $KAE_OPENSSL_DIR/src/.libs/*so* $KAE_BUILD/KAEOpensslEngine/lib
+
+    ## copy zlib
+    mkdir -p $KAE_BUILD/KAEZlib
+    cp -r /usr/local/kaezip  $KAE_BUILD/KAEZlib
+
+    ## copy zstd
+    mkdir -p $KAE_BUILD/KAEZstd
+    cp -r /usr/local/kaezstd  $KAE_BUILD/KAEZstd
+
+}
+
 function build_driver()
 {
         if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
@@ -90,7 +134,6 @@ function build_driver()
             echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
             exit 1
         fi
-
 }
 
 function driver_clean()
@@ -119,26 +162,12 @@ function uadk_clean()
 
 function build_engine()
 {
-        if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-            #NOSVA
             cd ${SRC_PATH}/KAEOpensslEngine
             export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
             autoreconf -i
             ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae
             make -j
             make install
-        elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-            #SVA
-            cd ${SRC_PATH}/KAEOpensslEngine
-            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-            autoreconf -i
-            ./configure --libdir=/usr/local/lib/engines-1.1/
-            make -j
-            make install
-        else
-            echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
-            exit 1
-        fi
 }
 
 function engine_clean()
@@ -146,56 +175,40 @@ function engine_clean()
         cd ${SRC_PATH}/KAEOpensslEngine
         make uninstall
         make clean
+        rm -rf /usr/local/lib/engines-1.1
 }
 
 function build_zlib()
 {
-        if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-            #NOSVA
             cd ${SRC_PATH}/KAEZlib
             sh setup.sh install
-        elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-            #SVA
-            cd ${SRC_PATH}/KAEZlib
-            sh setup.sh install KAE2
-        else
-            echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
-            exit 1
-        fi
 }
 
 function zlib_clean()
 {
         cd ${SRC_PATH}/KAEZlib
         sh setup.sh uninstall
+        rm -rf /usr/local/kaezip
 }
 
 function build_zstd()
 {
-        if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-            #NOSVA
-            echo "this cpu not support kaezstd."
-        elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-            #SVA
-            cd ${SRC_PATH}/KAEZstd
-            sh build.sh install
-        else
-            echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
-            exit 1
-        fi
+        cd ${SRC_PATH}/KAEZstd
+        sh build.sh install
 }
 
 function zstd_clean()
 {
         cd ${SRC_PATH}/KAEZstd
         sh build.sh uninstall
+        rm -rf /usr/local/kaezstd/
 }
 
 function help()
 {
 	echo "build KAE"
 	echo "sh build.sh all -- install all component"
-        echo "sh build.sh buildall_sva -- build all component but not install"
+    echo "sh build.sh rpmpack -- build rpm pack"
 
 	echo "sh build.sh driver -- install KAE SVA driver"
 	echo "sh build.sh driver clean -- uninstall KAE driver"
@@ -225,17 +238,39 @@ function check_enviroment()
         fi
 }
 
+function build_all_components()
+{
+    build_driver
+    build_uadk
+    build_engine
+    build_zlib
+    if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
+        #NOSVA
+        echo "this cpu not support kaezstd."
+    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
+        #SVA
+        build_zstd
+    else
+        echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
+    fi
+}
+
+function clear_all_components()
+{
+    driver_clean
+    engine_clean
+    zlib_clean
+    zstd_clean
+    uadk_clean
+}
+
 function main()
 {
         check_enviroment
 
 	if [ "$1" = "all" ];then
 	    echo "build all"
-            build_driver
-            build_uadk
-            build_engine
-            build_zlib
-            build_zstd
+        build_all_components
 	elif [ "$1" = "driver" ];then
             echo "build driver"
             if [ "$2" = "clean" ];then
@@ -267,17 +302,24 @@ function main()
             else
                 build_zstd
             fi
-	elif [ "$1" = "cleanup" ];then
+	elif [ "$1" = "rpm" ];then
+            set +e
+            clear_all_components
+            set -e
+            build_rpm
+    elif [ "$1" = "rpmpack" ];then
+            rm -rf /root/rpmbuild
+            rm -rf $KAE_BUILD
+            mkdir -p $KAE_BUILD
+            mkdir -p /root/rpmbuild/SOURCES/
+            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.0.tar.gz .
+            rpmbuild -bb ./scripts/specFile/kae.spec
+            cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD
+    elif [ "$1" = "cleanup" ];then
 	    echo "cleanup all"
-            driver_clean
-            uadk_clean
-            engine_clean
-            zlib_clean
-            zstd_clean
+        clear_all_components
 	    rm -rf $KAE_BUILD/*
-	elif [ "$1" = "buildall_sva" ];then
-            build_all_comp_sva
-        else
+    else
 	    help
 	fi
 }
