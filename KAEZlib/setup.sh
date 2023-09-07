@@ -39,11 +39,7 @@ function Dev_Build_kaezip()
     #Install_warpdrive
     Target_zlib
     cd "${SRC_PATH}"
-    if [ "$1" = "KAE2" ];then
-    	make clean && make KAE=KAE2
-    else
-	make clean && make KAE=KAE
-    fi
+	make clean
     make
     echo "build kaezip"
 
@@ -60,11 +56,7 @@ function Build_kaezip()
     #Install_warpdrive
     Target_zlib
     cd "${SRC_PATH}"
-    if [ "$1" = "KAE2" ];then
-    	make clean && make KAE=KAE2
-    else
 	make clean && make KAE=KAE
-    fi
     make install
     echo "install kaezip"
 
