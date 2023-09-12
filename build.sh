@@ -148,7 +148,7 @@ function build_uadk()
         cd ${SRC_PATH}/uadk
         sh autogen.sh
         sh conf.sh
-        make -j
+        make CFLAGS="-fstack-protector-strong -Wl,-z,relro,-z,now" -j 64
         make install
 }
 
@@ -165,7 +165,7 @@ function build_engine()
             cd ${SRC_PATH}/KAEOpensslEngine
             export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
             autoreconf -i
-            ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae
+            ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
             make -j
             make install
 }

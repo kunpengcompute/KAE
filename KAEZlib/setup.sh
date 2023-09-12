@@ -41,9 +41,9 @@ function Dev_Build_kaezip()
     cd "${SRC_PATH}"
 	make clean
     make
-    echo "build kaezip"
-
-    cd -
+    cd "${SRC_PATH}"/open_source/zlib-1.2.11/
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
     patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
     ./configure  --prefix=/usr/local/kaezip
     make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}
@@ -58,11 +58,13 @@ function Build_kaezip()
     cd "${SRC_PATH}"
 	make clean && make KAE=KAE
     make install
-    echo "install kaezip"
 
-    cd -
+    cd "${SRC_PATH}"/open_source/zlib-1.2.11/
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
     patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
     ./configure  --prefix=/usr/local/kaezip
+    export LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
     make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}
     echo "build zlib success"
 }
@@ -71,6 +73,8 @@ function Install_kaezip()
 {
     if [ -d "${SRC_PATH}"/open_source/zlib-1.2.11/ ]; then
         cd "${SRC_PATH}"/open_source/zlib-1.2.11/
+        echo "build and intsall zlib."
+        CFLAGS="-fstack-protector-strong -fPIE -pie -Wl,-z,relro,-z,now"  make -j 64
 		make install
     fi 
     echo "install zlib success"
