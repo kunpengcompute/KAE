@@ -8,7 +8,7 @@ ExclusiveOS:   linux
 BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel
+BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel, chrpath
 ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
@@ -50,6 +50,7 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib
+    chrpath -d %{kae_path}/kae_build/uadk/lib/*
     cp -rf %{kae_path}/kae_build/uadk/lib/*               ${RPM_BUILD_ROOT}/usr/local/lib
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
@@ -59,6 +60,7 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #engine
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1
+    chrpath -d %{kae_path}/kae_build/KAEOpensslEngine/lib/*
     cp -rf %{kae_path}/kae_build/KAEOpensslEngine/lib/*    ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1/
 
 #zlib
@@ -98,7 +100,12 @@ This package kae_driver library.
 %config(noreplace) /etc/modprobe.d/*.conf
 
 %defattr(755,root,root)
-/usr/local/lib/*  
+/usr/local/lib/libwd.*
+/usr/local/lib/libwd_comp.*  
+/usr/local/lib/libwd_crypto.*
+/usr/local/lib/libhisi_hpre.*
+/usr/local/lib/libhisi_sec.* 
+/usr/local/lib/libhisi_zip.* 
 
 %defattr(644,root,root)
 /usr/include/uadk/*.h
