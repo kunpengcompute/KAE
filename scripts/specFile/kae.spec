@@ -60,6 +60,7 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #engine
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1
+    chrpath -d %{kae_path}/kae_build/KAEOpensslEngine/lib/*
     cp -rf %{kae_path}/kae_build/KAEOpensslEngine/lib/*    ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1/
 
 #zlib
