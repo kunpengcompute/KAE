@@ -48,7 +48,8 @@ INCDIR += -I $(WORK_PATH)/async
 INCDIR += -I $(WORK_PATH)/wdmngr
 INCDIR += -I $(WORK_PATH)/utils
 INCDIR += -I $(OPENSSL_WORK_PATH)/include
-
+INCDIR += -I /usr/include/warpdrive
+INCDIR += -I /usr/include/warpdrive/include
 # Include Libs.
 LIBDIR := -L$(OPENSSL_WORK_PATH)/lib
 LIBDIR += -L/usr/lib64
@@ -60,6 +61,10 @@ CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fg
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option
+ifdef KAE_GMSSL
+	LDFLAGS   += -Wl,-rpath,/usr/local/gmssl2.0/lib:/usr/local/lib
+	CFLAGS += -DKAE_GMSSL
+endif
 
 # The command used to delete file.
 RM        = rm -f

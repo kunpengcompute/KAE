@@ -33,7 +33,11 @@ int hpre_dh_soft_try_get_priv_key(const DH* dh, BIGNUM** priv_key)
     BIGNUM* new_priv_key = NULL;
 
     // get the private key from dh.
+#ifdef KAE_GMSSL
+    DH_get0_key(dh, NULL,(const BIGNUM **) priv_key);
+#else
     *priv_key = (BIGNUM*)DH_get0_priv_key(dh);
+#endif
     if (*priv_key == NULL) {
         new_priv_key = BN_secure_new();
         if (new_priv_key == NULL) {
@@ -59,8 +63,14 @@ err:
 
 void hpre_dh_soft_set_pkeys(DH* dh, BIGNUM* pub_key, BIGNUM* priv_key)
 {
+#ifdef KAE_GMSSL
+    const BIGNUM* old_pub =  NULL;
+    const BIGNUM* old_priv = NULL;
+	DH_get0_key(dh, &old_pub, &old_priv);
+#else
     const BIGNUM* old_pub = DH_get0_pub_key(dh);
     const BIGNUM* old_priv = DH_get0_priv_key(dh);
+#endif
     if (old_pub != pub_key && old_priv != priv_key) {
         DH_set0_key(dh, pub_key, priv_key);
     } else if (old_pub != pub_key) {
@@ -100,6 +110,27 @@ int hpre_dh_soft_compute_key(unsigned char* key, const BIGNUM* pub_key, DH* dh)
 
 static int generate_new_priv_key(const DH* dh, BIGNUM* new_priv_key)
 {
+#ifdef KAE_GMSSL
+    const BIGNUM* q = NULL;
+	const BIGNUM* p = NULL;
+	int l;
+    DH_get0_pqg(dh, (const BIGNUM**)&p,(const BIGNUM**)&q, NULL);
+
+    if (q) {
+        do {
+            if (!BN_rand_range(new_priv_key, q)) {
+                return OPENSSL_FAIL;
+            }
+        } while (BN_is_zero(new_priv_key) || BN_is_one(new_priv_key));
+    } else {
+        l = DH_get_length(dh) ? DH_get_length(dh) : BN_num_bits(p) - 1;
+        if (!BN_rand(new_priv_key, l, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY)) {
+            return OPENSSL_FAIL;
+        }
+    }
+
+    return OPENSSL_SUCCESS;
+#else
     const BIGNUM* q = DH_get0_q(dh);
     int l;
 
@@ -117,4 +148,5 @@ static int generate_new_priv_key(const DH* dh, BIGNUM* new_priv_key)
     }
 
     return OPENSSL_SUCCESS;
+#endif
 }

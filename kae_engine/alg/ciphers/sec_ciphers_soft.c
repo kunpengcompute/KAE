@@ -42,10 +42,18 @@ static cipher_threshold_table_t g_sec_ciphers_pkt_threshold_table[] = {
     { NID_aes_128_xts, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_aes_256_xts, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     
+
+#ifdef KAE_GMSSL
+    { NID_sms4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sms4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sms4_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sms4_ecb, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+#else
     { NID_sm4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sm4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sm4_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sm4_ecb, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+#endif
 };
 static int g_sec_ciphers_pkt_threshold_table_size = BLOCKSIZES_OF(g_sec_ciphers_pkt_threshold_table);
 
@@ -62,11 +70,17 @@ static sw_cipher_t g_sec_ciphers_sw_cipher_table[] = {
     { NID_aes_256_ctr, EVP_aes_256_ctr },
     { NID_aes_128_xts, EVP_aes_128_xts },
     { NID_aes_256_xts, EVP_aes_256_xts },
-
+#ifdef KAE_GMSSL
+    { NID_sms4_cbc, EVP_sms4_cbc },
+    { NID_sms4_ctr, EVP_sms4_ctr },
+    { NID_sms4_ofb128, EVP_sms4_ofb },
+    { NID_sms4_ecb, EVP_sms4_ecb },
+#else
     { NID_sm4_cbc, EVP_sm4_cbc },
     { NID_sm4_ctr, EVP_sm4_ctr },
     { NID_sm4_ofb128, EVP_sm4_ofb },
     { NID_sm4_ecb, EVP_sm4_ecb },
+#endif
 };
 static int g_sec_ciphers_sw_cipher_table_size = BLOCKSIZES_OF(g_sec_ciphers_sw_cipher_table);
 
