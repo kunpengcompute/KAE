@@ -125,15 +125,29 @@ static int kae_engine_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void)
         case KAE_CMD_ENABLE_SM4:
             US_DEBUG("%s SM4\n", i == 0 ? "Disable" : "Enable");
             if (i == 0) {
+#ifdef KAE_GMSSL
+                sec_ciphers_set_enabled(NID_sms4_ctr, 0);
+				sec_ciphers_set_enabled(NID_sms4_cbc, 0);
+				sec_ciphers_set_enabled(NID_sms4_ofb128, 0);
+				sec_ciphers_set_enabled(NID_sms4_ecb, 0);
+#else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 0);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 0);
                 sec_ciphers_set_enabled(NID_sm4_ofb128, 0);
                 sec_ciphers_set_enabled(NID_sm4_ecb, 0);
+#endif
             } else {
+#ifdef KAE_GMSSL
+				sec_ciphers_set_enabled(NID_sms4_ctr, 1);
+				sec_ciphers_set_enabled(NID_sms4_cbc, 1);
+				sec_ciphers_set_enabled(NID_sms4_ofb128, 1);
+				sec_ciphers_set_enabled(NID_sms4_ecb, 1);
+#else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 1);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 1);
                 sec_ciphers_set_enabled(NID_sm4_ofb128, 1);
                 sec_ciphers_set_enabled(NID_sm4_ecb, 1);
+#endif
             }
             break;
         default:

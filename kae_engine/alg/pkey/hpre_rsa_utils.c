@@ -542,10 +542,14 @@ int hpre_rsa_iscrt(RSA *rsa)
         return 1;
     }
 
+#ifdef KAE_GMSSL
+    /* none */
+#else
     int version = RSA_get_version(rsa);
     if (version == RSA_ASN1_VERSION_MULTI) {
         return 1;
     }
+#endif
 
     const BIGNUM *p = NULL;
     const BIGNUM *q = NULL;
