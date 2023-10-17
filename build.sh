@@ -165,8 +165,7 @@ function build_engine()
             cd ${SRC_PATH}/KAEOpensslEngine
             export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
             autoreconf -i
-            # 默认会将kaev1和kaev2一起编译，以支持sva设备和no-sva设备
-            ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae --enable-kae-v2 CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
+            ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
             make -j
             make install
 }
@@ -185,7 +184,7 @@ function build_engine_gmssl()
             export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
             autoreconf -i
             # gmssl当前仅支持no-sva设备
-            ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/ -DKAE_GMSSL" 
+            ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
             make -j
             make install
 }

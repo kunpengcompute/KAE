@@ -223,7 +223,7 @@ static int uadk_destroy(ENGINE *e)
 		hpre_dh_destroy();
 #endif
 	kae_debug_close_log();
-#ifdef KAE_V2
+#ifndef KAE_GMSSL //gmssl仅在920支持
 	if (uadk_cipher)
 		uadk_e_destroy_cipher();
 	if (uadk_digest)
@@ -357,7 +357,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 }
 #endif
 
-#ifdef KAE_V2
+#ifndef KAE_GMSSL //gmssl仅在920支持
 static void bind_fn_uadk_alg(ENGINE *e)
 {
 	US_DEBUG("start bind_fn_uadk_alg (bind v2 algs)");
@@ -459,7 +459,7 @@ static int bind_fn(ENGINE *e, const char *id)
 	}
 #endif
 
-#ifdef KAE_V2
+#ifndef KAE_GMSSL //gmssl仅在920支持
 	bind_fn_uadk_alg(e);
 
 	if (uadk_cipher || uadk_digest || uadk_rsa || uadk_dh || uadk_ecc) {
