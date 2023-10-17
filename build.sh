@@ -175,7 +175,26 @@ function engine_clean()
         cd ${SRC_PATH}/KAEOpensslEngine
         make uninstall
         make clean
-        rm -rf /usr/local/lib/engines-1.1
+        rm -rf /usr/local/gmssl/lib/engines-1.1
+}
+
+function build_engine_gmssl()
+{
+            cd ${SRC_PATH}/KAEOpensslEngine
+            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+            autoreconf -i
+            # gmssl当前仅支持no-sva设备
+            ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
+            make -j
+            make install
+}
+
+function engine_clean_gmssl()
+{
+        cd ${SRC_PATH}/KAEOpensslEngine
+        make uninstall
+        make clean
+        rm -rf /usr/local/gmssl/lib/engines-1.1
 }
 
 function build_zlib()
@@ -207,8 +226,8 @@ function zstd_clean()
 function help()
 {
 	echo "build KAE"
-	echo "sh build.sh all -- install all component"
-    echo "sh build.sh rpmpack -- build rpm pack"
+	echo "sh build.sh all -- install all component(not include gmssl)"
+    echo "sh build.sh rpmpack -- build rpm pack(not include gmssl)"
 
 	echo "sh build.sh driver -- install KAE SVA driver"
 	echo "sh build.sh driver clean -- uninstall KAE driver"
@@ -218,6 +237,9 @@ function help()
 
 	echo "sh build.sh engine -- install KAE openssl engine"
 	echo "sh build.sh engine clean -- uninstall KAE openssl engine"
+
+    echo "sh build.sh engine_gmssl -- install KAE gmssl engine"
+	echo "sh build.sh engine_gmssl clean -- uninstall KAE gmssl engine"
 
 	echo "sh build.sh zlib -- install zlib using KAE"
 	echo "sh build.sh zlib clean -- uninstall zlib using KAE"
@@ -289,6 +311,12 @@ function main()
                 engine_clean
             else
                 build_engine
+            fi
+    elif [ "$1" = "engine_gmssl" ];then
+            if [ "$2" = "clean" ];then
+                engine_clean_gmssl
+            else
+                build_engine_gmssl
             fi
 	elif [ "$1" = "zlib" ];then
             if [ "$2" = "clean" ];then

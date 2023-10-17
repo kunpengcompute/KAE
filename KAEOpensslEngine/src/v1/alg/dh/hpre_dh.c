@@ -58,6 +58,11 @@ static int prepare_dh_data(const int bits, const BIGNUM *g, DH *dh, hpre_dh_engi
 
 static int hpre_dh_ctx_poll(void *engine_ctx);
 
+#ifdef KAE_GMSSL
+static int hpre_dh_keygen(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey);
+static int hpre_dh_derive(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen);
+#endif
+
 const DH_METHOD *hpre_get_dh_methods(void)
 {
 	int ret = 1;
@@ -93,9 +98,12 @@ const DH_METHOD *hpre_get_dh_methods(void)
 int hpre_module_dh_init(void)
 {
 	wd_hpre_dh_init_qnode_pool();
-
+#ifdef KAE_GMSSL
+    /* none */
+#else
 	(void)get_dh_pkey_meth();
 	(void)hpre_get_dh_methods();
+#endif
 
 	/* register async poll func */
 	async_register_poll_fn_v1(ASYNC_TASK_DH, hpre_dh_ctx_poll);
@@ -113,7 +121,11 @@ void hpre_dh_destroy(void)
 
 EVP_PKEY_METHOD *get_dh_pkey_meth(void)
 {
+#ifdef KAE_GMSSL
+    const EVP_PKEY_METHOD* def_dh = EVP_PKEY_meth_find(EVP_PKEY_DH);
+#else
 	const EVP_PKEY_METHOD *def_dh = EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
+#endif
 
 	if (g_hpre_dh_pkey_meth == NULL) {
 		g_hpre_dh_pkey_meth = EVP_PKEY_meth_new(EVP_PKEY_DH, 0);
@@ -123,14 +135,120 @@ EVP_PKEY_METHOD *get_dh_pkey_meth(void)
 		}
 		EVP_PKEY_meth_copy(g_hpre_dh_pkey_meth, def_dh);
 	}
+#ifdef KAE_GMSSL
+    EVP_PKEY_meth_set_keygen(g_hpre_dh_pkey_meth, 0, hpre_dh_keygen);
+    EVP_PKEY_meth_set_derive(g_hpre_dh_pkey_meth, 0, hpre_dh_derive);
+#endif
 
 	return g_hpre_dh_pkey_meth;
 }
 
 EVP_PKEY_METHOD *get_dsa_pkey_meth(void)
 {
+#ifdef KAE_GMSSL
+    return (EVP_PKEY_METHOD*)EVP_PKEY_meth_find(EVP_PKEY_DH);
+#else
 	return (EVP_PKEY_METHOD *)EVP_PKEY_meth_get0(DHPKEYMETH_IDX);
+#endif
 }
+
+#ifdef KAE_GMSSL
+static DH* change_dh_method(DH* dh_default)
+{
+    const DH_METHOD* hw_dh = hpre_get_dh_methods();
+    DH* dh = DH_new();
+
+    const BIGNUM *p, *q, *g, *priv_key, *pub_key;
+    BIGNUM *p1, *q1, *g1, *priv_key1, *pub_key1;
+    DH_get0_pqg(dh_default, &p, &q, &g);
+    DH_get0_key(dh_default, &pub_key, &priv_key);
+    p1 = BN_dup(p);
+    q1 = BN_dup(q);
+    g1 = BN_dup(g);
+    priv_key1 = BN_dup(priv_key);
+    pub_key1 = BN_dup(pub_key);
+    if (dh != NULL) {
+        DH_set_method(dh, hw_dh);
+        DH_set0_pqg(dh, p1, q1, g1);
+        DH_set0_key(dh, pub_key1, priv_key1);
+        return dh;
+    } else {
+        KAEerr(KAE_F_CHANGDHMETHOD, KAE_R_MALLOC_FAILURE);
+        US_ERR("changDHMethod failed.");
+        return (DH*)NULL;
+    }
+}
+
+static int hpre_dh_keygen(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey)
+{
+    DH* dh = NULL;
+    BIGNUM **dh_q = NULL;
+	bool is_dsa;
+    
+    int ret = 0;
+    int (*pkeygen)(EVP_PKEY_CTX* ctx, EVP_PKEY* pkey);
+    EVP_PKEY* pk = EVP_PKEY_CTX_get0_pkey(ctx);
+    DH* dh_default = EVP_PKEY_get1_DH(pk);
+	
+	DH_get0_pqg(dh_default, NULL, (const BIGNUM **)dh_q, NULL);	
+	if (NULL != dh_q) {
+		is_dsa = 1;	
+	} else {
+		is_dsa = 0;
+    }
+   // bool is_dsa = DH_get0_q(dh_default) != NULL;
+    if (is_dsa) {
+        EVP_PKEY_METHOD* def_dh_meth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DH);
+        EVP_PKEY_meth_get_keygen(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pkeygen);
+        ret = pkeygen(ctx, pkey);
+    } else {
+        dh = change_dh_method(dh_default);
+        EVP_PKEY_set1_DH(pk, dh);
+        EVP_PKEY_METHOD* def_dh_meth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DH);
+        EVP_PKEY_meth_get_keygen(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pkeygen);
+        ret = pkeygen(ctx, pkey);
+        EVP_PKEY_assign_DH(pk, dh_default);
+        DH_free(dh);
+    }
+
+    return ret;
+}
+
+static int hpre_dh_derive(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen)
+{
+    DH* dh = NULL;
+    int ret = 0;
+    int (*pderive)(EVP_PKEY_CTX* ctx, unsigned char* key, size_t* keylen);
+	bool is_dsa;
+	BIGNUM **dh_q = NULL;
+
+    EVP_PKEY* pk = EVP_PKEY_CTX_get0_pkey(ctx);
+    DH* dh_default = EVP_PKEY_get1_DH(pk);
+    //bool is_dsa = DH_get0_q(dh_default) != NULL;
+    DH_get0_pqg(dh_default, NULL, (const BIGNUM **)dh_q, NULL);
+	if (NULL != dh_q) {
+   		is_dsa = 1;
+    } else {
+		is_dsa = 0;
+    }
+
+    if (is_dsa) {
+        EVP_PKEY_METHOD* def_dh_meth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DH);
+        EVP_PKEY_meth_get_derive(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pderive);
+        ret = pderive(ctx, key, keylen);
+    } else {
+        dh = change_dh_method(dh_default);
+        EVP_PKEY_set1_DH(pk, dh);
+        EVP_PKEY_METHOD* def_dh_meth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DH);
+        EVP_PKEY_meth_get_derive(def_dh_meth, (int (**)(EVP_PKEY_CTX*))NULL, &pderive);
+        ret = pderive(ctx, key, keylen);
+        EVP_PKEY_assign_DH(pk, dh_default);
+        DH_free(dh);
+    }
+
+    return ret;
+}
+#endif
 
 static int hpre_dh_ctx_poll(void *engine_ctx)
 {
@@ -158,6 +276,10 @@ static int hpre_dh_generate_key(DH *dh)
 	BIGNUM *priv_key = NULL;
 	hpre_dh_engine_ctx_t *eng_ctx = NULL;
 	int ret = HPRE_DH_FAIL;
+#ifdef KAE_GMSSL
+    const BIGNUM *tempPubKey = NULL;
+	const BIGNUM *tempPrivKey = NULL;
+#endif
 
 	if (dh == NULL) {
 		KAEerr(KAE_F_HPRE_DH_KEYGEN, KAE_R_DH_INVALID_PARAMETER);
@@ -200,10 +322,22 @@ static int hpre_dh_generate_key(DH *dh)
 	hpre_dh_soft_set_pkeys(dh, pub_key, priv_key);
 
 end_soft:
-	if (pub_key != DH_get0_pub_key(dh))
-		BN_free(pub_key);
-	if (priv_key != DH_get0_priv_key(dh))
-		BN_free(priv_key);
+#ifdef KAE_GMSSL
+	DH_get0_key(dh, &tempPubKey, &tempPrivKey);
+    if (pub_key != tempPubKey) {
+        BN_free(pub_key);
+    }
+    if (priv_key != tempPrivKey) {
+        BN_free(priv_key);
+    }
+#else
+    if (pub_key != DH_get0_pub_key(dh)) {
+        BN_free(pub_key);
+    }
+    if (priv_key != DH_get0_priv_key(dh)) {
+        BN_free(priv_key);
+    }
+#endif
 	hpre_dh_free_eng_ctx(eng_ctx);
 
 	if (ret != HPRE_DH_SUCCESS)
@@ -224,11 +358,21 @@ static int hpre_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh
 	int ret = HPRE_DH_FAIL;
 	int ret_size = 0;
 
+#ifdef KAE_GMSSL
+    const BIGNUM *tempPrivKey = NULL;
+	DH_get0_key(dh, NULL, &tempPrivKey);
+    if (dh == NULL || key == NULL || pub_key == NULL || tempPrivKey == NULL) {
+        KAEerr(KAE_F_HPRE_DH_KEYCOMP, KAE_R_DH_INVALID_PARAMETER);
+        US_ERR("KAE_F_HPRE_DH_KEYCOMP KAE_R_DH_INVALID_PARAMETER");
+        return HPRE_DH_FAIL;
+    }
+#else
 	if (dh == NULL || key == NULL || pub_key == NULL || DH_get0_priv_key(dh) == NULL) {
 		KAEerr(KAE_F_HPRE_DH_KEYCOMP, KAE_R_DH_INVALID_PARAMETER);
 		US_ERR("KAE_F_HPRE_DH_KEYCOMP KAE_R_DH_INVALID_PARAMETER");
 		return HPRE_DH_FAIL;
 	}
+#endif
 
 	hpre_dh_soft_get_pg(dh, &p, &g, &q);
 	if (p == NULL || g == NULL) {

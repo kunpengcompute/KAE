@@ -10,10 +10,13 @@ AC_PROG_CC
 AC_PROG_LIBTOOL
 AM_PROG_LIBTOOL
 
-AC_ARG_ENABLE(kae,
-	      AS_HELP_STRING([--enable-kae],[Enable kae support]))
-AC_SUBST(enable_kae)
+# 定义命令行参数
+AC_ARG_ENABLE([kae], [AS_HELP_STRING([--enable-kae], [Enable kae support])], [enable_kae="yes"], [enable_kae="no"])
+AC_ARG_ENABLE([kae-gmssl], [AS_HELP_STRING([--enable-kae-gmssl], [Enable kae gmssl support])], [enable_kae_gmssl="yes"], [enable_kae_gmssl="no"])
+
+# 设置条件变量
 AM_CONDITIONAL([WD_KAE], [test "$enable_kae" = "yes"])
+AM_CONDITIONAL([WD_KAE_GMSSL], [test "$enable_kae_gmssl" = "yes"])
 
 AC_CHECK_HEADERS([openssl/engine.h])
 
