@@ -223,7 +223,7 @@ static int uadk_destroy(ENGINE *e)
 		hpre_dh_destroy();
 #endif
 	kae_debug_close_log();
-
+#ifdef KAE_V2
 	if (uadk_cipher)
 		uadk_e_destroy_cipher();
 	if (uadk_digest)
@@ -234,7 +234,7 @@ static int uadk_destroy(ENGINE *e)
 		uadk_e_destroy_ecc();
 	if (uadk_dh)
 		uadk_e_destroy_dh();
-
+#endif
 	pthread_mutex_lock(&uadk_engine_mutex);
 	uadk_inited = 0;
 	pthread_mutex_unlock(&uadk_engine_mutex);
@@ -244,6 +244,9 @@ static int uadk_destroy(ENGINE *e)
 
 static int uadk_init(ENGINE *e)
 {
+#ifdef KAE_GMSSL
+    return 1;
+#else
 	int ret;
 
 	pthread_mutex_lock(&uadk_engine_mutex);
@@ -276,6 +279,7 @@ static int uadk_init(ENGINE *e)
 	pthread_mutex_unlock(&uadk_engine_mutex);
 
 	return 1;
+#endif
 }
 
 static int uadk_finish(ENGINE *e)
@@ -353,6 +357,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 }
 #endif
 
+#ifdef KAE_V2
 static void bind_fn_uadk_alg(ENGINE *e)
 {
 	US_DEBUG("start bind_fn_uadk_alg (bind v2 algs)");
@@ -424,7 +429,7 @@ static void bind_fn_uadk_alg(ENGINE *e)
 		US_DEBUG("ecdsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 }
-
+#endif
 /*
  * Connect uadk_engine to OpenSSL engine library.
  */
@@ -441,6 +446,7 @@ static int bind_fn(ENGINE *e, const char *id)
 		return 0;
 	}
 
+
 	kae_debug_init_log();
 #ifdef KAE
 	bind_fn_kae_alg(e);
@@ -452,12 +458,15 @@ static int bind_fn(ENGINE *e, const char *id)
 		US_INFO("enable nosva");
 	}
 #endif
+
+#ifdef KAE_V2
 	bind_fn_uadk_alg(e);
 
 	if (uadk_cipher || uadk_digest || uadk_rsa || uadk_dh || uadk_ecc) {
 		pthread_atfork(NULL, NULL, engine_init_child_at_fork_handler);
 		US_INFO("enable sva");
 	}
+#endif
 
 	ret = ENGINE_set_ctrl_function(e, uadk_engine_ctrl);
 	if (ret != 1) {

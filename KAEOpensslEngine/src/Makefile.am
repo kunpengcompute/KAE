@@ -6,15 +6,19 @@ WD_CFLAGS = -I$(DEPSHEADDIR)
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk/v1
 AM_LDFLAGS = -L$(DEPSHEADDIR)/../lib
-
-lib_LTLIBRARIES=kae.la
-
-kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
-		v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c \
-		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
 kae_la_LIBADD=-ldl $(WD_LIBS) -lpthread
 kae_la_LDFLAGS=-module -version-number $(VERSION)
 kae_la_CFLAGS=$(WD_CFLAGS)
+lib_LTLIBRARIES=kae.la
+kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/async/uadk_async.c \
+		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
+
+if WD_KAE_V2
+kae_la_CFLAGS += -DKAE_V2
+kae_la_SOURCES+=v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c \
+				v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c\
+				v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c
+endif #WD_KAE_V2
 
 AUTOMAKE_OPTIONS = subdir-objects
 

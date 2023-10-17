@@ -15,6 +15,11 @@ AC_ARG_ENABLE(kae,
 AC_SUBST(enable_kae)
 AM_CONDITIONAL([WD_KAE], [test "$enable_kae" = "yes"])
 
+AC_ARG_ENABLE(kae,
+	      AS_HELP_STRING([--enable-kae-v2],[Enable kae2 support]))
+AC_SUBST(enable_kae_v2)
+AM_CONDITIONAL([WD_KAE_V2], [test "$enable_kae_v2" = "yes"])
+
 AC_CHECK_HEADERS([openssl/engine.h])
 
 PKG_CHECK_MODULES(WD, libwd libwd_crypto, [-L/usr/local/lib -L$(AM_LDFLAGS)], [with_wd=yes], [with_wd=no])
