@@ -47,7 +47,7 @@ function Install_kaezstd()
     if [ -d "${SRC_PATH}"/open_source/zstd/ ]; then
         cd "${SRC_PATH}"/open_source/zstd/
         echo "build and intsall zstd."
-        CFLAGS="-fstack-protector-strong -fPIE -pie -Wl,-z,relro,-z,now"  make -j 64
+        make
 		make PREFIX=/usr/local/kaezstd/ install
     fi 
     echo "install zlib success"
