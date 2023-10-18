@@ -62,7 +62,7 @@ LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option
 ifdef KAE_GMSSL
-	LDFLAGS   += -Wl,-rpath,/usr/local/gmssl2.0/lib:/usr/local/lib
+	LDFLAGS   += -Wl,-rpath,/usr/local/gmssl/lib:/usr/local/lib
 	CFLAGS += -DKAE_GMSSL
 endif
 
