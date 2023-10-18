@@ -34,6 +34,9 @@
 #define UADK_CMD_ENABLE_RSA_ENV		(ENGINE_CMD_BASE + 2)
 #define UADK_CMD_ENABLE_DH_ENV		(ENGINE_CMD_BASE + 3)
 #define UADK_CMD_ENABLE_ECC_ENV		(ENGINE_CMD_BASE + 4)
+#define KAE_CMD_ENABLE_ASYNC   (ENGINE_CMD_BASE + 5)
+#define KAE_CMD_ENABLE_SM3   (ENGINE_CMD_BASE + 6)
+#define KAE_CMD_ENABLE_SM4   (ENGINE_CMD_BASE + 7)
 
 /* Constants used when creating the ENGINE */
 const char *engine_uadk_id = "kae";
@@ -79,6 +82,26 @@ static const ENGINE_CMD_DEFN g_uadk_cmd_defns[] = {
 		"Enable or Disable dh engine environment variable.",
 		ENGINE_CMD_FLAG_NUMERIC
 	},
+#ifdef KAE
+    {
+        KAE_CMD_ENABLE_ASYNC,
+        "KAE_CMD_ENABLE_ASYNC",
+        "Enable or Disable the engine async interface.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+    {
+        KAE_CMD_ENABLE_SM3,
+        "KAE_CMD_ENABLE_SM3",
+        "Enable or Disable the SM3.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+    {
+        KAE_CMD_ENABLE_SM4,
+        "KAE_CMD_ENABLE_SM4",
+        "Enable or Disable the SM4.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+#endif
 	{
 		UADK_CMD_ENABLE_ECC_ENV,
 		"UADK_CMD_ENABLE_ECC_ENV",
@@ -202,6 +225,52 @@ static int uadk_engine_ctrl(ENGINE *e, int cmd, long i,
 		US_DEBUG("%s ecc\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("ecc", i);
 		break;
+#ifdef KAE
+    case KAE_CMD_ENABLE_ASYNC:
+        US_DEBUG("%s async polling\n", i == 0 ? "Disable" : "Enable");
+        if (i == 0) {
+            kae_disable_async();
+        } else {
+            kae_enable_async();
+        }
+        break;
+    case KAE_CMD_ENABLE_SM3:
+        US_DEBUG("%s SM3\n", i == 0 ? "Disable" : "Enable");
+        if (i == 0) {
+            sec_digests_set_enabled(NID_sm3, 0);
+        } else {
+            sec_digests_set_enabled(NID_sm3, 1);
+        }
+        break;
+    case KAE_CMD_ENABLE_SM4:
+        US_DEBUG("%s SM4\n", i == 0 ? "Disable" : "Enable");
+#ifdef KAE_GMSSL
+        if (i == 0) {
+            sec_ciphers_set_enabled(NID_sms4_ctr, 0);
+            sec_ciphers_set_enabled(NID_sms4_cbc, 0);
+            sec_ciphers_set_enabled(NID_sms4_ofb128, 0);
+            sec_ciphers_set_enabled(NID_sms4_ecb, 0);
+        } else {
+            sec_ciphers_set_enabled(NID_sms4_ctr, 1);
+            sec_ciphers_set_enabled(NID_sms4_cbc, 1);
+            sec_ciphers_set_enabled(NID_sms4_ofb128, 1);
+            sec_ciphers_set_enabled(NID_sms4_ecb, 1);
+        }
+#else
+        if (i == 0) {
+            sec_ciphers_set_enabled(NID_sm4_ctr, 0);
+            sec_ciphers_set_enabled(NID_sm4_cbc, 0);
+            sec_ciphers_set_enabled(NID_sm4_ofb128, 0);
+            sec_ciphers_set_enabled(NID_sm4_ecb, 0);
+        } else {
+            sec_ciphers_set_enabled(NID_sm4_ctr, 1);
+            sec_ciphers_set_enabled(NID_sm4_cbc, 1);
+            sec_ciphers_set_enabled(NID_sm4_ofb128, 1);
+            sec_ciphers_set_enabled(NID_sm4_ecb, 1);
+        }
+#endif
+        break;
+#endif
 	default:
 		US_WARN("CTRL command not implemented\n");
 		return 0;
