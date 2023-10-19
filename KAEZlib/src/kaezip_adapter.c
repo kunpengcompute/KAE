@@ -30,10 +30,13 @@ static void uadk_get_accel_platform(void)
     }
     //  check sva
     struct uacce_dev* dev = wd_get_accel_dev("zlib");
-    if (dev && (dev->flags & 0x1)) {
-        g_platform = HW_V2;
+    if (dev) {
+        int flag = dev->flags;
         free(dev);
-        return;
+        if (flag & 0x1) {
+            g_platform = HW_V2;
+            return;
+        }
     }
     //  check no-sva
     int nosva_dev_num = wd_get_available_dev_num("zlib");
@@ -95,11 +98,12 @@ int kz_deflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_deflate_v1(strm, flush);
         } else {
-            US_ERR("HW_V1: kz_deflate error! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_deflate! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            ret = lz_deflate(strm, flush);
         }
         break;
     case HW_V2:
-        ret = kz_deflate_v2(strm, flush);   //  implement in src/v2
+        ret = kz_deflate_v2(strm, flush);
         break;
     default:
         break;
@@ -202,7 +206,8 @@ int kz_inflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_inflate_v1(strm, flush);
         } else {
-            US_ERR("HW_V1: kz_inflate error! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            ret = lz_inflate(strm, flush);
         }
         break;
     case HW_V2:
