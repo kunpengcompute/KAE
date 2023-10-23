@@ -37,8 +37,12 @@ static const EVP_MD *sec_digests_soft_md(uint32_t e_nid)
     return g_digest_md;
 }
 
-int sec_digests_soft_init(EVP_MD_CTX *ctx, uint32_t e_nid)
+int sec_digests_soft_init(sec_digest_priv_t *ctx, uint32_t e_nid)
 {
+	if (ctx->soft_ctx == NULL) {
+		ctx->soft_ctx = EVP_MD_CTX_new();
+        memset(ctx->soft_ctx, 0, sizeof(EVP_MD_CTX));
+    }
     const EVP_MD *digest_md = NULL;
     digest_md = sec_digests_soft_md(e_nid);
     if (digest_md == NULL) {
@@ -46,16 +50,17 @@ int sec_digests_soft_init(EVP_MD_CTX *ctx, uint32_t e_nid)
         return OPENSSL_FAIL;
     }
     int ctx_len = EVP_MD_meth_get_app_datasize(digest_md);
-    if (ctx->md_data == NULL) {
-        ctx->md_data = OPENSSL_malloc(ctx_len);
+    if (ctx->soft_ctx->md_data == NULL) {
+        ctx->soft_ctx->md_data = OPENSSL_malloc(ctx_len);
+        memset(ctx->soft_ctx->md_data, 0, ctx_len);
     }
-    if (!ctx->md_data) {
+    if (!ctx->soft_ctx->md_data) {
         KAEerr(KAE_F_DIGEST_SOFT_INIT, KAE_R_MALLOC_FAILURE);
         US_ERR("malloc md_data failed");
         return OPENSSL_FAIL;
     }
     
-    return EVP_MD_meth_get_init (digest_md)(ctx);
+    return EVP_MD_meth_get_init (digest_md)(ctx->soft_ctx);
 }
 
 int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, uint32_t e_nid)
@@ -79,40 +84,35 @@ int sec_digests_soft_final(EVP_MD_CTX *ctx, unsigned char *digest, uint32_t e_ni
         US_WARN("switch to soft:don't support by sec engine.");
         return OPENSSL_FAIL;
     }
-    int ret = EVP_MD_meth_get_final(digest_md)(ctx, digest);
-    if (ctx->md_data) {
-        OPENSSL_free(ctx->md_data);
+    return EVP_MD_meth_get_final(digest_md)(ctx, digest);
+}
+
+int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest)
+{
+    int ret;
+    ret = sec_digests_soft_init(md_ctx, md_ctx->e_nid);
+    if (len != 0) {
+        ret |= sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff, len, md_ctx->e_nid);
     }
+    ret |= sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
+    sec_digests_soft_cleanup(md_ctx);
     
     return ret;
 }
 
-void sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest)
-{
-    if (md_ctx->soft_ctx == NULL) {
-        md_ctx->soft_ctx = EVP_MD_CTX_new();
-    }
-    
-    (void)sec_digests_soft_init(md_ctx->soft_ctx, md_ctx->e_nid);
-    if (len != 0) {
-        (void)sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff, len, md_ctx->e_nid);
-    }
-    (void)sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
-
-    if (md_ctx->soft_ctx != NULL) {
-        EVP_MD_CTX_free(md_ctx->soft_ctx);
-        md_ctx->soft_ctx = NULL;
-    }
-    
-    return;
-}
-
 void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx)
 {
-    if (md_ctx->soft_ctx != NULL) {
-        EVP_MD_CTX_free(md_ctx->soft_ctx);
-        md_ctx->soft_ctx = NULL;
-    }
+    EVP_MD_CTX *ctx = md_ctx->soft_ctx;
+    if (md_ctx->copy)
+		return;
+    if (ctx != NULL) {
+		if (ctx->md_data) {
+			OPENSSL_free(ctx->md_data);
+			ctx->md_data  = NULL;
+		}
+		EVP_MD_CTX_free(ctx);
+		md_ctx->soft_ctx = NULL;
+	}
     return;
 }
 

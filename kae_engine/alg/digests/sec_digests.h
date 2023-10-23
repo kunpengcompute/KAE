@@ -25,6 +25,35 @@
 #include "wd_queue_memory.h"
 #include "engine_types.h"
 #include "engine_utils.h"
+struct evp_md_st {
+    int type;
+    int pkey_type;
+    int md_size;
+    unsigned long flags;
+    int (*init) (EVP_MD_CTX *ctx);
+    int (*update) (EVP_MD_CTX *ctx, const void *data, size_t count);
+    int (*final) (EVP_MD_CTX *ctx, unsigned char *md);
+    int (*copy) (EVP_MD_CTX *to, const EVP_MD_CTX *from);
+    int (*cleanup) (EVP_MD_CTX *ctx);
+    int block_size;
+    int ctx_size;               /* how big does the ctx->md_data need to be */
+    /* control function */
+    int (*md_ctrl) (EVP_MD_CTX *ctx, int cmd, int p1, void *p2);
+} /* EVP_MD */ ;
+typedef struct evp_md_st EVP_MD;
+
+struct evp_md_ctx_st {
+    const EVP_MD *digest;
+    ENGINE *engine; /* functional reference if 'digest' is
+                                 * ENGINE-provided */
+    unsigned long flags;
+    void *md_data;
+    /* Public key context for sign/verify */
+    EVP_PKEY_CTX *pctx;
+    /* Update function: usually copied from EVP_MD */
+    int (*update)(EVP_MD_CTX *ctx, const void *data, size_t count);
+} /* EVP_MD_CTX */;
+typedef struct evp_md_ctx_st EVP_MD_CTX;
 
 #define MAX_SEND_TRY_CNTS 50
 
@@ -58,6 +87,7 @@ struct sec_digest_priv {
     digest_engine_ctx_t*    e_digest_ctx;
     EVP_MD_CTX*             soft_ctx;   
     uint32_t                switch_flag;
+    uint32_t                copy;
 };
 
 struct digest_engine_ctx {
