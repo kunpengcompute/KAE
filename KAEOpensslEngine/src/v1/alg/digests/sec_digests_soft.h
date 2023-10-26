@@ -21,21 +21,10 @@
 
 #include "sec_digests.h"
 
-struct evp_md_ctx_st {
-	const EVP_MD *digest;
-	ENGINE *engine; /* functional reference if 'digest' is ENGINE-provided */
-	unsigned long flags;
-	void *md_data;
-	/* Public key context for sign/verify */
-	EVP_PKEY_CTX *pctx;
-	/* Update function: usually copied from EVP_MD */
-	int (*update)(EVP_MD_CTX *ctx, const void *data, size_t count);
-} /* EVP_MD_CTX */;
-
-int sec_digests_soft_init(EVP_MD_CTX *ctx, uint32_t e_nid);
+int sec_digests_soft_init(sec_digest_priv_t *ctx, uint32_t e_nid);
 int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, uint32_t e_nid);
 int sec_digests_soft_final(EVP_MD_CTX *ctx, unsigned char *digest, uint32_t e_nid);
-void sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest);
+int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest);
 void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx);
 
 #endif
