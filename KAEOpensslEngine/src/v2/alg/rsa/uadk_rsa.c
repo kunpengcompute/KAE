@@ -507,6 +507,12 @@ static int add_rsa_pubenc_padding(int flen, const unsigned char *from,
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
 		break;
+	case RSA_SSLV23_PADDING:
+		ret = RSA_padding_add_SSLv23(buf, num, from, flen);
+		break;
+	case RSA_NO_PADDING:
+		ret = RSA_padding_add_none(buf, num, from, flen);
+		break;
 	default:
 		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
 		ret = UADK_E_FAIL;
@@ -533,6 +539,13 @@ static int check_rsa_pridec_padding(unsigned char *to, int num,
 						   NULL, 0);
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
+		break;
+	case RSA_SSLV23_PADDING:
+		ret = RSA_padding_check_SSLv23(to, num, buf, len, num);
+		break;
+	case RSA_NO_PADDING:
+		kae_memcpy(to, buf, len);
+		ret = len;
 		break;
 	default:
 		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
