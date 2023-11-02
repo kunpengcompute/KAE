@@ -123,10 +123,7 @@ int sec_digests_init(EVP_MD_CTX *ctx)
     md_ctx->e_nid = nid;
     sec_digests_get_alg(md_ctx);
     md_ctx->state = SEC_DIGEST_INIT;
-    if (md_ctx->soft_ctx == NULL) {
-        md_ctx->soft_ctx = EVP_MD_CTX_new();
-        memset(md_ctx->soft_ctx, 0, sizeof(EVP_MD_CTX));
-    }
+    sec_digests_soft_init(md_ctx, md_ctx->e_nid);
     if (md_ctx->e_digest_ctx == NULL) {
         md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
         if (md_ctx->e_digest_ctx == NULL) {
@@ -242,8 +239,7 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
 
     if (md_ctx->last_update_buff && md_ctx->last_update_bufflen != 0) {
         if (md_ctx->state == SEC_DIGEST_INIT 
-                && md_ctx->last_update_bufflen < sec_digests_sw_get_threshold(md_ctx->e_nid)
-                && md_ctx->switch_flag) {
+                && md_ctx->last_update_bufflen < sec_digests_sw_get_threshold(md_ctx->e_nid)) {
             US_WARN_LIMIT("small package offload, switch to soft digest");
             goto do_soft_digest;
         }
@@ -268,8 +264,7 @@ end:
 
 do_soft_digest:
     if (md_ctx->state == SEC_DIGEST_INIT) {
-        ret = sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
-        ret = OPENSSL_SUCCESS;
+        ret = sec_digests_soft_work(md_ctx, md_ctx->last_update_bufflen, digest);
     } else {
         US_ERR("do sec digest failed");
         ret = OPENSSL_FAIL;
