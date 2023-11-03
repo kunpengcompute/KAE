@@ -14,6 +14,7 @@
 #include "wd_util.h"
 #include "drv/wd_comp_drv.h"
 #include "wd_zlibwrapper.h"
+#include "kaezip_buffer.h"
 #include "kaezip_init.h"
 #include "kaezip_log.h"
 
@@ -245,33 +246,43 @@ out_unlock:
 /* ===   Compression   === */
 int kz_deflate_init(z_streamp strm, int level, int windowbits)
 {
+	if (kz_outbuffer_init(strm)) {
+		return Z_BUF_ERROR;
+	}
 	pthread_atfork(NULL, NULL, kz_zlib_unlock);
 	return kz_zlib_init(strm, level, windowbits, WD_DIR_COMPRESS);
 }
 
 int kz_deflate_reset(z_streamp strm)
 {
+	kz_outbuffer_reset(strm);
 	return wd_deflate_reset(strm);
 }
 
 int kz_deflate_end(z_streamp strm)
 {
+	kz_outbuffer_free(strm);
 	return kz_zlib_uninit(strm);
 }
 
 /* ===   Decompression   === */
 int kz_inflate_init(z_streamp strm, int windowbits)
 {
+	if (kz_outbuffer_init(strm)) {
+		return Z_BUF_ERROR;
+	}
 	pthread_atfork(NULL, NULL, kz_zlib_unlock);
 	return kz_zlib_init(strm, 0, windowbits, WD_DIR_DECOMPRESS);
 }
 
 int kz_inflate_reset(z_streamp strm)
 {
+	kz_outbuffer_reset(strm);
 	return wd_inflate_reset(strm);
 }
 
 int kz_inflate_end(z_streamp strm)
 {
+	kz_outbuffer_free(strm);
 	return kz_zlib_uninit(strm);
 }
