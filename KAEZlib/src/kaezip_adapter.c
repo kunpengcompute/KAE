@@ -64,7 +64,6 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         break;
     case HW_V2:
-        strm->adler = 0;
         if (level <= 0) {
             level = 1;
         } else if (level > 9) {
@@ -173,7 +172,6 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
         ret = kz_inflateInit2_v1(strm, windowBits, version, stream_size);
         break;
     case HW_V2:
-        strm->adler = 0;
         ret = kz_inflate_init(strm, windowBits);
         if (ret == Z_OK) {
             (void)kz_inflate_reset(strm);
