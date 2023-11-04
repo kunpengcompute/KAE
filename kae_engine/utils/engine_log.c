@@ -65,7 +65,7 @@ static void kae_set_conf_debuglevel()
         goto err;
     }
     memset(debuglev, 0, MAX_LEVEL_LEN);
-    memset(file_path, 0, sizeof(conf_path) + sizeof(filename) + 1);
+    memset(file_path, 0, strlen(conf_path) + strlen(filename) + 1);
     strcat(file_path, conf_path);
     strcat(file_path, filename);
     int ret = kae_drv_get_item(file_path, "LogSection", "debug_level", debuglev);
