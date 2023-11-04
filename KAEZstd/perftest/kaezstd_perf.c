@@ -17,6 +17,9 @@
 
 #include "common.h"
 
+uint8_t *g_inbuf = NULL;
+int g_threadnum=5;
+
 enum CompressFunc {
     ZSTD_COMPRESS_STREAM2,
     ZSTD_COMPRESS,
@@ -64,16 +67,71 @@ static resources CompressCreateResources(uint8_t *inbuf, int streamLen)
 static void FreeResources(resources ress)
 {
     ZSTD_freeCCtx(ress.cctx);
-    free(ress.buffIn);
+    // free(ress.buffIn);
     free(ress.buffOut);
 }
 
+struct ThreadArgs {
+    int streamLen;
+    int cLevel;
+    int loopTimes;
+    int core_id;
+};
+
+void* thread_function(void* arg) {
+    printf("[liuyang]in thread\n");
+    struct ThreadArgs* args = (struct ThreadArgs*)arg;
+    int streamLen = args->streamLen;
+    int cLevel = args->cLevel;
+    int loopTimes = args->loopTimes;
+    int core_id = args->core_id;
+    // 绑核操作
+    cpu_set_t cpuSet;
+    CPU_ZERO(&cpuSet); // 清空cpuSet
+    // 将线程绑定到第0个CPU内核
+    CPU_SET(core_id, &cpuSet);
+
+    // 设置CPU亲和性
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpuSet), &cpuSet) == -1) {
+        fprintf(stderr, "Failed to set CPU affinity\n");
+        return NULL;
+    }
+
+    for (int i = 0; i < loopTimes; ++i) {
+        // 生成随机输入
+        // uint8_t *inbuf = CompressInputGet(streamLen);
+        // if (inbuf == NULL) {
+        //     return NULL;
+        // }
+
+        // 初始化
+        resources const ress = CompressCreateResources(g_inbuf, streamLen);
+
+        /* Compress using the context.
+        * If you need more control over parameters, use the advanced API:
+        * ZSTD_CCtx_setParameter(), and ZSTD_compress2().
+        */
+        size_t const cSize = ZSTD_compressCCtx(ress.cctx, ress.buffOut, ress.buffOutSize,
+            ress.buffIn, ress.buffInSize, cLevel);
+        CHECK_ZSTD(cSize);
+        FreeResources(ress);
+    }
+
+    return NULL;
+}
+
 // 块压缩：一次性将所有输入都输入压缩
-void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbThreads)
+void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes)
 {
     pid_t pidChild = 0;
     struct timeval start, stop;
     int core_id;
+
+    g_inbuf = CompressInputGet(streamLen);
+    if (g_inbuf == NULL) {
+        return;
+    }
+
     for (int i = 0; i < multi; i++) {
         pidChild = fork();
         if (pidChild == 0) {
@@ -90,36 +148,17 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
     }
 
     if (pidChild == 0) {
-        // 绑核操作
-        cpu_set_t cpuSet;
-        CPU_ZERO(&cpuSet); // 清空cpuSet
-        // 将进程绑定到第0个CPU内核
-        CPU_SET(core_id, &cpuSet);
+        pthread_t threads[100];
+        struct ThreadArgs args = {streamLen, cLevel, loopTimes, core_id};
 
-        // 设置CPU亲和性
-        if (sched_setaffinity(0, sizeof(cpuSet), &cpuSet) == -1) {
-            fprintf(stderr, "Failed to set CPU affinity\n");
-            return ;
+        for (int i = 0; i < g_threadnum; i++) {
+            pthread_create(&threads[i], NULL, thread_function, &args);
         }
 
-        // 生成随机输入
-        uint8_t *inbuf = CompressInputGet(streamLen);
-        if (inbuf == NULL) {
-            return;
+        for (int i = 0; i < g_threadnum; i++) {
+            pthread_join(threads[i], NULL);
         }
-
-        // 初始化
-        resources const ress = CompressCreateResources(inbuf, streamLen);
-        for (int i = 0; i < loopTimes; ++i) {
-            /* Compress using the context.
-            * If you need more control over parameters, use the advanced API:
-            * ZSTD_CCtx_setParameter(), and ZSTD_compress2().
-            */
-            size_t const cSize = ZSTD_compressCCtx(ress.cctx, ress.buffOut, ress.buffOutSize,
-                ress.buffIn, ress.buffInSize, cLevel);
-            CHECK_ZSTD(cSize);
-        }
-        FreeResources(ress);
+        
     }
 
     if (pidChild > 0) {
@@ -130,6 +169,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
                 if (errno == EINTR) {
                     continue;
                 }
+                free(g_inbuf);
                 break;
             }
         }
@@ -141,14 +181,15 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int nbT
         }
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1 * loopTimes * multi * streamLen / 1000 / 1000 / 1000;
+        float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / 1000 / 1000 / 1000;
         printf("kaezstd %s perf result:\n", "compress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
 
+
 }
 
-static resources CompressStream2CreateResources(int cLevel, int nbThreads)
+static resources CompressStream2CreateResources(int cLevel)
 {
     resources ress;
     ress.buffInSize = ZSTD_CStreamInSize();   /* can always read one full block */
@@ -165,7 +206,7 @@ static resources CompressStream2CreateResources(int cLevel, int nbThreads)
      */
     CHECK_ZSTD( ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_compressionLevel, cLevel) );
     CHECK_ZSTD( ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_checksumFlag, 1) );
-    // ZSTD_CCtx_setParameter(ress.cctx, ZSTD_c_nbWorkers, nbThreads);
+
     return ress;
 }
 
@@ -210,7 +251,7 @@ static void DoMultiCompressStream2(resources ress, uint8_t *inbuf, int streamLen
     }
 }
 
-void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, int nbThreads)
+void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes)
 {
     // // 生成随机输入
     // uint8_t *inbuf = CompressInputGet(streamLen);
@@ -218,8 +259,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, 
     //     return;
     // }
 
-    // resources const ress = CompressStream2CreateResources(cLevel, nbThreads);
-
+    printf("[liuyang]\n");
     pid_t pidChild = 0;
     struct timeval start, stop;
     gettimeofday(&start, NULL);
@@ -232,14 +272,15 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, 
         }
     }
 
-    if (pidChild == 0) {
+    // if (pidChild == 0) {
+    for (int i = 0; i < 5; i++) {
         // 生成随机输入
         uint8_t *inbuf = CompressInputGet(streamLen);
         if (inbuf == NULL) {
             return;
         }
         
-        resources const ress = CompressStream2CreateResources(cLevel, nbThreads);
+        resources const ress = CompressStream2CreateResources(cLevel);
         CHECK_ZSTD( ZSTD_CCtx_reset(ress.cctx, ZSTD_reset_session_only) );
         for (int i = 0; i < loopTimes; ++i) {
             DoMultiCompressStream2(ress, inbuf, streamLen);
@@ -247,6 +288,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes, 
 
         FreeResources(ress);
     }
+    // }
     
     if (pidChild > 0) {
         int ret = -1;
@@ -298,7 +340,7 @@ int main(int argc, char **argv)
     int loopTimes = 1;
     int cLevel = 1; // 压缩等级
     enum CompressFunc cFunction = ZSTD_COMPRESS_STREAM2; // 压缩函数
-    int nbThreads = 4; // 线程个数
+    g_threadnum = 4; // 线程个数
     while ((o = getopt(argc, argv, optstring)) != -1) {
         if(optstring == NULL) continue;
         switch (o) {
@@ -338,8 +380,8 @@ int main(int argc, char **argv)
                 }
                 break;
             case 't':
-                nbThreads = atoi(optarg);
-                if (nbThreads <= 0) {
+                g_threadnum = atoi(optarg);
+                if (g_threadnum <= 0) {
                     printf("Error: compress threads is out of range\n");
                     exit(1);
                 }
@@ -356,18 +398,18 @@ int main(int argc, char **argv)
     } 
 
     printf("kaezstd perf parameter: multi process %d, stream length: %d(KB), compress level: %d, "
-        "compress function: %d, loop times: %d, nbThreads: %d\n",
-        multi, streamLen, cLevel, cFunction, loopTimes, nbThreads);
+        "compress function: %d, loop times: %d, g_threadnum: %d\n",
+        multi, streamLen, cLevel, cFunction, loopTimes, g_threadnum);
 
     streamLen = 1000 * streamLen;
 
     switch (cFunction)
     {
         case ZSTD_COMPRESS_STREAM2:
-            DoCompressStream2Perf(multi, streamLen, cLevel, loopTimes, nbThreads);
+            DoCompressStream2Perf(multi, streamLen, cLevel, loopTimes);
             break;
         case ZSTD_COMPRESS:
-            DoCompressPerf(multi, streamLen, cLevel, loopTimes, nbThreads);
+            DoCompressPerf(multi, streamLen, cLevel, loopTimes);
             break;
         default:
             printf("Error: no such compress funciton\n");
