@@ -23,6 +23,27 @@
 #define CTX_SET_SIZE 4
 #define CTX_SET_NUM 1
 
+enum zstd_init_status {
+	KAE_ZSTD_UNINIT,
+	KAE_ZSTD_INIT,
+};
+
+struct kz_zstdwrapper_config {
+	int count;
+	int status;
+};
+
+static struct kz_zstdwrapper_config zstd_config = {0};
+static pthread_mutex_t kz_zstd_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+int kaezstd_lock() {
+   return pthread_mutex_lock(&kz_zstd_mutex);
+}
+
+int kaezstd_unlock() {
+   return pthread_mutex_unlock(&kz_zstd_mutex);
+}   
+
 KaeZstdConfig* kaezstd_get_config(ZSTD_CCtx* zc)
 {
     KaeZstdConfig* config = (KaeZstdConfig*)(zc->kaeConfig);
@@ -40,6 +61,7 @@ void kaezstd_set_config(ZSTD_CCtx* zc, KaeZstdConfig* config)
         zc->kaeConfig = (uintptr_t)config;
     }
 }
+
 
 void kaezstd_options_init(KaeZstdConfig *config)
 {
@@ -153,12 +175,12 @@ int kaezstd_get_level_by_env()
 {
     char *zstd_str = getenv("KAE_ZSTD_LEVEL");
     if (zstd_str == NULL) {
-        US_ERR("KAE_ZSTD_LEVEL is NULL\n");
+        US_DEBUG("KAE_ZSTD_LEVEL is NULL\n");
         return 1;
     }
     int zstd_val = atoi(zstd_str);
     if (zstd_val < 1 || zstd_val > 22) {
-        US_ERR("KAE_ZSTD_LEVEL value out of range ：%d ", zstd_val);
+        US_DEBUG("KAE_ZSTD_LEVEL value out of range ：%d ", zstd_val);
         return 1;
     }
     US_DEBUG("KAE_ZSTD_LEVEL value is ：%d ", zstd_val);
@@ -223,13 +245,21 @@ int kaezstd_get_version(KAEZstdVersion* ver)
     return KAE_ZSTD_SUCC;
 }
 
+static void zstd_uadk_uninit(void)
+{
+	wd_comp_uninit2();
+    zstd_config.status = KAE_ZSTD_UNINIT;
+    return;
+}
+
 # define KAEZSTD_CTX_SET_NUM 1
 static int kaezstd_alg_init2(void)
 {
     struct wd_ctx_nums *ctx_set_num;
 	struct wd_ctx_params cparams;
 	int ret, i;
-
+    if (zstd_config.status == KAE_ZSTD_INIT)
+		return 0;
 	ctx_set_num = calloc(KAEZSTD_CTX_SET_NUM, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
 		WD_ERR("failed to alloc ctx_set_size!\n");
@@ -262,14 +292,12 @@ static int kaezstd_alg_init2(void)
 		ctx_set_num[i].sync_ctx_num = KAEZSTD_CTX_SET_NUM;
 
 	ret = wd_comp_init2_("lz77_zstd", 0, 1, &cparams);
-	if (ret && ret != WD_EEXIST) {
+	if (ret) {
         WD_ERR("failed to init wd_comp_init2_ ret is :%d!\n", ret);
 		ret = KAE_ZSTD_INIT_FAIL;
 		goto out_freebmp;
-	} else if (ret == WD_EEXIST) {
-        ret = KAE_ZSTD_SUCC;
-    }
-
+	}
+    zstd_config.status = KAE_ZSTD_INIT;
 out_freebmp:
 	numa_free_nodemask(cparams.bmp);
 
@@ -283,11 +311,14 @@ int kaezstd_init(ZSTD_CCtx* zc)
 {
     int ret;
     KaeZstdConfig *config = NULL;
+
+    kaezstd_lock();
     kaezstd_debug_init_log();
     US_DEBUG("Begin init KAE zstd.");
     config = (KaeZstdConfig*)malloc(sizeof(KaeZstdConfig));
     if (config == NULL) {
         US_ERR("failed to alloc config!\n");
+        kaezstd_unlock();
         return KAE_ZSTD_INIT_FAIL;
     }
 
@@ -302,7 +333,7 @@ int kaezstd_init(ZSTD_CCtx* zc)
     ret = kaezstd_alg_init2();
     if (ret) {
         US_ERR("failed to kaezstd_alg_init2!\n");
-        goto create_session_fail;
+        goto alg_init_fail;
     }
 
     ret = kaezstd_create_session(config);
@@ -312,32 +343,41 @@ int kaezstd_init(ZSTD_CCtx* zc)
     }
 
     kaezstd_set_config(zc, config);
-
+    __atomic_add_fetch(&zstd_config.count, 1, __ATOMIC_RELAXED);
+    kaezstd_unlock();
     return ret;
 
 create_session_fail:
+    zstd_uadk_uninit();
+alg_init_fail:
     wd_free_list_accels(config->info.list);
 
 get_dev_list_fail:
     free(config);
+    kaezstd_unlock();
     return KAE_ZSTD_INIT_FAIL;
 }
 
 void kaezstd_release(ZSTD_CCtx* zc)
 {
     KaeZstdConfig *config = NULL;
-
+    int ret;
     if (zc == NULL) {
         return;
     }
 
     config = kaezstd_get_config(zc);
-
     free(config->setup.sched_param);
-
     wd_comp_free_sess(config->sess);
-
     wd_free_list_accels(config->info.list);
-
     kaezstd_debug_close_log();
+    kaezstd_lock();
+	ret = __atomic_sub_fetch(&zstd_config.count, 1, __ATOMIC_RELAXED);
+	if (ret != 0)
+		goto out_unlock;
+
+    zstd_uadk_uninit();
+out_unlock:
+    kaezstd_unlock(); 
+    return;
 }
