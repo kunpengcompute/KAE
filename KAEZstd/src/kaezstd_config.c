@@ -262,7 +262,7 @@ static int kaezstd_alg_init2(void)
 		return 0;
 	ctx_set_num = calloc(KAEZSTD_CTX_SET_NUM, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
-		US_DEBUG("failed to alloc ctx_set_size!\n");
+		WD_ERR("failed to alloc ctx_set_size!\n");
 		return KAE_ZSTD_ALLOC_FAIL;
 	}
 
@@ -270,7 +270,7 @@ static int kaezstd_alg_init2(void)
 	cparams.ctx_set_num = ctx_set_num;
 	cparams.bmp = numa_allocate_nodemask();
 	if (!cparams.bmp) {
-		US_DEBUG("failed to create nodemask!\n");
+		WD_ERR("failed to create nodemask!\n");
 		ret = KAE_ZSTD_INIT_FAIL;
 		goto out_freectx;
 	}
