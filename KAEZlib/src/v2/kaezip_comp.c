@@ -9,8 +9,21 @@
 #include "wd.h"
 #include "wd_comp.h"
 #include "kaezip_comp.h"
+#include "kaezip_init.h"
 #include "kaezip_buffer.h"
 #include "kaezip_log.h"
+
+static z_stream g_init_strm = {0};
+
+static void __attribute((constructor)) wd_do_init_onlyone(void)
+{
+	kz_deflate_init(&g_init_strm, 1, 12);
+}
+
+static void __attribute((destructor)) wd_do_uninit_onlyone(void)
+{
+	kz_deflate_end(&g_init_strm);
+}
 
 static int kz_check_params(struct wd_comp_req *req)
 {
