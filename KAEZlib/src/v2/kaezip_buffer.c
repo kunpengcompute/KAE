@@ -39,7 +39,7 @@ void kz_outbuffer_reset(z_streamp strm)
     if (out_buffer) {
         unsigned char* buffer = out_buffer->out;
         if (buffer) {
-            memset(buffer, 0x1, OUTPUT_CHUNK_V2);
+            //  memset(buffer, 0x1, OUTPUT_CHUNK_V2);
         }
         out_buffer->produced = out_buffer->remained = 0;
     }
