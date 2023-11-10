@@ -69,7 +69,7 @@ static int kz_zlib_uadk_init(void)
 	if (zlib_config.status == WD_ZLIB_INIT)
 		return 0;
 
-	ctx_set_num = malloc(WD_DIR_MAX * sizeof(struct wd_ctx_nums));
+	ctx_set_num = calloc(WD_DIR_MAX, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
 		US_ERR("failed to alloc ctx_set_size!\n");
 		return Z_MEM_ERROR;
