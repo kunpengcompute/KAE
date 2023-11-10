@@ -79,7 +79,7 @@ struct ThreadArgs {
 };
 
 void* thread_function(void* arg) {
-    printf("[liuyang]in thread\n");
+    // printf("[liuyang]in thread\n");
     struct ThreadArgs* args = (struct ThreadArgs*)arg;
     int streamLen = args->streamLen;
     int cLevel = args->cLevel;
@@ -396,7 +396,7 @@ int main(int argc, char **argv)
         Usage();
         printf("\ndefault input parameter used\n");
     } 
-
+    setenv("KAE_ZSTD_LEVEL", (char *)&cLevel, 1);  
     printf("kaezstd perf parameter: multi process %d, stream length: %d(KB), compress level: %d, "
         "compress function: %d, loop times: %d, g_threadnum: %d\n",
         multi, streamLen, cLevel, cFunction, loopTimes, g_threadnum);
