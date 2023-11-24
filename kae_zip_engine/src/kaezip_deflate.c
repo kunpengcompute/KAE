@@ -29,6 +29,11 @@
 #include "kaezip_common.h"
 #include "kaezip_utils.h"
 #include "kaezip_log.h"
+#include <stdlib.h>  
+
+bool is_initialized = false; 
+//如果当前进程就是没有占用到kae资源，那就只能切软算。
+bool is_get_kaectx = false; 
 
 #define KAEZIP_UPDATE_ZSTREAM_IN(zstrm, in_len) \
     do { \
@@ -47,6 +52,14 @@
 static int  kaezip_do_deflate(z_streamp strm, int flush);
 static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type);
 
+kaezip_ctx_t* g_kaezip_ctx = NULL;
+void at_exit_handle() {
+    if (g_kaezip_ctx == NULL || is_initialized == false) return;
+    kaezip_put_ctx(g_kaezip_ctx);
+    is_get_kaectx = false;
+    return;
+}
+
 int kz_deflateInit2_(z_streamp strm, int level,
                       int method, int windowBits,
                       int memLevel, int strategy,
@@ -59,25 +72,42 @@ int kz_deflateInit2_(z_streamp strm, int level,
         return Z_ERRNO;
     }
 
+    if (is_initialized == true && is_get_kaectx == false) {
+        // 未占用硬件初始化过的进程一直以软算进行初始化
+        return Z_OK;
+    }
+
     int alg_comp_type = kaezip_winbits2algtype(windowBits);
     if (alg_comp_type != WCRYPTO_ZLIB && alg_comp_type != WCRYPTO_GZIP) {
         US_WARN("unsupport windowbits %d!", windowBits);
         setDeflateKaezipCtx(strm, 0);
+        is_initialized = true;
         return Z_OK;
     }
 
-    kaezip_ctx_t* kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_DEFLATE);
-    if (kaezip_ctx == NULL) {
+    if (is_initialized == true && g_kaezip_ctx != NULL) {
+        //已经初始化过kaezip
+        setDeflateKaezipCtx(strm, (uLong)g_kaezip_ctx);
+        is_initialized = true;
+        return Z_OK;
+    }
+
+    g_kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_DEFLATE);
+    if (g_kaezip_ctx == NULL) {
         US_ERR("failed to get kaezip ctx, windowbits %d!", windowBits);
         setDeflateKaezipCtx(strm, 0);
+        is_initialized = true;
         return Z_OK;
     }
+    // 注册进程退出时的清理函数  
+    atexit(at_exit_handle); 
 
-    kaezip_ctx->status = KAEZIP_COMP_INIT;
-    setDeflateKaezipCtx(strm, (uLong)kaezip_ctx);
-
-    US_DEBUG("kae zip deflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
-        kaezip_ctx, kaezip_ctx->comp_alg_type == WCRYPTO_ZLIB ? "zlib" : "gzip");
+    g_kaezip_ctx->status = KAEZIP_COMP_INIT;
+    setDeflateKaezipCtx(strm, (uLong)g_kaezip_ctx);
+    is_initialized = true;
+    is_get_kaectx = true;
+    US_DEBUG("kae zip deflate init success, g_kaezip_ctx %p, g_kaezip_ctx->comp_alg_type %s!",
+        g_kaezip_ctx, g_kaezip_ctx->comp_alg_type == WCRYPTO_ZLIB ? "zlib" : "gzip");
     return Z_OK;
 }
 
@@ -148,11 +178,11 @@ int kz_deflate(z_streamp strm, int flush)
 
 int kz_deflateEnd(z_streamp strm)
 {
-    kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
-    if (kaezip_ctx != NULL) {
-        US_DEBUG("kaezip deflate end");
-        kaezip_put_ctx(kaezip_ctx);
-    }
+    // kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
+    // if (kaezip_ctx != NULL) {
+    //     US_DEBUG("kaezip deflate end");
+    //     kaezip_put_ctx(kaezip_ctx);
+    // }
 
     setDeflateKaezipCtx(strm, 0);
     return lz_deflateEnd(strm);
