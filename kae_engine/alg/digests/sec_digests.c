@@ -123,7 +123,6 @@ int sec_digests_init(EVP_MD_CTX *ctx)
     md_ctx->e_nid = nid;
     sec_digests_get_alg(md_ctx);
     md_ctx->state = SEC_DIGEST_INIT;
-    sec_digests_soft_init(md_ctx, md_ctx->e_nid);
     if (md_ctx->e_digest_ctx == NULL) {
         md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
         if (md_ctx->e_digest_ctx == NULL) {
