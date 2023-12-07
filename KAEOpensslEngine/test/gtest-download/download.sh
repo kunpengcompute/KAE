@@ -4,7 +4,6 @@
 ## @Filename: download.sh
 ## @Usage:    sh download.sh download googletest source code
 ##############################################################
-set -e
 
 curd=$(pwd)
 test=$curd/..
