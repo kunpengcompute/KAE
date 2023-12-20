@@ -125,13 +125,6 @@ int sec_digests_init(EVP_MD_CTX *ctx)
 	md_ctx->e_nid = EVP_MD_nid(EVP_MD_CTX_md(ctx));
 	sec_digests_get_alg(md_ctx);
 	md_ctx->state = SEC_DIGEST_INIT;
-    if (md_ctx->e_digest_ctx == NULL) {
-        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
-        if (md_ctx->e_digest_ctx == NULL) {
-            US_WARN("failed to get engine ctx");
-            return OPENSSL_FAIL;
-        }
-    }
 
 	return OPENSSL_SUCCESS;
 }
@@ -200,6 +193,14 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
 
 	if (md_ctx->switch_flag)
 		return sec_digests_soft_update(md_ctx->soft_ctx, data, data_len, md_ctx->e_nid);
+
+    if (md_ctx->e_digest_ctx == NULL) {
+        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
+        if (md_ctx->e_digest_ctx == NULL) {
+            US_WARN("failed to get engine ctx");
+            return OPENSSL_FAIL;
+        }
+    }
 
 	digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
 
