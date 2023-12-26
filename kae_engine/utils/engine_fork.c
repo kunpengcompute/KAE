@@ -66,6 +66,11 @@ void engine_init_child_at_fork_handler(void)
 
 void engine_do_before_fork_handler(void)
 {
+    kae_check_thread_reset();
+    (void)wd_digests_uninit_qnode_pool();
+    (void)wd_ciphers_uninit_qnode_pool();
+    (void)wd_hpre_dh_uninit_qnode_pool();
+    (void)wd_hpre_uninit_qnode_pool();
     return;
 }
 
