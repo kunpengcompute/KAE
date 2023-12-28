@@ -279,11 +279,11 @@ function build_all_components()
 
 function clear_all_components()
 {
-    driver_clean
-    engine_clean
-    zlib_clean
-    zstd_clean
-    uadk_clean
+    driver_clean || true  
+    engine_clean || true  
+    zlib_clean || true  
+    zstd_clean || true  
+    uadk_clean || true  
 }
 
 function main()
