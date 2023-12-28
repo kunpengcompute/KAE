@@ -811,7 +811,7 @@ static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	if (pdev->revision >= QM_HW_V3)
 		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\ndeflate\n";
 	else
-		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n"
+		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n";
 	qm->uacce_mode = uacce_mode;
 #endif
 	qm->pdev = pdev;
