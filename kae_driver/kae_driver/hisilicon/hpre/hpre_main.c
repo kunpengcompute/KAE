@@ -845,7 +845,7 @@ static int hpre_pf_probe_init(struct hisi_qm *qm)
 {
 	int ret;
 
-	if (qm->ver != QM_HW_V2)
+	if (qm->ver == QM_HW_V1)
 		return -EINVAL;
 
 	qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;

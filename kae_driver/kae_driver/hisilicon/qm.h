@@ -118,6 +118,7 @@ enum qm_hw_ver {
 	QM_HW_UNKNOWN = -1,
 	QM_HW_V1 = 0x20,
 	QM_HW_V2 = 0x21,
+	QM_HW_V3 = 0x30,
 };
 
 enum qm_fun_type {
@@ -394,7 +395,6 @@ static inline int q_num_set(const char *val, const struct kernel_param *kp,
 	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI,
 					      device, NULL);
 	u32 n, q_num;
-	u8 rev_id;
 	int ret;
 
 	if (!val)
@@ -405,17 +405,10 @@ static inline int q_num_set(const char *val, const struct kernel_param *kp,
 		pr_info("No device found currently, suppose queue number is %d\n",
 			q_num);
 	} else {
-		rev_id = pdev->revision;
-		switch (rev_id) {
-		case QM_HW_V1:
+		if (pdev->revision == QM_HW_V1)
 			q_num = QNUM_V1;
-			break;
-		case QM_HW_V2:
+		else
 			q_num = QNUM_V2;
-			break;
-		default:
-			return -EINVAL;
-		}
 	}
 
 	ret = kstrtou32(val, 10, &n);
@@ -485,6 +478,7 @@ static inline int hisi_qm_pre_init(struct hisi_qm *qm,
 	switch (pdev->revision) {
 	case QM_HW_V1:
 	case QM_HW_V2:
+	case QM_HW_V3:
 		qm->ver = pdev->revision;
 		break;
 	default:

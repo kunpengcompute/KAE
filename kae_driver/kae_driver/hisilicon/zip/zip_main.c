@@ -770,18 +770,10 @@ static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
 	zip->ctrl = ctrl;
 	ctrl->hisi_zip = zip;
 
-	switch (qm->ver) {
-	case QM_HW_V1:
+	if (qm->ver == QM_HW_V1)
 		qm->ctrl_q_num = HZIP_QUEUE_NUM_V1;
-		break;
-
-	case QM_HW_V2:
+	else
 		qm->ctrl_q_num = HZIP_QUEUE_NUM_V2;
-		break;
-
-	default:
-		return -EINVAL;
-	}
 
 	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
 	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
@@ -816,7 +808,10 @@ static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	int ret;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n";
+	if (pdev->revision >= QM_HW_V3)
+		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\ndeflate\n";
+	else
+		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n"
 	qm->uacce_mode = uacce_mode;
 #endif
 	qm->pdev = pdev;
