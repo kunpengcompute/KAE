@@ -702,7 +702,7 @@ static int qm_irq_register(struct hisi_qm *qm)
 	if (ret)
 		return ret;
 
-	if (qm->ver == QM_HW_V2) {
+	if (qm->ver != QM_HW_V1) {
 		ret = request_irq(pci_irq_vector(pdev, QM_AEQ_EVENT_IRQ_VECTOR),
 				  qm_aeq_irq, IRQF_SHARED, qm->dev_name, qm);
 		if (ret)
@@ -733,13 +733,12 @@ static void qm_irq_unregister(struct hisi_qm *qm)
 
 	free_irq(pci_irq_vector(pdev, QM_EQ_EVENT_IRQ_VECTOR), qm);
 
-	if (qm->ver == QM_HW_V2) {
-		free_irq(pci_irq_vector(pdev, QM_AEQ_EVENT_IRQ_VECTOR), qm);
+	if (qm->ver == QM_HW_V1)
+		return;
 
-		if (qm->fun_type == QM_HW_PF)
-			free_irq(pci_irq_vector(pdev,
-				 QM_ABNORMAL_EVENT_IRQ_VECTOR), qm);
-	}
+	free_irq(pci_irq_vector(pdev, QM_AEQ_EVENT_IRQ_VECTOR), qm);
+	if (qm->fun_type == QM_HW_PF)
+		free_irq(pci_irq_vector(pdev, QM_ABNORMAL_EVENT_IRQ_VECTOR), qm);
 }
 
 static void qm_init_qp_status(struct hisi_qp *qp)
@@ -761,36 +760,26 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 	if (number > 0) {
 		switch (type) {
 		case SQC_VFT:
-			switch (qm->ver) {
-			case QM_HW_V1:
+			if (qm->ver == QM_HW_V1) {
 				tmp = QM_SQC_VFT_BUF_SIZE |
 				      QM_SQC_VFT_SQC_SIZE |
 				      QM_SQC_VFT_INDEX_NUMBER |
 				      QM_SQC_VFT_VALID |
 				      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
-				break;
-			case QM_HW_V2:
+			} else {
 				tmp = (u64)base << QM_SQC_VFT_START_SQN_SHIFT |
 				      QM_SQC_VFT_VALID |
 				      (u64)(number - 1) << QM_SQC_VFT_SQN_SHIFT;
-				break;
-			case QM_HW_UNKNOWN:
-				break;
 			}
 			break;
 		case CQC_VFT:
-			switch (qm->ver) {
-			case QM_HW_V1:
+			if (qm->ver == QM_HW_V1) {
 				tmp = QM_CQC_VFT_BUF_SIZE |
 				      QM_CQC_VFT_SQC_SIZE |
 				      QM_CQC_VFT_INDEX_NUMBER |
 				      QM_CQC_VFT_VALID;
-				break;
-			case QM_HW_V2:
+			} else {
 				tmp = QM_CQC_VFT_VALID;
-				break;
-			case QM_HW_UNKNOWN:
-				break;
 			}
 			break;
 		}
@@ -1843,7 +1832,7 @@ static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	if (ver == QM_HW_V1) {
 		sqc->dw3 = cpu_to_le32(QM_MK_SQC_DW3_V1(0, 0, 0, qm->sqe_size));
 		sqc->w8 = cpu_to_le16(QM_Q_DEPTH - 1);
-	} else if (ver == QM_HW_V2) {
+	} else {
 		sqc->dw3 = cpu_to_le32(QM_MK_SQC_DW3_V2(qm->sqe_size));
 		sqc->w8 = 0; /* rand_qc */
 	}
@@ -2138,14 +2127,13 @@ static void hisi_qm_cache_wb(struct hisi_qm *qm)
 {
 	unsigned int val;
 
-	if (qm->ver == QM_HW_V2) {
-		writel(0x1, qm->io_base + QM_CACHE_WB_START);
-		if (readl_relaxed_poll_timeout(qm->io_base + QM_CACHE_WB_DONE,
-					       val, val & BIT(0), POLL_PERIOD,
-					       POLL_TIMEOUT))
-			dev_err(&qm->pdev->dev,
-				"QM writeback sqc cache fail!\n");
-	}
+	if (qm->ver == QM_HW_V1)
+		return;
+
+	writel(0x1, qm->io_base + QM_CACHE_WB_START);
+	if (readl_relaxed_poll_timeout(qm->io_base + QM_CACHE_WB_DONE,
+					    val, val & BIT(0), 10, 1000))
+		dev_err(&qm->pdev->dev, "QM writeback sqc cache fail!\n");
 }
 
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm)
@@ -2248,12 +2236,12 @@ static int hisi_qm_uacce_mmap(struct uacce_queue *q,
 
 	switch (qfr->type) {
 	case UACCE_QFRT_MMIO:
-		if (qm->ver == QM_HW_V2) {
-			if (WARN_ON(sz > PAGE_SIZE * (QM_DOORBELL_PAGE_NR +
-				QM_V2_DOORBELL_OFFSET / PAGE_SIZE)))
+		if (qm->ver == QM_HW_V1) {
+			if (WARN_ON(sz > PAGE_SIZE * QM_DOORBELL_PAGE_NR))
 				return -EINVAL;
 		} else {
-			if (WARN_ON(sz > PAGE_SIZE * QM_DOORBELL_PAGE_NR))
+			if (WARN_ON(sz > PAGE_SIZE * (QM_DOORBELL_PAGE_NR +
+				QM_V2_DOORBELL_OFFSET / PAGE_SIZE)))
 				return -EINVAL;
 		}
 
@@ -2703,16 +2691,10 @@ int hisi_qm_init(struct hisi_qm *qm)
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	switch (qm->ver) {
-	case QM_HW_V1:
+	if (qm->ver == QM_HW_V1)
 		qm->ops = &qm_hw_ops_v1;
-		break;
-	case QM_HW_V2:
+	else
 		qm->ops = &qm_hw_ops_v2;
-		break;
-	default:
-		return -EINVAL;
-	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce) {
@@ -2734,7 +2716,7 @@ int hisi_qm_init(struct hisi_qm *qm)
 		goto err_irq_register;
 
 	mutex_init(&qm->mailbox_lock);
-	if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V2) {
+	if (qm->fun_type == QM_HW_VF && qm->ver != QM_HW_V1) {
 		/* v2 or v3 starts to support get vft by mailbox */
 		ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
 		if (ret)
