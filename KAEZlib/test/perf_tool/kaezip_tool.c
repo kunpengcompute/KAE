@@ -72,30 +72,19 @@ uint8_t *get_compress_input(size_t input_sz)
     return inbuf;
 }
 
-void do_perf_compress2(int level, unsigned char* output, uLong* output_sz, const unsigned char* inbuf, uLong stream_len)
+int do_perf_compress2(int level, unsigned char* output, uLong* output_sz, const unsigned char* inbuf, uLong stream_len)
 {
     int ret = 0;
     fflush(stdout);
     fflush(stderr);
 
-    struct timeval start, stop;
-    gettimeofday(&start, NULL);
-
     ret = compress2(output, output_sz, inbuf, stream_len, level);
     if (ret != Z_OK) {
-        printf("[KAE_ERR]:compress2 failed, ret is:%d.\n", ret);
-        exit(-1);
+        printf("[KAE_ERR do_perf_compress2]:compress2 failed, ret is:%d. (output_sz = %ld; stream_len = %ld.)\n", ret, *output_sz, stream_len);
+        return 1;
     }
 
-    gettimeofday(&stop, NULL);
-    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-
-    float speed1 = 1000000.0 / time1 * stream_len / (1 << 20); //单位MB/s  
-    float compressRate =  (float)*output_sz/ (float)stream_len;
-    // printf("[%ld]/[%ld]\n", *output_sz, stream_len);
-    printf("zip compress perf result: time used: %lu us, compress speed = %.3f MB/s, compress rate = %.3f\n", time1, speed1, compressRate);
-
-    return;
+    return 0;
 }
 
 void do_perf_uncompress2(unsigned char* decompressedData, uLong* decompressedSize, unsigned char* compressedData, uLong *compressedSize)
@@ -105,40 +94,31 @@ void do_perf_uncompress2(unsigned char* decompressedData, uLong* decompressedSiz
     fflush(stdout);
     fflush(stderr);
 
-    struct timeval start, stop;
-    gettimeofday(&start, NULL);
-
     ret = uncompress2(decompressedData, decompressedSize, compressedData, compressedSize);
     if (ret != Z_OK) {
         printf("[KAE_ERR]:uncompress2 failed, ret is:%d.\n", ret);
         exit(-1);
     }
 
-    gettimeofday(&stop, NULL);
-    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-
-    float speed1 = 1000000.0 / time1 * (*compressedSize) / (1 << 20); //单位MB/s  
-    printf("zip uncompress perf result: time used: %lu us, uncompress speed = %.3f MB/s\n", time1, speed1);
-
     return;
 }
 
 int do_perf(const char* in_filename, uLong stream_len, int loop_times, int level)
 {
+    int ret = 0;
     // 获取压缩数据：inbuf stream_len
     void *inbuf = NULL;
     if (in_filename) {
         fprintf(stdout, "compress filename : %s\n", in_filename);
-        stream_len = read_inputFile(in_filename, &inbuf, loop_times);
+        stream_len = read_inputFile(in_filename, &inbuf, 1);
     } else {
-        stream_len = stream_len * loop_times;
+        stream_len = stream_len * 1;
         inbuf = get_compress_input(stream_len);
     }
     if (!inbuf) {
         fprintf(stderr, "inbuf is NULL!\n");
         return -1;
     }
-    // printf("[KAE]input_size is %luB\n", stream_len);
     
     // 获取目的空间buf compressedData compressedSize
     uLong blen = compressBound(stream_len);
@@ -156,14 +136,44 @@ int do_perf(const char* in_filename, uLong stream_len, int loop_times, int level
     if (compressedData == NULL) {
         return -1;
     }
-                            
-    do_perf_compress2(level, compressedData, &compressedSize, inbuf, stream_len);
-    do_perf_uncompress2(decompressedData, &decompressedSize, compressedData, &compressedSize);
 
+    // 计算压缩性能
+    struct timeval start, stop;
+    gettimeofday(&start, NULL);
+
+    for (int i = 0; i < loop_times; i ++) {
+        compressedSize = blen;// 每次重复之前，需要恢复入参的情况，不然修改后的compressedSize可能会影响下一次的压缩。
+        ret = do_perf_compress2(level, compressedData, &compressedSize, inbuf, stream_len);
+        if (ret !=0 ) {
+            printf("[KAE_ERR do_perf_compress2]:loop_times is:%d.\n", i);
+            exit(-1);
+        }
+    }
+
+    gettimeofday(&stop, NULL);
+    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+
+    float speed1 = 1000000.0 / time1 * stream_len / (1 << 20) * loop_times; //单位MB/s  
+    float compressRate =  (float)compressedSize/ (float)stream_len;
+
+    // 计算解压性能
+    gettimeofday(&start, NULL);
+    for (int i = 0; i < loop_times; i ++) {
+        do_perf_uncompress2(decompressedData, &decompressedSize, compressedData, &compressedSize);
+    }
+
+    gettimeofday(&stop, NULL);
+    uLong time2 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+
+    float speed2 = 1000000.0 / time2 * (compressedSize) / (1 << 20) * loop_times; //单位MB/s  
+    
+    //判断及打印信息
     if(decompressedSize != stream_len){
         printf("[KAE_ERR] 压缩前后大小不一致：%ld ==> %ld\n", stream_len, decompressedSize);
         exit(-1);
-    }
+    }  
+    printf("zip compress perf result:\n time used: %lu us, compress speed = %.3f MB/s, compress rate = %.3f\n", time1, speed1, compressRate);
+    printf("zip uncompress perf result:\n time used: %lu us, uncompress speed = %.3f MB/s\n", time2, speed2);
 
     free(inbuf);
     free(compressedData);
