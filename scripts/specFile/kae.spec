@@ -1,7 +1,7 @@
 Name:          kae
 Summary:       Huawei Kunpeng Accelerator Engine Zip
-Version:       2.0.0
-Release:       3
+Version:       2.0.1
+Release:       1
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
 ExclusiveOS:   linux
@@ -391,6 +391,9 @@ echo "openssl engine uninstalled"
 /sbin/ldconfig
 
 %changelog
+* Tue Jan 2 2024 liuyang <liuyang645@huawei.com> 2.0.1-1
+- Update Spec Version Include kunpeng accelerator engine Code
+
 * Wed Jun 14 2023 liuyang <liuyang645@huawei.com> 2.0.0-2
 - Second Spec Version Include kunpeng accelerator engine Code
 

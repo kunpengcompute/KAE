@@ -350,7 +350,7 @@ TEST(ZlibTest, VersionCheck)
     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
     EXPECT_STREQ(ver.productVersion, "23.0.RC2");
     EXPECT_STREQ(ver.componentName, "KAEZlib");
-    EXPECT_STREQ(ver.componentVersion, "2.0.0");
+    EXPECT_STREQ(ver.componentVersion, "2.0.1");
 }
 #endif
 

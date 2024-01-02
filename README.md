@@ -568,9 +568,9 @@ sh build.sh engine
 total 5644
 -rw-r--r--. 1 root root 3846524 Aug 22 17:28 kae.a
 -rwxr-xr-x. 1 root root     995 Aug 22 17:28 kae.la
-lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so -> kae.so.2.0.0
-lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so.2 -> kae.so.2.0.0
--rwxr-xr-x. 1 root root 1967736 Aug 22 17:28 kae.so.2.0.0
+lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so -> kae.so.2.0.1
+lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so.2 -> kae.so.2.0.1
+-rwxr-xr-x. 1 root root 1967736 Aug 22 17:28 kae.so.2.0.1
 ```
 
 也可以通过openssl speed命令查看加速引擎是否生效：
@@ -609,7 +609,7 @@ sh build.sh zlib
 ```shell[root@localhost
 linux-vdso.so.1 (0x0000ffffb0282000)
         libc.so.6 => /usr/lib64/libc.so.6 (0x0000ffffb0075000)
-        libkaezip.so.2.0.0 => /usr/local/kaezip/lib/libkaezip.so.2.0.0 (0x0000ffffb0044000)
+        libkaezip.so.2.0.1 => /usr/local/kaezip/lib/libkaezip.so.2.0.1 (0x0000ffffb0044000)
         libwd.so.2 => /usr/local/lib/libwd.so.2 (0x0000ffffaffe3000)
         libwd_comp.so.2 => /usr/local/lib/libwd_comp.so.2 (0x0000ffffaffb2000)
         /lib/ld-linux-aarch64.so.1 (0x0000ffffb0245000)
