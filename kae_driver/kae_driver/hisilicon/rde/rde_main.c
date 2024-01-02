@@ -864,4 +864,4 @@ module_exit(hisi_rde_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Yu'an Wang<wangyuan46@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon RDE accelerator");
-MODULE_VERSION("1.3.11");
+MODULE_VERSION("1.3.12");

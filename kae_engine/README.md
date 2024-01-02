@@ -253,7 +253,7 @@ Please refer to [Secure Coding Specifications](https://github.com/kunpengcompute
 Please refer to [Secure Design](https://github.com/kunpengcompute/Kunpeng/blob/master/security/SecureDesign.md).
 
 ## ReleaseNote
-The latest version 1.3.11 is recommended.
+The latest version 1.3.12 is recommended.
 Please refer to https://github.com/kunpengcompute/KAE/blob/master/ReleaseNote
 
 ## More Information
