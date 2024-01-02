@@ -1,6 +1,6 @@
 Name:          kae_driver
 Summary:       Kunpeng Accelerator Engine Kernel Driver
-Version:       1.3.11
+Version:       1.3.12
 Release:       1%dist
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
@@ -274,5 +274,8 @@ echo "hisi_rde modules uninstalled"
 %config(noreplace) /etc/modprobe.d/hisi_rde.conf
 
 %changelog
+* Tue Jan 2 2024 liuyang <liuyang645@huawei.com> 1.3.12-1
+- Update Spec Version Include all Kunpeng Accelerator Engine Kernel Driver Code
+
 * Tue Jan 07 2020 jinbinhua <jinbinhua@huawei.com> 1.2.7-1
 - First Spec Version Include all Kunpeng Accelerator Engine Kernel Driver Code

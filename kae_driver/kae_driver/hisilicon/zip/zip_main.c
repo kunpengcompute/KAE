@@ -993,4 +993,4 @@ module_exit(hisi_zip_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator");
-MODULE_VERSION("1.3.11");
+MODULE_VERSION("1.3.12");

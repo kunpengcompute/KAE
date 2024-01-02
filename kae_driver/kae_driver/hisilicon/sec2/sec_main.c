@@ -1016,4 +1016,4 @@ MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_AUTHOR("Longfang Liu <liulongfang@huawei.com>");
 MODULE_AUTHOR("Zhang Wei <zhangwei375@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator");
-MODULE_VERSION("1.3.11");
+MODULE_VERSION("1.3.12");
