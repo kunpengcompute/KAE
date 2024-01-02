@@ -152,6 +152,7 @@ echo "installing driver..."
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+    depmod -a
     if [ "${implementer}-${part}" == "0x48-0xd01" ]; then
         modprobe uacce
         modprobe hisi_qm
