@@ -7,7 +7,7 @@ AM_CFLAGS+=-DWITH_LOG_FILE=\"$(with_log_file)\"
 endif
 
 lib_LTLIBRARIES=libwd.la
-libwd_la_LDFLAGS=-version-info 4:11:3
+libwd_la_LDFLAGS=-version-info 4:12:3
 libwd_la_SOURCES=wd.c wd_adapter.c wd.h wd_adapter.h \
 		 wd_rsa.c wd_rsa.h \
 		 wd_dh.c wd_dh.h \
