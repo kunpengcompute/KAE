@@ -32,7 +32,6 @@ implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}
 part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" != "0x48-0xd02" ]; then
     echo "Only installed on kunpeng CPUs"
-    exit 1
 fi
 
 %build
@@ -153,25 +152,14 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     depmod -a
-    if [ "${implementer}-${part}" == "0x48-0xd01" ]; then
-        modprobe uacce
-        modprobe hisi_qm
-        modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
-        modprobe hisi_hpre uacce_mode=2 pf_q_num=256
-        modprobe hisi_zip  uacce_mode=2 pf_q_num=256
-        echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
-        echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
-        echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-    elif [ "${implementer}-${part}" == "0x48-0xd02" ]; then
-        modprobe uacce
-        modprobe hisi_qm
-        modprobe hisi_sec2 uacce_mode=1 pf_q_num=256
-        modprobe hisi_hpre uacce_mode=1 pf_q_num=256
-        modprobe hisi_zip  uacce_mode=1 pf_q_num=256
-        echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
-        echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
-        echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-    fi
+    modprobe uacce
+    modprobe hisi_qm
+    modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
+    modprobe hisi_hpre uacce_mode=2 pf_q_num=256
+    modprobe hisi_zip  uacce_mode=2 pf_q_num=256
+    echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
+    echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
+    echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 fi
 /sbin/ldconfig
 

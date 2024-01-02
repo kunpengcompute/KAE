@@ -120,20 +120,9 @@ function build_rpm()
 
 function build_driver()
 {
-        if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-            #NOSVA
-            cd ${SRC_PATH}/KAEKernelDriver
-            make -j
-            make nosva
-        elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-            #SVA
-            cd ${SRC_PATH}/KAEKernelDriver
-            make -j
-            make install
-        else
-            echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
-            exit 1
-        fi
+        cd ${SRC_PATH}/KAEKernelDriver
+        make -j
+        make nosva #默认使用nosva模式
 }
 
 function driver_clean()
@@ -229,7 +218,7 @@ function help()
 	echo "sh build.sh all -- install all component(not include gmssl)"
     echo "sh build.sh rpmpack -- build rpm pack(not include gmssl)"
 
-	echo "sh build.sh driver -- install KAE SVA driver"
+	echo "sh build.sh driver -- install KAE driver"
 	echo "sh build.sh driver clean -- uninstall KAE driver"
 
 	echo "sh build.sh uadk -- install uadk"
