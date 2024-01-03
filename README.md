@@ -1,18 +1,11 @@
+当前KAE组件将原驱动仓、加密仓、压缩仓归一，统一编排在KAE仓（原来加密仓）；并且针对不同的内核版本，将代码分为了kae1分支（4.19内核）和kae2分支（5.10内核）。
+1.3.11及历史版本代码和发行包可在原驱动仓、加密仓、压缩仓下载。
 
-在历史的代码仓中，我们有以下几个部分的代码：
+[原驱动仓KAEdriver](https://gitee.com/kunpengcompute/KAEdriver)
+[原加密仓KAE](https://gitee.com/kunpengcompute/KAE/tree/v1.3.11/)
+[原压缩仓KAEzip](https://gitee.com/kunpengcompute/KAEzip)
 
-[KAEdriver](https://gitee.com/kunpengcompute/KAEdriver)  驱动层代码
-
-[KAE](https://gitee.com/kunpengcompute/KAE/tree/v1.3.11/) kae_engine层代码
-
-[KAEzip](https://gitee.com/kunpengcompute/KAEzip) kae_zip层代码
-
-
-这些代码仓适合查看1.3.11版本及其之前的tag。
-
-后来基于1.3.11版本的tag信息，我们将KAEdriver、KAE和KAEzip三个仓的代码合并到了[KAE](https://gitee.com/kunpengcompute/KAE)仓中。针对不同的内核版本，我们将代码分为了kae1分支（4.19内核）和kae2分支（5.10内核）。
-
-因此，如果您需要使用最新的代码，只需参考KAE代码仓中的readme。如果您需要下载历史代码，则需要到历史仓的对应tag点下载代码。
+[现KAE仓](https://gitee.com/kunpengcompute/KAE)
 
 ---
 
