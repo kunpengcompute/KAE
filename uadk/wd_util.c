@@ -25,8 +25,10 @@
 
 #define WD_INIT_SLEEP_UTIME		1000
 #define WD_INIT_RETRY_TIMES		10000
+#define US2S(us)			((us) >> 20)
+#define WD_INIT_RETRY_TIMEOUT		3
 
-#define DEF_DRV_LIB_FILE		"libwd.so"
+#define WD_DRV_LIB_DIR			"uadk"
 
 struct msg_pool {
 	/* message array allocated dynamically */
@@ -310,6 +312,20 @@ void wd_memset_zero(void *data, __u32 size)
 		*s++ = 0;
 }
 
+static void get_ctx_msg_num(struct wd_cap_config *cap, __u32 *msg_num)
+{
+	if (!cap || !cap->ctx_msg_num)
+		return;
+
+	if (cap->ctx_msg_num > WD_POOL_MAX_ENTRIES) {
+		WD_INFO("ctx_msg_num %u is invalid, use default value: %u!\n",
+			cap->ctx_msg_num, *msg_num);
+		return;
+	}
+
+	*msg_num = cap->ctx_msg_num;
+}
+
 static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 {
 	pool->msgs = calloc(1, msg_num * msg_size);
@@ -335,6 +351,9 @@ static int init_msg_pool(struct msg_pool *pool, __u32 msg_num, __u32 msg_size)
 
 static void uninit_msg_pool(struct msg_pool *pool)
 {
+	if (!pool->msg_num)
+		return;
+
 	free(pool->msgs);
 	free(pool->used);
 	pool->msgs = NULL;
@@ -342,21 +361,27 @@ static void uninit_msg_pool(struct msg_pool *pool)
 	memset(pool, 0, sizeof(*pool));
 }
 
-int wd_init_async_request_pool(struct wd_async_msg_pool *pool, __u32 pool_num,
+int wd_init_async_request_pool(struct wd_async_msg_pool *pool, struct wd_ctx_config *config,
 			       __u32 msg_num, __u32 msg_size)
 {
+	__u32 pool_num = config->ctx_num;
 	__u32 i, j;
 	int ret;
 
 	pool->pool_num = pool_num;
 
-	pool->pools = calloc(1, pool->pool_num * sizeof(struct msg_pool));
+	pool->pools = calloc(1, pool_num * sizeof(struct msg_pool));
 	if (!pool->pools) {
 		WD_ERR("failed to alloc memory for async msg pools!\n");
 		return -WD_ENOMEM;
 	}
 
-	for (i = 0; i < pool->pool_num; i++) {
+	/* If user set valid msg num, use user's. */
+	get_ctx_msg_num(config->cap, &msg_num);
+	for (i = 0; i < pool_num; i++) {
+		if (config->ctxs[i].ctx_mode == CTX_MODE_SYNC)
+			continue;
+
 		ret = init_msg_pool(&pool->pools[i], msg_num, msg_size);
 		if (ret < 0)
 			goto err;
@@ -383,7 +408,6 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 	pool->pool_num = 0;
 }
 
-/* fix me: this is old wd_get_req_from_pool */
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 			  int ctx_idx, __u32 tag)
 {
@@ -433,6 +457,14 @@ void wd_put_msg_to_pool(struct wd_async_msg_pool *pool, int ctx_idx, __u32 tag)
 	}
 
 	__atomic_clear(&p->used[tag - 1], __ATOMIC_RELEASE);
+}
+
+int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
+{
+	if ((in_bytes && !src) || (out_bytes && !dst))
+		return -WD_EINVAL;
+
+	return 0;
 }
 
 int wd_check_datalist(struct wd_datalist *head, __u32 size)
@@ -1319,7 +1351,6 @@ static struct async_task_queue *find_async_queue(struct wd_env_config *config,
 	return head + offset;
 }
 
-/* fix me: all return value here, and no config input */
 int wd_add_task_to_async_queue(struct wd_env_config *config, __u32 idx)
 {
 	struct async_task_queue *task_queue;
@@ -1367,6 +1398,7 @@ err_out:
 	task_queue->cur_task--;
 	task_queue->prod = curr_prod;
 	pthread_mutex_unlock(&task_queue->lock);
+	sem_post(&task_queue->empty_sem);
 
 	return ret;
 }
@@ -1767,8 +1799,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 	return 0;
 }
 
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
-		       void *msg, __u64 *balance, bool epoll_en)
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
+		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en)
 {
 	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
 	__u64 rx_cnt = 0;
@@ -1777,7 +1809,7 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 	if (balance)
 		timeout = WD_RECV_MAX_CNT_SLEEP;
 
-	ret = msg_handle->send(ctx, msg);
+	ret = msg_handle->send(drv, ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
 		return ret;
@@ -1790,7 +1822,7 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
-		ret = msg_handle->recv(ctx, msg);
+		ret = msg_handle->recv(drv, ctx, msg);
 		if (ret == -WD_EAGAIN) {
 			if (unlikely(rx_cnt++ >= timeout)) {
 				WD_ERR("failed to recv msg: timeout!\n");
@@ -1895,15 +1927,9 @@ static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 }
 
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
+		       struct wd_alg_driver *driver)
 {
-	void *priv;
 	int ret;
-
-	/* Init ctx related resources in specific driver */
-	priv = calloc(1, driver->priv_size);
-	if (!priv)
-		return -WD_ENOMEM;
 
 	if (!driver->init) {
 		driver->fallback = 0;
@@ -1912,7 +1938,7 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 		goto err_alloc;
 	}
 
-	ret = driver->init(config, priv);
+	ret = driver->init(driver, config);
 	if (ret < 0) {
 		WD_ERR("driver init failed.\n");
 		goto err_alloc;
@@ -1925,32 +1951,24 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 			WD_ERR("soft alg driver init failed.\n");
 		}
 	}
-	*drv_priv = priv;
 
 	return 0;
 
 err_alloc:
-	free(priv);
 	return ret;
 }
 
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
+			  struct wd_alg_driver *driver)
 {
-	void *priv = *drv_priv;
 
-	driver->exit(priv);
+	driver->exit(driver);
 	/* Ctx config just need clear once */
 	if (driver->calc_type == UADK_ALG_HW)
 		wd_clear_ctx_config(config);
 
 	if (driver->fallback)
 		wd_alg_uninit_fallback((struct wd_alg_driver *)driver->fallback);
-
-	if (priv) {
-		free(priv);
-		*drv_priv = NULL;
-	}
 }
 
 void wd_dlclose_drv(void *dlh_list)
@@ -2103,6 +2121,7 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		/* environment variable is not set, try to use user_ctx_params first */
 		if (user_ctx_params) {
 			copy_bitmask_to_bitmask(user_ctx_params->bmp, ctx_params->bmp);
+			ctx_params->cap = user_ctx_params->cap;
 			ctx_params->ctx_set_num = user_ctx_params->ctx_set_num;
 			ctx_params->op_type_num = user_ctx_params->op_type_num;
 			if (ctx_params->op_type_num > (__u32)max_op_type) {
@@ -2139,7 +2158,7 @@ static void dladdr_empty(void)
 int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_MAX] = {0};
-	char path[PATH_MAX];
+	char path[PATH_MAX] = {0};
 	Dl_info file_info;
 	int len, rc, i;
 
@@ -2161,16 +2180,17 @@ int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
 	}
 
 	if (is_dir) {
-		(void)snprintf(lib_path, PATH_MAX, "%s", file_path);
-		return 0;
+		len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, WD_DRV_LIB_DIR);
+		if (len >= PATH_MAX)
+			return -WD_EINVAL;
+	} else {
+		len = snprintf(lib_path, PATH_MAX, "%s/%s/%s", file_path, WD_DRV_LIB_DIR, lib_file);
+		if (len >= PATH_MAX)
+			return -WD_EINVAL;
 	}
 
-	len = snprintf(lib_path, PATH_MAX, "%s/%s", file_path, lib_file);
-	if (len < 0)
-		return -WD_EINVAL;
-
 	if (realpath(lib_path, path) == NULL) {
-		WD_ERR("%s: no such file or directory!\n", path);
+		WD_ERR("invalid: %s: no such file or directory!\n", path);
 		return -WD_EINVAL;
 	}
 
@@ -2193,11 +2213,10 @@ void *wd_dlopen_drv(const char *cust_lib_dir)
 		if (ret)
 			return NULL;
 	} else {
-		(void)snprintf(lib_path, PATH_MAX, "%s/%s", cust_lib_dir, DEF_DRV_LIB_FILE);
-		ret = access(lib_path, F_OK);
-		if (ret)
+		if (realpath(cust_lib_dir, lib_path) == NULL) {
+			WD_ERR("invalid: %s: no such file or directory!\n", lib_path);
 			return NULL;
-
+		}
 		strncpy(lib_dir_path, cust_lib_dir, PATH_MAX - 1);
 	}
 
@@ -2312,10 +2331,10 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv)
 	wd_release_drv(drv);
 }
 
-bool wd_alg_try_init(enum wd_status *status)
+int wd_alg_try_init(enum wd_status *status)
 {
 	enum wd_status expected;
-	int count = 0;
+	__u32 count = 0;
 	bool ret;
 
 	do {
@@ -2324,15 +2343,17 @@ bool wd_alg_try_init(enum wd_status *status)
 						  __ATOMIC_RELAXED, __ATOMIC_RELAXED);
 		if (expected == WD_INIT) {
 			WD_ERR("The algorithm has been initialized!\n");
-			return false;
+			return -WD_EEXIST;
 		}
 		usleep(WD_INIT_SLEEP_UTIME);
-		if (!(++count % WD_INIT_RETRY_TIMES))
-			WD_ERR("The algorithm initizalite has been waiting for %ds!\n",
-			       WD_INIT_SLEEP_UTIME * count / 1000000);
+
+		if (US2S(WD_INIT_SLEEP_UTIME * ++count) >= WD_INIT_RETRY_TIMEOUT) {
+			WD_ERR("The algorithm initialize wait timeout!\n");
+			return -WD_ETIMEDOUT;
+		}
 	} while (!ret);
 
-	return true;
+	return 0;
 }
 
 static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
@@ -2404,8 +2425,9 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	struct wd_ctx_nums ctx_nums = attrs->ctx_params->ctx_set_num[op_type];
 	__u32 ctx_set_num = ctx_nums.sync_ctx_num + ctx_nums.async_ctx_num;
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+	__u32 count = idx + ctx_set_num;
 	struct uacce_dev *dev;
-	__u32 i;
+	__u32 i, cnt = 0;
 
 	/* If the ctx set number is 0, the initialization is skipped. */
 	if (!ctx_set_num)
@@ -2415,13 +2437,27 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 	if (WD_IS_ERR(dev))
 		return WD_PTR_ERR(dev);
 
-	for (i = idx; i < idx + ctx_set_num; i++) {
+	for (i = idx; i < count; i++) {
 		ctx_config->ctxs[i].ctx = wd_request_ctx(dev);
 		if (errno == WD_EBUSY) {
 			dev = wd_find_dev_by_numa(list, numa_id);
 			if (WD_IS_ERR(dev))
 				return WD_PTR_ERR(dev);
+
+			if (cnt++ > WD_INIT_RETRY_TIMES) {
+				WD_ERR("failed to request enough ctx due to timeout!\n");
+				return -WD_ETIMEDOUT;
+			}
+
+			/* self-decrease i to eliminate self-increase on next loop */
 			i--;
+			continue;
+		} else if (!ctx_config->ctxs[i].ctx) {
+			/*
+			 * wd_release_ctx_set will release ctx in
+			 * caller wd_init_ctx_and_sched.
+			 */
+			return -WD_ENOMEM;
 		}
 		ctx_config->ctxs[i].op_type = op_type;
 		ctx_config->ctxs[i].ctx_mode =
@@ -2671,6 +2707,7 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 			goto out_freesched;
 		}
 
+		ctx_config->cap = attrs->ctx_params->cap;
 		ret = alg_init_func(ctx_config, alg_sched);
 		if (ret)
 			goto out_pre_init;

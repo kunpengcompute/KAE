@@ -36,11 +36,11 @@
 #include "v1/wd_ecc.h"
 #include "v1/wd_adapter.h"
 
-#define WD_CTX_MSG_NUM		64
-#define WD_HPRE_CTX_MSG_NUM	64
-#define WD_RNG_CTX_MSG_NUM	256
-#define WD_MAX_CTX_NUM			256
-#define BYTE_BITS			8
+#define WD_CTX_COOKIES_NUM	64
+#define WD_MAX_CTX_COOKIES_NUM	1024
+#define WD_CTX_COOKIES_NUM_MASK	0xffff
+#define WD_MAX_CTX_NUM		256
+#define BYTE_BITS		8
 #define BYTE_BITS_SHIFT		3
 #define CRT_PARAMS_SZ(key_size)		((5 * (key_size)) >> 1)
 #define CRT_GEN_PARAMS_SZ(key_size)	((7 * (key_size)) >> 1)
@@ -75,6 +75,23 @@
 /* x25519/x448 */
 #define X_DH_OUT_PARAM_NUM		1
 #define X_DH_HW_KEY_PARAM_NUM		3
+
+/* Key size and block size of aead */
+#define MAX_AEAD_KEY_SIZE		64
+#define GCM_BLOCK_SIZE			12
+
+/* Key size and block size of chiper */
+#define MAX_CIPHER_KEY_SIZE		64
+#define AES_BLOCK_SIZE			16
+#define DES_KEY_SIZE			8
+#define SM4_KEY_SIZE			16
+#define DES3_2KEY_SIZE			(2 * DES_KEY_SIZE)
+#define DES3_3KEY_SIZE			(3 * DES_KEY_SIZE)
+#define CBC_AES_BLOCK_SIZE		16
+#define CBC_3DES_BLOCK_SIZE		8
+
+/* Key size and block size of digest */
+#define MAX_HMAC_KEY_SIZE		128
 
 #define X_DH_OUT_PARAMS_SZ(hsz)		((hsz) * X_DH_OUT_PARAM_NUM)
 #define X_DH_HW_KEY_SZ(hsz)		((hsz) * X_DH_HW_KEY_PARAM_NUM)
@@ -173,6 +190,19 @@ struct wd_sec_udata {
 	__u16 gran_num;
 	__u16 key_bytes;
 	__u8 *key;
+};
+
+struct wd_aead_udata {
+	__u32 src_offset;
+	__u32 dst_offset;
+	__u16 ckey_bytes;
+	__u16 akey_bytes;
+	__u16 aiv_bytes;
+	__u16 mac_bytes;
+	__u8 *ckey;
+	__u8 *akey;
+	__u8 *aiv;
+	__u8 *mac;
 };
 
 /* Digest tag format of Warpdrive */
@@ -380,6 +410,7 @@ int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max);
 void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max);
 int wd_get_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
 void wd_put_cookies(struct wd_cookie_pool *pool, void **cookies, __u32 num);
+__u32 wd_get_ctx_cookies_num(__u32 usr_cookies_num, __u32 def_num);
 const char *wd_get_drv(struct wd_queue *q);
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num);
 int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num);
@@ -390,5 +421,6 @@ void drv_set_sgl_pri(struct wd_sgl *sgl, void *priv);
 void *drv_get_sgl_pri(struct wd_sgl *sgl);
 struct wd_mm_br *drv_get_br(void *pool);
 void wd_sgl_memset(struct wd_sgl *sgl, int ch);
+int wd_check_src_dst_ptr(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
 
 #endif

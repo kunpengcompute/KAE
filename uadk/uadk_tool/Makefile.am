@@ -1,7 +1,9 @@
 ACLOCAL_AMFLAGS = -I m4 -I./include
 AUTOMAKE_OPTIONS = foreign subdir-objects
-AM_CFLAGS=-Wall -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/benchmark/include \
+AM_CFLAGS=-Wall -Werror -fno-strict-aliasing -I$(top_srcdir) -I$(top_srcdir)/benchmark/include \
 			-pthread
+AM_CFLAGS += -fPIC -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+-O2 -ftrapv -Wl,-z,now -Wl,-s
 
 #AUTOMAKE_OPTIONS = subdir-objects
 
@@ -15,6 +17,7 @@ uadk_tool_SOURCES=uadk_tool.c dfx/uadk_dfx.c dfx/uadk_dfx.h \
 		benchmark/hpre_wd_benchmark.c hpre_wd_benchmark.h \
 		benchmark/zip_uadk_benchmark.c benchmark/zip_uadk_benchmark.h \
 		benchmark/zip_wd_benchmark.c benchmark/zip_wd_benchmark.h \
+		benchmark/trng_wd_benchmark.c benchmark/trng_wd_benchmark.h \
 		test/uadk_test.c test/uadk_test.h \
 		test/test_sec.c test/test_sec.h test/sec_template_tv.h
 
@@ -31,8 +34,6 @@ else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 		-l:libwd_comp.so.2 -lnuma
 endif
-
-uadk_tool_LDFLAGS=-Wl,-rpath,'/usr/local/lib'
 
 if WITH_ZLIB_FSE_DIR
 AM_CFLAGS += -DZLIB_FSE

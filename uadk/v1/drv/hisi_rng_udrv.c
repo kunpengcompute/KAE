@@ -18,18 +18,12 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <assert.h>
 #include <string.h>
 #include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
-#include <unistd.h>
 
-#include "config.h"
 #include "hisi_rng_udrv.h"
 
 #define HISI_RNG_BYTES		4
@@ -94,7 +88,7 @@ static int rng_read(struct rng_queue_info *info, struct wcrypto_rng_msg *msg)
 	__u32 max = msg->in_bytes;
 	__u32 currsize = 0;
 	int recv_count = 0;
-	int val;
+	__u32 val;
 
 	do {
 		val = wd_reg_read((void *)((uintptr_t)info->mmio_base +

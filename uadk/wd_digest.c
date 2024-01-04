@@ -10,17 +10,7 @@
 #include "include/drv/wd_digest_drv.h"
 #include "wd_digest.h"
 
-#define XTS_MODE_KEY_DIVISOR	2
-#define SM4_KEY_SIZE		16
-#define DES_KEY_SIZE		8
-#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
 #define GMAC_IV_LEN		16
-#define AES_KEYSIZE_128		16
-#define AES_KEYSIZE_192		24
-#define AES_KEYSIZE_256		32
-
-#define WD_POOL_MAX_ENTRIES	1024
-#define DES_WEAK_KEY_NUM	4
 
 static __u32 g_digest_mac_len[WD_DIGEST_TYPE_MAX] = {
 	WD_DIGEST_SM3_LEN, WD_DIGEST_MD5_LEN, WD_DIGEST_SHA1_LEN,
@@ -51,7 +41,6 @@ struct wd_digest_setting {
 	struct wd_sched sched;
 	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_digest_setting;
@@ -65,12 +54,13 @@ struct wd_digest_sess {
 	__u32			key_bytes;
 	void			*sched_key;
 	/*
-	 * Notify the BD state, zero is frist BD, non-zero
-	 * is middle or final BD.
+	 * Notify the stream message state, zero is frist message,
+	 * non-zero is middle or final message.
 	 */
-	int			bd_state;
-	/* Total of data for stream mode */
-	__u64			 long_data_len;
+	int			msg_state;
+
+	/* Total data length for stream mode */
+	__u64			long_data_len;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -132,7 +122,7 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	int ret;
 
 	if (!key || !sess) {
-		WD_ERR("failed to check key param!\n");
+		WD_ERR("invalid: failed to check input param, sess or key is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -213,7 +203,7 @@ void wd_digest_free_sess(handle_t h_sess)
 		return;
 	}
 
-	wd_memset_zero(sess->key, MAX_HMAC_KEY_SIZE);
+	wd_memset_zero(sess->key, sess->key_bytes);
 	if (sess->sched_key)
 		free(sess->sched_key);
 	free(sess);
@@ -244,14 +234,13 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 
 	/* allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_digest_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_digest_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_digest_setting.config,
-					wd_digest_setting.driver,
-					&wd_digest_setting.priv);
+					wd_digest_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -269,14 +258,13 @@ out_clear_ctx_config:
 
 int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
-	flag = wd_alg_try_init(&wd_digest_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_digest_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -306,13 +294,15 @@ static void wd_digest_uninit_nolock(void)
 	wd_uninit_async_request_pool(&wd_digest_setting.pool);
 	wd_clear_sched(&wd_digest_setting.sched);
 	wd_alg_uninit_driver(&wd_digest_setting.config,
-						 wd_digest_setting.driver,
-						 &wd_digest_setting.priv);
+			     wd_digest_setting.driver);
 }
 
 void wd_digest_uninit(void)
 {
-	if (!wd_digest_setting.priv)
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_digest_setting.status, &status);
+	if (status == WD_UNINIT)
 		return;
 
 	wd_digest_uninit_nolock();
@@ -335,14 +325,13 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 {
 	struct wd_ctx_params digest_ctx_params = {0};
 	struct wd_ctx_nums digest_ctx_num = {0};
-	int ret = -WD_EINVAL;
-	bool flag;
+	int state, ret = -WD_EINVAL;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
 
-	flag = wd_alg_try_init(&wd_digest_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_digest_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	     task_type < 0 || task_type >= TASK_MAX_TYPE) {
@@ -423,7 +412,10 @@ out_uninit:
 
 void wd_digest_uninit2(void)
 {
-	if (!wd_digest_setting.priv)
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_digest_setting.status, &status);
+	if (status == WD_UNINIT)
 		return;
 
 	wd_digest_uninit_nolock();
@@ -462,19 +454,26 @@ static int wd_mac_length_check(struct wd_digest_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(!req->has_next &&
-	    req->out_bytes > g_digest_mac_len[sess->alg])) {
-		WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
-		return -WD_EINVAL;
-	}
-
-	/* User need to input full mac buffer in first and middle hash */
-	if (unlikely(req->has_next &&
-	    req->out_bytes != g_digest_mac_full_len[sess->alg])) {
-		WD_ERR("invalid: digest mac full length is error, alg = %d, out_bytes = %u\n",
-			sess->alg, req->out_bytes);
-		return -WD_EINVAL;
+	switch (req->has_next) {
+	case WD_DIGEST_END:
+	case WD_DIGEST_STREAM_END:
+		if (unlikely(req->out_bytes > g_digest_mac_len[sess->alg])) {
+			WD_ERR("invalid: digest mac length, alg = %d, out_bytes = %u\n",
+			       sess->alg, req->out_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	case WD_DIGEST_DOING:
+	case WD_DIGEST_STREAM_DOING:
+		/* User need to input full mac buffer in first and middle hash */
+		if (unlikely(req->out_bytes != g_digest_mac_full_len[sess->alg])) {
+			WD_ERR("invalid: digest mac full length, alg = %d, out_bytes = %u\n",
+			       sess->alg, req->out_bytes);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		break;
 	}
 
 	return 0;
@@ -506,9 +505,15 @@ static int wd_digest_param_check(struct wd_digest_sess *sess,
 		return ret;
 
 	if (unlikely(sess->alg == WD_DIGEST_AES_GMAC &&
-	    req->iv_bytes != GMAC_IV_LEN)) {
+	    (!req->iv || req->iv_bytes != GMAC_IV_LEN))) {
 		WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
 			req->iv_bytes);
+		return -WD_EINVAL;
+	}
+
+	ret = wd_check_src_dst(req->in, req->in_bytes, req->out, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: in/out addr is NULL when in/out size is non-zero!\n");
 		return -WD_EINVAL;
 	}
 
@@ -530,6 +535,16 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 {
 	memcpy(&msg->req, req, sizeof(struct wd_digest_req));
 
+	if (unlikely(req->has_next == WD_DIGEST_STREAM_END)) {
+		sess->long_data_len = req->long_data_len;
+		sess->msg_state = WD_DIGEST_DOING;
+		req->has_next = WD_DIGEST_END;
+	} else if (unlikely(req->has_next == WD_DIGEST_STREAM_DOING)) {
+		sess->long_data_len = req->long_data_len;
+		sess->msg_state = WD_DIGEST_DOING;
+		req->has_next = WD_DIGEST_DOING;
+	}
+
 	msg->alg_type = WD_DIGEST;
 	msg->alg = sess->alg;
 	msg->mode = sess->mode;
@@ -542,15 +557,10 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->out_bytes = req->out_bytes;
 	msg->data_fmt = req->data_fmt;
 	msg->has_next = req->has_next;
-	sess->long_data_len += req->in_bytes;
-	msg->long_data_len = sess->long_data_len;
+	msg->long_data_len = sess->long_data_len + req->in_bytes;
 
-	/* To store the stream BD state, iv_bytes also means BD state */
-	msg->iv_bytes = sess->bd_state;
-	if (req->has_next == 0) {
-		sess->long_data_len = 0;
-		sess->bd_state = 0;
-	}
+	/* Use iv_bytes to store the stream message state */
+	msg->iv_bytes = sess->msg_state;
 }
 
 static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *dsess,
@@ -563,19 +573,25 @@ static int send_recv_sync(struct wd_ctx_internal *ctx, struct wd_digest_sess *ds
 	msg_handle.recv = wd_digest_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
-				 NULL, wd_digest_setting.config.epoll_en);
-	if (unlikely(ret))
-		goto out;
-
-	/*
-	 * non-zero is final BD or middle BD as stream mode.
-	 */
-	dsess->bd_state = msg->has_next;
-
-out:
+	ret = wd_handle_msg_sync(wd_digest_setting.driver, &msg_handle, ctx->ctx,
+				 msg, NULL, wd_digest_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
-	return ret;
+	if (unlikely(ret))
+		return ret;
+
+	/* After a stream mode job was done, update session long_data_len */
+	if (msg->has_next) {
+		/* Long hash(first and middle message) */
+		dsess->long_data_len += msg->in_bytes;
+	} else if (msg->iv_bytes) {
+		/* Long hash(final message) */
+		dsess->long_data_len = 0;
+	}
+
+	/* Update session message state */
+	dsess->msg_state = msg->has_next;
+
+	return 0;
 }
 
 int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
@@ -647,7 +663,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_digest_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -682,7 +698,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
+	if (unlikely(!count || !expt)) {
 		WD_ERR("invalid: digest poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -696,8 +712,7 @@ int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_digest_setting.driver->recv(ctx->ctx,
-							    &recv_msg);
+		ret = wd_alg_driver_recv(wd_digest_setting.driver, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

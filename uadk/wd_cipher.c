@@ -11,16 +11,9 @@
 #include "include/drv/wd_cipher_drv.h"
 #include "wd_cipher.h"
 
-#define XTS_MODE_KEY_DIVISOR	2
-#define SM4_KEY_SIZE		16
-#define DES_KEY_SIZE		8
-#define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
-#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
-#define AES_KEYSIZE_128		16
-#define AES_KEYSIZE_192		24
-#define AES_KEYSIZE_256		32
+#define XTS_MODE_KEY_SHIFT	1
+#define XTS_MODE_KEY_LEN_MASK	0x1
 
-#define WD_POOL_MAX_ENTRIES	1024
 #define DES_WEAK_KEY_NUM	16
 
 static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
@@ -46,7 +39,8 @@ static const unsigned char des_weak_keys[DES_WEAK_KEY_NUM][DES_KEY_SIZE] = {
 
 static char *wd_cipher_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
 	{"ecb(sm4)", "cbc(sm4)", "ctr(sm4)", "xts(sm4)", "ofb(sm4)",
-	 "cfb(sm4)", "cbc-cs1(sm4)", "cbc-cs2(sm4)", "cbc-cs3(sm4)"},
+	 "cfb(sm4)", "cbc-cs1(sm4)", "cbc-cs2(sm4)", "cbc-cs3(sm4)",
+	 "", "", "xts(sm4)"},
 	{"ecb(aes)", "cbc(aes)", "ctr(aes)", "xts(aes)", "ofb(aes)",
 	 "cfb(aes)", "cbc-cs1(aes)", "cbc-cs2(aes)", "cbc-cs3(aes)"},
 	{"ecb(des)", "cbc(des)",},
@@ -59,7 +53,6 @@ struct wd_cipher_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_cipher_setting;
@@ -143,27 +136,36 @@ static int aes_key_len_check(__u32 length)
 
 static int cipher_key_len_check(struct wd_cipher_sess *sess, __u32 length)
 {
+	__u32 key_len = length;
 	int ret = 0;
 
-	if (sess->mode == WD_CIPHER_XTS && length == AES_KEYSIZE_192) {
-		WD_ERR("unsupported XTS key length, length = %u\n", length);
-		return -WD_EINVAL;
+	if (sess->mode == WD_CIPHER_XTS || sess->mode == WD_CIPHER_XTS_GB) {
+		if (length & XTS_MODE_KEY_LEN_MASK) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
+		key_len = length >> XTS_MODE_KEY_SHIFT;
+
+		if (key_len == AES_KEYSIZE_192) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
 	}
 
 	switch (sess->alg) {
 	case WD_CIPHER_SM4:
-		if (length != SM4_KEY_SIZE)
+		if (key_len != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WD_CIPHER_AES:
-		ret = aes_key_len_check(length);
+		ret = aes_key_len_check(key_len);
 		break;
 	case WD_CIPHER_DES:
-		if (length != DES_KEY_SIZE)
+		if (key_len != DES_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WD_CIPHER_3DES:
-		if (length != DES3_2KEY_SIZE && length != DES3_3KEY_SIZE)
+		if (key_len != DES3_2KEY_SIZE && key_len != DES3_3KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	default:
@@ -195,7 +197,6 @@ static bool wd_cipher_alg_check(const char *alg_name)
 int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 {
 	struct wd_cipher_sess *sess = (struct wd_cipher_sess *)h_sess;
-	__u32 length = key_len;
 	int ret;
 
 	if (!key || !sess) {
@@ -203,10 +204,7 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (sess->mode == WD_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
-
-	ret = cipher_key_len_check(sess, length);
+	ret = cipher_key_len_check(sess, key_len);
 	if (ret) {
 		WD_ERR("cipher set key input key length err!\n");
 		return -WD_EINVAL;
@@ -246,13 +244,13 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	}
 
 	sess->alg_name = wd_cipher_alg_name[setup->alg][setup->mode];
-	sess->alg = setup->alg;
-	sess->mode = setup->mode;
 	ret = wd_drv_alg_support(sess->alg_name, wd_cipher_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
+	sess->alg = setup->alg;
+	sess->mode = setup->mode;
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(
@@ -280,7 +278,7 @@ void wd_cipher_free_sess(handle_t h_sess)
 		return;
 	}
 
-	wd_memset_zero(sess->key, MAX_CIPHER_KEY_SIZE);
+	wd_memset_zero(sess->key, sess->key_bytes);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -312,14 +310,13 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 
 	/* allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_cipher_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_cipher_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_cipher_setting.config,
-					wd_cipher_setting.driver,
-					&wd_cipher_setting.priv);
+					wd_cipher_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -336,9 +333,10 @@ out_clear_ctx_config:
 
 static int wd_cipher_common_uninit(void)
 {
-	void *priv = wd_cipher_setting.priv;
+	enum wd_status status;
 
-	if (!priv)
+	wd_alg_get_init(&wd_cipher_setting.status, &status);
+	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
 	/* uninit async request pool */
@@ -348,22 +346,20 @@ static int wd_cipher_common_uninit(void)
 	wd_clear_sched(&wd_cipher_setting.sched);
 
 	wd_alg_uninit_driver(&wd_cipher_setting.config,
-				wd_cipher_setting.driver,
-				&wd_cipher_setting.priv);
+			     wd_cipher_setting.driver);
 
 	return 0;
 }
 
 int wd_cipher_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
 
-	flag = wd_alg_try_init(&wd_cipher_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_cipher_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -404,14 +400,14 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 {
 	struct wd_ctx_nums cipher_ctx_num[WD_CIPHER_DECRYPTION + 1] = {0};
 	struct wd_ctx_params cipher_ctx_params = {0};
-	int ret = -WD_EINVAL;
+	int state, ret = -WD_EINVAL;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_cipher_clear_status);
 
-	flag = wd_alg_try_init(&wd_cipher_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_cipher_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	     task_type < 0 || task_type >= TASK_MAX_TYPE) {
@@ -539,6 +535,11 @@ static int cipher_iv_len_check(struct wd_cipher_req *req,
 	if (sess->mode == WD_CIPHER_ECB)
 		return 0;
 
+	if (!req->iv) {
+		WD_ERR("invalid: cipher input iv is NULL!\n");
+		ret = -WD_EINVAL;
+	}
+
 	switch (sess->alg) {
 	case WD_CIPHER_AES:
 	case WD_CIPHER_SM4:
@@ -586,6 +587,12 @@ static int wd_cipher_check_params(handle_t h_sess,
 		return -WD_EINVAL;
 	}
 
+	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+	if (unlikely(ret)) {
+		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
+		return -WD_EINVAL;
+	}
+
 	if (req->data_fmt == WD_SGL_BUF) {
 		ret = wd_check_datalist(req->list_src, req->in_bytes);
 		if (unlikely(ret)) {
@@ -616,8 +623,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.recv = wd_cipher_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
-			  wd_cipher_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_cipher_setting.driver, &msg_handle, ctx->ctx,
+				 msg, NULL, wd_cipher_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -692,7 +699,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_cipher_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_cipher_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("wd cipher async send err!\n");
@@ -727,7 +734,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
+	if (unlikely(!count || !expt)) {
 		WD_ERR("invalid: cipher poll ctx input param is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -741,7 +748,7 @@ int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_cipher_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_cipher_setting.driver, ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN)
 			return ret;
 		else if (ret < 0) {

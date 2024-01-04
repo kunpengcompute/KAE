@@ -56,12 +56,13 @@ struct wcrypto_dh_ctx {
 static int create_ctx_param_check(struct wd_queue *q,
 				  struct wcrypto_dh_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("%s(): input parameter err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
-	if (!setup->br.alloc || !setup->br.free) {
+	if (!setup->br.alloc || !setup->br.free ||
+	    !setup->br.iova_map || !setup->br.iova_unmap) {
 		WD_ERR("create dh ctx user mm br err!\n");
 		return -WD_EINVAL;
 	}
@@ -90,17 +91,19 @@ static int wcrypto_init_dh_cookie(struct wcrypto_dh_ctx *ctx)
 {
 	struct wcrypto_dh_ctx_setup *setup = &ctx->setup;
 	struct wcrypto_dh_cookie *cookie;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
 	int ret;
-	__u32 i;
 
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_dh_cookie), WD_HPRE_CTX_MSG_NUM);
+		sizeof(struct wcrypto_dh_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		return ret;
 	}
 
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.is_g2 = (__u8)setup->is_g2;
@@ -186,6 +189,10 @@ void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *set
 		goto free_ctx;
 	}
 	ctx->g.data = ctx->setup.br.alloc(ctx->setup.br.usr, ctx->key_size);
+	if (!ctx->g.data) {
+		WD_ERR("failed to alloc ctx->g.data memory!\n");
+		goto free_ctx;
+	}
 	ctx->g.bsize = ctx->key_size;
 
 	ret = wcrypto_init_dh_cookie(ctx);
@@ -297,12 +304,12 @@ static int do_dh_prepare(struct wcrypto_dh_op_data *opdata,
 	int ret;
 
 	if (unlikely(!ctxt || !opdata)) {
-		WD_ERR("input parameter err!\n");
+		WD_ERR("invalid: dh input parameter err!\n");
 		return -WD_EINVAL;
 	}
 
 	if (unlikely(tag && !ctxt->setup.cb)) {
-		WD_ERR("ctx call back is null!\n");
+		WD_ERR("invalid: ctx call back is null!\n");
 		return -WD_EINVAL;
 	}
 

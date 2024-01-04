@@ -79,7 +79,7 @@ static void wd_parse_log_level(void)
 		goto close_file;
 	}
 
-	while (fscanf(in_file, "%[^\n ] ", file_contents) != EOF) {
+	while (fscanf(in_file, " %[^\n ] ", file_contents) != EOF) {
 		if (!strcmp("local5.debug", file_contents))
 			log_debug = true;
 		else if (!strcmp("local5.info", file_contents))
@@ -228,7 +228,7 @@ static int get_dev_info(struct uacce_dev *dev)
 			return ret;
 		else if (value == 1) {
 			WD_ERR("skip isolated uacce device!\n");
-			return -ENODEV;
+			return -WD_ENODEV;
 		}
 	}
 
@@ -237,7 +237,7 @@ static int get_dev_info(struct uacce_dev *dev)
 		return ret;
 	else if (!((unsigned int)dev->flags & UACCE_DEV_SVA)) {
 		WD_ERR("skip none sva uacce device!\n");
-		return -ENODEV;
+		return -WD_ENODEV;
 	}
 
 	ret = get_int_attr(dev, "region_mmio_size", &value);
@@ -426,7 +426,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 
 	wd_ctx_init_qfrs_offs(ctx);
 
-	strncpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
+	memcpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
 	ctx->dev_path[MAX_DEV_NAME_LEN - 1] = '\0';
 
 	return (handle_t)ctx;
@@ -756,7 +756,7 @@ struct uacce_dev *wd_find_dev_by_numa(struct uacce_dev_list *list, int numa_id)
 	}
 
 	while (p) {
-		if (numa_id != p->dev->numa_id) {
+		if (p->dev && numa_id != p->dev->numa_id) {
 			p = p->next;
 			continue;
 		}

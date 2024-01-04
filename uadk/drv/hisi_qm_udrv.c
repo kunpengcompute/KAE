@@ -252,11 +252,10 @@ static int hisi_qm_setup_db(handle_t h_ctx, struct hisi_qm_queue_info *q_info)
 static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 			     struct hisi_qm_queue_info *q_info)
 {
-	struct hisi_qp_info qp_cfg;
-	struct hisi_qp_ctx qp_ctx;
+	struct hisi_qp_info qp_cfg = {0};
+	struct hisi_qp_ctx qp_ctx = {0};
 	int ret;
 
-	memset(&qp_ctx, 0, sizeof(struct hisi_qp_ctx));
 	qp_ctx.qc_type = config->op_type;
 	q_info->qc_type = qp_ctx.qc_type;
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_QM_SET_QP_CTX, &qp_ctx);
@@ -264,6 +263,7 @@ static int his_qm_set_qp_ctx(handle_t h_ctx, struct hisi_qm_priv *config,
 		WD_DEV_ERR(h_ctx, "failed to set qc_type!\n");
 		return ret;
 	}
+
 	q_info->sqn = qp_ctx.id;
 	config->sqn = qp_ctx.id;
 
@@ -449,10 +449,10 @@ void hisi_qm_free_qp(handle_t h_qp)
 	}
 
 	wd_release_ctx_force(qp->h_ctx);
-	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_MMIO);
-	wd_ctx_unmap_qfr(qp->h_ctx, UACCE_QFRT_DUS);
-	if (qp->h_sgl_pool)
-		hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+
+	hisi_qm_destroy_sglpool(qp->h_sgl_pool);
+
+	hisi_qm_clear_info(qp);
 
 	free(qp);
 }
@@ -469,11 +469,6 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 
 	q_info = &qp->q_info;
 
-	if (unlikely(wd_ioread32(q_info->ds_tx_base) == 1)) {
-		WD_ERR("wd queue hw error happened before qm send!\n");
-		return -WD_HW_EACCESS;
-	}
-
 	pthread_spin_lock(&q_info->sd_lock);
 	free_num = get_free_num(q_info);
 	if (!free_num) {
@@ -486,14 +481,26 @@ int hisi_qm_send(handle_t h_qp, const void *req, __u16 expect, __u16 *count)
 	tail = q_info->sq_tail_index;
 	hisi_qm_fill_sqe(req, q_info, tail, send_num);
 	tail = (tail + send_num) % q_info->sq_depth;
+
+	/*
+	 * Before sending doorbell, check the queue status,
+	 * if the queue is disable, return failure.
+	 */
+	if (unlikely(wd_ioread32(q_info->ds_tx_base) == 1)) {
+		pthread_spin_unlock(&q_info->sd_lock);
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened before qm send!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	/* Make sure sqe is filled before db ring and queue status check is complete. */
+	mb();
 	q_info->db(q_info, QM_DBELL_CMD_SQ, tail, 0);
 	q_info->sq_tail_index = tail;
 
 	/* Make sure used_num is changed before the next thread gets free sqe. */
 	__atomic_add_fetch(&q_info->used_num, send_num, __ATOMIC_RELAXED);
-	*count = send_num;
-
 	pthread_spin_unlock(&q_info->sd_lock);
+	*count = send_num;
 
 	return 0;
 }
@@ -509,6 +516,8 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 	cqe = q_info->cq_base + i * sizeof(struct cqe);
 
 	if (q_info->cqc_phase == CQE_PHASE(cqe)) {
+		/* Make sure cqe valid bit is set */
+		rmb();
 		j = CQE_SQ_HEAD_INDEX(cqe);
 		if (unlikely(j >= q_info->sq_depth)) {
 			pthread_spin_unlock(&q_info->rv_lock);
@@ -529,6 +538,18 @@ static int hisi_qm_recv_single(struct hisi_qm_queue_info *q_info, void *resp)
 		i++;
 	}
 
+	/*
+	 * Before sending doorbell, check the queue status,
+	 * if the queue is disable, return failure.
+	 */
+	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
+		pthread_spin_unlock(&q_info->rv_lock);
+		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened after qm receive!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	/* Make sure queue status check is complete. */
+	rmb();
 	q_info->db(q_info, QM_DBELL_CMD_CQ, i, q_info->epoll_en);
 
 	/* only support one thread poll one queue, so no need protect */
@@ -568,10 +589,6 @@ int hisi_qm_recv(handle_t h_qp, void *resp, __u16 expect, __u16 *count)
 	}
 
 	*count = recv_num;
-	if (unlikely(wd_ioread32(q_info->ds_rx_base) == 1)) {
-		WD_DEV_ERR(qp->h_ctx, "wd queue hw error happened in qm receive!\n");
-		return -WD_HW_EACCESS;
-	}
 
 	return ret;
 }
@@ -648,8 +665,7 @@ static void hisi_qm_free_sglpool(struct hisi_sgl_pool *pool)
 
 	if (pool->sgl) {
 		for (i = 0; i < pool->sgl_num; i++)
-			if (pool->sgl[i])
-				free(pool->sgl[i]);
+			free(pool->sgl[i]);
 
 		free(pool->sgl);
 	}
@@ -692,8 +708,10 @@ handle_t hisi_qm_create_sglpool(__u32 sgl_num, __u32 sge_num)
 	/* base the sgl_num create the sgl chain */
 	for (i = 0; i < sgl_num; i++) {
 		sgl_pool->sgl[i] = hisi_qm_create_sgl(sge_num);
-		if (!sgl_pool->sgl[i])
+		if (!sgl_pool->sgl[i]) {
+			sgl_pool->sgl_num = i;
 			goto err_out;
+		}
 
 		sgl_pool->sgl_align[i] = hisi_qm_align_sgl(sgl_pool->sgl[i],
 							   sge_num);
@@ -971,20 +989,19 @@ void hisi_qm_sgl_copy(void *pbuff, void *hw_sgl, __u32 offset, __u32 size,
 		      __u8 direct)
 {
 	struct hisi_sgl *tmp = hw_sgl;
+	int begin_sge = 0, i;
 	__u32 sge_offset = 0;
 	__u32 len = 0;
-	int begin_sge = 0;
-	int i;
 
 	if (!pbuff || !size || !tmp)
 		return;
 
 	while (len + tmp->entry_size_in_sgl <= offset) {
+		len += tmp->entry_size_in_sgl;
+
 		tmp = (struct hisi_sgl *)tmp->next_dma;
 		if (!tmp)
 			return;
-
-		len += tmp->entry_size_in_sgl;
 	}
 
 	/* find the start sge position and start offset */

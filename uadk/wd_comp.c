@@ -15,7 +15,6 @@
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
 #define HW_CTX_SIZE			(64 * 1024)
 #define STREAM_CHUNK			(128 * 1024)
 
@@ -48,7 +47,6 @@ struct wd_comp_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_comp_setting;
@@ -131,16 +129,14 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_comp_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_comp_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_comp_setting.config,
-					wd_comp_setting.driver,
-					&wd_comp_setting.priv);
+					wd_comp_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -157,9 +153,10 @@ out_clear_ctx_config:
 
 static int wd_comp_uninit_nolock(void)
 {
-	void *priv = wd_comp_setting.priv;
+	enum wd_status status;
 
-	if (!priv)
+	wd_alg_get_init(&wd_comp_setting.status, &status);
+	if (status == WD_UNINIT)
 		return -WD_EINVAL;
 
 	/* Uninit async request pool */
@@ -169,21 +166,20 @@ static int wd_comp_uninit_nolock(void)
 	wd_clear_sched(&wd_comp_setting.sched);
 
 	wd_alg_uninit_driver(&wd_comp_setting.config,
-		 wd_comp_setting.driver, &priv);
+			     wd_comp_setting.driver);
 
 	return 0;
 }
 
 int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_comp_clear_status);
 
-	flag = wd_alg_try_init(&wd_comp_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_comp_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -223,15 +219,15 @@ void wd_comp_uninit(void)
 int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_nums comp_ctx_num[WD_DIR_MAX] = {0};
-	struct wd_ctx_params comp_ctx_params;
-	int ret = -WD_EINVAL;
+	struct wd_ctx_params comp_ctx_params = {0};
+	int state, ret = -WD_EINVAL;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_comp_clear_status);
 
-	flag = wd_alg_try_init(&wd_comp_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_comp_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
@@ -344,8 +340,8 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
-		WD_ERR("invalid: comp poll count is 0!\n");
+	if (unlikely(!count || !expt)) {
+		WD_ERR("invalid: comp poll count or expt is 0!\n");
 		return -WD_EINVAL;
 	}
 
@@ -358,7 +354,7 @@ int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_comp_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_comp_setting.driver, ctx->ctx, &resp_msg);
 		if (unlikely(ret < 0)) {
 			if (ret == -WD_HW_EACCESS)
 				WD_ERR("wd comp recv hw error!\n");
@@ -498,7 +494,6 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->win_sz = sess->win_sz;
 	msg->avail_out = req->dst_len;
 
-	/* if is last 1: flush end; other: sync flush */
 	msg->req.last = 1;
 }
 
@@ -593,8 +588,8 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	msg_handle.recv = wd_comp_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg,
-				 NULL, config->epoll_en);
+	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx,
+				 msg, NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -726,7 +721,7 @@ static int append_store_block(struct wd_comp_sess *sess,
 		memcpy(req->dst, store_block, blocksize);
 		req->dst_len = blocksize;
 		checksum = (__u32) cpu_to_be32(checksum);
-		 /* if zlib, ADLER32 */
+		/* if zlib, ADLER32 */
 		memcpy(req->dst + blocksize, &checksum, sizeof(checksum));
 		req->dst_len += sizeof(checksum);
 	} else if (sess->alg_type == WD_GZIP) {
@@ -848,7 +843,7 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 	msg->tag = tag;
 	msg->stream_mode = WD_COMP_STATELESS;
 
-	ret = wd_comp_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("wd comp send error, ret = %d!\n", ret);
 		goto fail_with_msg;

@@ -40,8 +40,8 @@ static void wd_zlib_unlock(void)
 
 static int wd_zlib_uadk_init(void)
 {
+	struct wd_ctx_params cparams = {0};
 	struct wd_ctx_nums *ctx_set_num;
-	struct wd_ctx_params cparams;
 	int ret, i;
 
 	if (zlib_config.status == WD_ZLIB_INIT)
@@ -68,11 +68,12 @@ static int wd_zlib_uadk_init(void)
 		ctx_set_num[i].sync_ctx_num = WD_DIR_MAX;
 
 	ret = wd_comp_init2_("zlib", 0, 0, &cparams);
-	if (ret) {
+	if (ret && ret != -WD_EEXIST) {
 		ret = Z_STREAM_ERROR;
 		goto out_freebmp;
 	}
 
+	ret = 0;
 	zlib_config.status = WD_ZLIB_INIT;
 
 out_freebmp:
@@ -236,8 +237,8 @@ static int wd_zlib_do_request(z_streamp strm, int flush, enum wd_comp_op_type ty
 	req.last = (flush == Z_FINISH) ? 1 : 0;
 
 	ret = wd_do_comp_strm(h_sess, &req);
-	if (unlikely(ret)) {
-		WD_ERR("failed to do compress(%d)!\n", ret);
+	if (unlikely(ret || req.status == WD_IN_EPARA)) {
+		WD_ERR("failed to do compress, ret = %d, req.status = %u!\n", ret, req.status);
 		return Z_STREAM_ERROR;
 	}
 

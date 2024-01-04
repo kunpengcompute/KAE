@@ -56,6 +56,62 @@ static void fill_comp_msg(struct wcrypto_comp_ctx *ctx,
 	msg->status = 0;
 }
 
+static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *setup)
+{
+	struct q_info *qinfo;
+
+	if (!q || !q->qinfo || !setup) {
+		WD_ERR("%s: input param err!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (strcmp(q->capa.alg, "zlib") &&
+	    strcmp(q->capa.alg, "gzip") &&
+	    strcmp(q->capa.alg, "deflate") &&
+	    strcmp(q->capa.alg, "lz77_zstd")) {
+		WD_ERR("err: algorithm is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	qinfo = q->qinfo;
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
+		WD_ERR("err: create too many compress ctx!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->alg_type >= WCRYPTO_COMP_MAX_ALG) {
+		WD_ERR("err: alg_type is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->comp_lv > WCRYPTO_COMP_L9) {
+		WD_ERR("err: comp_lv is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->op_type > WCRYPTO_INFLATE) {
+		WD_ERR("err: op_type is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->stream_mode > WCRYPTO_FINISH) {
+		WD_ERR("err: stream_mode is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->win_size > WCRYPTO_COMP_WS_32K) {
+		WD_ERR("err: win_size is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	if (setup->data_fmt > WD_SGL_BUF) {
+		WD_ERR("err: data_fmt is invalid!\n");
+		return -WD_EINVAL;
+	}
+
+	return 0;
+}
+
 static int set_comp_ctx_br(struct q_info *qinfo, struct wd_mm_br *br)
 {
 	if (!br->alloc || !br->free ||
@@ -122,21 +178,13 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 {
 	struct wcrypto_comp_ctx *ctx;
 	struct q_info *qinfo;
+	__u32 cookies_num;
 	__u32 ctx_id = 0;
 	int ret;
 
-	if (!q || !setup) {
-		WD_ERR("err, input parameter invalid!\n");
+	ret = ctx_params_check(q, setup);
+	if (ret)
 		return NULL;
-	}
-
-	if (strcmp(q->capa.alg, "zlib") &&
-	    strcmp(q->capa.alg, "gzip") &&
-	    strcmp(q->capa.alg, "deflate") &&
-	    strcmp(q->capa.alg, "lz77_zstd")) {
-		WD_ERR("algorithm mismatch!\n");
-		return NULL;
-	}
 
 	qinfo = q->qinfo;
 
@@ -146,11 +194,6 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 	ret = set_comp_ctx_br(qinfo, &setup->br);
 	if (ret) {
 		WD_ERR("err: fail to set compress ctx br!\n");
-		goto unlock;
-	}
-
-	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
-		WD_ERR("err: create too many compress ctx!\n");
 		goto unlock;
 	}
 
@@ -169,8 +212,9 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
 		goto free_ctx_id;
 	}
 
+	cookies_num = wd_get_ctx_cookies_num(q->capa.flags, WD_CTX_COOKIES_NUM);
 	ret = wd_init_cookie_pool(&ctx->pool,
-			sizeof(struct wcrypto_comp_cookie), WD_CTX_MSG_NUM);
+			sizeof(struct wcrypto_comp_cookie), cookies_num);
 	if (ret) {
 		WD_ERR("fail to init cookie pool!\n");
 		goto free_ctx_buf;
@@ -190,8 +234,8 @@ free_ctx_buf:
 	free(ctx);
 free_ctx_id:
 	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
-	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
+	wd_spinlock(&qinfo->qlock);
 unlock:
 	wd_unspinlock(&qinfo->qlock);
 	return NULL;
@@ -211,8 +255,8 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	__u64 recv_count = 0;
 	int ret;
 
-	if (!ctx || !opdata) {
-		WD_ERR("input parameter err!\n");
+	if (unlikely(!ctx || !opdata || !opdata->in || !opdata->out)) {
+		WD_ERR("invalid: comp input parameter err!\n");
 		return -EINVAL;
 	}
 
@@ -223,7 +267,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
 	msg = &cookie->msg;
 	if (tag) {
 		if (!cctx->cb) {
-			WD_ERR("ctx call back is null!\n");
+			WD_ERR("invalid: ctx call back is null!\n");
 			ret = -WD_EINVAL;
 			goto err_put_cookie;
 		}
@@ -355,4 +399,3 @@ void wcrypto_del_comp_ctx(void *ctx)
 
 	free(cctx);
 }
-

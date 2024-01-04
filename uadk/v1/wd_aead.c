@@ -26,23 +26,8 @@
 #include "wd_util.h"
 #include "wd_aead.h"
 
-#define MAX_AEAD_KEY_SIZE		64
-#define MAX_AEAD_MAC_SIZE		64
-#define MAX_CIPHER_KEY_SIZE		64
 #define MAX_AEAD_AUTH_SIZE		64
-#define MAX_AEAD_ASSOC_SIZE		65536
-#define MAX_HMAC_KEY_SIZE		128
 #define MAX_AEAD_RETRY_CNT		20000000
-
-#define DES_KEY_SIZE 8
-#define SM4_KEY_SIZE 16
-#define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
-#define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
-
-#define AES_BLOCK_SIZE 16
-#define GCM_BLOCK_SIZE 12
-
-#define MAX_BURST_NUM	16
 
 static int g_aead_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
 	WCRYPTO_SM3_LEN, WCRYPTO_MD5_LEN, WCRYPTO_SHA1_LEN,
@@ -79,14 +64,14 @@ static void del_ctx_key(struct wcrypto_aead_ctx *ctx)
 	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
 	 * whose 'pbuf' is all zero.
 	 */
-	if (ctx->ckey) {
+	if (ctx->ckey && ctx->ckey_bytes) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->ckey, 0, MAX_CIPHER_KEY_SIZE);
 		else if (ctx->setup.data_fmt == WD_SGL_BUF)
 			wd_sgl_cp_from_pbuf(ctx->ckey, 0, tmp, MAX_CIPHER_KEY_SIZE);
 	}
 
-	if (ctx->akey) {
+	if (ctx->akey && ctx->akey_bytes) {
 		if (ctx->setup.data_fmt == WD_FLAT_BUF)
 			memset(ctx->akey, 0, MAX_AEAD_KEY_SIZE);
 		else if (ctx->setup.data_fmt == WD_SGL_BUF)
@@ -124,7 +109,7 @@ static int get_iv_block_size(int mode)
 static int create_ctx_para_check(struct wd_queue *q,
 	struct wcrypto_aead_ctx_setup *setup)
 {
-	if (!q || !setup) {
+	if (!q || !q->qinfo || !setup) {
 		WD_ERR("input param is NULL\n");
 		return -WD_EINVAL;
 	}
@@ -142,13 +127,23 @@ static int create_ctx_para_check(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
-static void init_aead_cookie(struct wcrypto_aead_ctx *ctx,
+static int init_aead_cookie(struct wcrypto_aead_ctx *ctx,
 	struct wcrypto_aead_ctx_setup *setup)
 {
 	struct wcrypto_aead_cookie *cookie;
-	__u32 i;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
+	int ret;
 
-	for (i = 0; i < ctx->pool.cookies_num; i++) {
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_aead_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("failed to init cookie pool!\n");
+		return ret;
+	}
+
+	for (i = 0; i < cookies_num; i++) {
 		cookie = (void *)((uintptr_t)ctx->pool.cookies +
 			i * ctx->pool.cookies_size);
 		cookie->msg.alg_type = WCRYPTO_AEAD;
@@ -161,6 +156,8 @@ static void init_aead_cookie(struct wcrypto_aead_ctx *ctx,
 		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
 		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
+
+	return 0;
 }
 
 static int wcrypto_setup_qinfo(struct wcrypto_aead_ctx_setup *setup,
@@ -236,13 +233,9 @@ void *wcrypto_create_aead_ctx(struct wd_queue *q,
 	}
 
 	ctx->iv_blk_size = get_iv_block_size(setup->cmode);
-	ret = wd_init_cookie_pool(&ctx->pool,
-		sizeof(struct wcrypto_aead_cookie), WD_CTX_MSG_NUM);
-	if (ret) {
-		WD_ERR("fail to init cookie pool!\n");
+	ret = init_aead_cookie(ctx, setup);
+	if (ret)
 		goto free_ctx_akey;
-	}
-	init_aead_cookie(ctx, setup);
 
 	return ctx;
 
@@ -445,7 +438,6 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 			     struct wcrypto_aead_op_data **op,
 			     struct wcrypto_aead_ctx *ctx, __u32 num)
 {
-	struct wd_sec_udata *udata;
 	int ret;
 	__u32 i;
 
@@ -471,11 +463,6 @@ static int aead_requests_init(struct wcrypto_aead_msg **req,
 		req[i]->out_bytes = op[i]->out_bytes;
 		req[i]->assoc_bytes = op[i]->assoc_size;
 		req[i]->auth_bytes = ctx->auth_size;
-		udata = op[i]->priv;
-		if (udata && udata->key) {
-			req[i]->ckey = udata->key;
-			req[i]->ckey_bytes = udata->key_bytes;
-		}
 
 		req[i]->aiv = ctx->setup.br.alloc(ctx->setup.br.usr,
 						  MAX_AEAD_KEY_SIZE);
@@ -540,26 +527,38 @@ static int param_check(struct wcrypto_aead_ctx *a_ctx,
 		       void **tag, __u32 num)
 {
 	__u32 i;
+	int ret;
 
 	if (unlikely(!a_ctx || !a_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
-		WD_ERR("input param err!\n");
+		WD_ERR("invalid: input param err!\n");
 		return -WD_EINVAL;
 	}
 
 	for (i = 0; i < num; i++) {
 		if (unlikely(!a_opdata[i])) {
-			WD_ERR("aead opdata[%u] is NULL!\n", i);
+			WD_ERR("invalid: aead opdata[%u] is NULL\n", i);
+			return -WD_EINVAL;
+		}
+
+		ret = wd_check_src_dst_ptr(a_opdata[i]->in, a_opdata[i]->in_bytes, a_opdata[i]->out, a_opdata[i]->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
+			return -WD_EINVAL;
+		}
+
+		if (unlikely(!a_opdata[i]->iv)) {
+			WD_ERR("invalid: aead input iv is NULL!\n");
 			return -WD_EINVAL;
 		}
 
 		if (unlikely(tag && !tag[i])) {
-			WD_ERR("tag[%u] is NULL!\n", i);
+			WD_ERR("invalid: tag[%u] is NULL!\n", i);
 			return -WD_EINVAL;
 		}
 	}
 
 	if (unlikely(tag && !a_ctx->setup.cb)) {
-		WD_ERR("aead ctx call back is NULL!\n");
+		WD_ERR("invalid: aead ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -579,10 +578,8 @@ int wcrypto_burst_aead(void *a_ctx, struct wcrypto_aead_op_data **opdata,
 		return -WD_EINVAL;
 
 	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
-	if (unlikely(ret)) {
-		WD_ERR("failed to get cookies %d!\n", ret);
+	if (unlikely(ret))
 		return ret;
-	}
 
 	for (i = 0; i < num; i++) {
 		cookies[i]->tag.priv = opdata[i]->priv;
