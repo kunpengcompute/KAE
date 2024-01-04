@@ -87,7 +87,7 @@ int wd_init_cookie_pool(struct wd_cookie_pool *pool,
 {
 	__u64 total_size = cookies_size * cookies_num;
 
-	pool->cookies = malloc(total_size + cookies_num);
+	pool->cookies = calloc(1, total_size + cookies_num);
 	if (!pool->cookies)
 		return -WD_ENOMEM;
 
@@ -157,6 +157,22 @@ put_cookies:
 	return -WD_EBUSY;
 }
 
+__u32 wd_get_ctx_cookies_num(__u32 usr_cookies_num, __u32 def_num)
+{
+	__u32 usr_num = usr_cookies_num & WD_CTX_COOKIES_NUM_MASK;
+
+	if (!usr_num)
+		return def_num;
+
+	if (usr_num > WD_MAX_CTX_COOKIES_NUM) {
+		WD_ERR("user msg num %u is invalid, use default value: %u!\n",
+			usr_num, def_num);
+		return def_num;
+	}
+
+	return usr_num;
+}
+
 int wd_burst_send(struct wd_queue *q, void **req, __u32 num)
 {
 	return drv_send(q, req, num);
@@ -165,4 +181,11 @@ int wd_burst_send(struct wd_queue *q, void **req, __u32 num)
 int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	return drv_recv(q, resp, num);
+}
+
+int wd_check_src_dst_ptr(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
+{
+	if (unlikely((in_bytes && !src) || (out_bytes && !dst)))
+		return -WD_EINVAL;
+	return 0;
 }

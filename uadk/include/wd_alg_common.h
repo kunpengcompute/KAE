@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <numa.h>
 #include "wd.h"
 #include "wd_alg.h"
 
@@ -27,6 +28,19 @@ extern "C" {
 #define MAX_STR_LEN		256
 #define CTX_TYPE_INVALID	9999
 #define POLL_TIME		1000
+
+/* Key size of chiper */
+#define MAX_CIPHER_KEY_SIZE	64
+#define AES_KEYSIZE_128		16
+#define AES_KEYSIZE_192		24
+#define AES_KEYSIZE_256		32
+#define SM4_KEY_SIZE		16
+#define DES_KEY_SIZE		8
+#define DES3_2KEY_SIZE		(2 * DES_KEY_SIZE)
+#define DES3_3KEY_SIZE		(3 * DES_KEY_SIZE)
+
+/* Key size of digest */
+#define MAX_HMAC_KEY_SIZE	128U
 
 enum alg_task_type {
 	TASK_MIX = 0x0,
@@ -56,17 +70,32 @@ struct wd_ctx {
 };
 
 /**
+ * struct wd_cap_config - Capabilities.
+ * @ctx_msg_num: number of asynchronous msg pools that the user wants to allocate.
+ *		 Optional, user can set ctx_msg_num based on the number of requests
+ *		 and system memory, 1~1024 is valid. If the value is not set or invalid,
+ *		 the default value 1024 is used to initialize msg pools.
+ * @resv: Reserved data.
+ */
+struct wd_cap_config {
+	__u32 ctx_msg_num;
+	__u32 resv;
+};
+
+/**
  * struct wd_ctx_config - Define a ctx set and its related attributes, which
  *			  will be used in the scope of current process.
  * @ctx_num:	The ctx number in below ctx array.
  * @ctxs:	Point to a ctx array, length is above ctx_num.
  * @priv:	The attributes of ctx defined by user, which is used by user
  *		defined scheduler.
+ * @cap:	Capabilities input by user. Support set NULL, use default value initialize.
  */
 struct wd_ctx_config {
 	__u32 ctx_num;
 	struct wd_ctx *ctxs;
 	void *priv;
+	struct wd_cap_config *cap;
 };
 
 /**
@@ -89,11 +118,13 @@ struct wd_ctx_nums {
  * @ctx_set_num: Each operation type ctx sets numbers.
  * @bmp: Ctxs distribution. Means users want to run business process on these
  * numa or request ctx from devices located in these numa.
+ * @cap: Capabilities input by user. Support set NULL, use default value initialize.
  */
 struct wd_ctx_params {
 	__u32 op_type_num;
 	struct wd_ctx_nums *ctx_set_num;
 	struct bitmask *bmp;
+	struct wd_cap_config *cap;
 };
 
 struct wd_ctx_internal {

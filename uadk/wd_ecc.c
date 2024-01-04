@@ -17,9 +17,6 @@
 #include "include/wd_ecc_curve.h"
 #include "wd_ecc.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
-#define WD_ECC_CTX_MSG_NUM		64
-#define WD_ECC_MAX_CTX			256
 #define ECC_MAX_HW_BITS			521
 #define ECC_MAX_KEY_SIZE		BITS_TO_BYTES(ECC_MAX_HW_BITS)
 #define ECC_MAX_IN_NUM			4
@@ -68,7 +65,6 @@ static struct wd_ecc_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_ecc_setting;
@@ -135,7 +131,7 @@ static int wd_ecc_open_driver(void)
 
 	wd_ecc_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static bool is_alg_support(const char *alg)
@@ -170,20 +166,18 @@ static int wd_ecc_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_ecc_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_ecc_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_ecc_setting.config,
-				 wd_ecc_setting.driver,
-				 &wd_ecc_setting.priv);
+				 wd_ecc_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
-	return 0;
+	return WD_SUCCESS;
 
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
@@ -196,33 +190,26 @@ out_clear_ctx_config:
 
 static int wd_ecc_common_uninit(void)
 {
-	if (!wd_ecc_setting.priv) {
-		WD_ERR("invalid: repeat uninit ecc!\n");
-		return -WD_EINVAL;
-	}
-
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_ecc_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_ecc_setting.sched);
 	wd_alg_uninit_driver(&wd_ecc_setting.config,
-			     wd_ecc_setting.driver,
-			     &wd_ecc_setting.priv);
+			     wd_ecc_setting.driver);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
 
-	flag = wd_alg_try_init(&wd_ecc_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_ecc_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -238,7 +225,7 @@ int wd_ecc_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_alg_set_init(&wd_ecc_setting.status);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_close_driver:
 	wd_ecc_close_driver();
@@ -263,14 +250,14 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 {
 	struct wd_ctx_nums ecc_ctx_num[WD_EC_OP_MAX] = {0};
 	struct wd_ctx_params ecc_ctx_params = {0};
-	int ret = -WD_EINVAL;
+	int state, ret = -WD_EINVAL;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_ecc_clear_status);
 
-	flag = wd_alg_try_init(&wd_ecc_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_ecc_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
@@ -340,7 +327,7 @@ int wd_ecc_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_alg_set_init(&wd_ecc_setting.status);
 	wd_ctx_param_uninit(&ecc_ctx_params);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_params_uninit:
 	wd_ctx_param_uninit(&ecc_ctx_params);
@@ -832,7 +819,7 @@ static int set_param_single(struct wd_dtb *dst, const struct wd_dtb *src,
 	memset(dst->data, 0, dst->bsize);
 	memcpy(dst->data, src->data, src->dsize);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_ecc_get_key_bits(handle_t sess)
@@ -910,7 +897,7 @@ static int set_curve_param(struct wd_ecc_key *key,
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static const struct wd_ecc_curve_list *find_curve_list(__u32 id)
@@ -947,7 +934,7 @@ static int fill_param_by_id(struct wd_ecc_curve *c,
 	key_size = BITS_TO_BYTES(item->key_bits);
 	memcpy(c->p.data, item->data, CURVE_PARAM_NUM * key_size);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void setup_curve_cfg(struct wd_ecc_sess_setup *setup)
@@ -1069,7 +1056,7 @@ static int create_sess_key(struct wd_ecc_sess_setup *setup,
 		goto free_d;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 
 free_d:
 	release_ecc_d(sess);
@@ -1120,7 +1107,7 @@ static int setup_param_check(struct wd_ecc_sess_setup *setup)
 		return -WD_EINVAL;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void del_sess_key(struct wd_ecc_sess *sess)
@@ -1572,8 +1559,8 @@ int wd_do_ecc_sync(handle_t h_sess, struct wd_ecc_req *req)
 	msg_handle.recv = wd_ecc_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
-				 wd_ecc_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_ecc_setting.driver, &msg_handle, ctx->ctx, &msg,
+				 &balance, wd_ecc_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -1632,7 +1619,7 @@ static int set_sign_in_param(struct wd_ecc_sign_in *sin,
 			return ret;
 	}
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int generate_random(struct wd_ecc_sess *sess, struct wd_dtb *k)
@@ -1769,6 +1756,14 @@ static struct wd_ecc_in *new_sign_in(struct wd_ecc_sess *sess,
 		return NULL;
 
 	sin = &ecc_in->param.sin;
+	sin->k_set = 0;
+	sin->dgst_set = 0;
+
+	/*
+	 * If k is not set and cb has been set, use cb to generate random k.
+	 * If k is set or has been generated by cb, directly set k.
+	 * If k and cb are not set, hw driver should config to generate random k.
+	 */
 	if (!k && sess_t->setup.rand.cb) {
 		ret = generate_random(sess_t, &sin->k);
 		if (ret)
@@ -1831,7 +1826,7 @@ static int set_verf_in_param(struct wd_ecc_verf_in *vin,
 	if (ret)
 		return ret;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static struct wd_ecc_in *create_sm2_verf_in(struct wd_ecc_sess *sess,
@@ -2250,7 +2245,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_ecc_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_ecc_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send ecc BD, hw is err!\n");
@@ -2263,7 +2258,7 @@ int wd_do_ecc_async(handle_t sess, struct wd_ecc_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_ecc_setting.pool, idx, mid);
@@ -2285,8 +2280,8 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
-		WD_ERR("invalid: param count is NULL!\n");
+	if (unlikely(!count || !expt)) {
+		WD_ERR("invalid: ecc poll param count or expt is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -2299,7 +2294,7 @@ int wd_ecc_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_ecc_setting.driver->recv(ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(wd_ecc_setting.driver, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

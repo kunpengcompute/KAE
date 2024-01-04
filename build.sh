@@ -137,7 +137,7 @@ function build_uadk()
         cd ${SRC_PATH}/uadk
         sh autogen.sh
         sh conf.sh
-        make CFLAGS="-fstack-protector-strong -Wl,-z,relro,-z,now" -j 64
+        make -j64
         make install
 }
 

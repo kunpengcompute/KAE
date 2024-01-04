@@ -344,32 +344,45 @@ static int hpre_uadk_param_parse(thread_data *tddata, struct acc_option *options
 	return 0;
 }
 
-static int init_hpre_ctx_config(char *alg, int subtype, int mode)
+static int init_hpre_ctx_config(struct acc_option *options)
 {
-	struct uacce_dev_list *list;
+	int subtype = options->subtype;
+	char *alg = options->algclass;
+	int mode = options->syncmode;
 	struct sched_params param;
-	int i, max_node;
+	struct uacce_dev *dev;
+	int max_node;
 	int ret = 0;
+	int i = 0;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
 		return -EINVAL;
 
-	list = wd_get_accel_list(alg);
-	if (!list) {
-		HPRE_TST_PRT("failed to get %s device\n", alg);
-		return -ENODEV;
-	}
 	memset(&g_ctx_cfg, 0, sizeof(struct wd_ctx_config));
 	g_ctx_cfg.ctx_num = g_ctxnum;
 	g_ctx_cfg.ctxs = calloc(g_ctxnum, sizeof(struct wd_ctx));
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	for (i = 0; i < g_ctxnum; i++) {
-		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(list->dev);
-		g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
-		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			HPRE_TST_PRT("failed to get %s device\n", alg);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
 	}
 
 	switch(subtype) {
@@ -388,19 +401,15 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype!\n");
-		g_sched = NULL;
+		return -EINVAL;
 	}
 	if (!g_sched) {
 		HPRE_TST_PRT("failed to alloc sched!\n");
 		goto out;
 	}
 
-	/* If there is no numa, we defualt config to zero */
-	if (list->dev->numa_id < 0)
-		list->dev->numa_id = 0;
-
 	g_sched->name = SCHED_SINGLE;
-	param.numa_id = list->dev->numa_id;
+	param.numa_id = 0;
 	param.type = 0;
 	param.mode = mode;
 	param.begin = 0;
@@ -426,18 +435,17 @@ static int init_hpre_ctx_config(char *alg, int subtype, int mode)
 	case X448_TYPE:
 		ret = wd_ecc_init(&g_ctx_cfg, g_sched);
 		break;
-	default:
-		ret =  -EINVAL;
 	}
 	if (ret) {
 		HPRE_TST_PRT("failed to get hpre ctx!\n");
 		goto out;
 	}
 
-	wd_free_list_accels(list);
-
 	return 0;
 out:
+	for (i = i - 1; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
 	free(g_ctx_cfg.ctxs);
 	wd_sched_rr_release(g_sched);
 
@@ -449,7 +457,7 @@ static void uninit_hpre_ctx_config(int subtype)
 	int i;
 
 	/* uninit */
-	switch(subtype) {
+	switch (subtype) {
 	case RSA_TYPE:
 		wd_rsa_uninit();
 		break;
@@ -474,6 +482,59 @@ static void uninit_hpre_ctx_config(int subtype)
 	wd_sched_rr_release(g_sched);
 }
 
+static void uninit_hpre_ctx_config2(int subtype)
+{
+	/* uninit2 */
+	switch (subtype) {
+	case RSA_TYPE:
+		wd_rsa_uninit2();
+		break;
+	case DH_TYPE:
+		wd_dh_uninit2();
+		break;
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		wd_ecc_uninit2();
+		break;
+	default:
+		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
+		return;
+	}
+}
+
+static int init_hpre_ctx_config2(struct acc_option *options)
+{
+	int subtype = options->subtype;
+	char alg_name[MAX_ALG_NAME];
+	int ret;
+
+	ret = get_alg_name(options->algtype, alg_name);
+	if (ret) {
+		HPRE_TST_PRT("failed to get valid alg name!\n");
+		return -EINVAL;
+	}
+
+	/* init2 */
+	switch (subtype) {
+	case RSA_TYPE:
+		return wd_rsa_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	case DH_TYPE:
+		return wd_dh_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		return wd_ecc_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+	default:
+		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
+		return -EINVAL;
+	}
+}
+
 /*-------------------------------uadk benchmark main code-------------------------------------*/
 
 void *hpre_uadk_poll(void *data)
@@ -491,7 +552,7 @@ void *hpre_uadk_poll(void *data)
 	if (id > g_ctxnum)
 		return NULL;
 
-	switch(pdata->subtype) {
+	switch (pdata->subtype) {
 	case RSA_TYPE:
 		uadk_poll_ctx = wd_rsa_poll_ctx;
 		break;
@@ -515,7 +576,56 @@ void *hpre_uadk_poll(void *data)
 		count += recv;
 		recv = 0;
 		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
-			HPRE_TST_PRT("poll ret: %u!\n", ret);
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
+			goto recv_error;
+		}
+
+		if (get_run_state() == 0)
+			last_time--;
+	}
+
+recv_error:
+	add_recv_data(count, pdata->keybits >> 3);
+
+	return NULL;
+}
+
+void *hpre_uadk_poll2(void *data)
+{
+	typedef int (*poll_ctx)(__u32 expt, __u32 *count);
+	thread_data *pdata = (thread_data *)data;
+	u32 expt = ACC_QUEUE_SIZE * g_thread_num;
+	poll_ctx uadk_poll = NULL;
+	u32 last_time = 2; // poll need one more recv time
+	u32 count = 0;
+	u32 recv = 0;
+	int  ret;
+
+	switch (pdata->subtype) {
+	case RSA_TYPE:
+		uadk_poll = wd_rsa_poll;
+		break;
+	case DH_TYPE:
+		uadk_poll = wd_dh_poll;
+		break;
+	case ECDH_TYPE:
+	case ECDSA_TYPE:
+	case SM2_TYPE:
+	case X25519_TYPE:
+	case X448_TYPE:
+		uadk_poll = wd_ecc_poll;
+		break;
+	default:
+		HPRE_TST_PRT("<<<<<<async poll interface is NULL!\n");
+		return NULL;
+	}
+
+	while (last_time) {
+		ret = uadk_poll(expt, &recv);
+		count += recv;
+		recv = 0;
+		if (unlikely(ret != -WD_EAGAIN && ret < 0)) {
+			HPRE_TST_PRT("poll ret: %d!\n", ret);
 			goto recv_error;
 		}
 
@@ -1198,6 +1308,7 @@ key_release:
 	free(key_info);
 
 	wd_rsa_free_sess(h_sess);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -1205,11 +1316,6 @@ key_release:
 
 static void rsa_async_cb(void *req_t)
 {
-	//struct wd_rsa_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type   	 op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 
@@ -1238,7 +1344,7 @@ static void *rsa_uadk_async_run(void *arg)
 	key_info = malloc(key_size * 16);
 	if (!key_info) {
 		HPRE_TST_PRT("failed to alloc RSA key info!\n");
-		return NULL;
+		goto h_sess_release;
 	}
 	memset(key_info, 0, key_size * 16);
 
@@ -1251,13 +1357,20 @@ static void *rsa_uadk_async_run(void *arg)
 	rsa_key_in->p = rsa_key_in->e + key_size;
 	rsa_key_in->q = rsa_key_in->p + (key_size >> 1);
 
-	ret = get_rsa_key_from_sample(h_sess,		key_info, key_info,
+	ret = get_rsa_key_from_sample(h_sess, key_info, key_info,
 					pdata->keybits, pdata->kmode);
 	if (ret) {
 		HPRE_TST_PRT("failed to get sample key data!\n");
-		goto sample_release;
+		goto key_in_release;
 	}
 
+	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
+	if (!tag) {
+		HPRE_TST_PRT("failed to malloc rsa tag!\n");
+		goto key_in_release;
+	}
+
+	req.cb = rsa_async_cb;
 	req.src_bytes = key_size;
 	req.dst_bytes = key_size;
 	req.op_type = pdata->optype;
@@ -1265,13 +1378,13 @@ static void *rsa_uadk_async_run(void *arg)
 		ret = get_hpre_keygen_opdata(h_sess, &req);
 		if (ret){
 			HPRE_TST_PRT("failed to fill rsa key gen req!\n");
-			goto sample_release;
+			goto tag_release;
 		}
 	} else {
 		req.src = malloc(key_size);
 		if (!req.src) {
 			HPRE_TST_PRT("failed to alloc rsa in buffer!\n");
-			goto sample_release;
+			goto tag_release;
 		}
 		memset(req.src, 0, req.src_bytes);
                 memcpy(req.src + key_size - sizeof(rsa_m), rsa_m, sizeof(rsa_m));
@@ -1281,13 +1394,6 @@ static void *rsa_uadk_async_run(void *arg)
 			goto src_release;
 		}
 	}
-
-	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
-	if (!tag) {
-		HPRE_TST_PRT("failed to malloc rsa tag!\n");
-		goto dst_release;
-	}
-	req.cb = rsa_async_cb;
 
 	do {
 		if (get_run_state() == 0)
@@ -1309,42 +1415,46 @@ static void *rsa_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do rsa async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
 
-	/* clean output buffer remainings in the last time operation */
-	if (req.op_type == WD_RSA_GENKEY) {
-		char *data;
-		int len;
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
 
-		len = wd_rsa_kg_out_data((void *)req.dst, &data);
-		if (len < 0) {
-			HPRE_TST_PRT("failed to wd rsa get key gen out data!\n");
-			goto tag_release;
+			usleep(SEND_USLEEP);
 		}
-		memset(data, 0, len);
 
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
+
+	if (req.op_type == WD_RSA_GENKEY) {
 		wd_rsa_del_kg_in(h_sess, req.src);
 		req.src = NULL;
 		wd_rsa_del_kg_out(h_sess, req.dst);
 		req.dst = NULL;
 	}
 
-tag_release:
-	free(tag);
-dst_release:
 	if (req.dst)
 		free(req.dst);
 src_release:
 	if (req.src)
 		free(req.src);
-sample_release:
+tag_release:
+	free(tag);
+key_in_release:
 	free(rsa_key_in);
 key_release:
 	free(key_info);
-
+h_sess_release:
 	wd_rsa_free_sess(h_sess);
 	add_send_complete();
 
@@ -1512,11 +1622,6 @@ ag_error:
 
 static void dh_async_cb(void *req_t)
 {
-	//struct wd_dh_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 
@@ -1552,7 +1657,7 @@ static void *dh_uadk_async_run(void *arg)
 	ret = get_dh_opdata_param(h_sess, &req, &param, key_size);
 	if (ret){
 		HPRE_TST_PRT("failed to fill dh key gen req!\n");
-		goto param_release;
+		goto sess_release;
 	}
 
 	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
@@ -1582,12 +1687,27 @@ static void *dh_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do DH async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
 
-tag_release:
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
+
 	free(tag);
 param_release:
 	free(req.x_p);
@@ -1651,6 +1771,7 @@ param_release:
 	free(req.pri);
 sess_release:
 	wd_dh_free_sess(h_sess);
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -1953,6 +2074,38 @@ del_ecc_out:
 	return ret;
 }
 
+static void fill_ecc_param_data(struct wd_ecc_curve *ecc_pa,
+				struct hpre_ecc_setup *ecc_set,
+				u32 key_bits)
+{
+	u32 key_size = (key_bits + 7) / 8;
+
+	ecc_pa->a.data = ecdsa_verf_a_secp256k1;
+	ecc_pa->b.data = ecdsa_verf_b_secp256k1;
+	ecc_pa->p.data = ecdsa_verf_p_secp256k1;
+	ecc_pa->n.data = ecdsa_verf_n_secp256k1;
+	ecc_pa->g.x.data = ecdsa_verf_g_secp256k1;
+	ecc_pa->g.y.data = ecdsa_verf_g_secp256k1 + key_size;
+
+	ecc_set->sign = ecdsa_verf_sign_secp256k1;
+	ecc_set->sign_size = sizeof(ecdsa_verf_sign_secp256k1);
+	ecc_set->pub_key = ecdh_verf_pubkey_secp256k1;
+	ecc_set->pub_key_size = sizeof(ecdh_verf_pubkey_secp256k1);
+
+	ecc_pa->a.bsize = key_size;
+	ecc_pa->a.dsize = key_size;
+	ecc_pa->b.bsize = key_size;
+	ecc_pa->b.dsize = key_size;
+	ecc_pa->p.bsize = key_size;
+	ecc_pa->p.dsize = key_size;
+	ecc_pa->n.bsize = key_size;
+	ecc_pa->n.dsize = key_size;
+	ecc_pa->g.x.bsize = key_size;
+	ecc_pa->g.x.dsize = key_size;
+	ecc_pa->g.y.bsize = key_size;
+	ecc_pa->g.y.dsize = key_size;
+}
+
 static void *ecc_uadk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
@@ -1960,6 +2113,8 @@ static void *ecc_uadk_sync_run(void *arg)
 	u32 subtype = pdata->subtype;
 	struct wd_ecc_sess_setup sess_setup;
 	struct hpre_ecc_setup setup;
+	struct wd_ecc_curve_cfg cfg;
+	struct wd_ecc_curve cv;
 	struct wd_ecc_curve param;
 	struct wd_ecc_key *ecc_key;
 	struct wd_ecc_point pbk;
@@ -2004,6 +2159,12 @@ static void *ecc_uadk_sync_run(void *arg)
 	case ECDSA_TYPE:
 		sess_setup.alg = "ecdsa";
 		break;
+	case X448_TYPE:
+		sess_setup.alg = "x448";
+		break;
+	case X25519_TYPE:
+		sess_setup.alg = "x25519";
+		break;
 	}
 
 	// set def setting;
@@ -2013,6 +2174,14 @@ static void *ecc_uadk_sync_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_param_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WD_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		sess_setup.cv = cfg;
+	}
 
 	h_sess = wd_ecc_alloc_sess(&sess_setup);
 	if (!h_sess)
@@ -2083,6 +2252,7 @@ msg_release:
 	if (subtype == SM2_TYPE)
 		free(setup.msg);
 
+	cal_avg_latency(count);
 	add_recv_data(count, key_size);
 
 	return NULL;
@@ -2090,11 +2260,6 @@ msg_release:
 
 static void ecc_async_cb(void *req_t)
 {
-	//struct wd_ecc_req *req = req_t;
-	//struct rsa_async_tag *tag = req->cb_param;
-	//enum wd_rsa_op_type op_type = req->op_type;
-	//handle_t h_sess = tag->sess;
-
 	return;
 }
 
@@ -2106,6 +2271,8 @@ static void *ecc_uadk_async_run(void *arg)
 	struct wd_ecc_sess_setup sess_setup;
 	struct rsa_async_tag *tag;
 	struct hpre_ecc_setup setup;
+	struct wd_ecc_curve_cfg cfg;
+	struct wd_ecc_curve cv;
 	struct wd_ecc_curve param;
 	struct wd_ecc_key *ecc_key;
 	struct wd_ecc_point pbk;
@@ -2151,6 +2318,12 @@ static void *ecc_uadk_async_run(void *arg)
 	case ECDSA_TYPE:
 		sess_setup.alg = "ecdsa";
 		break;
+	case X448_TYPE:
+		sess_setup.alg = "x448";
+		break;
+	case X25519_TYPE:
+		sess_setup.alg = "x25519";
+		break;
 	}
 
 	// set def setting;
@@ -2160,6 +2333,14 @@ static void *ecc_uadk_async_run(void *arg)
 	ret = get_ecc_param_from_sample(&setup, subtype, pdata->keybits);
 	if (ret)
 		return NULL;
+
+	if (subtype == ECDSA_TYPE && key_size == 32) {
+		fill_ecc_param_data(&cv, &setup, pdata->keybits);
+
+		cfg.type = WD_CV_CFG_PARAM;
+		cfg.cfg.pparam = &cv;
+		sess_setup.cv = cfg;
+	}
 
 	h_sess = wd_ecc_alloc_sess(&sess_setup);
 	if (!h_sess)
@@ -2210,7 +2391,7 @@ static void *ecc_uadk_async_run(void *arg)
 	tag = malloc(sizeof(*tag) * MAX_POOL_LENTH);
 	if (!tag) {
 		HPRE_TST_PRT("failed to malloc rsa tag!\n");
-		goto  src_release;
+		goto src_release;
 	}
 	req.cb = ecc_async_cb;
 
@@ -2223,7 +2404,7 @@ static void *ecc_uadk_async_run(void *arg)
 		tag[i].sess = h_sess;
 		req.cb_param = &tag[i];
 
-		ret = wd_do_ecc_sync(h_sess, &req);
+		ret = wd_do_ecc_async(h_sess, &req);
 		if (ret == -WD_EBUSY) {
 			usleep(SEND_USLEEP * try_cnt);
 			try_cnt++;
@@ -2234,12 +2415,27 @@ static void *ecc_uadk_async_run(void *arg)
 			continue;
 		} else if (ret) {
 			HPRE_TST_PRT("failed to do ECC async task!\n");
-			goto tag_release;
+			break;
 		}
 		count++;
 	} while(true);
 
-tag_release:
+	/* Release memory after all tasks are complete. */
+	if (count) {
+		i = 0;
+		while (get_recv_time() != g_ctxnum) {
+			if (i++ >= MAX_TRY_CNT) {
+				HPRE_TST_PRT("failed to wait poll thread finish!\n");
+				break;
+			}
+
+			usleep(SEND_USLEEP);
+		}
+
+		/* Wait for the device to complete the tasks. */
+		usleep(SEND_USLEEP * MAX_TRY_CNT);
+	}
+
 	free(tag);
 src_release:
 	if (req.src)
@@ -2358,7 +2554,10 @@ static int hpre_uadk_async_threads(struct acc_option *options)
 		threads_args[i].subtype = threads_option.subtype;
 		threads_args[i].td_id = i;
 		/* poll thread */
-		ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll, &threads_args[i]);
+		if (options->inittype == INIT2_TYPE)
+			ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll2, &threads_args[i]);
+		else
+			ret = pthread_create(&pollid[i], NULL, hpre_uadk_poll, &threads_args[i]);
 		if (ret) {
 			HPRE_TST_PRT("Create poll thread fail!\n");
 			goto async_error;
@@ -2412,10 +2611,14 @@ int hpre_uadk_benchmark(struct acc_option *options)
 		return -EINVAL;
 	}
 
-	ret = init_hpre_ctx_config(options->algclass, options->subtype,
-					  options->syncmode);
-	if (ret)
+	if (options->inittype == INIT2_TYPE)
+		ret = init_hpre_ctx_config2(options);
+	else
+		ret = init_hpre_ctx_config(options);
+	if (ret) {
+		HPRE_TST_PRT("failed to init %s ctx, ret = %d!\n", options->algclass, ret);
 		return ret;
+	}
 
 	get_pid_cpu_time(&ptime);
 	time_start(options->times);
@@ -2427,7 +2630,10 @@ int hpre_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	uninit_hpre_ctx_config(options->subtype);
+	if (options->inittype == INIT2_TYPE)
+		uninit_hpre_ctx_config2(options->subtype);
+	else
+		uninit_hpre_ctx_config(options->subtype);
 
 	return 0;
 }

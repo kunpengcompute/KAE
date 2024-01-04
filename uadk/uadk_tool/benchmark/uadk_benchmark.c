@@ -14,10 +14,13 @@
 #include "zip_uadk_benchmark.h"
 #include "zip_wd_benchmark.h"
 
+#include "trng_wd_benchmark.h"
+
 #define TABLE_SPACE_SIZE	8
 
 /*----------------------------------------head struct--------------------------------------------------------*/
 static unsigned int g_run_state = 1;
+static struct acc_option *g_run_options;
 static pthread_mutex_t acc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct _recv_data {
 	double pkg_len;
@@ -89,6 +92,15 @@ static struct acc_alg_item alg_options[] = {
 	{"aes-128-cbc", AES_128_CBC},
 	{"aes-192-cbc", AES_192_CBC},
 	{"aes-256-cbc", AES_256_CBC},
+	{"aes-128-cbc-cs1", AES_128_CBC_CS1},
+	{"aes-128-cbc-cs2", AES_128_CBC_CS2},
+	{"aes-128-cbc-cs3", AES_128_CBC_CS3},
+	{"aes-192-cbc-cs1", AES_192_CBC_CS1},
+	{"aes-192-cbc-cs2", AES_192_CBC_CS2},
+	{"aes-192-cbc-cs3", AES_192_CBC_CS3},
+	{"aes-256-cbc-cs1", AES_256_CBC_CS1},
+	{"aes-256-cbc-cs2", AES_256_CBC_CS2},
+	{"aes-256-cbc-cs3", AES_256_CBC_CS3},
 	{"aes-128-ctr", AES_128_CTR},
 	{"aes-192-ctr", AES_192_CTR},
 	{"aes-256-ctr", AES_256_CTR},
@@ -110,12 +122,16 @@ static struct acc_alg_item alg_options[] = {
 	{"sm4-128-ofb", SM4_128_OFB},
 	{"sm4-128-cfb", SM4_128_CFB},
 	{"sm4-128-xts", SM4_128_XTS},
+	{"sm4-128-xts-gb", SM4_128_XTS_GB},
 	{"aes-128-ccm", AES_128_CCM},
 	{"aes-192-ccm", AES_192_CCM},
 	{"aes-256-ccm", AES_256_CCM},
 	{"aes-128-gcm", AES_128_GCM},
 	{"aes-192-gcm", AES_192_GCM},
 	{"aes-256-gcm", AES_256_GCM},
+	{"aes-128-cbc-sha256-hmac", AES_128_CBC_SHA256_HMAC},
+	{"aes-192-cbc-sha256-hmac", AES_192_CBC_SHA256_HMAC},
+	{"aes-256-cbc-sha256-hmac", AES_256_CBC_SHA256_HMAC},
 	{"sm4-128-ccm", SM4_128_CCM},
 	{"sm4-128-gcm", SM4_128_GCM},
 	{"sm3",    SM3_ALG},
@@ -127,8 +143,99 @@ static struct acc_alg_item alg_options[] = {
 	{"sha512",    SHA512_ALG},
 	{"sha512-224",    SHA512_224},
 	{"sha512-256",    SHA512_256},
+	{"trng", TRNG},
 	{"", ALG_MAX}
 };
+
+static struct acc_alg_item alg_name_options[] = {
+	{"zlib",   ZLIB},
+	{"gzip",   GZIP},
+	{"deflate",    DEFLATE},
+	{"lz77_zstd", LZ77_ZSTD},
+	{"rsa",    RSA_1024},
+	{"rsa",    RSA_2048},
+	{"rsa",    RSA_3072},
+	{"rsa",    RSA_4096},
+	{"rsa", RSA_1024_CRT},
+	{"rsa", RSA_2048_CRT},
+	{"rsa", RSA_3072_CRT},
+	{"rsa", RSA_4096_CRT},
+	{"dh", DH_768},
+	{"dh",    DH_1024},
+	{"dh",    DH_1536},
+	{"dh", DH_2048},
+	{"dh",    DH_3072},
+	{"dh",    DH_4096},
+	{"ecdh",    ECDH_256},
+	{"ecdh",    ECDH_384},
+	{"ecdh",    ECDH_521},
+	{"ecdsa",    ECDSA_256},
+	{"ecdsa",    ECDSA_384},
+	{"ecdsa",    ECDSA_521},
+	{"sm2",    SM2_ALG},
+	{"x25519",    X25519_ALG},
+	{"x448",    X448_ALG},
+	{"ecb(aes)", AES_128_ECB},
+	{"ecb(aes)", AES_192_ECB},
+	{"ecb(aes)", AES_256_ECB},
+	{"cbc(aes)", AES_128_CBC},
+	{"cbc(aes)", AES_192_CBC},
+	{"cbc(aes)", AES_256_CBC},
+	{"cbc-cs1(aes)", AES_128_CBC_CS1},
+	{"cbc-cs2(aes)", AES_128_CBC_CS2},
+	{"cbc-cs3(aes)", AES_128_CBC_CS3},
+	{"cbc-cs1(aes)", AES_192_CBC_CS1},
+	{"cbc-cs2(aes)", AES_192_CBC_CS2},
+	{"cbc-cs3(aes)", AES_192_CBC_CS3},
+	{"cbc-cs1(aes)", AES_256_CBC_CS1},
+	{"cbc-cs2(aes)", AES_256_CBC_CS2},
+	{"cbc-cs3(aes)", AES_256_CBC_CS3},
+	{"ctr(aes)", AES_128_CTR},
+	{"ctr(aes)", AES_192_CTR},
+	{"ctr(aes)", AES_256_CTR},
+	{"ofb(aes)", AES_128_OFB},
+	{"ofb(aes)", AES_192_OFB},
+	{"ofb(aes)", AES_256_OFB},
+	{"cfb(aes)", AES_128_CFB},
+	{"cfb(aes)", AES_192_CFB},
+	{"cfb(aes)", AES_256_CFB},
+	{"xts(aes)", AES_256_XTS},
+	{"xts(aes)", AES_512_XTS},
+	{"ecb(des3_ede)", DES3_128_ECB},
+	{"ecb(des3_ede)", DES3_192_ECB},
+	{"cbc(des3_ede)", DES3_128_CBC},
+	{"cbc(des3_ede)", DES3_192_CBC},
+	{"ecb(sm4)", SM4_128_ECB},
+	{"cbc(sm4)", SM4_128_CBC},
+	{"ctr(sm4)", SM4_128_CTR},
+	{"ofb(sm4)", SM4_128_OFB},
+	{"cfb(sm4)", SM4_128_CFB},
+	{"xts(sm4)", SM4_128_XTS},
+	{"xts(sm4)", SM4_128_XTS_GB},
+	{"ccm(aes)", AES_128_CCM},
+	{"ccm(aes)", AES_192_CCM},
+	{"ccm(aes)", AES_256_CCM},
+	{"gcm(aes)", AES_128_GCM},
+	{"gcm(aes)", AES_192_GCM},
+	{"gcm(aes)", AES_256_GCM},
+	{"authenc(hmac(sha256),cbc(aes))", AES_128_CBC_SHA256_HMAC},
+	{"authenc(hmac(sha256),cbc(aes))", AES_192_CBC_SHA256_HMAC},
+	{"authenc(hmac(sha256),cbc(aes))", AES_256_CBC_SHA256_HMAC},
+	{"ccm(sm4)", SM4_128_CCM},
+	{"gcm(sm4)", SM4_128_GCM},
+	{"sm3",    SM3_ALG},
+	{"md5",    MD5_ALG},
+	{"sha1",    SHA1_ALG},
+	{"sha256",    SHA256_ALG},
+	{"sha224",    SHA224_ALG},
+	{"sha384",    SHA384_ALG},
+	{"sha512",    SHA512_ALG},
+	{"sha512-224",    SHA512_224},
+	{"sha512-256",    SHA512_256},
+	{"trng", TRNG},
+	{"", ALG_MAX}
+};
+
 
 /*-------------------------------------tool code------------------------------------------------------*/
 void add_send_complete(void)
@@ -185,6 +292,20 @@ static int get_alg_type(const char *alg_name)
 	}
 
 	return alg;
+}
+
+int get_alg_name(int alg, char *alg_name)
+{
+	int i;
+
+	for (i = 0; i < ALG_MAX; i++) {
+		if (alg == alg_name_options[i].alg) {
+			strcpy(alg_name, alg_name_options[i].name);
+			return 0;
+		}
+	}
+
+	return -EINVAL;
 }
 
 static int get_mode_type(const char *mode_name)
@@ -277,21 +398,32 @@ void get_rand_data(u8 *addr, u32 size)
 {
 	unsigned short rand_state[3] = {
 		(0xae >> 16) & 0xffff, 0xae & 0xffff, 0x330e};
+	static __thread u64 rand_seed = 0x330eabcd;
+	u64 rand48 = 0;
 	int i;
 
-#if 1
 	// only 32bit valid, other 32bit is zero
-	for (i = 0; i < size >> 3; i++)
-		*((u64 *)addr + i) = nrand48(rand_state);
-#else
-	// full 64bit valid
-	for (i = 0; i < size >> 2; i++)
-		*((u32 *)addr + i) = nrand48(rand_state);
-#endif
+	for (i = 0; i < size >> 3; i++) {
+		rand_state[0] = (u16)rand_seed;
+		rand_state[1] = (u16)(rand_seed >> 16);
+		rand48 = nrand48(rand_state);
+		*((u64 *)addr + i) = rand48;
+		rand_seed = rand48;
+	}
+}
+
+void cal_avg_latency(u32 count)
+{
+	double latency;
+
+	if (!g_run_options || !g_run_options->latency)
+		return;
+
+	latency = (double)g_run_options->times * SEC_2_USEC / count;
+	ACC_TST_PRT("thread<%lu> avg latency: %.1fus\n", gettid(), latency);
 }
 
 /*-------------------------------------main code------------------------------------------------------*/
-
 static void parse_alg_param(struct acc_option *option)
 {
 	switch(option->algtype) {
@@ -330,6 +462,11 @@ static void parse_alg_param(struct acc_option *option)
 		option->acctype = HPRE_TYPE;
 		option->subtype = X448_TYPE;
 		break;
+	case TRNG:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "trng");
+		option->acctype = TRNG_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
 	default:
 		if (option->algtype <= RSA_4096_CRT) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "rsa");
@@ -347,7 +484,7 @@ static void parse_alg_param(struct acc_option *option)
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "ecdsa");
 			option->acctype = HPRE_TYPE;
 			option->subtype = ECDSA_TYPE;
-		} else if (option->algtype <= SM4_128_XTS) {
+		} else if (option->algtype <= SM4_128_XTS_GB) {
 			snprintf(option->algclass, MAX_ALG_NAME, "%s", "cipher");
 			option->acctype = SEC_TYPE;
 			option->subtype = CIPHER_TYPE;
@@ -382,7 +519,7 @@ void cal_perfermance_data(struct acc_option *option, u32 sttime)
 			if (get_recv_time() == option->threads)
 				break;
 		} else { // ASYNC_MODE
-			if (get_recv_time() == 1)
+			if (get_recv_time() == 1) // poll complete
 				break;
 		}
 		usleep(1000);
@@ -441,6 +578,12 @@ static int benchmark_run(struct acc_option *option)
 		} else if (option->modetype & NOSVA_MODE) {
 			ret = zip_wd_benchmark(option);
 		}
+	case TRNG_TYPE:
+		if (option->modetype & SVA_MODE)
+			ACC_TST_PRT("TRNG not support sva mode..\n");
+		else if (option->modetype & NOSVA_MODE)
+			ret = trng_wd_benchmark(option);
+
 		break;
 	}
 
@@ -462,6 +605,8 @@ static void dump_param(struct acc_option *option)
 	ACC_TST_PRT("    [--acctype]: %u\n", option->acctype);
 	ACC_TST_PRT("    [--prefetch]:%u\n", option->prefetch);
 	ACC_TST_PRT("    [--engine]:  %s\n", option->engine);
+	ACC_TST_PRT("    [--latency]: %u\n", option->latency);
+	ACC_TST_PRT("    [--init2]:   %u\n", option->inittype);
 }
 
 int acc_benchmark_run(struct acc_option *option)
@@ -471,9 +616,9 @@ int acc_benchmark_run(struct acc_option *option)
 	int i, ret = 0;
 	int status;
 
-	ACC_TST_PRT("start UADK benchmark test.\n");
 	parse_alg_param(option);
 	dump_param(option);
+	g_run_options = option;
 
 	pthread_mutex_init(&acc_mutex, NULL);
 	if (option->multis <= 1) {
@@ -542,19 +687,20 @@ int acc_default_case(struct acc_option *option)
 	option->threads = 1;
 	option->multis = 1;
 	option->ctxnums = 2;
+	option->inittype = INIT_TYPE;
 
-	return	 acc_benchmark_run(option);
+	return acc_benchmark_run(option);
 }
 
 static void print_help(void)
 {
 	ACC_TST_PRT("NAME\n");
-	ACC_TST_PRT("    uadk_tool benchmark: test UADK acc performance,etc\n");
+	ACC_TST_PRT("    benchmark: test UADK acc performance,etc\n");
 	ACC_TST_PRT("USAGE\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
-	ACC_TST_PRT("    uadk_tool benchmark [--multi] [--sync] [--async] [--help]\n");
-	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_tool benchmark xxxx\n");
+	ACC_TST_PRT("    benchmark [--alg aes-128-cbc] [--alg rsa-2048]\n");
+	ACC_TST_PRT("    benchmark [--mode] [--pktlen] [--keylen] [--seconds]\n");
+	ACC_TST_PRT("    benchmark [--multi] [--sync] [--async] [--help]\n");
+	ACC_TST_PRT("    numactl --cpubind=0  --membind=0,1 ./uadk_benchmark xxxx\n");
 	ACC_TST_PRT("        specify numa nodes for cpu and memory\n");
 	ACC_TST_PRT("DESCRIPTION\n");
 	ACC_TST_PRT("    [--alg aes-128-cbc ]:\n");
@@ -569,7 +715,7 @@ static void print_help(void)
 	ACC_TST_PRT("    [--seconds]:\n");
 	ACC_TST_PRT("        set the test times\n");
 	ACC_TST_PRT("    [--multi]:\n");
-	ACC_TST_PRT("        set the number of process\n");
+	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--thread]:\n");
 	ACC_TST_PRT("        set the number of threads\n");
 	ACC_TST_PRT("    [--ctxnum]:\n");
@@ -580,11 +726,15 @@ static void print_help(void)
 	ACC_TST_PRT("        set the test openssl engine\n");
 	ACC_TST_PRT("    [--alglist]:\n");
 	ACC_TST_PRT("        list the all support alg\n");
+	ACC_TST_PRT("    [--latency]:\n");
+	ACC_TST_PRT("        test the running time of packets\n");
+	ACC_TST_PRT("    [--init2]:\n");
+	ACC_TST_PRT("        select init2 mode in the init interface of UADK SVA\n");
 	ACC_TST_PRT("    [--help]  = usage\n");
 	ACC_TST_PRT("Example\n");
 	ACC_TST_PRT("    ./uadk_tool benchmark --alg aes-128-cbc --mode sva --opt 0 --sync\n");
-	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 4\n");
-	ACC_TST_PRT("UPDATE:2022-7-18\n");
+	ACC_TST_PRT("    	     --pktlen 1024 --seconds 1 --multi 1 --thread 1 --ctxnum 2\n");
+	ACC_TST_PRT("UPDATE:2022-3-28\n");
 }
 
 static void print_support_alg(void)
@@ -603,20 +753,24 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 	int c;
 
 	static struct option long_options[] = {
-		{"alg",       required_argument, 0, 2},
-		{"mode",      required_argument, 0, 3},
-		{"opt",       required_argument, 0, 4},
-		{"sync",      no_argument,       0, 5},
-		{"async",     no_argument,       0, 6},
-		{"pktlen",    required_argument, 0, 7},
-		{"seconds",   required_argument, 0, 8},
-		{"thread",    required_argument, 0, 9},
-		{"multi",     required_argument, 0, 10},
-		{"ctxnum",    required_argument, 0, 11},
-		{"prefetch",     no_argument,    0, 12},
-		{"engine",    required_argument, 0, 13},
-		{"alglist",      no_argument,    0, 14},
-		{"help",      no_argument,       0, 15},
+		{"help",      no_argument,       0, 0},
+		{"alg",       required_argument, 0, 1},
+		{"mode",      required_argument, 0, 2},
+		{"opt",       required_argument, 0, 3},
+		{"sync",      no_argument,       0, 4},
+		{"async",     no_argument,       0, 5},
+		{"pktlen",    required_argument, 0, 6},
+		{"seconds",   required_argument, 0, 7},
+		{"thread",    required_argument, 0, 8},
+		{"multi",     required_argument, 0, 9},
+		{"ctxnum",    required_argument, 0, 10},
+		{"prefetch",  no_argument,       0, 11},
+		{"engine",    required_argument, 0, 12},
+		{"alglist",   no_argument,       0, 13},
+		{"latency",   no_argument,       0, 14},
+		{"winsize",   required_argument, 0, 15},
+		{"complevel", required_argument, 0, 16},
+		{"init2", no_argument, 0, 17},
 		{0, 0, 0, 0}
 	};
 
@@ -626,49 +780,61 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			break;
 
 		switch (c) {
-		case 2:
+		case 0:
+			print_help();
+			goto to_exit;
+		case 1:
 			option->algtype = get_alg_type(optarg);
 			strcpy(option->algname, optarg);
 			break;
-		case 3:
+		case 2:
 			option->modetype = get_mode_type(optarg);
 			break;
-		case 4:
+		case 3:
 			option->optype = strtol(optarg, NULL, 0);
 			break;
-		case 5:
+		case 4:
 			option->syncmode = SYNC_MODE;
 			break;
-		case 6:
+		case 5:
 			option->syncmode = ASYNC_MODE;
 			break;
-		case 7:
+		case 6:
 			option->pktlen = strtol(optarg, NULL, 0);
 			break;
-		case 8:
+		case 7:
 			option->times = strtol(optarg, NULL, 0);
 			break;
-		case 9:
+		case 8:
 			option->threads = strtol(optarg, NULL, 0);
 			break;
-		case 10:
+		case 9:
 			option->multis = strtol(optarg, NULL, 0);
 			break;
-		case 11:
+		case 10:
 			option->ctxnums = strtol(optarg, NULL, 0);
 			break;
-		case 12:
+		case 11:
 			option->prefetch = 1;
 			break;
-		case 13:
+		case 12:
 			strcpy(option->engine, optarg);
 			break;
-		case 14:
+		case 13:
 			print_support_alg();
 			goto to_exit;
+		case 14:
+			option->latency = true;
+			break;
 		case 15:
-			print_help();
-			goto to_exit;
+			option->winsize = strtol(optarg, NULL, 0);
+			break;
+		case 16:
+			option->complevel = strtol(optarg, NULL, 0);
+			break;
+		case 17:
+			option->inittype = INIT2_TYPE;
+			break;
 		default:
 			ACC_TST_PRT("bad input test parameter!\n");
 			print_help();
@@ -729,9 +895,19 @@ int acc_option_convert(struct acc_option *option)
 	if (!strlen(option->engine)) {
 		option->engine_flag = false;
 		return 0;
-	} else if (strcmp(option->engine, "uadk")) {
+	} else if (strcmp(option->engine, "uadk_engine")) {
 		option->engine_flag = false;
-		ACC_TST_PRT("uadk benchmark just support engine: uadk\n");
+		ACC_TST_PRT("uadk benchmark just support engine: uadk_engine\n");
+		goto param_err;
+	}
+
+	if (option->syncmode == ASYNC_MODE && option->latency) {
+		ACC_TST_PRT("uadk benchmark async mode can't test latency\n");
+		goto param_err;
+	}
+
+	if (option->inittype == INIT2_TYPE && option->modetype != SVA_MODE) {
+		ACC_TST_PRT("uadk benchmark No-SVA mode can't use init2\n");
 		goto param_err;
 	}
 

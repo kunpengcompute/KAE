@@ -15,9 +15,6 @@
 #include "include/drv/wd_rsa_drv.h"
 #include "wd_rsa.h"
 
-#define WD_POOL_MAX_ENTRIES		1024
-#define WD_HW_EACCESS			62
-
 #define RSA_MAX_KEY_SIZE		512
 
 static __thread __u64 balance;
@@ -76,7 +73,6 @@ static struct wd_rsa_setting {
 	struct wd_sched sched;
 	struct wd_async_msg_pool pool;
 	struct wd_alg_driver *driver;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_rsa_setting;
@@ -120,7 +116,7 @@ static int wd_rsa_open_driver(void)
 
 	wd_rsa_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static void wd_rsa_clear_status(void)
@@ -145,20 +141,18 @@ static int wd_rsa_common_init(struct wd_ctx_config *config, struct wd_sched *sch
 	if (ret < 0)
 		goto out_clear_ctx_config;
 
-	/* fix me: sadly find we allocate async pool for every ctx */
 	ret = wd_init_async_request_pool(&wd_rsa_setting.pool,
-					 config->ctx_num, WD_POOL_MAX_ENTRIES,
+					 config, WD_POOL_MAX_ENTRIES,
 					 sizeof(struct wd_rsa_msg));
 	if (ret < 0)
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_rsa_setting.config,
-				 wd_rsa_setting.driver,
-				 &wd_rsa_setting.priv);
+				 wd_rsa_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
-	return 0;
+	return WD_SUCCESS;
 
 out_clear_pool:
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
@@ -171,33 +165,26 @@ out_clear_ctx_config:
 
 static int wd_rsa_common_uninit(void)
 {
-	if (!wd_rsa_setting.priv) {
-		WD_ERR("invalid: repeat uninit rsa!\n");
-		return -WD_EINVAL;
-	}
-
 	/* uninit async request pool */
 	wd_uninit_async_request_pool(&wd_rsa_setting.pool);
 
 	/* unset config, sched, driver */
 	wd_clear_sched(&wd_rsa_setting.sched);
 	wd_alg_uninit_driver(&wd_rsa_setting.config,
-			     wd_rsa_setting.driver,
-			     &wd_rsa_setting.priv);
+			     wd_rsa_setting.driver);
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 {
-	bool flag;
 	int ret;
 
 	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
 
-	flag = wd_alg_try_init(&wd_rsa_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	ret = wd_alg_try_init(&wd_rsa_setting.status);
+	if (ret)
+		return ret;
 
 	ret = wd_init_param_check(config, sched);
 	if (ret)
@@ -213,7 +200,7 @@ int wd_rsa_init(struct wd_ctx_config *config, struct wd_sched *sched)
 
 	wd_alg_set_init(&wd_rsa_setting.status);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_close_driver:
 	wd_rsa_close_driver();
@@ -238,14 +225,13 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 {
 	struct wd_ctx_nums rsa_ctx_num[WD_RSA_GENKEY] = {0};
 	struct wd_ctx_params rsa_ctx_params = {0};
-	int ret = -WD_EINVAL;
-	bool flag;
+	int state, ret = -WD_EINVAL;
 
 	pthread_atfork(NULL, NULL, wd_rsa_clear_status);
 
-	flag = wd_alg_try_init(&wd_rsa_setting.status);
-	if (!flag)
-		return -WD_EEXIST;
+	state = wd_alg_try_init(&wd_rsa_setting.status);
+	if (state)
+		return state;
 
 	if (!alg || sched_type >= SCHED_POLICY_BUTT ||
 	    task_type < 0 || task_type >= TASK_MAX_TYPE) {
@@ -314,7 +300,7 @@ int wd_rsa_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_para
 	wd_alg_set_init(&wd_rsa_setting.status);
 	wd_ctx_param_uninit(&rsa_ctx_params);
 
-	return 0;
+	return WD_SUCCESS;
 
 out_params_uninit:
 	wd_ctx_param_uninit(&rsa_ctx_params);
@@ -391,7 +377,7 @@ static int fill_rsa_msg(struct wd_rsa_msg *msg, struct wd_rsa_req *req,
 
 	msg->key = key;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
@@ -429,8 +415,8 @@ int wd_do_rsa_sync(handle_t h_sess, struct wd_rsa_req *req)
 	msg_handle.recv = wd_rsa_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, &msg, &balance,
-				 wd_rsa_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_rsa_setting.driver, &msg_handle, ctx->ctx, &msg,
+				 &balance, wd_rsa_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 	if (unlikely(ret))
 		return ret;
@@ -474,7 +460,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 		goto fail_with_msg;
 	msg->tag = mid;
 
-	ret = wd_rsa_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_rsa_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send rsa BD, hw is err!\n");
@@ -487,7 +473,7 @@ int wd_do_rsa_async(handle_t sess, struct wd_rsa_req *req)
 	if (ret)
 		goto fail_with_msg;
 
-	return 0;
+	return WD_SUCCESS;
 
 fail_with_msg:
 	wd_put_msg_to_pool(&wd_rsa_setting.pool, idx, mid);
@@ -509,8 +495,8 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	__u32 tmp = expt;
 	int ret;
 
-	if (unlikely(!count)) {
-		WD_ERR("invalid: param count is NULL!\n");
+	if (unlikely(!count || !expt)) {
+		WD_ERR("invalid: rsa poll count or expt is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -523,7 +509,7 @@ int wd_rsa_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_rsa_setting.driver->recv(ctx->ctx, &recv_msg);
+		ret = wd_alg_driver_recv(wd_rsa_setting.driver, ctx->ctx, &recv_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {

@@ -14,8 +14,6 @@
 extern "C" {
 #endif
 
-#define MAX_HMAC_KEY_SIZE	128U
-
 /**
  * wd_digest_type - Algorithm type of digest
  * algorithm should be offered by struct wd_digest_arg
@@ -79,6 +77,21 @@ enum wd_digest_mode {
 };
 
 /**
+ * wd_digest_msg_state - Message state of digest
+ * @WD_DIGEST_END: Final message or single block message
+ * @WD_DIGEST_DOING: First message or middle message
+ * @WD_DIGEST_STREAM_END: Final message carrying long data information
+ * @WD_DIGEST_STREAM_DOING: Middle message carrying long data information
+ */
+enum wd_digest_msg_state {
+	WD_DIGEST_END = 0x0,
+	WD_DIGEST_DOING,
+	WD_DIGEST_STREAM_END,
+	WD_DIGEST_STREAM_DOING,
+	WD_DIGEST_MSG_STATE_MAX,
+};
+
+/**
  * wd_digest_sess_setup - Parameters which is used to allocate a digest session
  * @alg: digest algorithm type, denoted by enum wd_digest_type
  * @mode: digest algorithm mode, denoted by enum wd_digest_mode
@@ -100,9 +113,11 @@ typedef void *wd_digest_cb_t(void *cb_param);
  * @out_buf_bytes: actual output buffer size
  * @iv: input iv data addrss for AES_GMAC
  * @iv_bytes: input iv data size
- * @has_next: is there next data block
+ * @has_next: message state, all types are defined in enum wd_digest_msg_state.
  * @cb: callback function for async mode
  * @cb_param: pointer of callback parameter
+ * @long_data_len: total length of data has been processed, it is only needed by
+ *		   the data flow switched to another session for processing.
  *
  * Note: If there is a alg selected in session, alg below will be ignore
  *       otherwise, alg here will be used. Same as mode below.
@@ -125,6 +140,7 @@ struct wd_digest_req {
 	__u8		data_fmt;
 	wd_digest_cb_t	*cb;
 	void		*cb_param;
+	__u64		long_data_len;
 };
 
 struct wd_cb_tag {
@@ -180,7 +196,7 @@ void wd_digest_uninit2(void);
 handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup);
 
 /**
- * wd_alg_digest_free_sess() - Free digest session.
+ * wd_digest_free_sess() - Free digest session.
  * @h_sess: session handler which will be free
  */
 void wd_digest_free_sess(handle_t h_sess);

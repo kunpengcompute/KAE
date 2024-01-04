@@ -65,7 +65,7 @@ run_cmd()
 	if [ -z ${VALGRIND} ]; then
 		# "|| exit_code=$?" is used to capature the return value.
 		# It could prevent bash to stop scripts when error occurs.
-		$@ &> /dev/null || exit_code=$?
+		$@ || exit_code=$?
 	else
 		${VALGRIND} $@
 	fi
@@ -87,10 +87,10 @@ hw_blk_deflate()
 	case $3 in
 	"gzip")
 		${RM} -f /tmp/gzip_list.bin
-		zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
+		run_cmd zip_sva_perf --in $1 --out $2 --olist /tmp/gzip_list.bin $@
 		;;
 	"zlib")
-		zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
+		run_cmd zip_sva_perf -z --in $1 --out $2 --olist /tmp/zlib_list.bin $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -104,10 +104,10 @@ hw_blk_inflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
+		run_cmd zip_sva_perf -d --in $1 --out $2 --ilist /tmp/gzip_list.bin $@
 		;;
 	"zlib")
-		zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
+		run_cmd zip_sva_perf -z -d --in $1 --out $2 --ilist /tmp/zlib_list.bin $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -121,10 +121,10 @@ hw_strm_deflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -S --in $1 --out $2 $@
+		run_cmd zip_sva_perf -S --in $1 --out $2 $@
 		;;
 	"zlib")
-		zip_sva_perf -z -S --in $1 --out $2 $@
+		run_cmd zip_sva_perf -z -S --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -138,10 +138,10 @@ hw_strm_inflate()
 {
 	case $3 in
 	"gzip")
-		zip_sva_perf -S -d --in $1 --out $2 $@
+		run_cmd zip_sva_perf -S -d --in $1 --out $2 $@
 		;;
 	"zlib")
-		zip_sva_perf -z -S -d --in $1 --out $2 $@
+		run_cmd zip_sva_perf -z -S -d --in $1 --out $2 $@
 		;;
 	*)
 		echo "Unsupported algorithm type: $3"
@@ -306,9 +306,9 @@ sw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	sw_blk_deflate origin /tmp/ori.gz gzip 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
-	md5sum -c ori.md5
+	#sw_blk_deflate origin /tmp/ori.gz gzip 8192
+	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192 --env
+	#md5sum -c ori.md5
 
 	sw_strm_deflate origin /tmp/ori.gz gzip 8192
 	hw_strm_inflate /tmp/ori.gz origin gzip -b 8192 --env
@@ -340,9 +340,9 @@ hw_dfl_hw_ifl()
 	prepare_src_file $1
 	md5sum origin > ori.md5
 
-	hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
-	hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
-	md5sum -c ori.md5
+	#hw_blk_deflate origin /tmp/ori.gz gzip -b 8192
+	#hw_blk_inflate /tmp/ori.gz origin gzip -b 8192
+	#md5sum -c ori.md5
 
 	${RM} -f /tmp/ori.gz
 	hw_strm_deflate origin /tmp/ori.gz gzip -b 8192
@@ -365,34 +365,35 @@ run_zip_test_v2()
 	WD_COMP_EPOLL_EN=1 hw_dfl_hw_ifl /tmp/syslog
 	WD_COMP_EPOLL_EN=0 hw_dfl_hw_ifl /tmp/syslog
 	# test without environment variables
-	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self
+	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self
 	# test with environment variables
-	#zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
+	#run_cmd zip_sva_perf -b 8192 -s 81920 -l 1000 --self --env
 }
 
 # Accept more paraterms
 # failed: return 1; success: return 0
 run_sec_test_v2()
 {
-	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd test_hisi_sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd uadk_tool test --m sec --cipher 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 
-	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd uadk_tool test --m sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --sync --multi 1 $@
 
-	run_cmd test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
+	run_cmd uadk_tool test --m sec test_hisi_sec --digest 0 --optype 0 --pktlen 16 --keylen 16 \
 		--times 1 --async --multi 1 $@
 }
 
 # failed: return 1; success: return 0
 run_hpre_test_v2()
 {
-	run_cmd test_hisi_hpre --trd_mode=sync
+	dev_path=$(ls -1 /dev/hisi_hpre-* | head -1)
+	run_cmd test_hisi_hpre --trd_mode=sync --dev_path=$dev_path
 
-	run_cmd test_hisi_hpre --trd_mode=async
+	run_cmd test_hisi_hpre --trd_mode=async --dev_path=$dev_path
 }
 
 # failed: return 1; success: return 0

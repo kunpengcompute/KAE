@@ -326,7 +326,7 @@ struct bd3_tls_type_back {
 	__u32 pad_len_1p3_back:16;
 };
 
-/* the kp930 sence */
+/* the hw v2 sence */
 struct hisi_sec_bd3_sqe {
 	__u32 type:4;
 	__u32 inveld:1;
@@ -459,6 +459,12 @@ enum C_MODE {
 	C_MODE_GCM	  = 0x6,
 	C_MODE_XTS	  = 0x7,
 	C_MODE_CBC_CS	= 0x9
+};
+
+enum SEC_C_WIDTH {
+	C_WIDTH_CS1 = 0x1,
+	C_WIDTH_CS2 = 0x2,
+	C_WIDTH_CS3 = 0x3,
 };
 
 enum CKEY_LEN {

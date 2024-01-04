@@ -20,12 +20,12 @@ endif	# WITH_LOG_FILE
 # y = minor
 # z = revision
 MAJOR = 2
-MINOR = 5
+MINOR = 6
 REVISION = 0
 UADK_VERSION = -version-number ${MAJOR}:${MINOR}:${REVISION}
 
-DAY = 1
-MONTH = June
+DAY = 20
+MONTH = Dec
 YEAR = 2023
 AM_CFLAGS+= -DUADK_VERSION_NUMBER="\"UADK version: ${MAJOR}.${MINOR}.${REVISION}\""
 AM_CFLAGS+= -DUADK_RELEASED_TIME="\"Released ${MONTH} ${DAY}, ${YEAR}\""
@@ -36,10 +36,12 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h
 
 nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
-			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h v1/wd_comp.h
+			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
-lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libhisi_zip.la \
-		libhisi_hpre.la libhisi_sec.la
+lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la
+
+uadk_driversdir=$(libdir)/uadk
+uadk_drivers_LTLIBRARIES=libhisi_sec.la libhisi_hpre.la libhisi_zip.la
 
 libwd_la_SOURCES=wd.c wd_mempool.c wd.h	wd_alg.c wd_alg.h	\
 		 v1/wd.c v1/wd.h v1/wd_adapter.c v1/wd_adapter.h \
@@ -92,7 +94,7 @@ libwd_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_comp_la_DEPENDENCIES = libwd.la
 
-libhisi_zip_la_LIBADD = -ldl -lwd_comp
+libhisi_zip_la_LIBADD = -ldl
 
 libwd_crypto_la_LIBADD = $(libwd_la_OBJECTS) -ldl -lnuma
 libwd_crypto_la_DEPENDENCIES = libwd.la
@@ -121,7 +123,7 @@ libwd_crypto_la_DEPENDENCIES= libwd.la
 
 libhisi_zip_la_LIBADD= -lwd -ldl -lwd_comp
 libhisi_zip_la_LDFLAGS=$(UADK_VERSION)
-libhisi_zip_la_DEPENDENCIES= libwd.la  libwd_comp.la
+libhisi_zip_la_DEPENDENCIES= libwd.la libwd_comp.la
 
 libhisi_sec_la_LIBADD= -lwd -lwd_crypto
 libhisi_sec_la_LDFLAGS=$(UADK_VERSION)

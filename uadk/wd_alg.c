@@ -139,6 +139,11 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 		return -WD_EINVAL;
 	}
 
+	if (!drv->init || !drv->exit || !drv->send || !drv->recv) {
+		WD_ERR("invalid: driver's parameter is NULL!\n");
+		return -WD_EINVAL;
+	}
+
 	new_alg = calloc(1, sizeof(struct wd_alg_list));
 	if (!new_alg) {
 		WD_ERR("failed to alloc alg driver memory!\n");
@@ -212,6 +217,9 @@ bool wd_drv_alg_support(const char *alg_name,
 {
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
+
+	if (!alg_name)
+		return false;
 
 	while (pnext) {
 		if (!strcmp(alg_name, pnext->alg_name) &&

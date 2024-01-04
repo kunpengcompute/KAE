@@ -126,6 +126,7 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 		WD_ERR("Get zip in buf dma address fail!\n");
 		return -WD_ENOMEM;
 	}
+
 	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF)) {
 		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
 		if (!phy_out) {
@@ -256,6 +257,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr)
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
+	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)recv_msg->udata;
 	struct hisi_zip_sqe *sqe = hw_msg;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -295,11 +297,14 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
-		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
-				      sqe->stream_ctx_addr_l);
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
+			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
+
+	if (tag && info->sqe_parse_priv)
+		info->sqe_parse_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
 
@@ -508,6 +513,9 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 unmap_phy_seq:
 	drv_iova_unmap(q, zstd_out->literal, (void *)phy_lit, zstd_out->lit_sz);
 unmap_phy_lit:
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
+		drv_iova_unmap(q, msg->ctx_buf, (void *)addr.ctxbuf_addr - CTX_BUFFER_OFFSET,
+			       MAX_CTX_RSV_SIZE);
 	drv_iova_unmap(q, msg->src, (void *)addr.source_addr, msg->in_size);
 	return -WD_ENOMEM;
 }
@@ -580,6 +588,7 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 {
 	struct hisi_zip_sqe_v3 *sqe = (struct hisi_zip_sqe_v3 *)info->sq_base + i;
 	struct wcrypto_comp_msg *msg = smsg;
+	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)msg->udata;
 	struct wd_queue *q = info->q;
 	__u8 flush_type;
 	__u8 data_fmt;
@@ -627,6 +636,9 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 
 	ops[msg->alg_type].fill_sqe_hw_info(sqe, msg);
 	sqe->tag_l = msg->tag;
+
+	if (tag && info->sqe_fill_priv)
+		info->sqe_fill_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	info->req_cache[i] = msg;
 
@@ -716,8 +728,8 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
 	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
-		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h,
-				      sqe->stream_ctx_addr_l);
+		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
+			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
@@ -727,6 +739,9 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	tag = (void *)(uintptr_t)recv_msg->udata;
 	if (tag && tag->priv && !info->sqe_fill_priv)
 		fill_priv_lz77_zstd(sqe, recv_msg);
+
+	if (tag && info->sqe_parse_priv)
+		info->sqe_parse_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	return 1;
 }

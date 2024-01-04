@@ -8,6 +8,7 @@
 #define __WD_CIPHER_H
 
 #include <dlfcn.h>
+#include <asm/types.h>
 #include "wd_alg_common.h"
 
 #ifdef __cplusplus
@@ -17,7 +18,6 @@ extern "C" {
 #define AES_BLOCK_SIZE	16
 #define GCM_IV_SIZE	12
 #define DES3_BLOCK_SIZE	8
-#define MAX_CIPHER_KEY_SIZE	64
 #define MAX_IV_SIZE	AES_BLOCK_SIZE
 
 /**
@@ -50,6 +50,8 @@ enum wd_cipher_alg {
 
 /**
  * wd_cipher_mode - Algorithm mode of cipher
+ * WD_CIPHER_XTS for xts specified by IEEE Std 1619-2007.
+ * WD_CIPHER_XTS_GB for xts specified by GB/T 17964-2021.
  */
 enum wd_cipher_mode {
 	WD_CIPHER_ECB,
@@ -63,6 +65,7 @@ enum wd_cipher_mode {
 	WD_CIPHER_CBC_CS3,
 	WD_CIPHER_CCM,
 	WD_CIPHER_GCM,
+	WD_CIPHER_XTS_GB,
 	WD_CIPHER_MODE_TYPE_MAX,
 };
 
@@ -127,7 +130,7 @@ void wd_cipher_uninit(void);
 int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_params *ctx_params);
 
 #define wd_cipher_init2(alg, sched_type, task_type) \
-	wd_cipher_init2(alg, sched_type, task_type, NULL)
+	wd_cipher_init2_(alg, sched_type, task_type, NULL)
 
 /**
  * wd_cipher_uninit2() - Uninitialise ctx configuration and scheduler.
