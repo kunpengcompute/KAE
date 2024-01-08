@@ -1,0 +1,27 @@
+From 43e69e295475aa26d98d57a4670f826751c3bd6f Mon Sep 17 00:00:00 2001
+From: l00584920 <liuyang645@huawei.com>
+Date: Mon, 8 Jan 2024 15:07:42 +0800
+Subject: [PATCH] uadk-add-ctr-mode
+
+Signed-off-by: l00584920 <liuyang645@huawei.com>
+---
+ uadk/v1/drv/hisi_sec_udrv.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/uadk/v1/drv/hisi_sec_udrv.c b/uadk/v1/drv/hisi_sec_udrv.c
+index d046327..0b3e4f5 100644
+--- a/uadk/v1/drv/hisi_sec_udrv.c
++++ b/uadk/v1/drv/hisi_sec_udrv.c
+@@ -176,6 +176,9 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
+ 	case WCRYPTO_CIPHER_XTS:
+ 		sqe->type2.c_mode = C_MODE_XTS;
+ 		break;
++	case WCRYPTO_CIPHER_CTR:
++		sqe->type2.c_mode = C_MODE_CTR;
++		break;
+ 	case WCRYPTO_CIPHER_CBC_CS1:
+ 		sqe->type2.c_mode = C_MODE_CBC_CS;
+ 		sqe->type2.c_width = C_WIDTH_CS1;
+-- 
+2.28.0.windows.1
+
