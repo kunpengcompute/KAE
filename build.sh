@@ -135,7 +135,8 @@ function driver_clean()
 function build_uadk()
 {
         cd ${SRC_PATH}
-        patch -p1  < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
+        patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
+        patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
         cd ${SRC_PATH}/uadk
         sh autogen.sh
         sh conf.sh
