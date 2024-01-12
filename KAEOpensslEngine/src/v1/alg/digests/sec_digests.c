@@ -446,7 +446,7 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from) // stream mo
 {
     sec_digest_priv_t *to_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(to);
     sec_digest_priv_t *from_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(from);
-    if (to_ctx) {
+    if (to_ctx && to_ctx->e_digest_ctx) {
         to_ctx->e_digest_ctx->md_ctx = to_ctx;
     }
 
