@@ -65,6 +65,7 @@ static cipher_info_t g_sec_ciphers_info[] = {
     {NID_sms4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
     {NID_sms4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE, 1, NULL},
     {NID_sms4_ecb, 16, 16, 0, EVP_CIPH_ECB_MODE, 1, NULL},
+	{NID_sms4_gcm, 1, 16, 12, EVP_CIPH_GCM_MODE, 1, NULL}, // gmssl-gcm是软优化，参数调用
 #else
 	{NID_sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
 	{NID_sm4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
@@ -93,6 +94,7 @@ static int g_known_cipher_nids[CIPHERS_COUNT] = {
     NID_sms4_cbc,
     NID_sms4_ofb128,
     NID_sms4_ecb,
+	NID_sms4_gcm,
 #else
 	NID_sm4_ctr,
 	NID_sm4_cbc,
@@ -621,10 +623,19 @@ static int sec_ciphers_cleanup(EVP_CIPHER_CTX *ctx)
 	return OPENSSL_SUCCESS;
 }
 
+#ifdef KAE_GMSSL
+EVP_CIPHER *get_EVP_sm4_gcm(void);
+#endif
 static EVP_CIPHER *sec_ciphers_set_cipher_method(cipher_info_t cipherinfo)
 {
-	EVP_CIPHER *cipher = EVP_CIPHER_meth_new(cipherinfo.nid, cipherinfo.blocksize, cipherinfo.keylen);
 	int ret = 1;
+#ifdef KAE_GMSSL
+	if (cipherinfo.nid == NID_sms4_gcm) {
+        EVP_CIPHER * sm4_gcm_cipher = get_EVP_sm4_gcm();
+        return EVP_CIPHER_meth_dup(sm4_gcm_cipher);
+    }
+#endif
+	EVP_CIPHER *cipher = EVP_CIPHER_meth_new(cipherinfo.nid, cipherinfo.blocksize, cipherinfo.keylen);
 
 	if (cipher == NULL)
 		return NULL;
@@ -672,6 +683,9 @@ static EVP_CIPHER *get_ciphers_default_method(int nid)
 		break;
 	case NID_sms4_ecb:
 		cipher = (EVP_CIPHER *)EVP_sms4_ecb();
+		break;
+	case NID_sms4_gcm:
+		cipher = (EVP_CIPHER *)EVP_sms4_gcm();
 		break;
 	default:
 		US_WARN("nid = %d not support.", nid);
