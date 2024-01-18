@@ -635,8 +635,8 @@ static EVP_CIPHER *sec_ciphers_set_cipher_method(cipher_info_t cipherinfo)
     int ret = 1;
 #ifdef KAE_GMSSL
     if (cipherinfo.nid == NID_sms4_gcm) {
-        EVP_CIPHER * sm4_gcm_cipher = get_EVP_sm4_gcm();
-        return EVP_CIPHER_meth_dup(sm4_gcm_cipher);
+        EVP_CIPHER *sw_cipher = get_EVP_sm4_gcm();
+        return EVP_CIPHER_meth_dup(sw_cipher);
     }
 #endif
     EVP_CIPHER *cipher = EVP_CIPHER_meth_new(cipherinfo.nid, cipherinfo.blocksize, cipherinfo.keylen);
