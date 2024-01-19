@@ -13,8 +13,12 @@ lib_LTLIBRARIES=kae.la
 
 if WD_KAE_GMSSL
 kae_la_CFLAGS += -DKAE_GMSSL
+kae_la_CFLAGS += -I v1/alg/ciphers/sw
+kae_la_CFLAGS += -I v1/alg/ciphers/
 kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/async/uadk_async.c \
 		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
+kae_la_SOURCES+=v1/alg/ciphers/sw/e_sms4_gcm.c
+kae_la_SOURCES+=v1/alg/ciphers/sw/vpsms4_ex-armv8.s
 else
 kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
 		v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c \
