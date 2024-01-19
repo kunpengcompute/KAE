@@ -130,6 +130,7 @@ static int kae_engine_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void)
 				sec_ciphers_set_enabled(NID_sms4_cbc, 0);
 				sec_ciphers_set_enabled(NID_sms4_ofb128, 0);
 				sec_ciphers_set_enabled(NID_sms4_ecb, 0);
+                sec_ciphers_set_enabled(NID_sms4_gcm, 0);
 #else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 0);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 0);
@@ -142,6 +143,7 @@ static int kae_engine_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void)
 				sec_ciphers_set_enabled(NID_sms4_cbc, 1);
 				sec_ciphers_set_enabled(NID_sms4_ofb128, 1);
 				sec_ciphers_set_enabled(NID_sms4_ecb, 1);
+                sec_ciphers_set_enabled(NID_sms4_gcm, 1);
 #else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 1);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 1);

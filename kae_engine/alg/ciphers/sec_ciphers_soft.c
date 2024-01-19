@@ -48,6 +48,7 @@ static cipher_threshold_table_t g_sec_ciphers_pkt_threshold_table[] = {
     { NID_sms4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sms4_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sms4_ecb, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+    { NID_sms4_gcm, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 #else
     { NID_sm4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sm4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
@@ -75,6 +76,7 @@ static sw_cipher_t g_sec_ciphers_sw_cipher_table[] = {
     { NID_sms4_ctr, EVP_sms4_ctr },
     { NID_sms4_ofb128, EVP_sms4_ofb },
     { NID_sms4_ecb, EVP_sms4_ecb },
+    { NID_sms4_gcm, EVP_sms4_gcm },
 #else
     { NID_sm4_cbc, EVP_sm4_cbc },
     { NID_sm4_ctr, EVP_sm4_ctr },
