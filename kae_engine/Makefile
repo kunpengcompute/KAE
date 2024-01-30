@@ -36,7 +36,7 @@ SRCDIRS   += ${WORK_PATH}/async
 SRCDIRS   += ${WORK_PATH}/wdmngr
 SRCDIRS   += ${WORK_PATH}/utils
 
-SRCEXTS   := .c # C program
+SRCEXTS   := .c .s # C program
 
 # Include
 INCDIR += -I $(WORK_PATH)/
@@ -62,8 +62,10 @@ LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option
 ifdef KAE_GMSSL
+	SRCDIRS   += ${WORK_PATH}/alg/ciphers/sw
+    INCDIR    += -I $(WORK_PATH)/alg/ciphers/sw
 	LDFLAGS   += -Wl,-rpath,/usr/local/gmssl/lib:/usr/local/lib
-	CFLAGS += -DKAE_GMSSL
+	CFLAGS    += -DKAE_GMSSL
 endif
 
 # The command used to delete file.
@@ -82,10 +84,16 @@ all : $(TARGET)
 # Rules for creating the dependency files (.d).
 %.d : %.c
 	$(CC) -MM -MD $(CFLAGS)  $<
+%.d : %.s
+	$(CC) -MM -MD $(CFLAGS)  $<
 
 # Rules for producing the objects.
 objs : $(OBJS)
 %.o : %.c
+	@echo compiling $(notdir $<)
+	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
+
+%.o : %.s
 	@echo compiling $(notdir $<)
 	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
