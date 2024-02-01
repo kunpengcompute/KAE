@@ -59,7 +59,7 @@ int sec_digests_soft_init(sec_digest_priv_t *ctx, uint32_t e_nid)
         US_ERR("malloc md_data failed");
         return OPENSSL_FAIL;
     }
-    
+    ctx->app_datasize = ctx_len;
     return EVP_MD_meth_get_init (digest_md)(ctx->soft_ctx);
 }
 
@@ -68,7 +68,7 @@ int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, 
     const EVP_MD *digest_md = NULL;
     digest_md = sec_digests_soft_md(e_nid);
     if (digest_md == NULL) {
-        US_WARN("switch to soft:don't support by sec engine.");
+        US_ERR("switch to soft:don't support by sec engine.");
         return OPENSSL_FAIL;
     }
     return EVP_MD_meth_get_update (digest_md)(ctx, data, data_len);
@@ -112,7 +112,35 @@ void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx)
 		}
 		EVP_MD_CTX_free(ctx);
 		md_ctx->soft_ctx = NULL;
+        md_ctx->app_datasize = 0;
 	}
     return;
+}
+
+int sec_digests_soft_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
+{
+    sec_digest_priv_t *to_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(to);
+    sec_digest_priv_t *from_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(from);
+    int ret;
+
+    if (!to_ctx)
+		return 1;
+
+	if (!from_ctx) {
+		US_ERR("priv get from digest ctx is NULL.");
+		return 0;
+	}
+    // 需要重新给目的上下文分配ctx
+    if (to_ctx->soft_ctx) {
+		to_ctx->soft_ctx = NULL;
+		ret = sec_digests_soft_init(to_ctx, to_ctx->e_nid);
+		if (ret != OPENSSL_SUCCESS) {
+            return OPENSSL_FAIL;
+        }
+
+		memcpy(to_ctx->soft_ctx->md_data, from_ctx->soft_ctx->md_data, to_ctx->app_datasize);
+	}
+
+	return OPENSSL_SUCCESS;
 }
 

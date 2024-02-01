@@ -26,6 +26,7 @@ int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, 
 int sec_digests_soft_final(EVP_MD_CTX *ctx, unsigned char *digest, uint32_t e_nid);
 int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest);
 void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx);
+int sec_digests_soft_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from);
 
 #endif
 

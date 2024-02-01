@@ -88,6 +88,7 @@ struct sec_digest_priv {
     EVP_MD_CTX*             soft_ctx;   
     uint32_t                switch_flag;
     uint32_t                copy;
+    uint32_t                app_datasize;
 };
 
 struct digest_engine_ctx {
