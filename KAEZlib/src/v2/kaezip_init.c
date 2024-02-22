@@ -63,7 +63,7 @@ static void kz_zlib_unlock(void)
 static int kz_zlib_uadk_init(void)
 {
 	struct wd_ctx_nums *ctx_set_num;
-	struct wd_ctx_params cparams;
+	struct wd_ctx_params cparams = {0};
 	int ret, i;
 
 	if (zlib_config.status == WD_ZLIB_INIT)
