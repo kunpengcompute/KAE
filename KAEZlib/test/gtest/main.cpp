@@ -225,6 +225,93 @@ TEST(ZlibTest, CompressAndDecompress_LargeCase)
     delete[] uncompress_data;
 }
 
+constexpr int G_THREAD_NUM = 4;
+typedef struct {
+    Bytef *input;
+    uLong input_size;
+    Bytef* compress_data;
+    uLong compress_size;
+    Bytef* uncompress_data;
+    uLong uncompress_size;
+    int windowBits;
+} zlib_data;
+
+void* ZlibPthreadFunc(void *args)
+{
+    zlib_data* pdata = (zlib_data*)args;
+    fprintf(stderr, "winBit = %d\n", pdata->windowBits);
+
+    struct timeval comp_start, comp_stop;
+    gettimeofday(&comp_start, NULL);
+    for (int loop_times = 0; loop_times < 1000; ++loop_times) {
+        pdata->compress_size = compressBound(pdata->input_size);
+        common_compress(pdata->windowBits, 9, pdata->input, pdata->input_size, pdata->compress_data, pdata->compress_size);
+    }
+    gettimeofday(&comp_stop, NULL);
+    uLong time1 = (comp_stop.tv_sec - comp_start.tv_sec) * 1000000 + comp_stop.tv_usec - comp_start.tv_usec;
+    float speed1 = 1000000.0 / time1 * 1000 * pdata->input_size / (1 << 30);
+    fprintf(stderr, "kaezip mult-thread compress perf result:\n");
+    fprintf(stderr, "     time used: %lu us, speed = %.3f GB/s\n\n", time1, speed1);
+
+    gettimeofday(&comp_start, NULL);
+    for (int loop_times = 0; loop_times < 1000; ++loop_times) {
+        pdata->uncompress_size = compressBound(pdata->input_size);
+        common_uncompress(pdata->windowBits, pdata->compress_data, pdata->compress_size,
+            pdata->uncompress_data, pdata->uncompress_size);
+    }
+    gettimeofday(&comp_stop, NULL);
+    time1 = (comp_stop.tv_sec - comp_start.tv_sec) * 1000000 + comp_stop.tv_usec - comp_start.tv_usec;
+    speed1 = 1000000.0 / time1 * 1000 * pdata->compress_size / (1 << 30);
+    fprintf(stderr, "kaezip mult-thread decompress perf result:\n");
+    fprintf(stderr, "     time used: %lu us, speed = %.3f GB/s\n\n", time1, speed1);
+
+    return nullptr;
+}
+
+TEST(ZlibTest, CompressAndDecompress_MtCase)
+{
+    constexpr uLong input_size = 1024UL * 1024 * 2;
+    pthread_t system_test_thrds[G_THREAD_NUM];
+    zlib_data data[G_THREAD_NUM];
+    int ret;
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        data[i].input = new Bytef[input_size];
+        ASSERT_NE(data[i].input, nullptr);
+        generate_random_data(data[i].input, input_size);
+        data[i].compress_data = new Bytef[compressBound(input_size)]();
+        ASSERT_NE(data[i].compress_data, nullptr);
+        data[i].uncompress_data = new Bytef[compressBound(input_size)]();
+        ASSERT_NE(data[i].uncompress_data, nullptr);
+        data[i].input_size = input_size;
+        data[i].windowBits = 8 + i;
+    }
+    fprintf(stderr, "THREAD_NUM is %d\n", G_THREAD_NUM);
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ret = pthread_create(&system_test_thrds[i], NULL, ZlibPthreadFunc, &data[i]);
+        if (ret) {
+			fprintf(stderr, "Create %dth thread fail! ret is %d\n", i, ret);
+			return;
+		}
+    }
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ret = pthread_join(system_test_thrds[i], NULL);
+        if (ret) {
+			fprintf(stderr, "Join %dth thread fail! ret is %d\n", i, ret);
+			return;
+		}
+    }
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ASSERT_EQ(data[i].input_size, data[i].uncompress_size);
+        ASSERT_EQ(memcmp(data[i].input, data[i].uncompress_data, input_size), 0);
+        delete[] data[i].input;
+        delete[] data[i].compress_data;
+        delete[] data[i].uncompress_data;
+    }
+}
+
 #ifdef KP920B
 TEST(ZlibTest, CompressAndDecompress_Deflate)
 {

@@ -245,7 +245,7 @@ static void zstd_uadk_uninit(void)
 static int kaezstd_alg_init2(void)
 {
     struct wd_ctx_nums *ctx_set_num;
-	struct wd_ctx_params cparams;
+	struct wd_ctx_params cparams = {0};
 	int ret, i;
     
     if (zstd_config.status == 1) {

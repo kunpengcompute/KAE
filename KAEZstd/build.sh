@@ -50,7 +50,7 @@ function Install_kaezstd()
         make
 		make PREFIX=/usr/local/kaezstd/ install
     fi 
-    echo "install zlib success"
+    echo "install zstd success"
 }
 
 function Uninstall_kaezstd()
