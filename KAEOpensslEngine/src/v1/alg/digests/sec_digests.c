@@ -125,18 +125,6 @@ int sec_digests_init(EVP_MD_CTX *ctx)
 	md_ctx->e_nid = EVP_MD_nid(EVP_MD_CTX_md(ctx));
 	sec_digests_get_alg(md_ctx);
 	md_ctx->state = SEC_DIGEST_INIT;
-	if (md_ctx->e_digest_ctx == NULL) {
-        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
-        if (md_ctx->e_digest_ctx == NULL) {
-            US_WARN("failed to get engine ctx");
-            //如果硬件申请不行就走软算
-            if (sec_digests_soft_init(md_ctx, md_ctx->e_nid) != OPENSSL_SUCCESS) {
-                US_ERR("do sec digest soft init failed");
-                return OPENSSL_FAIL;
-            }
-            md_ctx->switch_flag = 1;
-        }
-    }
 
 	return OPENSSL_SUCCESS;
 }
@@ -203,14 +191,19 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
 
 	SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL),   "md_ctx is NULL.", OPENSSL_FAIL);
 
-	if (md_ctx->switch_flag == 1)
+	if (md_ctx->soft_ctx == NULL)
+		md_ctx->soft_ctx = EVP_MD_CTX_new();
+
+	if (md_ctx->switch_flag)
 		return sec_digests_soft_update(md_ctx->soft_ctx, data, data_len, md_ctx->e_nid);
 
-    if (md_ctx->e_digest_ctx == NULL) {
-        US_ERR("digest_ctx is null");
-        return OPENSSL_FAIL;
-    }
-
+	if (md_ctx->e_digest_ctx == NULL) {
+		md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
+		if (md_ctx->e_digest_ctx == NULL) {
+			US_WARN("failed to get engine ctx");
+			return OPENSSL_FAIL;
+		}
+	}
 	digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
 
 	if (md_ctx->last_update_buff == NULL)
@@ -241,9 +234,8 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
 
 	SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL), "md_ctx is NULL.", OPENSSL_FAIL);
 
-	if (md_ctx->switch_flag == 1) {
+	if (md_ctx->switch_flag) {
 		ret = sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
-		sec_digests_soft_cleanup(md_ctx);
 		goto end;
 	}
 
@@ -276,14 +268,26 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
 	US_DEBUG("do digest success. ctx=%p", md_ctx);
 
 end:
+	sec_digests_soft_cleanup(md_ctx);
+	if (md_ctx->e_digest_ctx != NULL) {
+		(void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
+		md_ctx->e_digest_ctx = NULL;
+	}
+
 	return ret;
 
 do_soft_digest:
 	if (md_ctx->state == SEC_DIGEST_INIT) {
-		ret = sec_digests_soft_work(md_ctx, md_ctx->last_update_bufflen, digest);
+		sec_digests_soft_work(md_ctx, md_ctx->last_update_bufflen, digest);
+		ret = OPENSSL_SUCCESS;
 	} else {
 		US_ERR("do sec digest failed");
 		ret = OPENSSL_FAIL;
+	}
+
+	if (md_ctx->e_digest_ctx != NULL) {
+		(void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
+		md_ctx->e_digest_ctx = NULL;
 	}
 
 	return ret;
@@ -434,20 +438,6 @@ static int sec_digests_async_dowork(sec_digest_priv_t *md_ctx, op_done_t *op_don
 
 static int sec_digests_cleanup(EVP_MD_CTX *ctx)
 {
-    SEC_DIGESTS_RETURN_FAIL_IF(!ctx, "ctx is NULL.", OPENSSL_FAIL);
-    sec_digest_priv_t *md_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(ctx);
-    SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL), "md_ctx is NULL.", OPENSSL_FAIL);
-
-	/* Prevent double-free after the copy is used */
-	if (!md_ctx || md_ctx->copy)
-		return OPENSSL_SUCCESS;
-    if (md_ctx->switch_flag == 1) {
-        sec_digests_soft_cleanup(md_ctx);
-    }
-    if (md_ctx->e_digest_ctx != NULL) {
-        (void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
-        md_ctx->e_digest_ctx = NULL;
-    }
 	return OPENSSL_SUCCESS;
 }
 
