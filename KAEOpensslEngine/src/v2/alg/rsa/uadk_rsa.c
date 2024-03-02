@@ -24,6 +24,7 @@
 #include "v2/async/uadk_async.h"
 #include "v2/uadk.h"
 #include "utils/engine_log.h"
+#include "utils/engine_utils.h"
 
 #define UN_SET				0
 #define IS_SET				1

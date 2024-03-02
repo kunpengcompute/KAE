@@ -55,6 +55,7 @@ static int uadk_cipher_nosva;
 static int uadk_digest_nosva;
 static int uadk_rsa_nosva;
 static int uadk_dh_nosva;
+static int uadk_sm2_nosva;
 #endif
 
 static const ENGINE_CMD_DEFN g_uadk_cmd_defns[] = {
@@ -420,6 +421,19 @@ static void bind_fn_kae_alg(ENGINE *e)
 			fprintf(stderr, "uadk bind dh failed\n");
 		}else{
 			uadk_dh_nosva = 1;
+			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
+		}
+	}else{
+		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
+	}
+
+	dev_num = wd_get_nosva_dev_num("sm2");
+	if (dev_num > 0) {
+		hpre_module_sm2_init();
+		if (!ENGINE_set_pkey_meths(e, hpre_get_sm2_pkey_meths)){
+			fprintf(stderr, "uadk bind sm2 failed\n");
+		}else{
+			uadk_sm2_nosva = 1;
 			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
 		}
 	}else{
