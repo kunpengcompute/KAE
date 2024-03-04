@@ -28,6 +28,8 @@ static void uadk_get_accel_platform(void)
         US_INFO("g_platform is %d, inited!\n", g_platform);
         return;
     }
+    //	init log
+    kaezip_debug_init_log();
     //  check sva
     struct uacce_dev* dev = wd_get_accel_dev("zlib");
     if (dev) {

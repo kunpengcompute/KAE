@@ -34,17 +34,17 @@ static uLong read_inputFile(const char* fileName, void** input)
     return input_size;
 }
 
-// static size_t write_outputFile(const char* outFileName, void* output, uLong output_size)
-// {
-//     FILE* outputFile = fopen(outFileName, "w");
-//     if (!outputFile) {
-//         fprintf(stderr, "%s create failed!\n", outFileName);
-//         return 0;
-//     }
-//     size_t count = fwrite(output, sizeof(Bytef), output_size, outputFile);
-//     fclose(outputFile);
-//     return count;
-// }
+static size_t write_outputFile(const char* outFileName, void* output, uLong output_size)
+{
+    FILE* outputFile = fopen(outFileName, "w");
+    if (!outputFile) {
+        fprintf(stderr, "%s create failed!\n", outFileName);
+        return 0;
+    }
+    size_t count = fwrite(output, sizeof(Bytef), output_size, outputFile);
+    fclose(outputFile);
+    return count;
+}
 
 uint8_t *get_compress_input(size_t input_sz)
 {
@@ -91,8 +91,8 @@ uint8_t *get_decompress_input(size_t input_sz, uLong *pblen)
     return outbuf;
 }
 
-int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, int compress, 
-    void* output, uLong output_sz, void* inbuf, uLong blen)
+int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, int level, int compress,
+    void* output, uLong output_sz, void* inbuf, uLong blen, const char* out_filename)
 {
     int i, j, err;
     int ret = 0;
@@ -108,14 +108,14 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
             break;
         }
     }
-    
+
     if (pid_child == 0) {
         z_stream strm;
         strm.zalloc   = (alloc_func)0;
         strm.zfree    = (free_func)0;
         strm.opaque   = (voidpf)0;
         if (compress) {
-            (void)deflateInit2_(&strm, 1, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY, "1.2.11", sizeof(z_stream));
+            (void)deflateInit2_(&strm, level, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY, "1.2.11", sizeof(z_stream));
         } else {
             (void)inflateInit2_(&strm, windowBits, "1.2.11", sizeof(z_stream));
         }
@@ -136,6 +136,9 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
                     double compress_rate = 100.0 * output_sz / stream_len;
                     fprintf(stdout, "compress_size is %luB = %.3lfMB, compress_rate is %.3lf%%\n",
                         output_sz, 1.0 * output_sz / (1 << 20), compress_rate);
+                    if (out_filename) {
+                        write_outputFile(out_filename, output, output_sz);
+                    }
                 }
                 deflateReset(&strm);
                 /***********************************************/
@@ -154,6 +157,9 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
                     output_sz = strm.total_out;
                     fprintf(stdout, "uncompress_size is %luB = %.3lfMB\n",
                         output_sz, 1.0 * output_sz / (1 << 20));
+                    if (out_filename) {
+                        write_outputFile(out_filename, output, output_sz);
+                    }
                 }
                 inflateReset(&strm);
                 /***********************************************/
@@ -170,7 +176,7 @@ free_init:
             (void)inflateEnd(&strm);
         }
     }
-    
+
     if (pid_child > 0) {
         ret = -1;
         while (1) {
@@ -196,7 +202,8 @@ free_init:
     return ret;
 }
 
-int do_compress_perf(const char* in_filename, int multi, uLong stream_len, int loop_times, int windowBits)
+int do_compress_perf(const char* in_filename, const char* out_filename,
+    int multi, uLong stream_len, int loop_times, int windowBits, int level)
 {
     void *inbuf = NULL;
     if (in_filename) {
@@ -210,7 +217,7 @@ int do_compress_perf(const char* in_filename, int multi, uLong stream_len, int l
         return -1;
     }
     fprintf(stdout, "input_size is %luB\n", stream_len);
-    
+
     uLong blen = compressBound(stream_len);
     uLong output_sz = blen;
     void *outbuf = malloc(output_sz * sizeof(uint8_t));
@@ -219,15 +226,16 @@ int do_compress_perf(const char* in_filename, int multi, uLong stream_len, int l
     }
     memset(outbuf, 0, output_sz);
 
-    int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, 1, outbuf, output_sz, inbuf, blen);
+    int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, level, 1, outbuf, output_sz, inbuf, blen, out_filename);
 
     free(inbuf);
     free(outbuf);
     return ret;
 }
 
-int do_decompress_perf(const char* in_filename, int multi, int stream_len, int loop_times, int windowBits)
-{   
+int do_decompress_perf(const char* in_filename, const char* out_filename,
+    int multi, int stream_len, int loop_times, int windowBits, int level)
+{
     uLong blen = 0;
     void *inbuf = NULL;
     if (in_filename) {
@@ -250,9 +258,9 @@ int do_decompress_perf(const char* in_filename, int multi, int stream_len, int l
     }
     memset(output, 0, output_sz);
 
-    int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, 0, output, output_sz, inbuf, blen);
+    int ret = do_multi_perf(multi, stream_len, loop_times, windowBits, level, 0, output, output_sz, inbuf, blen, out_filename);
 
-    free(inbuf); 
+    free(inbuf);
     free(output);
     return ret;
 }
@@ -262,9 +270,12 @@ void usage(void)
     printf("usage: \n");
     printf("  -m: multi process \n");
     printf("  -l: stream length(KB)\n");
+    printf("  -w: windowBits\n");
+    printf("  -v: compress level(1~9)\n");
+    printf("  -f: input  filename(-l useless if this work)\n");
+    printf("  -o: output filename\n");
     printf("  -n: loop times\n");
     printf("  -d: compress or decompress\n");
-    printf("  -w: windowBits\n");
     printf("  example: ./kaezip_perf -m 2 -l 1024 -n 1000\n");
     printf("           ./kaezip_perf -d -m 2 -l 1024 -n 1000\n");
 }
@@ -290,13 +301,14 @@ void usage(void)
 
 int main(int argc, char **argv)
 {
+    const char *optstring = "dm:l:n:w:f:o:v:h";
     int o = 0;
-    const char *optstring = "dm:l:n:w:f:o:h";
     int multi = 2;
+    int level = 6;
     uLong stream_len = 1024;
     int loop_times = 1000;
     int compress = 1;
-    int windowBits = 8;
+    int windowBits = 15;
     char input_filename[128] = {0};
     char output_filename[128] = {0};
     while ((o = getopt(argc, argv, optstring)) != -1) {
@@ -307,6 +319,9 @@ int main(int argc, char **argv)
                 break;
             case 'l':
                 stream_len = atoi(optarg);
+                break;
+	    case 'v':
+                level = atoi(optarg);
                 break;
             case 'n':
                 loop_times = atoi(optarg);
@@ -332,17 +347,18 @@ int main(int argc, char **argv)
     if (argc <= 1) {
         usage();
         printf("\ndefault input parameter used\n");
-    } 
+    }
 
-    printf("kaezip perf parameter: multi process %d, stream length: %lu(KB), loop times: %d, windowBits : %d\n", 
-        multi, stream_len, loop_times, windowBits);
+    printf("kaezip perf parameter: multi process %d, stream length: %lu(KB), loop times: %d, windowBits : %d, level : %d\n",
+        multi, stream_len, loop_times, windowBits, level);
 
     const char* in_filename  = input_filename[0] == 0 ? NULL : input_filename;
-    // const char* out_filename = output_filename[0]== 0 ? NULL : output_filename;
+    const char* out_filename = output_filename[0]== 0 ? NULL : output_filename;
     stream_len *= 1024;
     if (compress) {
-        return do_compress_perf(in_filename, multi, stream_len, loop_times, windowBits);
+        return do_compress_perf(in_filename, out_filename, multi, stream_len, loop_times, windowBits, level);
     } else {
-        return do_decompress_perf(in_filename, multi, stream_len, loop_times, windowBits);
+        return do_decompress_perf(in_filename, out_filename, multi, stream_len, loop_times, windowBits, level);
     }
 }
+

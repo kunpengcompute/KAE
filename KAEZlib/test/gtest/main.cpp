@@ -268,50 +268,6 @@ void* ZlibPthreadFunc(void *args)
     return nullptr;
 }
 
-TEST(ZlibTest, CompressAndDecompress_MtCase)
-{
-    constexpr uLong input_size = 1024UL * 1024 * 2;
-    pthread_t system_test_thrds[G_THREAD_NUM];
-    zlib_data data[G_THREAD_NUM];
-    int ret;
-    for (int i = 0; i < G_THREAD_NUM; ++i) {
-        data[i].input = new Bytef[input_size];
-        ASSERT_NE(data[i].input, nullptr);
-        generate_random_data(data[i].input, input_size);
-        data[i].compress_data = new Bytef[compressBound(input_size)]();
-        ASSERT_NE(data[i].compress_data, nullptr);
-        data[i].uncompress_data = new Bytef[compressBound(input_size)]();
-        ASSERT_NE(data[i].uncompress_data, nullptr);
-        data[i].input_size = input_size;
-        data[i].windowBits = 8 + i;
-    }
-    fprintf(stderr, "THREAD_NUM is %d\n", G_THREAD_NUM);
-
-    for (int i = 0; i < G_THREAD_NUM; ++i) {
-        ret = pthread_create(&system_test_thrds[i], NULL, ZlibPthreadFunc, &data[i]);
-        if (ret) {
-			fprintf(stderr, "Create %dth thread fail! ret is %d\n", i, ret);
-			return;
-		}
-    }
-
-    for (int i = 0; i < G_THREAD_NUM; ++i) {
-        ret = pthread_join(system_test_thrds[i], NULL);
-        if (ret) {
-			fprintf(stderr, "Join %dth thread fail! ret is %d\n", i, ret);
-			return;
-		}
-    }
-
-    for (int i = 0; i < G_THREAD_NUM; ++i) {
-        ASSERT_EQ(data[i].input_size, data[i].uncompress_size);
-        ASSERT_EQ(memcmp(data[i].input, data[i].uncompress_data, input_size), 0);
-        delete[] data[i].input;
-        delete[] data[i].compress_data;
-        delete[] data[i].uncompress_data;
-    }
-}
-
 #ifdef KP920B
 TEST(ZlibTest, CompressAndDecompress_Deflate)
 {
@@ -369,7 +325,7 @@ TEST(ZlibTest, CompressAndDecompress_level)
             continue;
         }
 #endif        
-        for (int level = 0; level <= 15; level++) {
+        for (int level = 0; level <= 9; level++) {
             common_test(windowBits, level);
         }
     }
@@ -426,6 +382,51 @@ TEST(ZlibTest, CompressAndDecompress_perf)
         }
     }
 }
+
+
+TEST(ZlibTest, CompressAndDecompress_MtCase)
+{
+    constexpr uLong input_size = 1024UL * 1024 * 2;
+    pthread_t system_test_thrds[G_THREAD_NUM];
+    zlib_data data[G_THREAD_NUM];
+    int ret;
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        data[i].input = new Bytef[input_size];
+        ASSERT_NE(data[i].input, nullptr);
+        generate_random_data(data[i].input, input_size);
+        data[i].compress_data = new Bytef[compressBound(input_size)]();
+        ASSERT_NE(data[i].compress_data, nullptr);
+        data[i].uncompress_data = new Bytef[compressBound(input_size)]();
+        ASSERT_NE(data[i].uncompress_data, nullptr);
+        data[i].input_size = input_size;
+        data[i].windowBits = 8 + i;
+    }
+    fprintf(stderr, "THREAD_NUM is %d\n", G_THREAD_NUM);
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ret = pthread_create(&system_test_thrds[i], NULL, ZlibPthreadFunc, &data[i]);
+        if (ret) {
+			fprintf(stderr, "Create %dth thread fail! ret is %d\n", i, ret);
+			return;
+		}
+    }
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ret = pthread_join(system_test_thrds[i], NULL);
+        if (ret) {
+			fprintf(stderr, "Join %dth thread fail! ret is %d\n", i, ret);
+			return;
+		}
+    }
+
+    for (int i = 0; i < G_THREAD_NUM; ++i) {
+        ASSERT_EQ(data[i].input_size, data[i].uncompress_size);
+        ASSERT_EQ(memcmp(data[i].input, data[i].uncompress_data, input_size), 0);
+        delete[] data[i].input;
+        delete[] data[i].compress_data;
+        delete[] data[i].uncompress_data;
+    }
+}
 #endif
 
 #ifndef TEST_OPEN
@@ -435,7 +436,7 @@ TEST(ZlibTest, VersionCheck)
     int ret = kaezlib_get_version(&ver);
     EXPECT_EQ(ret, 0);
     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
-    EXPECT_STREQ(ver.productVersion, "23.0.RC2");
+    EXPECT_STREQ(ver.productVersion, "24.0.0");
     EXPECT_STREQ(ver.componentName, "KAEZlib");
     EXPECT_STREQ(ver.componentVersion, "2.0.1");
 }
