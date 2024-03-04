@@ -281,6 +281,7 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
         ret = wcrypto_comp_poll(q, 1);
         if (ret < 0) {
             US_ERR("poll fail! ret = %d", ret);
+            pthread_mutex_unlock(&g_kaezip_async_comp_mutex);
             return KAEZIP_FAILED;
         } else if (ret > 0) {
             break;
