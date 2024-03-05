@@ -34,7 +34,7 @@ int kz_get_devices(void);
 int kaezip_winbits2algtype(int windowBits);
 
 const uint32_t kaezip_fmt_header_sz(int comp_alg_type);
-const char*    kaezip_get_fmt_header(int comp_alg_type);
+const char*    kaezip_get_fmt_header(int comp_alg_type, int level, int windowBits);
 void           kaezip_set_fmt_tail(kaezip_ctx_t *kz_ctx);
 void           kaezip_deflate_addcrc(kaezip_ctx_t *kz_ctx);
 #endif
