@@ -29,7 +29,6 @@ static KAE_QUEUE_POOL_HEAD_S* g_kaezip_deflate_qp = NULL;
 static KAE_QUEUE_POOL_HEAD_S* g_kaezip_inflate_qp = NULL;
 static pthread_mutex_t g_kaezip_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_kaezip_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t g_kaezip_async_comp_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
 static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
@@ -115,24 +114,17 @@ err:
     return NULL;
 }
 
-static __u32 cb_consumed;
-static __u32 cb_produced;
-static __u32 cb_status;
-static __u8  cb_stream_pos;
-static __u8  cb_flush;
-static __u32 cb_isize;
-static __u32 cb_checksum;
-
 void kaezip_callback(const void *msg, void *tag)
 {
     const struct wcrypto_comp_msg *respmsg = msg;
-    cb_consumed   = respmsg->in_cons;
-    cb_produced   = respmsg->produced;
-    cb_status     = respmsg->status;
-    cb_stream_pos = respmsg->stream_pos;
-    cb_flush      = respmsg->flush_type;
-    cb_isize      = respmsg->isize;
-    cb_checksum   = respmsg->checksum;
+    struct wcrypto_comp_op_data *op_data = (struct wcrypto_comp_op_data *)tag;
+    op_data->consumed   = respmsg->in_cons;
+    op_data->produced   = respmsg->produced;
+    op_data->status     = respmsg->status;
+    op_data->stream_pos = respmsg->stream_pos;
+    op_data->flush      = respmsg->flush_type;
+    op_data->isize      = respmsg->isize;
+    op_data->checksum   = respmsg->checksum;
 }
 
 static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int comp_optype)
@@ -260,9 +252,8 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
     KAEZIP_RETURN_FAIL_IF(kz_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
 
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
-    struct user_comp_tag_info u_tag = {sched_getcpu(), gettid(), kz_ctx->comp_alg_type};
 
-    int ret = wcrypto_do_comp(kz_ctx->wd_ctx, op_data, &u_tag);
+    int ret = wcrypto_do_comp(kz_ctx->wd_ctx, op_data, op_data);
     if (unlikely(ret < 0)) {
         US_ERR("wd_do_comp fail! ret = %d", ret);
         return KAEZIP_FAILED;
@@ -276,34 +267,23 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
     struct wd_queue *q = kz_ctx->q_node->kae_wd_queue;
     int loop_times = 0;
 
-    pthread_mutex_lock(&g_kaezip_async_comp_mutex);
     do {
         ret = wcrypto_comp_poll(q, 1);
         if (ret < 0) {
             US_ERR("poll fail! ret = %d", ret);
-            pthread_mutex_unlock(&g_kaezip_async_comp_mutex);
             return KAEZIP_FAILED;
         } else if (ret > 0) {
             break;
         }
     } while (++loop_times < KAE_ASYNC_MAX_RECV_TIMES);
 
-    op_data->consumed   = cb_consumed;
-    op_data->produced   = cb_produced;
-    op_data->status     = cb_status;
-    op_data->stream_pos = cb_stream_pos;
-    op_data->flush      = cb_flush;
-    op_data->isize      = cb_isize;
-    op_data->checksum   = cb_checksum;
-    pthread_mutex_unlock(&g_kaezip_async_comp_mutex);
-
     US_DEBUG("rate is %lf, sleep_time is %ldns, loop_times is %d, cb_status is %u",
-        rate, sleep_info.ns_sleep.tv_nsec, loop_times, cb_status);
+        rate, sleep_info.ns_sleep.tv_nsec, loop_times, op_data->status);
 
     if (loop_times > 10) {  //  dynamic adjust rate
         sleep_info.flag[sleep_info.index] = 1;
         if (kaezip_should_add_rate(&sleep_info)) {
-            rate += 4.0;
+            rate += 8.0;
         }
     } else {
         sleep_info.flag[sleep_info.index] = 0;

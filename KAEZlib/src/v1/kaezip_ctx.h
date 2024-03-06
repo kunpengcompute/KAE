@@ -50,12 +50,6 @@ struct wcrypto_end_block {
     unsigned int     b_set;
 };
 
-struct user_comp_tag_info {
-    int cpu_id;
-    pid_t tid;
-    int alg_type;
-};
-
 #define KAE_ASYNC_MAX_RECV_TIMES (2000000)
 #define FLAG_NUM (10)
 struct kaezip_async_sleep_info {
