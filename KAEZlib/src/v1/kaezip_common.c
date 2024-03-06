@@ -103,17 +103,25 @@ int kaezip_winbits2algtype(int windowbits)
     return alg_type;
 }
 
-const uint32_t kaezip_fmt_header_sz(int comp_alg_type)
+const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const void* src)
 {
-    switch (comp_alg_type) {
-    case WCRYPTO_ZLIB:
+    if (comp_alg_type ==  WCRYPTO_ZLIB) {
         return 2U;
-    case WCRYPTO_GZIP:
-        return 10U;
-    default:
-        US_WARN("not support alg comp type!");
-        return 0U;
+    } else if (comp_alg_type == WCRYPTO_GZIP) {
+        uint32_t append_info_sz = 0U;
+        if (comp_optype == WCRYPTO_INFLATE) {
+            const char* inflate_data = (const char*)src;
+            const char flag = inflate_data[3];
+            if (flag & 0x8) {   //  header contain filename
+                uint32_t filename_sz = strlen(inflate_data + 10U);
+                append_info_sz += (filename_sz + 1U);   //  end with 0x0
+            }
+        }
+        US_DEBUG("gzip header append_info_sz is %u\n", append_info_sz);
+        return 10U + append_info_sz;
     }
+    US_WARN("not support alg comp type!");
+    return 0U;
 }
 
 const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
@@ -136,12 +144,12 @@ const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
         if ((level < -1) || (level == 0) || (level > 9)) {
             level = 1;
         }
-        level = (level == -1 ? 6 : level);
+
         if (level == 1) {
             v = 0;
         } else if (level <= 5) {
             v = 1;
-        } else if (level == 6) {
+        } else if (level == 6 || level == -1) {
             v = 2;
         } else {
             v = 3;

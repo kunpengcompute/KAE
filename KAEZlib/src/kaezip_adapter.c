@@ -99,7 +99,7 @@ int kz_deflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_deflate_v1(strm, flush);
         } else {
-            US_WARN("HW_V1: using lz_deflate! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_deflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
             ret = lz_deflate(strm, flush);
         }
         break;
@@ -206,7 +206,7 @@ int kz_inflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_inflate_v1(strm, flush);
         } else {
-            US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
             ret = lz_inflate(strm, flush);
         }
         break;
