@@ -58,6 +58,7 @@ struct kaezip_ctx {
     unsigned int     produced;
     unsigned int     remain;        //data produced by warpdrive but haven't been take away for not enough avail out buf
 
+    const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
     int              flush;         // WCRYPTO_SYNC_FLUSH / WCRYPTO_FINISH
     int              comp_alg_type; // WCRYPTO_ZLIB / WCRYPTO_GZIP
