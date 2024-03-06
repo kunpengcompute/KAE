@@ -50,12 +50,6 @@ struct wcrypto_end_block {
     unsigned int     b_set;
 };
 
-struct user_comp_tag_info {
-    int cpu_id;
-    pid_t tid;
-    int alg_type;
-};
-
 #define KAE_ASYNC_MAX_RECV_TIMES (2000000)
 #define FLAG_NUM (10)
 struct kaezip_async_sleep_info {
@@ -73,6 +67,7 @@ struct kaezip_ctx {
     unsigned int     produced;
     unsigned int     remain;        //data produced by warpdrive but haven't been take away for not enough avail out buf
 
+    const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
     int              flush;         // WCRYPTO_SYNC_FLUSH / WCRYPTO_FINISH
     int              comp_alg_type; // WCRYPTO_ZLIB / WCRYPTO_GZIP

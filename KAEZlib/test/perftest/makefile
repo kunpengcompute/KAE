@@ -7,12 +7,14 @@ LIBDIR := -L/usr/local/kaezip/lib
 CFLAGS    := -g -lz -Wall
 LDFLAGS   := $(LIBDIR)
 
-all: kaezip_perf
+all: kaezip_perf zip_perf
 objects = kaezip_perf.c
 
 kaezip_perf : $(objects)
 	gcc $(CFLAGS) $(LDFLAGS) $(INCDIR) -Wl,-rpath=/usr/local/kaezip/lib -o kaezip_perf $(objects)
+zip_perf : $(objects)
+	gcc $(CFLAGS) -o zip_perf $(objects)
 
 .PHONY : clean
 clean :
-	-rm -f kaezip_perf
+	-rm -f kaezip_perf zip_perf

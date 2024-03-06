@@ -74,6 +74,7 @@ int kz_deflateInit2_v1(z_streamp strm, int level,
     }
 
     kaezip_ctx->status = KAEZIP_COMP_INIT;
+    kaezip_ctx->header = kaezip_get_fmt_header(alg_comp_type, level, windowBits);
     setDeflateKaezipCtx(strm, (uLong)kaezip_ctx);
 
     US_DEBUG("kae zip deflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
@@ -173,7 +174,7 @@ static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     const uint32_t fmt_header_sz = kaezip_fmt_header_sz(comp_alg_type);
-    const char*    fmt_header    = kaezip_get_fmt_header(comp_alg_type);
+    const char*    fmt_header    = kaezip_ctx->header;
 
     //that means the outout avail buf is even not enough for a header
     if (strm->avail_out < fmt_header_sz - kaezip_ctx->header_pos) {

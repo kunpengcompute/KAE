@@ -116,20 +116,42 @@ const uint32_t kaezip_fmt_header_sz(int comp_alg_type)
     }
 }
 
-const char* kaezip_get_fmt_header(int comp_alg_type)
+const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
 {
-    static const char zlib_head[] = {0x78, 0x9c};
-    static const char gzip_head[] = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03};
+    static const char zlib_head[][2] = {
+        {0x18, 0x1d},	{0x18, 0x5b},	{0x18, 0x99},	{0x18, 0xd7},
+        {0x18, 0x19},	{0x18, 0x57},	{0x18, 0x95},	{0x18, 0xd3},
+        {0x28, 0x15},	{0x28, 0x53},	{0x28, 0x91},	{0x28, 0xcf},
+        {0x38, 0x11},	{0x38, 0x4f},	{0x38, 0x8d},	{0x38, 0xcb},
+        {0x48, 0x0d},	{0x48, 0x4b},	{0x48, 0x89},	{0x48, 0xc7},
+        {0x58, 0x09},	{0x58, 0x47},	{0x58, 0x85},	{0x58, 0xc3},
+        {0x68, 0x05},	{0x68, 0x43},	{0x68, 0x81},	{0x68, 0xde},
+        {0x78, 0x01},	{0x78, 0x5e},	{0x78, 0x9c},	{0x78, 0xda}
+    };
+    static const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03};
 
-    switch (comp_alg_type) {
-    case WCRYPTO_ZLIB:
-        return zlib_head;
-    case WCRYPTO_GZIP:
+    if (alg_comp_type == WCRYPTO_ZLIB) {
+        int w = windowBits - 8;
+        int v;
+        if ((level < -1) || (level == 0) || (level > 9)) {
+            level = 1;
+        }
+        level = (level == -1 ? 6 : level);
+        if (level == 1) {
+            v = 0;
+        } else if (level <= 5) {
+            v = 1;
+        } else if (level == 6) {
+            v = 2;
+        } else {
+            v = 3;
+        }
+        return zlib_head[4 * w + v];
+    } else if (alg_comp_type == WCRYPTO_GZIP) {
         return gzip_head;
-    default:
-        US_WARN("not support alg comp type!");
-        return NULL;
     }
+    US_WARN("not support alg comp type!");
+    return NULL;
 }
 
 static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
