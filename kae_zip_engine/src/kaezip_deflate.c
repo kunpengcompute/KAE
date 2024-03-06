@@ -55,7 +55,7 @@ int kz_deflateInit2_(z_streamp strm, int level,
 {
     int ret = lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy, version, stream_size);
     if (ret != Z_OK) {
-        US_ERR("zlib deflate init failed windowbits %d!", windowBits);
+        US_ERR("zlib deflate init failed windowbits %d! ret is %d!", windowBits, ret);
         return Z_ERRNO;
     }
 
@@ -114,7 +114,7 @@ int kz_deflate(z_streamp strm, int flush)
     }
 
     //wcrypto deflate need to add output format header
-    const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type);
+    const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type, kaezip_ctx->comp_type, NULL);
     if (kaezip_ctx->header_pos != fmt_header_sz) {
         kaezip_deflate_set_fmt_header(strm, kaezip_ctx->comp_alg_type);
         if (kaezip_ctx->header_pos != fmt_header_sz) {
@@ -172,7 +172,7 @@ int ZEXPORT kz_deflateReset(z_streamp strm)
 static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
-    const uint32_t fmt_header_sz = kaezip_fmt_header_sz(comp_alg_type);
+    const uint32_t fmt_header_sz = kaezip_fmt_header_sz(comp_alg_type, kaezip_ctx->comp_type, NULL);
     const char*    fmt_header    = kaezip_ctx->header;
 
     //that means the outout avail buf is even not enough for a header
