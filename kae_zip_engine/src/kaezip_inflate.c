@@ -53,7 +53,7 @@ int ZEXPORT kz_inflateInit2_(z_streamp strm, int windowBits, const char *version
     
     int ret = lz_inflateInit2_(strm, windowBits, version, stream_size);
     if (unlikely(ret != Z_OK)) {
-        US_ERR("lz_inflateInit2_ error, windowBits %d!", windowBits);
+        US_ERR("lz_inflateInit2_ error, windowBits %d! ret is %d!", windowBits, ret);
         return Z_ERRNO;
     }
 
@@ -169,7 +169,7 @@ static int kaezip_do_inflate(z_streamp strm, int flush)
 
     //the firsh input z stream, should skip the format header, for hardware incompatible
     if (kaezip_ctx->status == KAEZIP_DECOMP_INIT) {
-        const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type);
+        const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type, kaezip_ctx->comp_type, kaezip_ctx->in);
         if (kaezip_ctx->header_pos + kaezip_ctx->in_len <= fmt_header_sz) {
             kaezip_ctx->header_pos += kaezip_ctx->in_len;
             kaezip_ctx->consumed   = kaezip_ctx->in_len;
