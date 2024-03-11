@@ -37,12 +37,6 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t *kz_ctx);
 static void kaezip_set_input_data(kaezip_ctx_t *kz_ctx);
 static void kaezip_get_output_data(kaezip_ctx_t *kz_ctx);
 
-static void __attribute((destructor)) kaezip_free_qp(void)
-{
-	kaezip_queue_pool_destroy(g_kaezip_deflate_qp, kaezip_free_ctx);
-    kaezip_queue_pool_destroy(g_kaezip_inflate_qp, kaezip_free_ctx);
-}
-
 void kaezip_free_ctx(void* kz_ctx)
 {
     kaezip_ctx_t* kaezip_ctx = (kaezip_ctx_t *)kz_ctx;
