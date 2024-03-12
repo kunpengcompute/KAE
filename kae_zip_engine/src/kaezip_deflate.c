@@ -74,6 +74,7 @@ int kz_deflateInit2_(z_streamp strm, int level,
     }
 
     kaezip_ctx->status = KAEZIP_COMP_INIT;
+    kaezip_ctx->header = kaezip_get_fmt_header(alg_comp_type, level, windowBits);
     setDeflateKaezipCtx(strm, (uLong)kaezip_ctx);
 
     US_DEBUG("kae zip deflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
