@@ -123,18 +123,6 @@ int sec_digests_init(EVP_MD_CTX *ctx)
     md_ctx->e_nid = nid;
     sec_digests_get_alg(md_ctx);
     md_ctx->state = SEC_DIGEST_INIT;
-    if (md_ctx->e_digest_ctx == NULL) {
-        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
-        if (md_ctx->e_digest_ctx == NULL) {
-            US_WARN("failed to get engine ctx");
-            //如果硬件申请不行就走软算
-            if (sec_digests_soft_init(md_ctx, md_ctx->e_nid) != OPENSSL_SUCCESS) {
-                US_ERR("do sec digest soft init failed");
-                return OPENSSL_FAIL;
-            }
-            md_ctx->switch_flag = 1;
-        }
-    }
     return OPENSSL_SUCCESS;
 }
 
@@ -197,6 +185,19 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
     SEC_DIGESTS_RETURN_FAIL_IF(unlikely(!ctx || !data),   "ctx is NULL.", OPENSSL_FAIL);
     sec_digest_priv_t *md_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(ctx);
     SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL),   "md_ctx is NULL.", OPENSSL_FAIL);
+
+    if (md_ctx->e_digest_ctx == NULL) {
+        md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
+        if (md_ctx->e_digest_ctx == NULL) {
+            US_WARN("failed to get engine ctx");
+            //如果硬件申请不行就走软算
+            if (sec_digests_soft_init(md_ctx, md_ctx->e_nid) != OPENSSL_SUCCESS) {
+                US_ERR("do sec digest soft init failed");
+                return OPENSSL_FAIL;
+            }
+            md_ctx->switch_flag = 1;
+        }
+    }
     
     if (md_ctx->switch_flag == 1) {
         return sec_digests_soft_update(md_ctx->soft_ctx, data, data_len, md_ctx->e_nid);
