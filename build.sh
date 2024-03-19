@@ -332,7 +332,7 @@ function main()
             rm -rf $KAE_BUILD
             mkdir -p $KAE_BUILD
             mkdir -p /root/rpmbuild/SOURCES/
-            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.1.tar.gz .
+            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .
             rpmbuild -bb ./scripts/specFile/kae.spec
             cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD
     elif [ "$1" = "cleanup" ];then

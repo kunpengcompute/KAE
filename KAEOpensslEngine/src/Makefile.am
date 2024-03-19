@@ -1,4 +1,4 @@
-VERSION = 2:0:1
+VERSION = 2:0:2
 ACLOCAL_AMFLAGS = -I m4
 
 DEPSHEADDIR = $(CURDIR)/../../kae_build/head/

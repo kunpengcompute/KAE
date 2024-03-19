@@ -1350,4 +1350,4 @@ module_exit(hisi_zip_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");
-MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.1");
+MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.2");
