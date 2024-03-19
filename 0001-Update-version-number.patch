@@ -1,0 +1,217 @@
+From e85dc91506f64bce864bc37f953f7d4e0a3f2e56 Mon Sep 17 00:00:00 2001
+From: l00584920 <liuyang645@huawei.com>
+Date: Tue, 19 Mar 2024 20:41:11 +0800
+Subject: [PATCH] Update version number
+
+Signed-off-by: l00584920 <liuyang645@huawei.com>
+---
+ KAEKernelDriver/hisilicon/hpre/hpre_main.c | 2 +-
+ KAEKernelDriver/hisilicon/sec2/sec_main.c  | 2 +-
+ KAEKernelDriver/hisilicon/zip/zip_main.c   | 2 +-
+ KAEOpensslEngine/src/Makefile.am           | 2 +-
+ KAEZlib/Makefile                           | 2 +-
+ KAEZlib/src/utils/kaezip_conf.c            | 2 +-
+ KAEZlib/test/gtest/main.cpp                | 2 +-
+ KAEZstd/Makefile                           | 2 +-
+ KAEZstd/open_source/kaezstd_1_5_2.patch    | 2 +-
+ KAEZstd/src/kaezstd_config.c               | 2 +-
+ KAEZstd/test/gtest/main.cpp                | 2 +-
+ README.md                                  | 8 ++++----
+ build.sh                                   | 2 +-
+ scripts/specFile/kae.spec                  | 5 ++++-
+ 14 files changed, 20 insertions(+), 17 deletions(-)
+
+diff --git a/KAEKernelDriver/hisilicon/hpre/hpre_main.c b/KAEKernelDriver/hisilicon/hpre/hpre_main.c
+index 3fb0555..8aa13cd 100755
+--- a/KAEKernelDriver/hisilicon/hpre/hpre_main.c
++++ b/KAEKernelDriver/hisilicon/hpre/hpre_main.c
+@@ -1518,4 +1518,4 @@ module_exit(hpre_exit);
+ MODULE_LICENSE("GPL v2");
+ MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
+ MODULE_AUTHOR("Meng Yu <yumeng18@huawei.com>");
+-MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.1");
++MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.2");
+diff --git a/KAEKernelDriver/hisilicon/sec2/sec_main.c b/KAEKernelDriver/hisilicon/sec2/sec_main.c
+index 48367c5..5b49302 100755
+--- a/KAEKernelDriver/hisilicon/sec2/sec_main.c
++++ b/KAEKernelDriver/hisilicon/sec2/sec_main.c
+@@ -1347,4 +1347,4 @@ MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
+ MODULE_AUTHOR("Longfang Liu <liulongfang@huawei.com>");
+ MODULE_AUTHOR("Kai Ye <yekai13@huawei.com>");
+ MODULE_AUTHOR("Wei Zhang <zhangwei375@huawei.com>");
+-MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.1");
++MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.2");
+diff --git a/KAEKernelDriver/hisilicon/zip/zip_main.c b/KAEKernelDriver/hisilicon/zip/zip_main.c
+index 12130d5..96ac8ae 100755
+--- a/KAEKernelDriver/hisilicon/zip/zip_main.c
++++ b/KAEKernelDriver/hisilicon/zip/zip_main.c
+@@ -1350,4 +1350,4 @@ module_exit(hisi_zip_exit);
+ 
+ MODULE_LICENSE("GPL v2");
+ MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");
+-MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.1");
++MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator\nProduct Name: Kunpeng BoostKit\nProduct Version: 23.0.RC2\nComponent Name: KAE\nComponent Version: 2.0.2");
+diff --git a/KAEOpensslEngine/src/Makefile.am b/KAEOpensslEngine/src/Makefile.am
+index 9684fdb..b16c16d 100644
+--- a/KAEOpensslEngine/src/Makefile.am
++++ b/KAEOpensslEngine/src/Makefile.am
+@@ -1,4 +1,4 @@
+-VERSION = 2:0:1
++VERSION = 2:0:2
+ ACLOCAL_AMFLAGS = -I m4
+ 
+ DEPSHEADDIR = $(CURDIR)/../../kae_build/head/
+diff --git a/KAEZlib/Makefile b/KAEZlib/Makefile
+index fa4d0e1..ac880cc 100644
+--- a/KAEZlib/Makefile
++++ b/KAEZlib/Makefile
+@@ -17,7 +17,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaezip
+ CC=gcc
+ 
+ LIBNAME := libkaezip.so
+-VERSION = 2.0.1
++VERSION = 2.0.2
+ TARGET = ${LIBNAME}.${VERSION}
+ SOFTLINK = libkaezip.so
+ 
+diff --git a/KAEZlib/src/utils/kaezip_conf.c b/KAEZlib/src/utils/kaezip_conf.c
+index 826a621..9714d73 100644
+--- a/KAEZlib/src/utils/kaezip_conf.c
++++ b/KAEZlib/src/utils/kaezip_conf.c
+@@ -132,6 +132,6 @@ int kaezlib_get_version(KAEZlibVersion* ver)
+     versionCpy(ver->productName, "Kunpeng Boostkit");
+     versionCpy(ver->productVersion, "24.0.0");
+     versionCpy(ver->componentName, "KAEZlib");
+-    versionCpy(ver->componentVersion, "2.0.1");
++    versionCpy(ver->componentVersion, "2.0.2");
+     return 0;
+ }
+diff --git a/KAEZlib/test/gtest/main.cpp b/KAEZlib/test/gtest/main.cpp
+index 501d951..afa15c0 100644
+--- a/KAEZlib/test/gtest/main.cpp
++++ b/KAEZlib/test/gtest/main.cpp
+@@ -438,7 +438,7 @@ TEST(ZlibTest, VersionCheck)
+     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
+     EXPECT_STREQ(ver.productVersion, "24.0.0");
+     EXPECT_STREQ(ver.componentName, "KAEZlib");
+-    EXPECT_STREQ(ver.componentVersion, "2.0.1");
++    EXPECT_STREQ(ver.componentVersion, "2.0.2");
+ }
+ #endif
+ 
+diff --git a/KAEZstd/Makefile b/KAEZstd/Makefile
+index 8b3fdf5..4fc8b66 100644
+--- a/KAEZstd/Makefile
++++ b/KAEZstd/Makefile
+@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaezstd
+ CC=gcc
+ 
+ LIBNAME := libkaezstd.so
+-VERSION = 2.0.1
++VERSION = 2.0.2
+ TARGET = ${LIBNAME}.${VERSION}
+ SOFTLINK = libkaezstd.so
+ 
+diff --git a/KAEZstd/open_source/kaezstd_1_5_2.patch b/KAEZstd/open_source/kaezstd_1_5_2.patch
+index faa4fb4..968c03d 100644
+--- a/KAEZstd/open_source/kaezstd_1_5_2.patch
++++ b/KAEZstd/open_source/kaezstd_1_5_2.patch
+@@ -173,7 +173,7 @@ diff -uprN zstd/lib/libzstd.mk ./open_source/zstd/lib/libzstd.mk
+  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
+  
+ +KAEZSTD_CFLAGS=-I/usr/local/kaezstd/include -I$(KAEZSTDPATH)/include -I. -I../lib -DCONF_KAEZSTD
+-+KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.0.1
+++KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.0.2
+ +CFLAGS+=$(KAEZSTD_CFLAGS)
+ +LDFLAGS+=$(KAEZSTD_LDFLAGS)
+  ifndef ALREADY_APPENDED_NOEXECSTACK
+diff --git a/KAEZstd/src/kaezstd_config.c b/KAEZstd/src/kaezstd_config.c
+index bcf92b9..6248209 100644
+--- a/KAEZstd/src/kaezstd_config.c
++++ b/KAEZstd/src/kaezstd_config.c
+@@ -232,7 +232,7 @@ int kaezstd_get_version(KAEZstdVersion* ver)
+     versionCpy(ver->productName, "Kunpeng Boostkit");
+     versionCpy(ver->productVersion, "23.0.RC2");
+     versionCpy(ver->componentName, "KAEZstd");
+-    versionCpy(ver->componentVersion, "2.0.1");
++    versionCpy(ver->componentVersion, "2.0.2");
+     return KAE_ZSTD_SUCC;
+ }
+ 
+diff --git a/KAEZstd/test/gtest/main.cpp b/KAEZstd/test/gtest/main.cpp
+index aeef179..c0fc94c 100644
+--- a/KAEZstd/test/gtest/main.cpp
++++ b/KAEZstd/test/gtest/main.cpp
+@@ -72,7 +72,7 @@ TEST(functest_version, kaezstd_version)
+     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
+     EXPECT_STREQ(ver.productVersion, "23.0.RC2");
+     EXPECT_STREQ(ver.componentName, "KAEZstd");
+-    EXPECT_STREQ(ver.componentVersion, "2.0.1");
++    EXPECT_STREQ(ver.componentVersion, "2.0.2");
+ }
+ 
+ // 主函数
+diff --git a/README.md b/README.md
+index b3584c2..e160eaa 100644
+--- a/README.md
++++ b/README.md
+@@ -568,9 +568,9 @@ sh build.sh engine
+ total 5644
+ -rw-r--r--. 1 root root 3846524 Aug 22 17:28 kae.a
+ -rwxr-xr-x. 1 root root     995 Aug 22 17:28 kae.la
+-lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so -> kae.so.2.0.1
+-lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so.2 -> kae.so.2.0.1
+--rwxr-xr-x. 1 root root 1967736 Aug 22 17:28 kae.so.2.0.1
++lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so -> kae.so.2.0.2
++lrwxrwxrwx. 1 root root      12 Aug 22 17:28 kae.so.2 -> kae.so.2.0.2
++-rwxr-xr-x. 1 root root 1967736 Aug 22 17:28 kae.so.2.0.2
+ ```
+ 
+ 也可以通过openssl speed命令查看加速引擎是否生效：
+@@ -609,7 +609,7 @@ sh build.sh zlib
+ ```shell[root@localhost
+ linux-vdso.so.1 (0x0000ffffb0282000)
+         libc.so.6 => /usr/lib64/libc.so.6 (0x0000ffffb0075000)
+-        libkaezip.so.2.0.1 => /usr/local/kaezip/lib/libkaezip.so.2.0.1 (0x0000ffffb0044000)
++        libkaezip.so.2.0.2 => /usr/local/kaezip/lib/libkaezip.so.2.0.2 (0x0000ffffb0044000)
+         libwd.so.2 => /usr/local/lib/libwd.so.2 (0x0000ffffaffe3000)
+         libwd_comp.so.2 => /usr/local/lib/libwd_comp.so.2 (0x0000ffffaffb2000)
+         /lib/ld-linux-aarch64.so.1 (0x0000ffffb0245000)
+diff --git a/build.sh b/build.sh
+index 6b2dbba..453a214 100644
+--- a/build.sh
++++ b/build.sh
+@@ -332,7 +332,7 @@ function main()
+             rm -rf $KAE_BUILD
+             mkdir -p $KAE_BUILD
+             mkdir -p /root/rpmbuild/SOURCES/
+-            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.1.tar.gz .
++            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .
+             rpmbuild -bb ./scripts/specFile/kae.spec
+             cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD
+     elif [ "$1" = "cleanup" ];then
+diff --git a/scripts/specFile/kae.spec b/scripts/specFile/kae.spec
+index 806ce41..f9147e2 100644
+--- a/scripts/specFile/kae.spec
++++ b/scripts/specFile/kae.spec
+@@ -1,6 +1,6 @@
+ Name:          kae
+ Summary:       Huawei Kunpeng Accelerator Engine Zip
+-Version:       2.0.1
++Version:       2.0.2
+ Release:       1
+ License:       GPL-2.0
+ Source:        %{name}-%{version}.tar.gz
+@@ -380,6 +380,9 @@ echo "openssl engine uninstalled"
+ /sbin/ldconfig
+ 
+ %changelog
++* Tue Mar 19 2024 liuyang <liuyang645@huawei.com> 2.0.2-1
++- Update Spec Version Include kunpeng accelerator engine Code
++
+ * Tue Jan 2 2024 liuyang <liuyang645@huawei.com> 2.0.1-1
+ - Update Spec Version Include kunpeng accelerator engine Code
+ 
+-- 
+2.28.0.windows.1
+
