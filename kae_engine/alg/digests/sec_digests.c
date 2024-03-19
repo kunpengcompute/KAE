@@ -186,7 +186,7 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
     sec_digest_priv_t *md_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(ctx);
     SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL),   "md_ctx is NULL.", OPENSSL_FAIL);
 
-    if (md_ctx->e_digest_ctx == NULL) {
+    if (md_ctx->e_digest_ctx == NULL && md_ctx->switch_flag != 1) {
         md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
         if (md_ctx->e_digest_ctx == NULL) {
             US_WARN("failed to get engine ctx");
