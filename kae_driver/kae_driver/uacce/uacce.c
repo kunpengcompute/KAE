@@ -1352,4 +1352,4 @@ module_exit(uacce_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Accelerator interface for Userland applications");
-MODULE_VERSION("1.3.12");
+MODULE_VERSION("1.3.13");

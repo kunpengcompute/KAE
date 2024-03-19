@@ -1,6 +1,6 @@
 Name:          libwd
 Summary:       Huawei Accelerator Library
-Version:       1.3.12
+Version:       1.3.13
 Release:       1%dist
 License:       Apache-2.0
 Source:        %{name}-%{version}.tar.gz
@@ -81,6 +81,9 @@ fi
 /sbin/ldconfig
 
 %changelog
+* Tue Mar 19 2024 liuyang <liuyang645@huawei.com> 1.3.13-1
+- Update Spec Version Include Warpdrive Code
+
 * Tue Jan 2 2024 liuyang <liuyang645@huawei.com> 1.3.12-1
 - Update Spec Version Include Warpdrive Code
 

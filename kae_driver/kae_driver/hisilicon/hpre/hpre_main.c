@@ -1051,4 +1051,4 @@ module_exit(hpre_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator");
-MODULE_VERSION("1.3.12");
+MODULE_VERSION("1.3.13");
