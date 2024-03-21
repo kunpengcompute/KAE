@@ -252,7 +252,7 @@ static int kaezstd_alg_init2(void)
         // 进程已经初始化过，直接返回
         return 0;
     }
-    kaezstd_lock();
+    
 	ctx_set_num = calloc(KAEZSTD_CTX_SET_NUM, sizeof(*ctx_set_num));
 	if (!ctx_set_num) {
 		WD_ERR("failed to alloc ctx_set_size!\n");
@@ -298,7 +298,6 @@ out_freebmp:
 out_freectx:
 	free(ctx_set_num);
     free(dev);
-    kaezstd_unlock();
 	return ret;
 }
 
@@ -317,6 +316,7 @@ int kaezstd_init(ZSTD_CCtx* zc)
     memset(config, 0, sizeof(KaeZstdConfig));
     kaezstd_options_init(config);
 
+    kaezstd_lock();
     ret = kaezstd_alg_init2();
     if (ret) {
         US_ERR("failed to kaezstd_alg_init2!\n");
@@ -328,6 +328,7 @@ int kaezstd_init(ZSTD_CCtx* zc)
         US_ERR("failed to init session!\n");
         goto free_config;
     }
+    kaezstd_unlock();
 
     kaezstd_set_config(zc, config);
 
@@ -336,6 +337,7 @@ int kaezstd_init(ZSTD_CCtx* zc)
 
 free_config:
     free(config);
+    kaezstd_unlock();
     return KAE_ZSTD_INIT_FAIL;
 }
 
