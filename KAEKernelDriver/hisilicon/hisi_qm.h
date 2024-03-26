@@ -2,6 +2,7 @@
 #ifndef _UAPI_HISI_QM_H
 #define _UAPI_HISI_QM_H
 
+#include <linux/types.h>
 #define QM_CQE_SIZE			16
 
 /* default queue depth for sq/cq/eq */
