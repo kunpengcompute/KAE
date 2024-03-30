@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 SRC_PATH=$(pwd)
-KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver
+KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver-OLK-6.6
 KAE_UADK_DIR=${SRC_PATH}/uadk
 KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
 KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
@@ -120,14 +120,14 @@ function build_rpm()
 
 function build_driver()
 {
-        cd ${SRC_PATH}/KAEKernelDriver
+        cd ${SRC_PATH}/KAEKernelDriver-OLK-6.6
         make -j
         make nosva #默认使用nosva模式
 }
 
 function driver_clean()
 {
-        cd ${SRC_PATH}/KAEKernelDriver
+        cd ${SRC_PATH}/KAEKernelDriver-OLK-6.6
         make uninstall
         make clean
 }
