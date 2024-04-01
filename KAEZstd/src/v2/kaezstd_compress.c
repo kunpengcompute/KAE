@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2024. All rights reserved.
  * Description: contain kae compress functions
  * Author: songchao
  * Create: 2021-7-19
@@ -19,14 +19,14 @@
 #include "kaezstd_config.h"
 #include "kaezstd_log.h"
 
-void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
+void kaezstd_setstatus_v2(ZSTD_CCtx* zc, unsigned int status)
 {
     KaeZstdConfig *config;
     config = kaezstd_get_config(zc);
     config->tuple.bstatus = status;
 }
 
-int kaezstd_data_parsing(ZSTD_CCtx* zc, KaeZstdConfig* config)
+static int kaezstd_data_parsing(ZSTD_CCtx* zc, KaeZstdConfig* config)
 {
     if (config->tuple.litStart == NULL || config->tuple.sequencesStart == NULL) {
         US_ERR("config parameter invalid\n");
@@ -48,7 +48,7 @@ int kaezstd_data_parsing(ZSTD_CCtx* zc, KaeZstdConfig* config)
     return 0;
 }
 
-int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize)
+int kaezstd_compress_v2(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 {
     KaeZstdConfig *config = NULL;
     int ret;

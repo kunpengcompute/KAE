@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2024. All rights reserved.
  * Description: contain kae common defines
  * Author: songchao
  * Create: 2021-7-19
@@ -20,7 +20,4 @@
 
 #include "kaezstd.h"
 
-#include "zstd.h"
-#include "zstd_internal.h"
-#include "zstd_compress_internal.h"
 #endif

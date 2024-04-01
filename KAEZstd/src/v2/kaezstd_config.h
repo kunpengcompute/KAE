@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2024. All rights reserved.
  * Description: contain kae config defines
  * Author: songchao
  * Create: 2021-7-19
@@ -29,7 +29,7 @@ typedef struct Comp4Tuple_S {
      * block compress status:
      * Raw_Block=0 (this is an uncompressed block)
      * RLE_Block=1
-     * Compressed_Block=0
+     * Compressed_Block=2
      * Reserved=3
      */
     unsigned int bstatus;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2024. All rights reserved.
  * Description: contain kae log
  * Author: liuyang
  * Create: 2023-5-30
@@ -21,8 +21,8 @@ static const char *g_kaezstd_conf_env = "KAEZSTD_CONF_ENV";
 
 FILE *g_kaezstd_debug_log_file = (FILE *)NULL;
 pthread_mutex_t g_kaezstd_debug_file_mutex = PTHREAD_MUTEX_INITIALIZER;
-int g_kaezstd_debug_file_ref_count = 0;
-int g_kaezstd_log_init_times = 0;
+static int g_kaezstd_debug_file_ref_count = 0;
+static int g_kaezstd_log_init_times = 0;
 int g_kaezstd_log_level = 0;
 
 const char *g_kaezstd_log_level_string[] = {
@@ -33,7 +33,7 @@ const char *g_kaezstd_log_level_string[] = {
     "debug",
 };
 
-int kaezstd_drv_findsection(FILE *stream, const char *v_pszSection)
+static int kaezstd_drv_findsection(FILE *stream, const char *v_pszSection)
 {
     char line[256]; // array length:256
     char *pos = NULL;
@@ -60,7 +60,7 @@ int kaezstd_drv_findsection(FILE *stream, const char *v_pszSection)
     return -1;
 }
 
-void kaezstd_drv_get_value(char *pos, char *v_pszValue)
+static void kaezstd_drv_get_value(char *pos, char *v_pszValue)
 {
     while (*pos != '\0') {
         if (*pos == ' ') {
@@ -77,7 +77,7 @@ void kaezstd_drv_get_value(char *pos, char *v_pszValue)
     }
 }
 
-int kaezstd_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
+static int kaezstd_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
 {
     char line[256]; // array length:256
     char *pos = NULL;
@@ -104,7 +104,7 @@ int kaezstd_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
     return -1;
 }
 
-int kaezstd_drv_get_item(const char *config_file, const char *v_pszSection, 
+static int kaezstd_drv_get_item(const char *config_file, const char *v_pszSection,
                      const char *v_pszItem, char *v_pszValue)
 {
     FILE *stream;

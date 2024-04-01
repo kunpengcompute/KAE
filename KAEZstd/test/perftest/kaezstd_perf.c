@@ -158,7 +158,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes)
         for (int i = 0; i < g_threadnum; i++) {
             pthread_join(threads[i], NULL);
         }
-        
+
     }
 
     if (pidChild > 0) {
@@ -176,12 +176,12 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes)
     }
 
     if (pidChild > 0 || multi == 0) {
-        if (multi == 0) { 
-            multi = 1; 
+        if (multi == 0) {
+            multi = 1;
         }
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / 1000 / 1000 / 1000;
+        float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / 1024 / 1024 / 1024;
         printf("kaezstd %s perf result:\n", "compress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
@@ -217,7 +217,7 @@ static size_t ReadFromInput(void *buffer, size_t sizeToRead, uint8_t *src, int t
     return cpySize;
 }
 
-static void DoMultiCompressStream2(resources ress, uint8_t *inbuf, int streamLen) 
+static void DoMultiCompressStream2(resources ress, uint8_t *inbuf, int streamLen)
 {
     /* Reset the context to a clean state to start a new compression operation.
      * The parameters are sticky, so we keep the compression level and extra
@@ -279,7 +279,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes)
         if (inbuf == NULL) {
             return;
         }
-        
+
         resources const ress = CompressStream2CreateResources(cLevel);
         CHECK_ZSTD( ZSTD_CCtx_reset(ress.cctx, ZSTD_reset_session_only) );
         for (int i = 0; i < loopTimes; ++i) {
@@ -289,7 +289,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes)
         FreeResources(ress);
     }
     // }
-    
+
     if (pidChild > 0) {
         int ret = -1;
         while (1) {
@@ -304,12 +304,12 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes)
     }
 
     if (pidChild > 0 || multi == 0) {
-        if (multi == 0) { 
-            multi = 1; 
+        if (multi == 0) {
+            multi = 1;
         }
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1 * loopTimes * multi * streamLen / 1000 / 1000 / 1000;
+        float speed1 = 1000000.0 / time1 * 5 * loopTimes * multi * streamLen / 1024 / 1024 / 1024;
         printf("kaezstd %s perf result:\n", "compress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
@@ -395,8 +395,8 @@ int main(int argc, char **argv)
     if (argc <= 1) {
         Usage();
         printf("\ndefault input parameter used\n");
-    } 
-    setenv("KAE_ZSTD_LEVEL", (char *)&cLevel, 1);  
+    }
+    setenv("KAE_ZSTD_LEVEL", (char *)&cLevel, 1);
     printf("kaezstd perf parameter: multi process %d, stream length: %d(KB), compress level: %d, "
         "compress function: %d, loop times: %d, g_threadnum: %d\n",
         multi, streamLen, cLevel, cFunction, loopTimes, g_threadnum);

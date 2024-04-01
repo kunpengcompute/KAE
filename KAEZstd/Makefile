@@ -27,14 +27,16 @@ ifndef SILENCE
 endif
 
 # Src
-SRCDIRS   := ${WORK_PATH}/
 SRCDIRS   += ${WORK_PATH}/src
+SRCDIRS   += ${WORK_PATH}/src/utils
+SRCDIRS   += ${WORK_PATH}/src/v1
+SRCDIRS   += ${WORK_PATH}/src/v2
 
 SRCEXTS   := .c # C program
 
 # Include
-INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
+INCDIR += -I $(WORK_PATH)/src/utils
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib/common
 INCDIR += -I $(WORK_PATH)/open_source/zstd/lib/compress

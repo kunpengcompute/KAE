@@ -69,7 +69,7 @@ CompressOut DoCompress(int streamLen, int cLevel, int nbThreads)
     CHECK_ZSTD(cSize);
 
     ZSTD_freeCCtx(ress.cctx);
-    
+
     return CompressOut(inbuf, streamLen, ress.buffOut, cSize);
 }
 
@@ -100,7 +100,7 @@ static size_t ReadFromInput(void *buffer, size_t sizeToRead, uint8_t *src, int t
     return cpySize;
 }
 
-static CompressOut DoCompressStream2Internal(Resources ress, uint8_t *inbuf, int streamLen) 
+static CompressOut DoCompressStream2Internal(Resources ress, uint8_t *inbuf, int streamLen)
 {
     size_t const toRead = ress.buffInSize;
     size_t read;
@@ -242,7 +242,7 @@ DecompressOut DecompressStream(CompressOut compressOut)
             lastRet = ret;
         }
     }
-    
+
     if (totalOutputSize != compressOut.oSize) {
         fprintf(stderr, "decompress output size wrong\n");
         exit(1);
