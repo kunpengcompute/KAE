@@ -178,11 +178,10 @@ int kz_deflate(z_streamp strm, int flush)
 
 int kz_deflateEnd(z_streamp strm)
 {
-    // kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
-    // if (kaezip_ctx != NULL) {
-    //     US_DEBUG("kaezip deflate end");
-    //     kaezip_put_ctx(kaezip_ctx);
-    // }
+    kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
+    if (kaezip_ctx != NULL) {
+        kaezip_init_ctx(kaezip_ctx);
+    }
 
     setDeflateKaezipCtx(strm, 0);
     return lz_deflateEnd(strm);
