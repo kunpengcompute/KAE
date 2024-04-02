@@ -107,8 +107,8 @@ int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *dig
 void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx)
 {
 	EVP_MD_CTX *ctx = md_ctx->soft_ctx;
-    if (md_ctx->copy)
-		return;
+    // if (md_ctx->copy)
+	// 	return;
     if (ctx != NULL) {
 		if (ctx->md_data) {
 			OPENSSL_free(ctx->md_data);

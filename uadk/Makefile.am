@@ -35,7 +35,7 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
 		  include/wd_rsa.h  include/uacce.h include/wd_alg_common.h \
 		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h
 
-nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
+nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h v1/wd_ecc.h \
 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
 
 lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la

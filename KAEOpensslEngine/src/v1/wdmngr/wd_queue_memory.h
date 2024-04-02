@@ -40,6 +40,9 @@
 #define DH_BLOCK_NUM       16
 #define DH_BLOCK_SIZE      4096
 
+#define SM2_BLOCK_NUM       16
+#define SM2_BLOCK_SIZE      4096
+
 #define CIPHER_BLOCK_NUM   4
 #define CIPHER_BLOCK_SIZE  (272*1024)
 

@@ -904,7 +904,7 @@ static int sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 	c3_size = EVP_MD_size(md);
 	if (c3_size <= 0) {
 		fprintf(stderr, "c3 size error\n");
-		return 0;
+		return UADK_E_INVALID;
 	}
 
 	if (!out) {
