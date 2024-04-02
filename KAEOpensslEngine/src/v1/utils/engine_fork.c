@@ -50,6 +50,7 @@ void engine_init_child_at_fork_handler_v1(void)
 	(void)hpre_module_dh_init();
 	(void)cipher_module_init();
 	(void)digest_module_init();
+	(void)hpre_module_sm2_init();
 
 	kae_check_thread_reset();
 	if (!kae_checking_q_thread_init())

@@ -33,6 +33,7 @@ const char *g_alg_type[] = {
 	"dh",
 	"cipher",
 	"digest",
+	"sm2",
 };
 
 struct wd_queue_mempool *wd_queue_mempool_create(struct wd_queue *q, unsigned int block_size, unsigned int block_num)
@@ -104,6 +105,10 @@ struct wd_queue_mempool *create_alg_wd_queue_mempool(int algtype, struct wd_queu
 	case WCRYPTO_DIGEST:
 		block_size = DIGEST_BLOCK_SIZE;
 		block_num = DIGEST_BLOCK_NUM;
+		break;
+	case WCRYPTO_SM2:
+		block_size = SM2_BLOCK_SIZE;//4352
+		block_num = SM2_BLOCK_NUM;
 		break;
 	case WCRYPTO_COMP:
 	case WCRYPTO_EC:
