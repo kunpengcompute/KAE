@@ -8,7 +8,7 @@ ExclusiveOS:   linux
 BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel, chrpath
+BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, compat-openssl11-devel, chrpath
 ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
@@ -391,4 +391,3 @@ echo "openssl engine uninstalled"
 
 * Tue Jan 07 2020 jinbinhua <jinbinhua@huawei.com> 1.2.7-1
 - First Spec Version Include kunpeng accelerator engine Code
-

@@ -1,7 +1,8 @@
 #!/bin/sh
 set -e
 SRC_PATH=$(pwd)
-KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver
+KAE_KERNEL_DIR=""
+KAE_SPEC_FILE=""
 KAE_UADK_DIR=${SRC_PATH}/uadk
 KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
 KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
@@ -13,6 +14,21 @@ KAE_BUILD_HEAD=${SRC_PATH}/kae_build/head
 
 IMPLEMENTER=""
 CPUPAET=""
+
+function build_check_OS_version()
+{
+    local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
+    if [ "$KERNEL_VERSION" == "6.6.0" ]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver-OLK-6.6
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
+    elif [ "$KERNEL_VERSION" == "5.10.0" ]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+    else 
+        echo "[KAE error]:unsupport kernel version"
+    fi
+}
+
 function build_all_comp_sva()
 {
         if [ -d $KAE_BUILD ]; then
@@ -120,14 +136,14 @@ function build_rpm()
 
 function build_driver()
 {
-        cd ${SRC_PATH}/KAEKernelDriver
+        cd ${KAE_KERNEL_DIR}
         make -j
         make nosva #默认使用nosva模式
 }
 
 function driver_clean()
 {
-        cd ${SRC_PATH}/KAEKernelDriver
+        cd ${KAE_KERNEL_DIR}
         make uninstall
         make clean
 }
@@ -281,6 +297,7 @@ function clear_all_components()
 function main()
 {
         check_enviroment
+        build_check_OS_version
 
 	if [ "$1" = "all" ];then
 	    echo "build all"
@@ -333,7 +350,7 @@ function main()
             mkdir -p $KAE_BUILD
             mkdir -p /root/rpmbuild/SOURCES/
             tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .
-            rpmbuild -bb ./scripts/specFile/kae.spec
+            rpmbuild -bb $KAE_SPEC_FILE
             cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD
     elif [ "$1" = "cleanup" ];then
 	    echo "cleanup all"
