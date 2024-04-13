@@ -21,6 +21,7 @@
 
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
 #define ENV_STRING_LEN		256
+#define ENGINE_SEND_MAX_CNT	90000000
 #define ENGINE_RECV_MAX_CNT	60000000
 
 enum {
@@ -29,8 +30,8 @@ enum {
 };
 
 extern const char *engine_uadk_id;
-int uadk_e_bind_cipher(ENGINE *e);
-void uadk_e_destroy_cipher(void);
+// int uadk_e_bind_cipher(ENGINE *e);
+// void uadk_e_destroy_cipher(void);
 int uadk_e_bind_digest(ENGINE *e);
 void uadk_e_destroy_digest(void);
 int uadk_e_bind_rsa(ENGINE *e);

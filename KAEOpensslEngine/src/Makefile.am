@@ -1,5 +1,6 @@
 VERSION = 2:0:2
 ACLOCAL_AMFLAGS = -I m4
+CFLAGS = -g -Wall
 
 DEPSHEADDIR = $(CURDIR)/../../kae_build/head/
 WD_CFLAGS = -I$(DEPSHEADDIR)
@@ -22,7 +23,7 @@ kae_la_SOURCES+=v1/alg/ciphers/sw/vpsms4_ex-armv8.s
 else
 kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
 		v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c \
-		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
+		utils/engine_log.c utils/engine_config.c utils/engine_utils.c v2/alg/ciphers/uadk_aead.c v2/alg/ciphers/uadk_cipher_adapter.c
 endif #WD_KAE_GMSSL
 
 AUTOMAKE_OPTIONS = subdir-objects

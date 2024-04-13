@@ -139,6 +139,7 @@ function build_driver()
         cd ${KAE_KERNEL_DIR}
         make -j
         make nosva #默认使用nosva模式
+        # make install
 }
 
 function driver_clean()

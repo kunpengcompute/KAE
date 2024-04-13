@@ -43,7 +43,7 @@ install:
 	-echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
 	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-	dracut -f
+	# dracut -f
 uninstall:
 	modprobe -r hisi_zip
 	modprobe -r hisi_hpre
@@ -53,7 +53,7 @@ uninstall:
 	rm -rf /etc/modprobe.d/hisi_sec2.conf
 	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
-	dracut -f
+	# dracut -f
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/uacce.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_qm.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_sec2.ko
@@ -75,6 +75,6 @@ nosva:
 	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
 	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-	dracut -f
+	# dracut -f
 clean:
 	rm -rf $(TARGET) 
