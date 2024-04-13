@@ -25,18 +25,20 @@
 #include "v2/uadk.h"
 #include "v2/async/uadk_async.h"
 #include "utils/engine_log.h"
+#include "v2/alg/ciphers/uadk_cipher_adapter.h"
 #ifdef KAE
 #include "v1/uadk_v1.h"
 #endif
 
 #define UADK_CMD_ENABLE_CIPHER_ENV	ENGINE_CMD_BASE
-#define UADK_CMD_ENABLE_DIGEST_ENV	(ENGINE_CMD_BASE + 1)
-#define UADK_CMD_ENABLE_RSA_ENV		(ENGINE_CMD_BASE + 2)
-#define UADK_CMD_ENABLE_DH_ENV		(ENGINE_CMD_BASE + 3)
-#define UADK_CMD_ENABLE_ECC_ENV		(ENGINE_CMD_BASE + 4)
-#define KAE_CMD_ENABLE_ASYNC   (ENGINE_CMD_BASE + 5)
-#define KAE_CMD_ENABLE_SM3   (ENGINE_CMD_BASE + 6)
-#define KAE_CMD_ENABLE_SM4   (ENGINE_CMD_BASE + 7)
+#define UADK_CMD_ENABLE_AEAD_ENV	(ENGINE_CMD_BASE + 1)
+#define UADK_CMD_ENABLE_DIGEST_ENV	(ENGINE_CMD_BASE + 2)
+#define UADK_CMD_ENABLE_RSA_ENV		(ENGINE_CMD_BASE + 3)
+#define UADK_CMD_ENABLE_DH_ENV		(ENGINE_CMD_BASE + 4)
+#define UADK_CMD_ENABLE_ECC_ENV		(ENGINE_CMD_BASE + 5)
+#define KAE_CMD_ENABLE_ASYNC   (ENGINE_CMD_BASE + 6)
+#define KAE_CMD_ENABLE_SM3   (ENGINE_CMD_BASE + 7)
+#define KAE_CMD_ENABLE_SM4   (ENGINE_CMD_BASE + 8)
 
 /* Constants used when creating the ENGINE */
 const char *engine_uadk_id = "kae";
@@ -63,6 +65,12 @@ static const ENGINE_CMD_DEFN g_uadk_cmd_defns[] = {
 		UADK_CMD_ENABLE_CIPHER_ENV,
 		"UADK_CMD_ENABLE_CIPHER_ENV",
 		"Enable or Disable cipher engine environment variable.",
+		ENGINE_CMD_FLAG_NUMERIC
+	},
+	{
+		UADK_CMD_ENABLE_AEAD_ENV,
+		"UADK_CMD_ENABLE_AEAD_ENV",
+		"Enable or Disable aead engine environment variable.",
 		ENGINE_CMD_FLAG_NUMERIC
 	},
 	{
@@ -129,6 +137,7 @@ struct uadk_alg_env_enabled {
 
 static struct uadk_alg_env_enabled uadk_env_enabled[] = {
 	{ "cipher", 0 },
+	{ "aead", 0 },
 	{ "digest", 0 },
 	{ "rsa", 0 },
 	{ "dh", 0 },
@@ -209,6 +218,9 @@ static int uadk_engine_ctrl(ENGINE *e, int cmd, long i,
 	case UADK_CMD_ENABLE_CIPHER_ENV:
 		US_DEBUG("%s cipher\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("cipher", i);
+		break;
+	case UADK_CMD_ENABLE_AEAD_ENV:
+		uadk_e_set_env_enabled("aead", i);
 		break;
 	case UADK_CMD_ENABLE_DIGEST_ENV:
 		US_DEBUG("%s digest\n", i == 0 ? "Disable" : "Enable");
@@ -297,7 +309,7 @@ static int uadk_destroy(ENGINE *e)
 	kae_debug_close_log();
 #ifndef KAE_GMSSL //gmssl仅在920支持
 	if (uadk_cipher)
-		uadk_e_destroy_cipher();
+		uadk_e_destroy_ciphers();
 	if (uadk_digest)
 		uadk_e_destroy_digest();
 	if (uadk_rsa)
@@ -450,7 +462,7 @@ static void bind_fn_uadk_alg(ENGINE *e)
 
 	dev = wd_get_accel_dev("cipher");
 	if (dev) {
-		if (!uadk_e_bind_cipher(e)){
+		if (!uadk_e_bind_ciphers(e)){
 			fprintf(stderr, "uadk bind cipher failed\n");
 		}else{
 			uadk_cipher = 1;
