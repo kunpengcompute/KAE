@@ -60,6 +60,9 @@ static cipher_info_t g_sec_ciphers_info[] = {
 	{NID_aes_256_ctr, 1, 32, 16, EVP_CIPH_CTR_MODE, 1, NULL},
 	{NID_aes_128_xts, 1, 32, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
 	{NID_aes_256_xts, 1, 64, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
+	{NID_aes_128_gcm, 16, 16, 16, EVP_CIPH_GCM_MODE, 1, NULL},
+	{NID_aes_192_gcm, 16, 24, 16, EVP_CIPH_GCM_MODE, 1, NULL},
+	{NID_aes_256_gcm, 16, 32, 16, EVP_CIPH_GCM_MODE, 1, NULL},
 #ifdef KAE_GMSSL
     {NID_sms4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
     {NID_sms4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
@@ -88,6 +91,9 @@ static int g_known_cipher_nids[CIPHERS_COUNT] = {
 	NID_aes_256_ctr,
 	NID_aes_128_xts,
 	NID_aes_256_xts,
+	NID_aes_128_gcm,
+	NID_aes_192_gcm,
+	NID_aes_256_gcm
 
 #ifdef KAE_GMSSL
     NID_sms4_ctr,
@@ -625,16 +631,20 @@ static int sec_ciphers_cleanup(EVP_CIPHER_CTX *ctx)
 
 #ifdef KAE_GMSSL
 EVP_CIPHER *get_EVP_sm4_gcm(void);
+static EVP_CIPHER *sec_ciphers_set_sw_cipher_method(cipher_info_t cipherinfo)
+{
+	if (cipherinfo.nid == NID_sms4_gcm) {
+		EVP_CIPHER *sw_cipher = get_EVP_sm4_gcm();
+		return EVP_CIPHER_meth_dup(sw_cipher);
+	} else {
+		return NULL;
+	}
+}
 #endif
+
 static EVP_CIPHER *sec_ciphers_set_cipher_method(cipher_info_t cipherinfo)
 {
 	int ret = 1;
-#ifdef KAE_GMSSL
-	if (cipherinfo.nid == NID_sms4_gcm) {
-        EVP_CIPHER *sw_cipher = get_EVP_sm4_gcm();
-        return EVP_CIPHER_meth_dup(sw_cipher);
-    }
-#endif
 	EVP_CIPHER *cipher = EVP_CIPHER_meth_new(cipherinfo.nid, cipherinfo.blocksize, cipherinfo.keylen);
 
 	if (cipher == NULL)
@@ -656,13 +666,58 @@ static EVP_CIPHER *sec_ciphers_set_cipher_method(cipher_info_t cipherinfo)
 	}
 }
 
+static void sec_cipher_create_ciphers(int index)
+{
+	EVP_CIPHER *cipher = NULL;
+
+	switch (g_sec_ciphers_info[index].nid) {
+		case NID_aes_128_gcm:
+		case NID_aes_192_gcm:
+		case NID_aes_256_gcm:
+			cipher = sec_ciphers_set_gcm_method(g_sec_ciphers_info[index].nid);
+			break;
+		case NID_aes_128_cbc:
+		case NID_aes_192_cbc:
+		case NID_aes_256_cbc:
+		case NID_aes_128_ctr:
+		case NID_aes_192_ctr:
+		case NID_aes_256_ctr:
+		case NID_aes_128_ecb:
+		case NID_aes_192_ecb:
+		case NID_aes_256_ecb:
+		case NID_aes_128_xts:
+		case NID_aes_256_xts:
+#ifdef KAE_GMSSL
+		case NID_sms4_ctr:
+		case NID_sms4_cbc: 
+		case NID_sms4_ofb128:
+		case NID_sms4_ecb:
+			cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[index]);
+			break;
+		case NID_sms4_gcm: 
+			cipher = sec_ciphers_set_sw_cipher_method(g_sec_ciphers_info[index]);
+			break;
+#else
+		case NID_sm4_cbc:
+		case NID_sm4_ecb:
+		case NID_sm4_ofb128:
+		case NID_sm4_ctr:
+			cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[index]);
+			break;
+#endif
+		default:
+			break;
+	}
+	return cipher;
+}
+
 void sec_create_ciphers(void)
 {
 	unsigned int i = 0;
 
 	for (i = 0; i < CIPHERS_COUNT; i++) {
 		if (g_sec_ciphers_info[i].cipher == NULL)
-			g_sec_ciphers_info[i].cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[i]);
+			g_sec_ciphers_info[i].cipher = sec_cipher_create_ciphers(i);
 	}
 }
 

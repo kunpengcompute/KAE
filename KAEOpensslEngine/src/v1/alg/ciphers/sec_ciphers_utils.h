@@ -36,6 +36,9 @@ enum CIPHERS_MODE {
 	CTR,
 	XTS,
 	OFB,
+	CFB,
+	CCM,
+	GCM,
 };
 
 enum CIPHERS_ALG {

@@ -89,9 +89,9 @@ struct wcrypto_aead_ctx_setup {
 struct wcrypto_aead_op_data {
 	enum wcrypto_aead_op_type op_type;
 	int status;
-	void *in;
-	void *out;
-	void *iv;
+	void *in; //wd_aeads_init_engine_ctx
+	void *out; //wd_aeads_init_engine_ctx
+	void *iv; //wd_aeads_init_engine_ctx
 	__u32 in_bytes;
 	__u32 out_bytes;
 	__u32 out_buf_bytes;
