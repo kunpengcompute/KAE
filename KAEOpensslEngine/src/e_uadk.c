@@ -55,7 +55,9 @@ static int uadk_cipher_nosva;
 static int uadk_digest_nosva;
 static int uadk_rsa_nosva;
 static int uadk_dh_nosva;
+#ifndef KAE_GMSSL
 static int uadk_sm2_nosva;
+#endif
 #endif
 
 static const ENGINE_CMD_DEFN g_uadk_cmd_defns[] = {
@@ -426,7 +428,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 	}else{
 		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
-
+#ifndef KAE_GMSSL
 	dev_num = wd_get_nosva_dev_num("sm2");
 	if (dev_num > 0) {
 		hpre_module_sm2_init();
@@ -439,6 +441,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 	}else{
 		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
+#endif
 }
 #endif
 
