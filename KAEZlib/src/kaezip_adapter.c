@@ -8,6 +8,7 @@
 #include "kaezip.h"
 #include "wd_comp.h"
 #include "kaezip_adapter.h"
+#include "kaezip_init.h"
 #include "kaezip_comp.h"
 #include "kaezip_deflate.h"
 #include "kaezip_inflate.h"
@@ -27,12 +28,17 @@ static void uadk_get_accel_platform(void)
         US_INFO("g_platform is %d, inited!\n", g_platform);
         return;
     }
+    //	init log
+    kaezip_debug_init_log();
     //  check sva
     struct uacce_dev* dev = wd_get_accel_dev("zlib");
-    if (dev && (dev->flags & 0x1)) {
-        g_platform = HW_V2;
+    if (dev) {
+        int flag = dev->flags;
         free(dev);
-        return;
+        if (flag & 0x1) {
+            g_platform = HW_V2;
+            return;
+        }
     }
     //  check no-sva
     int nosva_dev_num = wd_get_available_dev_num("zlib");
@@ -60,11 +66,14 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         break;
     case HW_V2:
-        strm->adler = 0;
-        level = (level <= 0 || level > 15) ? 1 : level;
-        ret = wd_deflateInit2_(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
+        if (level <= 0) {
+            level = 1;
+        } else if (level > 9) {
+            level = 9;
+        }
+        ret = kz_deflate_init(strm, level, windowBit);
         if (ret == Z_OK) {
-            (void)wd_deflateReset(strm);
+            (void)kz_deflate_reset(strm);
         }
         break;
     default:
@@ -90,11 +99,12 @@ int kz_deflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_deflate_v1(strm, flush);
         } else {
-            US_ERR("HW_V1: kz_deflate error! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_deflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
+            ret = lz_deflate(strm, flush);
         }
         break;
     case HW_V2:
-        ret = wd_deflate_v2(strm, flush);   //  implement in src/v2
+        ret = kz_deflate_v2(strm, flush);
         break;
     default:
         break;
@@ -117,7 +127,7 @@ int kz_deflateEnd(z_streamp strm)
         ret = kz_deflateEnd_v1(strm);
         break;
     case HW_V2:
-        ret = wd_deflateEnd(strm);
+        ret = kz_deflate_end(strm);
         break;
     default:
         break;
@@ -140,7 +150,7 @@ int kz_deflateReset(z_streamp strm)
         ret = kz_deflateReset_v1(strm);
         break;
     case HW_V2:
-        ret = wd_deflateReset(strm);
+        ret = kz_deflate_reset(strm);
         break;
     default:
         break;
@@ -164,10 +174,9 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
         ret = kz_inflateInit2_v1(strm, windowBits, version, stream_size);
         break;
     case HW_V2:
-        strm->adler = 0;
-        ret = wd_inflateInit2_(strm, windowBits, version, stream_size);
+        ret = kz_inflate_init(strm, windowBits);
         if (ret == Z_OK) {
-            (void)wd_inflateReset(strm);
+            (void)kz_inflate_reset(strm);
         }
         break;
     default:
@@ -197,11 +206,12 @@ int kz_inflate(z_streamp strm, int flush)
         if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
             ret = kz_inflate_v1(strm, flush);
         } else {
-            US_ERR("HW_V1: kz_inflate error! kaezip_ctx is %lu, flush is %d\n", kaezip_ctx, flush);
+            US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
+            ret = lz_inflate(strm, flush);
         }
         break;
     case HW_V2:
-        ret = wd_inflate_v2(strm, flush);
+        ret = kz_inflate_v2(strm, flush);
         break;
     default:
         break;
@@ -224,7 +234,7 @@ int kz_inflateEnd(z_streamp strm)
         ret = kz_inflateEnd_v1(strm);
         break;
     case HW_V2:
-        ret = wd_inflateEnd(strm);
+        ret = kz_inflate_end(strm);
         break;
     default:
         break;
@@ -247,7 +257,7 @@ int kz_inflateReset(z_streamp strm)
         ret = kz_inflateReset_v1(strm);
         break;
     case HW_V2:
-        ret = wd_inflateReset(strm);
+        ret = kz_inflate_reset(strm);
         break;
     default:
         break;

@@ -22,6 +22,7 @@
 
 #ifndef KAEZIP_CTX_H
 #define KAEZIP_CTX_H
+#include <sys/time.h>
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
 
@@ -49,6 +50,14 @@ struct wcrypto_end_block {
     unsigned int     b_set;
 };
 
+#define KAE_ASYNC_MAX_RECV_TIMES (2000000)
+#define FLAG_NUM (10)
+struct kaezip_async_sleep_info {
+    struct timespec ns_sleep;
+    int flag[FLAG_NUM];
+    int index;
+};
+
 struct kaezip_ctx {
     void            *in;
     unsigned int    in_len;             
@@ -58,6 +67,7 @@ struct kaezip_ctx {
     unsigned int     produced;
     unsigned int     remain;        //data produced by warpdrive but haven't been take away for not enough avail out buf
 
+    const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
     int              flush;         // WCRYPTO_SYNC_FLUSH / WCRYPTO_FINISH
     int              comp_alg_type; // WCRYPTO_ZLIB / WCRYPTO_GZIP
