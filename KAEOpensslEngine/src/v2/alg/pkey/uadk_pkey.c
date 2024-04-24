@@ -28,6 +28,9 @@
 #define CTX_SYNC		0
 #define CTX_NUM			2
 #define GET_RAND_MAX_CNT	100
+#define SUPPORT			1
+
+static int g_ecc_support_state[ECC_TYPE];
 
 static int pkey_nids[] = {
 	EVP_PKEY_EC,
@@ -43,13 +46,13 @@ struct ecc_sched {
 
 struct ecc_res_config {
 	struct ecc_sched sched;
-	int numa_id;
 };
 
 /* ECC global hardware resource is saved here */
 struct ecc_res {
 	struct wd_ctx_config *ctx_res;
 	int pid;
+	int numa_id;
 	pthread_spinlock_t lock;
 } ecc_res;
 
@@ -126,7 +129,7 @@ static int uadk_ecc_poll(void *ctx)
 }
 
 /* Make resource configure static */
-struct ecc_res_config ecc_res_config = {
+static struct ecc_res_config ecc_res_config = {
 	.sched = {
 		.sched_type = -1,
 		.wd_sched = {
@@ -137,12 +140,21 @@ struct ecc_res_config ecc_res_config = {
 			.h_sched_ctx = 0,
 		},
 	},
-	.numa_id = 0,
 };
 
 int uadk_e_ecc_get_numa_id(void)
 {
-	return ecc_res_config.numa_id;
+	return ecc_res.numa_id;
+}
+
+int uadk_e_ecc_get_support_state(int alg_tag)
+{
+	return g_ecc_support_state[alg_tag];
+}
+
+static void uadk_e_ecc_set_support_state(int alg_tag, int value)
+{
+	g_ecc_support_state[alg_tag] = value;
 }
 
 static int uadk_e_ecc_env_poll(void *ctx)
@@ -230,18 +242,10 @@ free_cfg:
 	return ret;
 }
 
-static int uadk_wd_ecc_init(struct ecc_res_config *config)
+static int uadk_wd_ecc_init(struct ecc_res_config *config, struct uacce_dev *dev)
 {
 	struct wd_sched *sched = &config->sched.wd_sched;
-	struct uacce_dev *dev;
 	int ret;
-
-	/* The ctx is no difference for sm2/ecdsa/ecdh/x25519/x448 */
-	dev = wd_get_accel_dev("ecdsa");
-	if (!dev)
-		return -ENOMEM;
-
-	config->numa_id = dev->numa_id;
 
 	ret = uadk_e_is_env_enabled("ecc");
 	if (ret)
@@ -249,10 +253,9 @@ static int uadk_wd_ecc_init(struct ecc_res_config *config)
 	else
 		ret = uadk_e_wd_ecc_general_init(dev, sched);
 
-	free(dev);
-
 	return ret;
 }
+
 
 static void uadk_wd_ecc_uninit(void)
 {
@@ -274,6 +277,7 @@ static void uadk_wd_ecc_uninit(void)
 		ecc_res.ctx_res = NULL;
 	}
 	ecc_res.pid = 0;
+	ecc_res.numa_id = 0;
 }
 
 int uadk_ecc_crypto(handle_t sess, struct wd_ecc_req *req, void *usr)
@@ -517,14 +521,8 @@ bool uadk_support_algorithm(const char *alg)
 
 int uadk_init_ecc(void)
 {
+	struct uacce_dev *dev;
 	int ret;
-
-	if (!uadk_support_algorithm("sm2") &&
-	    !uadk_support_algorithm("ecdsa") &&
-	    !uadk_support_algorithm("ecdh") &&
-	    !uadk_support_algorithm("x25519") &&
-	    !uadk_support_algorithm("x448"))
-		return -EINVAL;
 
 	if (ecc_res.pid != getpid()) {
 		pthread_spin_lock(&ecc_res.lock);
@@ -533,22 +531,34 @@ int uadk_init_ecc(void)
 			return 0;
 		}
 
-		ret = uadk_wd_ecc_init(&ecc_res_config);
+		/* Find an ecc device, no difference for sm2/ecdsa/ecdh/x25519/x448 */
+		dev = wd_get_accel_dev("ecdsa");
+		if (!dev) {
+			pthread_spin_unlock(&ecc_res.lock);
+			fprintf(stderr, "failed to get device for ecc\n");
+			return -ENOMEM;
+		}
+
+		ret = uadk_wd_ecc_init(&ecc_res_config, dev);
 		if (ret) {
 			fprintf(stderr, "failed to init ec(%d).\n", ret);
 			goto err_unlock;
 		}
 
+		ecc_res.numa_id = dev->numa_id;
 		ecc_res.pid = getpid();
 		pthread_spin_unlock(&ecc_res.lock);
+		free(dev);
 	}
 
 	return 0;
 
 err_unlock:
 	pthread_spin_unlock(&ecc_res.lock);
+	free(dev);
 	return ret;
 }
+
 
 static void uadk_uninit_ecc(void)
 {
@@ -646,7 +656,17 @@ void uadk_e_ecc_lock_init(void)
 int uadk_e_bind_ecc(ENGINE *e)
 {
 	US_DEBUG("uadk_e_bind_ecc start.\n");
-	int ret;
+	static const char * const ecc_alg[] = {"sm2", "ecdsa", "ecdh", "x25519", "x448"};
+	int i, size, ret;
+	bool sp;
+
+	/* Enumerate ecc algs to check whether it is supported and set tags */
+	size = ARRAY_SIZE(ecc_alg);
+	for (i = 0; i < size; i++) {
+		sp = uadk_support_algorithm(*(ecc_alg + i));
+		if (sp)
+			uadk_e_ecc_set_support_state(i, SUPPORT);
+	}
 
 	ret = uadk_ecc_bind_pmeth(e);
 	if (!ret) {
