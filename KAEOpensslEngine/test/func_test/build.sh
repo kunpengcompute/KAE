@@ -18,7 +18,12 @@ function build_googletest()
 function main()
 {
     cd ${gtest_download}
-    sh download.sh
+    if [ ! -d ${gtest_download}/googletest-release-1.11.0 ]
+    then
+        echo -e "\033[32m The googletest-release-1.11.0 directory not exists and need to be downloaded. \033[0m"
+        sh download.sh
+    fi
+
     cd ${gtest_download}/googletest-release-1.11.0
     if [ ! -f "${BUILD_PATH}/test_tool_bins/gtest/libgtest.a" ]; then
         build_googletest
