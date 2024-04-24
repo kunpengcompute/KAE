@@ -507,6 +507,12 @@ static int add_rsa_pubenc_padding(int flen, const unsigned char *from,
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
 		break;
+	case RSA_SSLV23_PADDING:
+		ret = RSA_padding_add_SSLv23(buf, num, from, flen);
+		break;
+	case RSA_NO_PADDING:
+		ret = RSA_padding_add_none(buf, num, from, flen);
+		break;
 	default:
 		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
 		ret = UADK_E_FAIL;
@@ -533,6 +539,13 @@ static int check_rsa_pridec_padding(unsigned char *to, int num,
 						   NULL, 0);
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
+		break;
+	case RSA_SSLV23_PADDING:
+		ret = RSA_padding_check_SSLv23(to, num, buf, len, num);
+		break;
+	case RSA_NO_PADDING:
+		kae_memcpy(to, buf, len);
+		ret = len;
 		break;
 	default:
 		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
@@ -927,7 +940,13 @@ static int rsa_fill_pubkey(struct rsa_pubkey_param *pubkey_param,
 
 	if (!rsa_sess->is_pubkey_ready) {
 		wd_rsa_get_pubkey(rsa_sess->sess, &pubkey);
+		if (!pubkey)
+			return UADK_E_FAIL;
+
 		wd_rsa_get_pubkey_params(pubkey, &wd_e, &wd_n);
+		if (!wd_e || !wd_n)
+			return UADK_E_FAIL;
+
 		wd_e->dsize = BN_bn2bin(pubkey_param->e,
 					(unsigned char *)wd_e->data);
 		wd_n->dsize = BN_bn2bin(pubkey_param->n,
@@ -960,8 +979,14 @@ static int rsa_fill_prikey(RSA *rsa, struct uadk_rsa_sess *rsa_sess,
 
 	if (!(rsa_sess->is_prikey_ready) && (pri->is_crt)) {
 		wd_rsa_get_prikey(rsa_sess->sess, &prikey);
+		if (!prikey)
+			return UADK_E_FAIL;
+
 		wd_rsa_get_crt_prikey_params(prikey, &wd_dq, &wd_dp,
 					     &wd_qinv, &wd_q, &wd_p);
+		if (!wd_dq || !wd_dp || !wd_qinv || !wd_q || !wd_p)
+			return UADK_E_FAIL;
+
 		wd_dq->dsize = BN_bn2bin(pri->dmq1,
 					 (unsigned char *)wd_dq->data);
 		wd_dp->dsize = BN_bn2bin(pri->dmp1,
@@ -974,7 +999,13 @@ static int rsa_fill_prikey(RSA *rsa, struct uadk_rsa_sess *rsa_sess,
 					   (unsigned char *)wd_qinv->data);
 	} else if (!(rsa_sess->is_prikey_ready) && !(pri->is_crt)) {
 		wd_rsa_get_prikey(rsa_sess->sess, &prikey);
+		if (!prikey)
+			return UADK_E_FAIL;
+
 		wd_rsa_get_prikey_params(prikey, &wd_d, &wd_n);
+		if (!wd_d || !wd_n)
+			return UADK_E_FAIL;
+
 		wd_d->dsize = BN_bn2bin(pri->d,
 					(unsigned char *)wd_d->data);
 		wd_n->dsize = BN_bn2bin(pri->n,

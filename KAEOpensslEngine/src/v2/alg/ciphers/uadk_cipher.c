@@ -65,7 +65,7 @@ struct cipher_priv_ctx {
 	void *sw_ctx_data;
 	/* Crypto small packet offload threshold */
 	size_t switch_threshold;
-	int update_iv;
+	bool update_iv;
 };
 
 struct cipher_info {
@@ -92,9 +92,6 @@ static int cipher_hw_v2_nids[] = {
 	NID_des_ede3_cbc,
 	NID_des_ede3_ecb,
 	NID_sm4_ecb,
-	NID_sm4_cfb128,
-	NID_sm4_ofb128,
-	NID_sm4_ctr,
 	0,
 };
 
@@ -326,18 +323,6 @@ static int uadk_e_cipher_soft_work(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	return 1;
 }
 
-static int sec_ciphers_is_check_valid(struct cipher_priv_ctx *priv)
-{
-	US_DEBUG("sec_ciphers_is_check_valid start\n");
-	if(priv->req.in_bytes <= priv->switch_threshold){
-		US_DEBUG("small packet cipher offload, switch to soft cipher, in_bytes %d\n", (int)priv->req.in_bytes);
-		return 0;
-	}else{
-		US_DEBUG("sec ciphers checked valid\n");
-		return 1;
-	}
-}
-
 static void uadk_e_cipher_sw_cleanup(EVP_CIPHER_CTX *ctx)
 {
 	struct cipher_priv_ctx *priv =
@@ -392,10 +377,10 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		return size;
 	}
 
-	// for (i = 0; i < size; i++) {
-	// 	if (nid == cipher_nids[i])
-	// 		break;
-	// }
+	for (i = 0; i < size; i++) {
+		if (nid == cipher_nids[i])
+			break;
+	}
 
 	switch (nid) {
 	case NID_aes_128_cbc:
@@ -501,11 +486,6 @@ static int uadk_e_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
 		break;
 	}
 
-	if(ret == 0){
-		US_DEBUG("nid = %d not support.", nid);
-	}else{
-		US_DEBUG("nid = %d support.", nid);
-	}
 	return ret;
 }
 
@@ -781,6 +761,7 @@ static int uadk_e_cipher_init(EVP_CIPHER_CTX *ctx, const unsigned char *key,
 
 	memcpy(priv->key, key, EVP_CIPHER_CTX_key_length(ctx));
 	priv->switch_threshold = SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT;
+	US_INFO("init switch_threshold=%d\n",SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT);
 
 	US_DEBUG("uadk_e_cipher_init successed \n");
 	return 1;
@@ -849,14 +830,12 @@ static void uadk_cipher_update_priv_ctx(struct cipher_priv_ctx *priv)
 	int i;
 
 	switch (priv->setup.mode) {
+	case WD_CIPHER_CFB:
 	case WD_CIPHER_CBC:
 		if (priv->req.op_type == WD_CIPHER_ENCRYPTION)
-			memcpy(priv->iv, priv->req.dst + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
+			memcpy(priv->iv, priv->req.dst + offset, iv_bytes);
 		else
-			memcpy(priv->iv, priv->req.src  + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-
+			memcpy(priv->iv, priv->req.src  + offset, iv_bytes);
 		break;
 	case WD_CIPHER_OFB:
 		for (i = 0; i < IV_LEN; i++) {
@@ -864,15 +843,6 @@ static void uadk_cipher_update_priv_ctx(struct cipher_priv_ctx *priv)
 			       *((unsigned char *)priv->req.dst + offset + i);
 		}
 		memcpy(priv->iv, K, iv_bytes);
-		break;
-	case WD_CIPHER_CFB:
-		if (priv->req.op_type == WD_CIPHER_ENCRYPTION)
-			memcpy(priv->iv, priv->req.dst + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-		else
-			memcpy(priv->iv, priv->req.src + priv->req.in_bytes - iv_bytes,
-			       iv_bytes);
-
 		break;
 	case WD_CIPHER_CTR:
 		ctr_iv_inc(priv->iv, priv->req.in_bytes >> CTR_MODE_LEN_SHIFT);
@@ -887,12 +857,15 @@ static int do_cipher_sync(struct cipher_priv_ctx *priv)
 	US_DEBUG("do_cipher_sync start\n");
 	int ret;
 
-	if (unlikely(priv->switch_flag == UADK_DO_SOFT))
+	if (unlikely(priv->switch_flag == UADK_DO_SOFT)){
+		US_DEBUG("do_cipher_sync failed,priv->switch_flag == UADK_DO_SOFT");
 		return 0;
+	}
 
-	ret = sec_ciphers_is_check_valid(priv);
-	if (!ret)
+	if (priv->switch_threshold >= priv->req.in_bytes){
+		US_DEBUG("do_cipher_sync failed,%d >= %d",priv->switch_threshold,priv->req.in_bytes);
 		return 0;
+	}
 
 	ret = wd_do_cipher_sync(priv->sess, &priv->req);
 	if (ret){
@@ -941,8 +914,10 @@ static int do_cipher_async(struct cipher_priv_ctx *priv, struct async_op *op)
 
 static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 {
+	__u32 cipher_counts = ARRAY_SIZE(cipher_info_table);	
 	struct sched_params params = {0};
-	int ret;
+	int nid, ret;
+	__u32 i;
 
 	priv->req.iv_bytes = EVP_CIPHER_CTX_iv_length(ctx);
 	priv->req.iv = priv->iv;
@@ -970,7 +945,23 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 	/* Use the default numa parameters */
 	params.numa_id = -1;
 	priv->setup.sched_param = &params;
+
 	if (!priv->sess) {
+		nid = EVP_CIPHER_CTX_nid(ctx);
+
+		for (i = 0; i < cipher_counts; i++) {
+			if (nid == cipher_info_table[i].nid) {
+				cipher_priv_ctx_setup(priv, cipher_info_table[i].alg,
+					cipher_info_table[i].mode, cipher_info_table[i].out_bytes);
+				break;
+			}
+		}
+
+		if (i == cipher_counts) {
+			fprintf(stderr, "failed to setup the private ctx.\n");
+			return;
+		}
+
 		priv->sess = wd_cipher_alloc_sess(&priv->setup);
 		if (!priv->sess)
 			fprintf(stderr, "uadk failed to alloc session!\n");
@@ -979,6 +970,7 @@ static void uadk_e_ctx_init(EVP_CIPHER_CTX *ctx, struct cipher_priv_ctx *priv)
 	ret = wd_cipher_set_key(priv->sess, priv->key, EVP_CIPHER_CTX_key_length(ctx));
 	if (ret) {
 		wd_cipher_free_sess(priv->sess);
+		priv->sess = 0;
 		fprintf(stderr, "uadk failed to set key!\n");
 	}
 }
@@ -1010,9 +1002,17 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 		if (!ret)
 			goto sync_err;
 	} else {
+		/*
+		 * If the length of the input data
+		 * does not reach to hardware computing threshold,
+		 * directly switch to soft cipher.
+		 */
+		if (priv->req.in_bytes <= priv->switch_threshold)
+			goto sync_err;
+
 		ret = do_cipher_async(priv, &op);
 		if (!ret){
-			US_ERR("do_cipher_async failed\n");
+			US_DEBUG("do_cipher_async failed\n");
 			goto out_notify;
 		}
 	}
@@ -1021,7 +1021,7 @@ static int uadk_e_do_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 	US_DEBUG("uadk_e_do_cipher successed\n");
 	return 1;
 sync_err:
-	US_ERR("do_cipher_sync failed , switch soft work");
+	US_WARN("do_cipher_sync failed , switch soft work");
 	ret = uadk_e_cipher_soft_work(ctx, out, in, inlen);
 	if (ret != 1)
 		fprintf(stderr, "do soft ciphers failed.\n");
@@ -1109,23 +1109,7 @@ static int bind_v2_cipher(void)
 	UADK_CIPHER_DESCR(sm4_ecb, 16, 16, 16, EVP_CIPH_ECB_MODE,
 			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_ecb");
-	UADK_CIPHER_DESCR(sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_ofb128");
-	UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
-	US_DEBUG("successed to bind sm4_cfb128");
-	UADK_CIPHER_DESCR(sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE,
-			  sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
-			  uadk_e_do_cipher, uadk_e_cipher_cleanup,
-			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv); 
-	US_DEBUG("successed to bind sm4_ctr");    
+			  EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);   
 	return 0;
 }
 
