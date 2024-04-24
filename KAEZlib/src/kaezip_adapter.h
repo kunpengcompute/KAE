@@ -14,18 +14,6 @@
 extern int wd_get_available_dev_num(const char* alogrithm);
 
 /**
- * UADK Zlib v2 interface from wd_zlibwrapper.h
-*/
-extern int wd_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int memLevel, int strategy,
-                const char *version, int stream_size);
-extern int wd_deflateEnd(z_streamp strm);
-extern int wd_deflateReset(z_streamp strm);
-
-extern int wd_inflateInit2_(z_streamp strm, int windowBits, const char *version, int stream_size);
-extern int wd_inflateEnd(z_streamp strm);
-extern int wd_inflateReset(z_streamp strm);
-
-/**
  * adapter interface for zlib-open
  */
 int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int memLevel, int strategy,
