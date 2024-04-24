@@ -513,17 +513,19 @@ err:
 
 int hpre_rsa_iscrt(RSA *rsa)
 {
-	int version;
-
 	if (unlikely(rsa == NULL))
 		return 0;
 
 	if (RSA_test_flags(rsa, RSA_FLAG_EXT_PKEY))
 		return 1;
 
-	version = RSA_get_version(rsa);
+#ifdef KAE_GMSSL
+    /* none */
+#else
+	int version = RSA_get_version(rsa);
 	if (version == RSA_ASN1_VERSION_MULTI)
 		return 1;
+#endif
 
 	const BIGNUM *p = NULL;
 	const BIGNUM *q = NULL;
