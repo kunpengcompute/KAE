@@ -40,7 +40,6 @@
 #define CHAR_BIT_SIZE		3
 #define DH_PARAMS_CNT		3
 #define CTX_MODE_NUM		2
-#define CTX_MODE_NUM		2
 #define UN_SET			0
 #define IS_SET			1
 #define CTX_ASYNC		1
@@ -709,7 +708,7 @@ static int dh_do_crypto(struct uadk_dh_sess *dh_sess)
 
 	ret = async_setup_async_event_notification(&op);
 	if (!ret) {
-		fprintf(stderr, "failed to setup async event notification.\n");
+		printf("failed to setup async event notification.\n");
 		return UADK_E_FAIL;
 	}
 
