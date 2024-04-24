@@ -17,7 +17,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaezip
 CC=gcc
 
 LIBNAME := libkaezip.so
-VERSION = 2.0.0
+VERSION = 2.0.2
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = libkaezip.so
 
@@ -26,7 +26,6 @@ ifndef SILENCE
 endif
 
 # Src
-SRCDIRS   := ${WORK_PATH}/
 SRCDIRS   += ${WORK_PATH}/src
 SRCDIRS   += ${WORK_PATH}/src/utils
 SRCDIRS   += ${WORK_PATH}/src/v1
@@ -38,15 +37,13 @@ SRCEXTS   := .c # C program
 INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
+INCDIR += -I ${WORK_PATH}/../uadk/include
 INCDIR += -I /usr/local/include/uadk/
 INCDIR += -I ${WORK_PATH}/../uadk
+INCDIR += -I ${WORK_PATH}/../
 INCDIR += -I ${WORK_PATH}/src/utils
 INCDIR += -I ${WORK_PATH}/src/v1
 INCDIR += -I ${WORK_PATH}/src/v2
-INCDIR += -I ${WORK_PATH}/../kae_build/head/
-INCDIR += -I ${WORK_PATH}/../kae_build/head/uadk
-INCDIR += -I ${WORK_PATH}/../kae_build/head/uadk/v1
-INCDIR += -I /usr/local/include/uadk/
 
 # Include Libs.
 LIBDIR += -L/usr/lib64
