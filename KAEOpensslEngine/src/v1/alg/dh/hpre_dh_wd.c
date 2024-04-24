@@ -315,6 +315,8 @@ static int hpre_dh_init_eng_ctx(hpre_dh_engine_ctx_t *eng_ctx, int bits, bool is
 		eng_ctx->dh_setup.cb = hpre_dh_cb;
 		eng_ctx->dh_setup.br.alloc = kae_wd_alloc_blk;
 		eng_ctx->dh_setup.br.free = kae_wd_free_blk;
+		eng_ctx->dh_setup.br.iova_map = kae_dma_map;
+		eng_ctx->dh_setup.br.iova_unmap = kae_dma_unmap;
 		eng_ctx->dh_setup.br.usr = pool;
 		eng_ctx->dh_setup.is_g2 = is_g2;
 		eng_ctx->ctx = wcrypto_create_dh_ctx(q, &eng_ctx->dh_setup);
