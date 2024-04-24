@@ -1,6 +1,15 @@
 diff -Naru zlib-1.2.11/compress.c zlib-1.2.11_new/compress.c
 --- zlib-1.2.11/compress.c	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/compress.c	2023-05-09 10:27:01.000000000 +0800
++++ zlib-1.2.11_new/compress.c	2023-06-19 17:23:32.555445560 +0800
+@@ -28,7 +28,7 @@
+ {
+     z_stream stream;
+     int err;
+-    const uInt max = (uInt)-1;
++    const uInt max = ((uInt)-1) - 3; // make sure its multiples of 4B
+     uLong left;
+ 
+     left = *destLen;
 @@ -81,6 +81,10 @@
  uLong ZEXPORT compressBound (sourceLen)
      uLong sourceLen;
@@ -15,7 +24,7 @@ diff -Naru zlib-1.2.11/compress.c zlib-1.2.11_new/compress.c
  }
 diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
 --- zlib-1.2.11/deflate.c	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/deflate.c	2023-05-09 09:59:58.000000000 +0800
++++ zlib-1.2.11_new/deflate.c	2023-06-19 17:21:03.747445560 +0800
 @@ -50,6 +50,7 @@
  /* @(#) $Id$ */
  
@@ -100,7 +109,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
  /* ========================================================================= */
  int ZEXPORT deflateSetHeader (strm, head)
      z_streamp strm;
-@@ -653,6 +694,17 @@
+@@ -653,6 +695,17 @@
      z_streamp strm;
      uLong sourceLen;
  {
@@ -118,7 +127,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
      deflate_state *s;
      uLong complen, wraplen;
  
-@@ -760,7 +812,8 @@
+@@ -760,7 +813,8 @@
      } while (0)
  
  /* ========================================================================= */
@@ -128,7 +137,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
      z_streamp strm;
      int flush;
  {
-@@ -1072,10 +1125,27 @@
+@@ -1072,10 +1126,27 @@
      return s->pending != 0 ? Z_OK : Z_STREAM_END;
  }
  
@@ -157,7 +166,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
      int status;
  
      if (deflateStateCheck(strm)) return Z_STREAM_ERROR;
-@@ -1091,9 +1161,24 @@
+@@ -1091,9 +1162,24 @@
      ZFREE(strm, strm->state);
      strm->state = Z_NULL;
  
@@ -182,7 +191,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
  /* =========================================================================
   * Copy the source state to the destination state.
   * To simplify the source, this is not supported for 16-bit MSDOS (which
-@@ -2161,3 +2246,36 @@
+@@ -2161,3 +2247,36 @@
          FLUSH_BLOCK(s, 0);
      return block_done;
  }
@@ -221,7 +230,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
 +
 diff -Naru zlib-1.2.11/deflate.h zlib-1.2.11_new/deflate.h
 --- zlib-1.2.11/deflate.h	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/deflate.h	2023-05-09 10:27:01.000000000 +0800
++++ zlib-1.2.11_new/deflate.h	2023-06-19 17:21:03.747445560 +0800
 @@ -272,7 +272,7 @@
       * longest match routines access bytes past the input.  This is then
       * updated to the new high water mark.
@@ -233,7 +242,7 @@ diff -Naru zlib-1.2.11/deflate.h zlib-1.2.11_new/deflate.h
  /* Output a byte on the stream.
 diff -Naru zlib-1.2.11/inflate.c zlib-1.2.11_new/inflate.c
 --- zlib-1.2.11/inflate.c	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/inflate.c	2023-05-09 10:14:44.000000000 +0800
++++ zlib-1.2.11_new/inflate.c	2023-06-19 17:21:03.747445560 +0800
 @@ -84,6 +84,7 @@
  #include "inftrees.h"
  #include "inflate.h"
@@ -441,7 +450,7 @@ diff -Naru zlib-1.2.11/inflate.c zlib-1.2.11_new/inflate.c
 +
 diff -Naru zlib-1.2.11/inflate.h zlib-1.2.11_new/inflate.h
 --- zlib-1.2.11/inflate.h	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/inflate.h	2023-05-09 10:27:01.000000000 +0800
++++ zlib-1.2.11_new/inflate.h	2023-06-19 17:21:03.747445560 +0800
 @@ -122,4 +122,5 @@
      int sane;                   /* if false, allow invalid distance too far */
      int back;                   /* bits back of last unprocessed length/lit */
@@ -450,14 +459,14 @@ diff -Naru zlib-1.2.11/inflate.h zlib-1.2.11_new/inflate.h
  };
 diff -Naru zlib-1.2.11/Makefile.in zlib-1.2.11_new/Makefile.in
 --- zlib-1.2.11/Makefile.in	2017-01-16 01:29:40.000000000 +0800
-+++ zlib-1.2.11_new/Makefile.in	2023-05-09 10:29:11.000000000 +0800
++++ zlib-1.2.11_new/Makefile.in	2023-06-19 17:21:03.747445560 +0800
 @@ -26,7 +26,15 @@
  
  SFLAGS=-O
  LDFLAGS=
 +
-+KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I$(KAEZLIBPATH)/include -I. -DCONF_KAEZIP
-+KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -L$(KAEBUILDPATH)/lib -L$(KAEZLIBPATH) -Wl,-rpath,/usr/local/kaezip/lib:/usr/local/lib:$(KAEBUILDPATH)/lib:$(KAEZLIBPATH) -l:libkaezip.so.2.0.0 -lwd -lwd_comp
++KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I$(KAEZLIBPATH)/include -I. -DCONF_KAEZIP -fstack-protector-strong
++KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -L$(KAEBUILDPATH)/lib -L$(KAEZLIBPATH) -lkaezip -lwd -lwd_comp -Wl,-z,relro,-z,now
 +CFLAGS+=$(KAEZIP_CFLAGS)
 +SFLAGS+=$(KAEZIP_CFLAGS)
 +LDFLAGS+=$(KAEZIP_LDFLAGS)
@@ -480,3 +489,15 @@ diff -Naru zlib-1.2.11/Makefile.in zlib-1.2.11_new/Makefile.in
  
  example64$(EXE): example64.o $(STATICLIB)
  	$(CC) $(CFLAGS) -o $@ example64.o $(TEST_LDFLAGS)
+diff -Naru zlib-1.2.11/uncompr.c zlib-1.2.11_new/uncompr.c
+--- zlib-1.2.11/uncompr.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-1.2.11_new/uncompr.c	2023-06-19 17:24:09.055445560 +0800
+@@ -32,7 +32,7 @@
+ {
+     z_stream stream;
+     int err;
+-    const uInt max = (uInt)-1;
++    const uInt max = ((uInt)-1) - 3; // make sure its multiples of 4B
+     uLong len, left;
+     Byte buf[1];    /* for detection of incomplete stream when *destLen == 0 */
+ 
