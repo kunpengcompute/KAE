@@ -14,10 +14,14 @@
  */
 #ifndef UADK_V1_H
 #define UADK_V1_H
+#include <uadk/v1/wd.h>
 #include "async/async_poll.h"
 #include "utils/engine_fork.h"
 #include "../utils/engine_log.h"
+#include "utils/engine_check.h"
 
+extern void sec_ciphers_set_enabled(int nid, int enabled);
+extern void sec_digests_set_enabled(int nid, int enabled);
 extern void sec_ciphers_free_ciphers(void);
 extern int cipher_module_init(void);
 extern int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, int nid);

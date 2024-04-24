@@ -34,6 +34,9 @@
 #define UADK_CMD_ENABLE_RSA_ENV		(ENGINE_CMD_BASE + 2)
 #define UADK_CMD_ENABLE_DH_ENV		(ENGINE_CMD_BASE + 3)
 #define UADK_CMD_ENABLE_ECC_ENV		(ENGINE_CMD_BASE + 4)
+#define KAE_CMD_ENABLE_ASYNC   (ENGINE_CMD_BASE + 5)
+#define KAE_CMD_ENABLE_SM3   (ENGINE_CMD_BASE + 6)
+#define KAE_CMD_ENABLE_SM4   (ENGINE_CMD_BASE + 7)
 
 /* Constants used when creating the ENGINE */
 const char *engine_uadk_id = "kae";
@@ -79,6 +82,26 @@ static const ENGINE_CMD_DEFN g_uadk_cmd_defns[] = {
 		"Enable or Disable dh engine environment variable.",
 		ENGINE_CMD_FLAG_NUMERIC
 	},
+#ifdef KAE
+    {
+        KAE_CMD_ENABLE_ASYNC,
+        "KAE_CMD_ENABLE_ASYNC",
+        "Enable or Disable the engine async interface.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+    {
+        KAE_CMD_ENABLE_SM3,
+        "KAE_CMD_ENABLE_SM3",
+        "Enable or Disable the SM3.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+    {
+        KAE_CMD_ENABLE_SM4,
+        "KAE_CMD_ENABLE_SM4",
+        "Enable or Disable the SM4.",
+        ENGINE_CMD_FLAG_NUMERIC
+    },
+#endif
 	{
 		UADK_CMD_ENABLE_ECC_ENV,
 		"UADK_CMD_ENABLE_ECC_ENV",
@@ -202,6 +225,54 @@ static int uadk_engine_ctrl(ENGINE *e, int cmd, long i,
 		US_DEBUG("%s ecc\n", i == 0 ? "Disable" : "Enable");
 		uadk_e_set_env_enabled("ecc", i);
 		break;
+#ifdef KAE
+    case KAE_CMD_ENABLE_ASYNC:
+        US_DEBUG("%s async polling\n", i == 0 ? "Disable" : "Enable");
+        if (i == 0) {
+            kae_disable_async();
+        } else {
+            kae_enable_async();
+        }
+        break;
+    case KAE_CMD_ENABLE_SM3:
+        US_DEBUG("%s SM3\n", i == 0 ? "Disable" : "Enable");
+        if (i == 0) {
+            sec_digests_set_enabled(NID_sm3, 0);
+        } else {
+            sec_digests_set_enabled(NID_sm3, 1);
+        }
+        break;
+    case KAE_CMD_ENABLE_SM4:
+        US_DEBUG("%s SM4\n", i == 0 ? "Disable" : "Enable");
+#ifdef KAE_GMSSL
+        if (i == 0) {
+            sec_ciphers_set_enabled(NID_sms4_ctr, 0);
+            sec_ciphers_set_enabled(NID_sms4_cbc, 0);
+            sec_ciphers_set_enabled(NID_sms4_ofb128, 0);
+            sec_ciphers_set_enabled(NID_sms4_ecb, 0);
+			sec_ciphers_set_enabled(NID_sms4_gcm, 0);
+        } else {
+            sec_ciphers_set_enabled(NID_sms4_ctr, 1);
+            sec_ciphers_set_enabled(NID_sms4_cbc, 1);
+            sec_ciphers_set_enabled(NID_sms4_ofb128, 1);
+            sec_ciphers_set_enabled(NID_sms4_ecb, 1);
+			sec_ciphers_set_enabled(NID_sms4_gcm, 1);
+        }
+#else
+        if (i == 0) {
+            sec_ciphers_set_enabled(NID_sm4_ctr, 0);
+            sec_ciphers_set_enabled(NID_sm4_cbc, 0);
+            sec_ciphers_set_enabled(NID_sm4_ofb128, 0);
+            sec_ciphers_set_enabled(NID_sm4_ecb, 0);
+        } else {
+            sec_ciphers_set_enabled(NID_sm4_ctr, 1);
+            sec_ciphers_set_enabled(NID_sm4_cbc, 1);
+            sec_ciphers_set_enabled(NID_sm4_ofb128, 1);
+            sec_ciphers_set_enabled(NID_sm4_ecb, 1);
+        }
+#endif
+        break;
+#endif
 	default:
 		US_WARN("CTRL command not implemented\n");
 		return 0;
@@ -223,7 +294,7 @@ static int uadk_destroy(ENGINE *e)
 		hpre_dh_destroy();
 #endif
 	kae_debug_close_log();
-
+#ifndef KAE_GMSSL //gmssl仅在920支持
 	if (uadk_cipher)
 		uadk_e_destroy_cipher();
 	if (uadk_digest)
@@ -234,7 +305,7 @@ static int uadk_destroy(ENGINE *e)
 		uadk_e_destroy_ecc();
 	if (uadk_dh)
 		uadk_e_destroy_dh();
-
+#endif
 	pthread_mutex_lock(&uadk_engine_mutex);
 	uadk_inited = 0;
 	pthread_mutex_unlock(&uadk_engine_mutex);
@@ -244,6 +315,9 @@ static int uadk_destroy(ENGINE *e)
 
 static int uadk_init(ENGINE *e)
 {
+#ifdef KAE_GMSSL
+    return 1;
+#else
 	int ret;
 
 	pthread_mutex_lock(&uadk_engine_mutex);
@@ -276,6 +350,7 @@ static int uadk_init(ENGINE *e)
 	pthread_mutex_unlock(&uadk_engine_mutex);
 
 	return 1;
+#endif
 }
 
 static int uadk_finish(ENGINE *e)
@@ -353,6 +428,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 }
 #endif
 
+#ifndef KAE_GMSSL //gmssl仅在920支持
 static void bind_fn_uadk_alg(ENGINE *e)
 {
 	US_DEBUG("start bind_fn_uadk_alg (bind v2 algs)");
@@ -424,7 +500,7 @@ static void bind_fn_uadk_alg(ENGINE *e)
 		US_DEBUG("ecdsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 }
-
+#endif
 /*
  * Connect uadk_engine to OpenSSL engine library.
  */
@@ -441,6 +517,7 @@ static int bind_fn(ENGINE *e, const char *id)
 		return 0;
 	}
 
+
 	kae_debug_init_log();
 #ifdef KAE
 	bind_fn_kae_alg(e);
@@ -452,12 +529,15 @@ static int bind_fn(ENGINE *e, const char *id)
 		US_INFO("enable nosva");
 	}
 #endif
+
+#ifndef KAE_GMSSL //gmssl仅在920支持
 	bind_fn_uadk_alg(e);
 
 	if (uadk_cipher || uadk_digest || uadk_rsa || uadk_dh || uadk_ecc) {
 		pthread_atfork(NULL, NULL, engine_init_child_at_fork_handler);
 		US_INFO("enable sva");
 	}
+#endif
 
 	ret = ENGINE_set_ctrl_function(e, uadk_engine_ctrl);
 	if (ret != 1) {
