@@ -1,12 +1,12 @@
 /*
  * Copyright (C) 2019. Huawei Technologies Co., Ltd. All rights reserved.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the zlib License. 
+ * it under the terms of the zlib License.
  * You may obtain a copy of the License at
- * 
+ *
  *     https://www.zlib.net/zlib_license.html
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -119,6 +119,8 @@ const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const vo
         }
         US_DEBUG("gzip header append_info_sz is %u\n", append_info_sz);
         return 10U + append_info_sz;
+    } else if (comp_alg_type == WCRYPTO_RAW_DEFLATE) {
+        return 0U;
     }
     US_WARN("not support alg comp type!");
     return 0U;
@@ -157,6 +159,8 @@ const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
         return zlib_head[4 * w + v];
     } else if (alg_comp_type == WCRYPTO_GZIP) {
         return gzip_head;
+    } else if (alg_comp_type == WCRYPTO_RAW_DEFLATE) {
+        return NULL;
     }
     US_WARN("not support alg comp type!");
     return NULL;
@@ -184,8 +188,8 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
     if (alg_type == WCRYPTO_ZLIB) {
         checksum = (uint32_t)__cpu_to_be32(checksum);
         KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block), &checksum, sizeof(checksum));
-    } 
-    
+    }
+
     if (alg_type == WCRYPTO_GZIP) {
         checksum = ~checksum;
         checksum = __kaezip_checksum_reverse(checksum);
@@ -199,13 +203,13 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
 
 void kaezip_set_fmt_tail(kaezip_ctx_t *kaezip_ctx)
 {
-    if (kaezip_ctx->status == KAEZIP_COMP_END) {
+    if (kaezip_ctx->status == KAEZIP_COMP_END || kaezip_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE) {
         return;
     }
 
-    if (kaezip_ctx->end_block.b_set == 0) {           
+    if (kaezip_ctx->end_block.b_set == 0) {
         kaezip_append_fmt_tail(kaezip_ctx);
-    } 
+    }
 
     int data_begin = kaezip_ctx->end_block.data_len - kaezip_ctx->end_block.remain;
     if (kaezip_ctx->end_block.remain <= kaezip_ctx->avail_out) {

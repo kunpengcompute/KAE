@@ -12,10 +12,10 @@
 #define HIDDEN_API  __attribute__((visibility("hidden")))
 #define CONSTRUCTOR __attribute__((constructor))
 typedef enum ARCH_TYPE {
-    CPU_HISILICOM_TSV110 = 0, /* support nosva */
-    CPU_HISILICOM_920B, /* support nosva and sva */
-    CPU_HISILICOM_920C, /* for the future */
-    CPU_HISILICOM_920F, /* for the future */
+    CPU_HISILICOM_V1 = 0, /* support nosva */
+    CPU_HISILICOM_V2, /* support nosva and sva */
+    CPU_HISILICOM_V3, /* for the future */
+    CPU_HISILICOM_V4, /* for the future */
     CPU_UNKNOW,
 } ARCH_TYPE;
 static int g_kaezstdInitialized = 0;
@@ -50,13 +50,13 @@ static ARCH_TYPE KaeZstdDetect(void)
     unsigned long long vendor = (cpuId >> 0x18) & 0xFF;
     unsigned long long partId = (cpuId >> 0x4) & 0xFFF;
     if ((vendor == 0x48) && (partId == 0xD01)) {
-        return CPU_HISILICOM_TSV110;
+        return CPU_HISILICOM_V1;
     } else if ((vendor == 0x48) && (partId == 0xD02)) {
-        return CPU_HISILICOM_920B;
+        return CPU_HISILICOM_V2;
     } else if ((vendor == 0x48) && (partId == 0xD03)) {
-        return CPU_HISILICOM_920C;
+        return CPU_HISILICOM_V3;
     } else if (partId == 0xD22) {
-        return CPU_HISILICOM_920F;
+        return CPU_HISILICOM_V4;
     }
     return CPU_UNKNOW;
 }
@@ -67,8 +67,8 @@ HIDDEN_API void CONSTRUCTOR KaeZstdInit(void)
         return;
     }
 
-    if (KaeZstdDetect() != CPU_HISILICOM_920B) {
-        fprintf(stderr, "KAEzstd only support in KP920B, please check CPU ID.\n");
+    if (KaeZstdDetect() != CPU_HISILICOM_V2) {
+        fprintf(stderr, "KAEzstd only support in V2, please check CPU ID.\n");
         abort();
     }
     g_kaezstdInitialized = 1;
