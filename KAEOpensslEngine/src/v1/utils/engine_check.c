@@ -25,8 +25,10 @@
 #include <pthread.h>
 
 #include "../alg/ciphers/sec_ciphers_wd.h"
+#include "../alg/ciphers/sec_ciphers_aead.h"
 #include "../alg/digests/sec_digests_wd.h"
 #include "../alg/pkey/hpre_wd.h"
+#include "../alg/pkey/hpre_sm2.h"
 #include "../alg/dh/hpre_dh_wd.h"
 #include "engine_check.h"
 #include "../../utils/engine_utils.h"
@@ -80,8 +82,10 @@ static void *kae_checking_q_loop_fn(void *args)
 			break; // double check
 
 		kae_queue_pool_check_and_release(wd_ciphers_get_qnode_pool(), wd_ciphers_free_engine_ctx);
+		kae_queue_pool_check_and_release(wd_aead_get_qnode_pool(), wd_aead_free_engine_ctx);
 		kae_queue_pool_check_and_release(wd_digests_get_qnode_pool(), wd_digests_free_engine_ctx);
 		kae_queue_pool_check_and_release(wd_hpre_get_qnode_pool(), NULL);
+		kae_queue_pool_check_and_release(wd_hpre_sm2_get_qnode_pool(), NULL);
 		kae_queue_pool_check_and_release(wd_hpre_dh_get_qnode_pool(), NULL);
 	}
 	US_INFO("check thread exit normally.");
@@ -98,6 +102,8 @@ static void kae_checking_q_thread_destroy(void)
 	(void)wd_ciphers_uninit_qnode_pool();
 	(void)wd_hpre_dh_uninit_qnode_pool();
 	(void)wd_hpre_uninit_qnode_pool();
+	(void)wd_sm2_uninit_qnode_pool();
+	(void)wd_aead_uninit_qnode_pool();
 }
 
 static void kae_check_thread_init(void)

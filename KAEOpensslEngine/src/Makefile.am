@@ -34,6 +34,7 @@ kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/alg/ciphers/sec_ciphers_soft.c \
 		 v1/alg/ciphers/sec_ciphers_utils.c \
 		 v1/alg/ciphers/sec_ciphers_wd.c \
+		 v1/alg/ciphers/sec_ciphers_aead.c\
 		 v1/alg/dh/hpre_dh.c \
 		 v1/alg/dh/hpre_dh_soft.c \
 		 v1/alg/dh/hpre_dh_wd.c \

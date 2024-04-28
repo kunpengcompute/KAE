@@ -49,8 +49,10 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib/uadk
     chrpath -d %{kae_path}/kae_build/uadk/lib/*
-    cp -rf %{kae_path}/kae_build/uadk/lib/*               ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/*              ${RPM_BUILD_ROOT}/usr/local/
+    cp -rf %{kae_path}/kae_build/uadk/                   ${RPM_BUILD_ROOT}/usr/local/lib/uadk/
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
     install -b -m755 %{kae_path}/kae_build/uadk/include/*.h                        ${RPM_BUILD_ROOT}/usr/include/uadk
