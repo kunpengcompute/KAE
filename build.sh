@@ -142,6 +142,14 @@ function build_driver()
         # make install
 }
 
+function build_driver_sva()
+{
+        cd ${KAE_KERNEL_DIR}
+        make -j
+        # make nosva #默认使用nosva模式
+        make install
+}
+
 function driver_clean()
 {
         cd ${KAE_KERNEL_DIR}
@@ -307,6 +315,8 @@ function main()
             echo "build driver"
             if [ "$2" = "clean" ];then
                 driver_clean
+            elif [ "$2" = "sva" ];then
+                build_driver_sva
             else
                 build_driver
             fi

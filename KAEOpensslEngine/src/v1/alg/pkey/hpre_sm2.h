@@ -20,6 +20,9 @@
 #define HPRE_SM2_H
 
 #include "uadk/v1/wd_ecc.h"
+#include "../../wdmngr/wd_queue_memory.h"
+
+extern KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
 
 #define HPRE_SM2_RETURN_FAIL_IF(cond, mesg, ret) \
 	do { \
@@ -91,17 +94,6 @@ typedef struct hpre_sm2_ciphertext {
 	ASN1_OCTET_STRING *C2;
 } HPRE_SM2_Ciphertext;
 
-DECLARE_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
-
-ASN1_SEQUENCE(HPRE_SM2_Ciphertext) = {
-	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C1x, BIGNUM),
-	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C1y, BIGNUM),
-	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C3, ASN1_OCTET_STRING),
-	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C2, ASN1_OCTET_STRING),
-} ASN1_SEQUENCE_END(HPRE_SM2_Ciphertext)
-
-IMPLEMENT_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
-
 struct hpre_sm2_param {
 	/*
 	 * p: BIGNUM with the prime number (GFp) or the polynomial
@@ -161,7 +153,9 @@ struct hpre_sm2_engine_ctx {
 
 int hpre_get_sm2_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth, const int **nids, int nid);
 int hpre_module_sm2_init(void);
+void wd_sm2_uninit_qnode_pool(void);
 void hpre_sm2_set_enabled(int nid, int enabled);
+KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void);
 
 #endif
 
