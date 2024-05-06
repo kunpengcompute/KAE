@@ -360,6 +360,56 @@ again:
 	return KAE_SUCCESS;
 }
 
+// 当前支持同步，异步之后再说,只输出
+int wd_aead_do_crypto_impl_async(struct aead_priv_ctx *priv, op_done_t *op_done)
+{
+	int ret = -WD_EINVAL;
+	int cnt = 0;
+	enum task_type type = ASYNC_TASK_AEAD;
+	
+	if (unlikely(priv == NULL) || unlikely(priv->e_aead_ctx == NULL)) {
+		US_ERR("do cipher priv or e_aead_ctx NULL!");
+		return KAE_FAIL;
+	}
+
+	aead_engine_ctx_t *e_aead_ctx = priv->e_aead_ctx;
+
+	// 输入参数
+	e_aead_ctx->op_data.in_bytes = priv->aad_len + priv->data_len + priv->mac_len;
+	e_aead_ctx->op_data.out_buf_bytes = OUTPUT_CACHE_SIZE;
+	e_aead_ctx->op_data.iv_bytes = priv->iv_len;
+
+	/////////////////////////////
+	do {
+		if (cnt > MAX_SEND_TRY_CNTS)
+			break;
+
+		ret = wcrypto_do_aead(e_aead_ctx->wd_ctx, &e_aead_ctx->op_data, e_aead_ctx);
+		if (ret == -WD_EBUSY) {
+			if ((async_wake_job_v1(op_done->job, ASYNC_STATUS_EAGAIN) == 0 ||
+						async_pause_job_v1(op_done->job, ASYNC_STATUS_EAGAIN) == 0)) {
+				US_ERR("sec wake job or sec pause job fail!\n");
+				ret = 0;
+				break;
+			}
+			cnt++;
+		}
+	} while (ret == -WD_EBUSY);
+
+	if (ret != WD_SUCCESS) {
+		US_ERR("sec async wcryto do cipher failed");
+		return KAE_FAIL;
+	}
+
+	if (async_add_poll_task_v1(e_aead_ctx, op_done, type) == 0) {
+		US_ERR("sec add task failed ");
+		return KAE_FAIL;
+	}
+
+	return KAE_SUCCESS;
+
+}
+
 // 获取add头信息，将assoc data复制到buf
 static int sec_aes_do_aes_gcm_first(struct aead_priv_ctx *priv, unsigned char *out,
 				   const unsigned char *in, size_t inlen)
@@ -376,32 +426,11 @@ static int sec_aes_do_aes_gcm_first(struct aead_priv_ctx *priv, unsigned char *o
 	return 1;
 }
 
-static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
-				    unsigned char *out, const unsigned char *in, size_t inlen)
+static int do_aes_aead(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
+				    unsigned char *out, const unsigned char *in, size_t inlen, op_done_t *op_done)
 {
 	unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
-	// struct async_op *op;
 	int enc;
-
-	// if (ASYNC_get_current_job()) {
-	// 	op = malloc(sizeof(struct async_op));
-	// 	if (unlikely(!op))
-	// 		return RET_FAIL;
-
-	// 	ret = async_setup_async_event_notification(op);
-	// 	if (unlikely(!ret)) {
-	// 		fprintf(stderr, "failed to setup async event notification.\n");
-	// 		free(op);
-	// 		return RET_FAIL;
-	// 	}
-
-	// 	ret = do_aead_async(priv, op, out, in, inlen);
-	// 	if (unlikely(!ret))
-	// 		goto out;
-
-	// 	free(op);
-	// 	return inlen;
-	// }
 
 	// 得预处理，把输出的数据按uadk要求准备
 	memcpy(priv->data_buf + priv->aad_len, in, inlen);
@@ -416,7 +445,14 @@ static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *
 	}
 
 	//给硬件计算数据
-	wd_aead_do_crypto_impl(priv);
+	if (op_done) {
+		// async
+		wd_aead_do_crypto_impl_async(priv, op_done);
+	} else {
+		// sync
+		wd_aead_do_crypto_impl(priv);
+	}
+	
 
 	//处理硬件数据结果，输出cipher
 	memcpy(out, priv->out_data_buf + priv->aad_len, inlen);
@@ -428,11 +464,56 @@ static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *
 	}
 
 	return inlen; // 成功就返回out数据长度
+}
 
-// out:
-// 	(void)async_clear_async_event_notification();
-// 	free(op);
-// 	return RET_FAIL;
+static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
+				    unsigned char *out, const unsigned char *in, size_t inlen)
+{
+	// add async parm
+	int job_ret;
+	op_done_t op_done;
+
+	// async
+	async_init_op_done_v1(&op_done);
+
+	if (op_done.job != NULL && kae_is_async_enabled()) {
+		if (async_setup_async_event_notification_v1(0) == 0) {
+			US_ERR("sec async event notifying failed");
+			async_cleanup_op_done_v1(&op_done);
+			return KAE_FAIL;
+		}
+	} else {
+		US_DEBUG("NO ASYNC Job or async disable, back to SYNC!");
+		async_cleanup_op_done_v1(&op_done);
+		return do_aes_aead(ctx, priv, out, in, inlen, NULL); //同步模式
+	}
+
+	// 异步模式
+	if (do_aes_aead(ctx, priv, out, in, inlen, &op_done) == KAE_FAIL) ////////////////////////
+		goto err;
+	
+	do {
+		job_ret = async_pause_job_v1(op_done.job, ASYNC_STATUS_OK);
+		if ((job_ret == 0)) {
+			US_DEBUG("- pthread_yidle -");
+			kae_pthread_yield();
+		}
+	} while (!op_done.flag || ASYNC_CHK_JOB_RESUMED_UNEXPECTEDLY(job_ret));
+
+	if (op_done.verifyRst < 0) {
+		US_ERR("verify result failed with %d", op_done.verifyRst);
+		async_cleanup_op_done_v1(&op_done);
+		return KAE_FAIL;
+	}
+
+	async_cleanup_op_done_v1(&op_done);
+
+	US_DEBUG(" Cipher Async Job Finish! priv_ctx = %p\n", priv);
+	return 1;
+err:
+	US_ERR("async job err");
+	(void)async_clear_async_event_notification_v1();
+	async_cleanup_op_done_v1(&op_done);
 }
 
 static int sec_aes_do_aes_gcm_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
@@ -610,7 +691,7 @@ int sec_aead_engine_ctx_poll(void *engnine_ctx)
 	struct wd_queue *q = eng_ctx->q_node->kae_wd_queue;
 
 POLL_AGAIN:
-	ret = wcrypto_cipher_poll(q, 1);
+	ret = wcrypto_aead_poll(q, 1);
 	if (!ret) {
 		goto POLL_AGAIN;
 	} else if (ret < 0) {
