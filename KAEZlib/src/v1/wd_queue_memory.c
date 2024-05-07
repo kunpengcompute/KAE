@@ -1,12 +1,12 @@
 /*
  * Copyright (C) 2019. Huawei Technologies Co., Ltd. All rights reserved.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the zlib License. 
+ * it under the terms of the zlib License.
  * You may obtain a copy of the License at
- * 
+ *
  *     https://www.zlib.net/zlib_license.html
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -45,6 +45,9 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype)
             break;
         case WCRYPTO_GZIP:
             queue->capa.alg = "gzip";
+            break;
+        case WCRYPTO_RAW_DEFLATE:
+            queue->capa.alg = "deflate";
             break;
         default:
             kae_free(queue);
@@ -157,7 +160,7 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
     int i = 0;
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
-    
+
     if ((pool_head->pool_use_num == 0) && (pool_head->next == NULL)) {
         return queue_data_node;
     }
@@ -172,13 +175,13 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
                 if (temp_pool->kae_queue_pool[i].node_data == NULL) {
                     KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
                     continue;
-                } 
+                }
 
                 if (temp_pool->kae_queue_pool[i].node_data->comp_alg_type != type) {
                     KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
                     continue;
-                } 
-                             
+                }
+
                 queue_data_node = temp_pool->kae_queue_pool[i].node_data;
                 temp_pool->kae_queue_pool[i].node_data = NULL;
                 KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
@@ -190,7 +193,7 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
         /* next pool */
         temp_pool = temp_pool->next;
     }
-    
+
     return queue_data_node;
 }
 
@@ -210,7 +213,7 @@ static void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_r
             kaezip_wd_free_queue(queue_node->kae_wd_queue);
             queue_node->kae_wd_queue = NULL;
         }
-        
+
         kae_free(queue_node);
         queue_node = NULL;
     }
@@ -221,29 +224,29 @@ static void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_r
 static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
-    
+
     queue_node = (KAE_QUEUE_DATA_NODE_S *)kae_malloc(sizeof(KAE_QUEUE_DATA_NODE_S));
     if (queue_node == NULL) {
         US_ERR("malloc failed");
         return NULL;
     }
     memset(queue_node, 0, sizeof(KAE_QUEUE_DATA_NODE_S));
-    
+
     queue_node->kae_wd_queue = kaezip_wd_new_queue(comp_alg_type, comp_type);
     if (queue_node->kae_wd_queue == NULL) {
         US_ERR("new wd queue fail");
         goto err;
     }
-    
+
     queue_node->kae_queue_mem_pool = kaezip_create_alg_wd_queue_mempool(queue_node->kae_wd_queue);
     if (queue_node->kae_queue_mem_pool == NULL) {
         US_ERR("request mempool fail!");
         goto err;
     }
-    
+
     queue_node->comp_alg_type = comp_alg_type;
     return queue_node;
-    
+
 err:
     kaezip_free_wd_queue_memory(queue_node, NULL);
     return NULL;
@@ -280,7 +283,7 @@ int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NO
     int i = 0;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
     KAE_QUEUE_POOL_HEAD_S *last_pool = NULL;
-    
+
     if (node_data == NULL || pool_head == NULL) {
         return 0;
     }
@@ -290,7 +293,7 @@ int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NO
             if (temp_pool->kae_queue_pool[i].node_data) {
                 continue;
             }
-    
+
             if (KAE_SPIN_TRYLOCK(temp_pool->kae_queue_pool[i].spinlock)) {
                 if (temp_pool->kae_queue_pool[i].node_data) {
                     KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
@@ -302,7 +305,7 @@ int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NO
                     if (i >= temp_pool->pool_use_num) {
                         kaezip_set_pool_use_num(temp_pool, i + 1);
                     }
-    
+
                     US_DEBUG("kaezip put queue node to pool, queue node id is %d.", i);
                     return 1;
                 }
@@ -324,7 +327,7 @@ int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NO
             (void)pthread_mutex_unlock(&last_pool->destroy_mutex);
         }
     }
-    /* if not added,free it */    
+    /* if not added,free it */
     kaezip_free_wd_queue_memory(node_data, kaezip_free_ctx);
     return 0;
 }
@@ -431,11 +434,11 @@ void kaezip_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_r
                 }
             }
         }
-        
+
         (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
         cur_pool = cur_pool->next;
     }
-    
+
     return;
 }
 

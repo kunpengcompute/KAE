@@ -1,12 +1,12 @@
 /*
  * Copyright (C) 2019. Huawei Technologies Co., Ltd. All rights reserved.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the zlib License. 
+ * it under the terms of the zlib License.
  * You may obtain a copy of the License at
- * 
+ *
  *     https://www.zlib.net/zlib_license.html
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -60,8 +60,8 @@ struct kaezip_async_sleep_info {
 
 struct kaezip_ctx {
     void            *in;
-    unsigned int    in_len;             
-    void            *out;            
+    unsigned int    in_len;
+    void            *out;
     unsigned int     avail_out;
     unsigned int     consumed;
     unsigned int     produced;
@@ -83,7 +83,7 @@ struct kaezip_ctx {
 };
 typedef struct kaezip_ctx   kaezip_ctx_t;
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype);
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int level);
 void          kaezip_put_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_init_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_free_ctx(void* kz_ctx);

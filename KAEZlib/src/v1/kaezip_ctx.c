@@ -1,12 +1,12 @@
 /*
  * Copyright (C) 2019. Huawei Technologies Co., Ltd. All rights reserved.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the zlib License. 
+ * it under the terms of the zlib License.
  * You may obtain a copy of the License at
- * 
+ *
  *     https://www.zlib.net/zlib_license.html
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -31,7 +31,7 @@ static pthread_mutex_t g_kaezip_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALI
 static pthread_mutex_t g_kaezip_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
-static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
+static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, int level);
 static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
 static int kaezip_driver_do_comp_impl(kaezip_ctx_t *kz_ctx);
 static void kaezip_set_input_data(kaezip_ctx_t *kz_ctx);
@@ -45,12 +45,12 @@ void kaezip_free_ctx(void* kz_ctx)
     }
 
     if (kaezip_ctx->op_data.in && kaezip_ctx->setup.br.usr) {
-        kaezip_ctx->setup.br.free(kaezip_ctx->setup.br.usr, (void *)kaezip_ctx->op_data.in); 
+        kaezip_ctx->setup.br.free(kaezip_ctx->setup.br.usr, (void *)kaezip_ctx->op_data.in);
         kaezip_ctx->op_data.in = NULL;
     }
-    
+
     if (kaezip_ctx->op_data.out && kaezip_ctx->setup.br.usr) {
-        kaezip_ctx->setup.br.free(kaezip_ctx->setup.br.usr, (void *)kaezip_ctx->op_data.out); 
+        kaezip_ctx->setup.br.free(kaezip_ctx->setup.br.usr, (void *)kaezip_ctx->op_data.out);
         kaezip_ctx->op_data.out = NULL;
     }
 
@@ -64,7 +64,7 @@ void kaezip_free_ctx(void* kz_ctx)
     return;
 }
 
-static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype)
+static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, int level)
 {
     kaezip_ctx_t *kz_ctx = NULL;
     kz_ctx = (kaezip_ctx_t *)kae_malloc(sizeof(kaezip_ctx_t));
@@ -80,20 +80,24 @@ static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
     kz_ctx->setup.br.iova_unmap = kaezip_dma_unmap;
     kz_ctx->setup.br.usr = q_node->kae_queue_mem_pool;
 
-    kz_ctx->op_data.in = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE); 
+    int windowsize, alg;
+    (void)kz_zlib_analy_alg(-15, &alg, &windowsize, level);
+    kz_ctx->setup.win_size = windowsize;
+
+    kz_ctx->op_data.in = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE);
     if (kz_ctx->op_data.in == NULL) {
         US_ERR("alloc opdata in buf failed");
         goto err;
     }
 
-    kz_ctx->op_data.out = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE); 
+    kz_ctx->op_data.out = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE);
     if (kz_ctx->op_data.out == NULL) {
         US_ERR("alloc opdata out buf failed");
         goto err;
     }
-    
-    kz_ctx->q_node = q_node;          
-    q_node->priv_ctx = kz_ctx; 
+
+    kz_ctx->q_node = q_node;
+    q_node->priv_ctx = kz_ctx;
 
     if (kaezip_create_wd_ctx(kz_ctx, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
         US_ERR("create wd ctx fail!");
@@ -101,9 +105,9 @@ static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
     }
 
     return kz_ctx;
-    
+
 err:
-    kaezip_free_ctx(kz_ctx);  
+    kaezip_free_ctx(kz_ctx);
 
     return NULL;
 }
@@ -147,7 +151,7 @@ static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int com
     return KAEZIP_SUCCESS;
 }
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype)
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int level)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaezip_ctx_t               *kz_ctx = NULL;
@@ -168,7 +172,7 @@ kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype)
 
     kz_ctx = (kaezip_ctx_t *)q_node->priv_ctx;
     if (kz_ctx == NULL) {
-        kz_ctx = kaezip_new_ctx(q_node, alg_comp_type, comp_optype);
+        kz_ctx = kaezip_new_ctx(q_node, alg_comp_type, comp_optype, level);
         if (kz_ctx == NULL) {
             US_ERR("kaezip new engine ctx fail!");
             (void)kaezip_put_node_to_pool(qp, q_node);
@@ -190,7 +194,7 @@ void  kaezip_init_ctx(kaezip_ctx_t* kz_ctx)
     }
 
     kz_ctx->in           = NULL;
-    kz_ctx->in_len       = 0;   
+    kz_ctx->in_len       = 0;
     kz_ctx->out          = NULL;
     kz_ctx->avail_out    = 0;
     kz_ctx->consumed     = 0;
@@ -200,7 +204,7 @@ void  kaezip_init_ctx(kaezip_ctx_t* kz_ctx)
     kz_ctx->header_pos   = 0;
     kz_ctx->flush        = 0;
     kz_ctx->status       = 0;
-    
+
     memset(&kz_ctx->end_block, 0, sizeof(struct wcrypto_end_block));
 }
 
@@ -303,7 +307,7 @@ int kaezip_driver_do_comp(kaezip_ctx_t *kaezip_ctx)
     }
 
     if (kaezip_ctx->in_len == 0) {
-        US_DEBUG("kaezip do comp impl success, for input len zero, comp type : %s", 
+        US_DEBUG("kaezip do comp impl success, for input len zero, comp type : %s",
             kaezip_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
         return KAEZIP_SUCCESS;
     }
@@ -313,11 +317,11 @@ int kaezip_driver_do_comp(kaezip_ctx_t *kaezip_ctx)
     } else {
         kaezip_ctx->do_comp_len = kaezip_ctx->in_len;
     }
-    
+
     kaezip_set_input_data(kaezip_ctx);
     int ret = kaezip_driver_do_comp_impl(kaezip_ctx);
     if (ret != KAEZIP_SUCCESS) {
-        US_DEBUG("kaezip do comp impl success, comp type : %s", 
+        US_DEBUG("kaezip do comp impl success, comp type : %s",
             kaezip_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
         return ret;
     }
@@ -353,7 +357,7 @@ static void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
                 break;
             case WD_VERIFY_ERR:
                 kz_ctx->status = KAEZIP_DECOMP_VERIFY_ERR;
-                break;   
+                break;
             default:
                 kz_ctx->status = KAEZIP_DECOMP_DOING;
                 break;
@@ -379,7 +383,7 @@ static void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
                 break;
             case WD_VERIFY_ERR:
                 kz_ctx->status = KAEZIP_COMP_VERIFY_ERR;
-                break;   
+                break;
             default:
                 kz_ctx->status = KAEZIP_COMP_DOING;
                 break;
@@ -501,9 +505,9 @@ static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype)
         kaezip_queue_pool_destroy(g_kaezip_inflate_qp, kaezip_free_ctx);
         g_kaezip_inflate_qp = kaezip_init_queue_pool(algtype);
         pthread_mutex_unlock(&g_kaezip_inflate_pool_init_mutex);
-        
+
         return g_kaezip_inflate_qp == NULL ? NULL : g_kaezip_inflate_qp;
     }
-    
+
     return NULL;
 }
