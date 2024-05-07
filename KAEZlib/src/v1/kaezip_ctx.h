@@ -43,6 +43,11 @@ enum kaezip_decomp_status {
     KAEZIP_DECOMP_VERIFY_ERR,
 };
 
+enum kaezip_mode {
+    KAEZIP_SYNC = 0,
+    KAEZIP_ASYNC,
+};
+
 struct wcrypto_end_block {
     char             buffer[32];
     unsigned int     data_len;
@@ -59,13 +64,13 @@ struct kaezip_async_sleep_info {
 };
 
 struct kaezip_ctx {
-    void            *in;
-    unsigned int    in_len;
-    void            *out;
+    void*            in;
+    unsigned int     in_len;
+    void*            out;
     unsigned int     avail_out;
     unsigned int     consumed;
     unsigned int     produced;
-    unsigned int     remain;        //data produced by warpdrive but haven't been take away for not enough avail out buf
+    unsigned int     remain;        // data produced by warpdrive but haven't been take away for not enough avail out buf
 
     const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos

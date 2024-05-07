@@ -29,6 +29,7 @@ static KAE_QUEUE_POOL_HEAD_S* g_kaezip_deflate_qp = NULL;
 static KAE_QUEUE_POOL_HEAD_S* g_kaezip_inflate_qp = NULL;
 static pthread_mutex_t g_kaezip_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_kaezip_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static enum kaezip_mode g_kaezip_mode = KAEZIP_SYNC;
 
 static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
 static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, int level);
@@ -36,6 +37,19 @@ static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int com
 static int kaezip_driver_do_comp_impl(kaezip_ctx_t *kz_ctx);
 static void kaezip_set_input_data(kaezip_ctx_t *kz_ctx);
 static void kaezip_get_output_data(kaezip_ctx_t *kz_ctx);
+
+static void __attribute((constructor)) kaezip_getmode_from_env(void)
+{
+    char* kz_env_mode = getenv("KAEZIP_MODE");
+    if (!kz_env_mode) {
+        return;
+    }
+    if (strcasecmp(kz_env_mode, "SYNC") == 0) {
+	g_kaezip_mode = KAEZIP_SYNC;
+    } else if (strcasecmp(kz_env_mode, "ASYNC") == 0) {
+        g_kaezip_mode = KAEZIP_ASYNC;
+    }
+}
 
 void kaezip_free_ctx(void* kz_ctx)
 {
@@ -137,7 +151,7 @@ static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int com
     kz_ctx->setup.alg_type  = (enum wcrypto_comp_alg_type)alg_comp_type;
     kz_ctx->setup.op_type = (enum wcrypto_comp_optype)comp_optype;
     kz_ctx->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATEFUL;
-    kz_ctx->setup.cb = kaezip_callback;
+    kz_ctx->setup.cb = (g_kaezip_mode == KAEZIP_ASYNC ? kaezip_callback : NULL);
 
     kz_ctx->wd_ctx = wcrypto_create_comp_ctx(q, &kz_ctx->setup);
     if (kz_ctx->wd_ctx == NULL) {
@@ -251,45 +265,47 @@ static int kaezip_driver_do_comp_impl(kaezip_ctx_t* kz_ctx)
 
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
 
-    int ret = wcrypto_do_comp(kz_ctx->wd_ctx, op_data, op_data);
+    int ret = wcrypto_do_comp(kz_ctx->wd_ctx, op_data, g_kaezip_mode == KAEZIP_ASYNC ? op_data : NULL);
     if (unlikely(ret < 0)) {
         US_ERR("wd_do_comp fail! ret = %d", ret);
         return KAEZIP_FAILED;
     }
 
-    static double rate = 0.0;
-    static struct kaezip_async_sleep_info sleep_info = {{0, 0}, {0}, 0};
-    sleep_info.ns_sleep.tv_nsec = (op_data->in_len) / 1024.0 * rate;
-    nanosleep(&sleep_info.ns_sleep, NULL);
+    if (g_kaezip_mode == KAEZIP_ASYNC) {
+        static double rate = 0.0;
+        static struct kaezip_async_sleep_info sleep_info = {{0, 0}, {0}, 0};
+        sleep_info.ns_sleep.tv_nsec = (op_data->in_len) / 1024.0 * rate;
+        nanosleep(&sleep_info.ns_sleep, NULL);
 
-    struct wd_queue *q = kz_ctx->q_node->kae_wd_queue;
-    int loop_times = 0;
+        struct wd_queue *q = kz_ctx->q_node->kae_wd_queue;
+        int loop_times = 0;
 
-    do {
-        ret = wcrypto_comp_poll(q, 1);
-        if (ret < 0) {
-            US_ERR("poll fail! ret = %d", ret);
-            return KAEZIP_FAILED;
-        } else if (ret > 0) {
-            break;
-        }
-    } while (++loop_times < KAE_ASYNC_MAX_RECV_TIMES);
+        do {
+            ret = wcrypto_comp_poll(q, 1);
+            if (ret < 0) {
+                US_ERR("poll fail! ret = %d", ret);
+                return KAEZIP_FAILED;
+            } else if (ret > 0) {
+                break;
+            }
+        } while (++loop_times < KAE_ASYNC_MAX_RECV_TIMES);
 
-    US_DEBUG("rate is %lf, sleep_time is %ldns, loop_times is %d, cb_status is %u",
-        rate, sleep_info.ns_sleep.tv_nsec, loop_times, op_data->status);
+        US_DEBUG("rate is %lf, sleep_time is %ldns, loop_times is %d, cb_status is %u",
+            rate, sleep_info.ns_sleep.tv_nsec, loop_times, op_data->status);
 
-    if (loop_times > 10) {  //  dynamic adjust rate
-        sleep_info.flag[sleep_info.index] = 1;
-        if (kaezip_should_add_rate(&sleep_info)) {
-            rate += 8.0;
-        }
-    } else {
-        sleep_info.flag[sleep_info.index] = 0;
-        if (!kaezip_should_add_rate(&sleep_info) && rate > 0.1) {
-            rate -= 0.1;
-        }
+        if (loop_times > 10) {  //  dynamic adjust rate
+            sleep_info.flag[sleep_info.index] = 1;
+            if (kaezip_should_add_rate(&sleep_info)) {
+                rate += 4.0;
+            }
+        } else {
+            sleep_info.flag[sleep_info.index] = 0;
+            if (!kaezip_should_add_rate(&sleep_info) && rate > 0.1) {
+                rate -= 0.1;
+       	    }
+    	}
+    	sleep_info.index = (sleep_info.index + 1) % FLAG_NUM;
     }
-    sleep_info.index = (sleep_info.index + 1) % FLAG_NUM;
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
         op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;
