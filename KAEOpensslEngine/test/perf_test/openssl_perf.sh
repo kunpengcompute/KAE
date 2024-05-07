@@ -3,7 +3,9 @@ RESFILE="res.txt"
 ENV=""
 SYNC_MULTIS="1 4 16 32 64"
 ASYNC_MULTIS="1 2 4 16"
-EXE=""
+EXE="openssl"
+ENGINE_DIR="/usr/local/lib/engines-1.1"
+ENGINE_NAME="kae"
 
 function check_enviroment()
 {
@@ -11,16 +13,22 @@ function check_enviroment()
         CPUPAET=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
         if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
             ENV="920"
-            EXE="./openssl_arm"
+            # EXE="openssl_arm"
+            ENGINE_DIR="/usr/local/lib/engines-1.1"
+            ENGINE_NAME="kae"
         elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
             ENV="920B"
-            EXE="./openssl_arm"
+            # EXE="./openssl_arm"
+            ENGINE_DIR="/usr/local/lib/engines-1.1"
+            ENGINE_NAME="kae"
         elif [ $(arch) == "x86_64" ];then
             ENV="X86"
-            EXE="./openssl_x86"
+            # EXE="./openssl_x86"
+            ENGINE_DIR="/usr/lib64/engines-1.1"
+            ENGINE_NAME="qatengine"
         else
             ENV="UNKNOW CPU"
-            EXE="openssl"
+            # EXE="openssl"
         fi
 }
 
@@ -39,8 +47,8 @@ function DO_OPENSSL_SYNC(){
     unset OPENSSL_ENGINES
     SPEED_S=`taskset -c 0-63 $EXE speed -elapsed -evp $ALG -multi $MULTI -bytes $BYTES | tail -n 1 |  awk '{print $NF}'` #soft
     SPEED_S=${SPEED_S/k/}
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED_H=`taskset -c 0-63 $EXE speed -engine kae -elapsed -evp $ALG -multi $MULTI -bytes $BYTES | tail -n 1 | awk '{print $NF}'` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED_H=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -evp $ALG -multi $MULTI -bytes $BYTES | tail -n 1 | awk '{print $NF}'` #hard
     SPEED_H=${SPEED_H/k/}
     echo "$ENV , $ALG , SYNC , $MULTI , $BYTES , $SPEED_S , $SPEED_H , $(echo "scale=3; $SPEED_H/$SPEED_S" | bc | awk '{printf "%.3f\n", $0}') " >> $RESFILE
 }
@@ -57,8 +65,8 @@ function DO_OPENSSL_ASYNC(){
     unset OPENSSL_ENGINES
     SPEED_S=`taskset -c 0-63 $EXE speed -elapsed -async_jobs 16 -multi  $MULTI -evp $ALG -bytes $BYTES  | tail -n 1 | awk '{print $NF}'` #soft
     SPEED_S=${SPEED_S/k/}
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED_H=`taskset -c 0-63 $EXE speed -engine kae -elapsed -async_jobs 16 -multi  $MULTI -evp $ALG -bytes $BYTES  | tail -n 1 | awk '{print $NF}'` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED_H=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -async_jobs 16 -multi  $MULTI -evp $ALG -bytes $BYTES  | tail -n 1 | awk '{print $NF}'` #hard
     SPEED_H=${SPEED_H/k/}
     echo "$ENV , $ALG , ASYNC , 16x$MULTI , $BYTES , $SPEED_S , $SPEED_H , $(echo "scale=3; $SPEED_H/$SPEED_S" | bc | awk '{printf "%.3f\n", $0}') " >> $RESFILE
 }
@@ -110,8 +118,8 @@ function RSA_SYNC(){
     SPEED_sign_S=$(echo $SPEED | awk '{print $(NF-1)}')
     SPEED_verify_S=$(echo $SPEED | awk '{print $(NF-0)}')
 
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED=`taskset -c 0-63 $EXE speed -engine kae -elapsed -multi $MULTI $ALG  | tail -n 1 ` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -multi $MULTI $ALG  | tail -n 1 ` #hard
     SPEED_sign_H=$(echo $SPEED | awk '{print $(NF-1)}')
     SPEED_verify_H=$(echo $SPEED | awk '{print $(NF-0)}')
 
@@ -134,8 +142,8 @@ function RSA_ASYNC(){
     SPEED_sign_S=$(echo $SPEED | awk '{print $(NF-1)}')
     SPEED_verify_S=$(echo $SPEED | awk '{print $(NF-0)}')
 
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED=`taskset -c 0-63 $EXE speed -engine kae -elapsed -async_jobs 16 -multi $MULTI $ALG  | tail -n 1 ` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -async_jobs 16 -multi $MULTI $ALG  | tail -n 1 ` #hard
     SPEED_sign_H=$(echo $SPEED | awk '{print $(NF-1)}')
     SPEED_verify_H=$(echo $SPEED | awk '{print $(NF-0)}')
     echo "$ENV , $ALG-sign , ASYNC , 16x$MULTI , ${ALG#rsa} , $SPEED_sign_S , $SPEED_sign_H , $(echo "scale=3; $SPEED_sign_H/$SPEED_sign_S" | bc | awk '{printf "%.3f\n", $0}') " >> $RESFILE
@@ -176,8 +184,8 @@ function DH_SYNC(){
     unset OPENSSL_ENGINES
     SPEED_S=`taskset -c 0-63 $EXE speed -elapsed -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}'` #soft
 
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED_H=`taskset -c 0-63 $EXE speed -engine kae -elapsed -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}' ` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED_H=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}' ` #hard
 
     echo "$ENV , $ALG , SYNC , $MULTI , ${ALG#ffdh} , $SPEED_S , $SPEED_H , $(echo "scale=3; $SPEED_H/$SPEED_S" | bc | awk '{printf "%.3f\n", $0}') " >> $RESFILE
 }
@@ -191,8 +199,8 @@ function DH_ASYNC(){
     unset OPENSSL_ENGINES
     SPEED_S=`taskset -c 0-63 $EXE speed -elapsed -async_jobs 16 -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}'` #soft
 
-    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-    SPEED_H=`taskset -c 0-63 $EXE speed -engine kae -elapsed -async_jobs 16 -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}'` #hard
+    export OPENSSL_ENGINES=$ENGINE_DIR
+    SPEED_H=`taskset -c 0-63 $EXE speed -engine $ENGINE_NAME -elapsed -async_jobs 16 -multi $MULTI $ALG  | tail -n 1 | awk '{print $(NF-0)}'` #hard
 
     echo "$ENV , $ALG , ASYNC , 16x$MULTI , ${ALG#ffdh} , $SPEED_S , $SPEED_H , $(echo "scale=3; $SPEED_H/$SPEED_S" | bc | awk '{printf "%.3f\n", $0}') " >> $RESFILE
 }
