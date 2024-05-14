@@ -34,12 +34,24 @@
 #include "../../async/async_task_queue.h"
 #include "../../async/async_event.h"
 
+KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
+
+DECLARE_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
+
+ASN1_SEQUENCE(HPRE_SM2_Ciphertext) = {
+	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C1x, BIGNUM),
+	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C1y, BIGNUM),
+	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C3, ASN1_OCTET_STRING),
+	ASN1_SIMPLE(HPRE_SM2_Ciphertext, C2, ASN1_OCTET_STRING),
+} ASN1_SEQUENCE_END(HPRE_SM2_Ciphertext)
+
+IMPLEMENT_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
+
 static int g_known_pkey_nids[] = {
 	EVP_PKEY_SM2,
 };
 
 // static struct hpre_pkey_meth g_pkey_meth;
-KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
 static EVP_PKEY_METHOD *g_hpre_sm2_method;
 
 // 回调函数，返回值不按OPENSSL规范
@@ -140,6 +152,7 @@ static int wd_sm2_init_engine_ctx(hpre_sm2_engine_ctx_t *e_sm2_ctx)
 	e_sm2_ctx->setup.rand.cb = hpre_sm2_get_rand;
 	e_sm2_ctx->setup.hash.cb = hpre_sm2_compute_hash;
 	e_sm2_ctx->setup.hash.type = WCRYPTO_HASH_SHA256;
+	return KAE_SUCCESS;
 }
 
 void wd_sm2_put_engine_ctx(hpre_sm2_engine_ctx_t *e_hpre_sm2_ctx)
@@ -203,7 +216,6 @@ hpre_sm2_engine_ctx_t *wd_sm2_get_engine_ctx(hpre_sm2_priv_ctx_t *priv_ctx)
 static int  hpre_sm2_init(EVP_PKEY_CTX *ctx)
 {
 	hpre_sm2_priv_ctx_t *sm2ctx = NULL;
-	int ret;
 
 	sm2ctx = calloc(1, sizeof(*sm2ctx)); // 不同于cipher的自动申请和回收pkey需要自己申请的
 	if (!sm2ctx) {
@@ -212,7 +224,7 @@ static int  hpre_sm2_init(EVP_PKEY_CTX *ctx)
 	}
 
 	sm2ctx->init_status = HPRE_SM2_INIT_SUCC;
-end:
+
 	EVP_PKEY_CTX_set_data(ctx, sm2ctx);
 	EVP_PKEY_CTX_set0_keygen_info(ctx, NULL, 0);
 	return OPENSSL_SUCCESS;
@@ -1040,7 +1052,7 @@ static int hpre_async_do_sm2(struct hpre_sm2_engine_ctx *eng_ctx,
 int hpre_sm2_crypto(struct wcrypto_ecc_op_data *opdata, struct hpre_sm2_priv_ctx *smctx)
 {
 	op_done_t op;
-	int idx, ret, cnt;
+	int ret;
 
 	async_init_op_done_v1(&op);
 
@@ -1985,6 +1997,18 @@ int wd_sm2_init_qnode_pool(void)
 	}
 
 	return KAE_SUCCESS;
+}
+
+KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void)
+{
+	return g_hpre_sm2_qnode_pool;
+}
+
+
+void wd_sm2_uninit_qnode_pool(void)
+{
+	kae_queue_pool_destroy(g_hpre_sm2_qnode_pool, NULL);
+	g_hpre_sm2_qnode_pool = NULL;
 }
 
 // async poll thread create
