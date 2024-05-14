@@ -44,7 +44,6 @@ kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/alg/pkey/hpre_rsa_soft.c \
 		 v1/alg/pkey/hpre_rsa_utils.c \
 		 v1/alg/pkey/hpre_wd.c \
-		 v1/alg/pkey/hpre_sm2.c \
 		 v1/wdmngr/wd_alg_queue.c \
 		 v1/wdmngr/wd_queue_memory.c \
 		 v1/utils/engine_check.c \
@@ -54,4 +53,9 @@ kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/async/async_event.c \
 		 v1/async/async_poll.c \
 		 v1/async/async_task_queue.c
+
+if !WD_KAE_GMSSL
+kae_la_SOURCES+=v1/alg/pkey/hpre_sm2.c
+endif
+
 endif #WD_KAE

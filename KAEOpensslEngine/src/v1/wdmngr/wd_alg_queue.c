@@ -44,12 +44,14 @@ struct wd_queue *wd_new_queue(int algtype)
 	case WCRYPTO_DIGEST:
 		queue->capa.alg = "digest";
 		break;
+#ifndef KAE_GMSSL
 	case WCRYPTO_SM2:
 		queue->capa.alg = "sm2";
 		break;
 	case WCRYPTO_AEAD:
 		queue->capa.alg = "aead";
 		break;
+#endif
 	case WCRYPTO_COMP:
 	case WCRYPTO_EC:
 	case WCRYPTO_RNG:

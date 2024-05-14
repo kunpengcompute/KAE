@@ -1,12 +1,12 @@
 /*
  * Copyright (C) 2019. Huawei Technologies Co., Ltd. All rights reserved.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the zlib License. 
+ * it under the terms of the zlib License.
  * You may obtain a copy of the License at
- * 
+ *
  *     https://www.zlib.net/zlib_license.html
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -43,6 +43,11 @@ enum kaezip_decomp_status {
     KAEZIP_DECOMP_VERIFY_ERR,
 };
 
+enum kaezip_mode {
+    KAEZIP_SYNC = 0,
+    KAEZIP_ASYNC,
+};
+
 struct wcrypto_end_block {
     char             buffer[32];
     unsigned int     data_len;
@@ -59,13 +64,13 @@ struct kaezip_async_sleep_info {
 };
 
 struct kaezip_ctx {
-    void            *in;
-    unsigned int    in_len;             
-    void            *out;            
+    void*            in;
+    unsigned int     in_len;
+    void*            out;
     unsigned int     avail_out;
     unsigned int     consumed;
     unsigned int     produced;
-    unsigned int     remain;        //data produced by warpdrive but haven't been take away for not enough avail out buf
+    unsigned int     remain;        // data produced by warpdrive but haven't been take away for not enough avail out buf
 
     const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
@@ -83,7 +88,7 @@ struct kaezip_ctx {
 };
 typedef struct kaezip_ctx   kaezip_ctx_t;
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype);
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int level);
 void          kaezip_put_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_init_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_free_ctx(void* kz_ctx);
