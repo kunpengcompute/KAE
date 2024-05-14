@@ -34,7 +34,15 @@ const char *g_alg_type[] = {
 	"cipher",
 	"digest",
 #ifndef KAE_GMSSL
+	"comp",
+	"ec",
+	"rng",
+	"ecdh",
+	"x25519",
+	"x448",
+	"ecdsa",
 	"sm2",
+	"aead",
 #endif
 };
 
@@ -112,6 +120,10 @@ struct wd_queue_mempool *create_alg_wd_queue_mempool(int algtype, struct wd_queu
 	case WCRYPTO_SM2:
 		block_size = SM2_BLOCK_SIZE;//4352
 		block_num = SM2_BLOCK_NUM;
+		break;
+	case WCRYPTO_AEAD:
+		block_size = (600 * 1024);
+		block_num = 16;
 		break;
 #endif
 	case WCRYPTO_COMP:

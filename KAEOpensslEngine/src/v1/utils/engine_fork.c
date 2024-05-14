@@ -24,6 +24,7 @@
 #include "engine_check.h"
 #include "../async/async_poll.h"
 #include "../alg/pkey/hpre_rsa.h"
+#include "../alg/pkey/hpre_sm2.h"
 #include "../alg/dh/hpre_dh.h"
 #include "../alg/ciphers/sec_ciphers.h"
 #include "../alg/digests/sec_digests.h"
@@ -31,6 +32,7 @@
 #include "../alg/pkey/hpre_wd.h"
 #include "../alg/dh/hpre_dh_wd.h"
 #include "../alg/ciphers/sec_ciphers_wd.h"
+#include "../alg/ciphers/sec_ciphers_aead.h"
 #include "../alg/digests/sec_digests_wd.h"
 
 void engine_init_child_at_fork_handler_v1(void)
@@ -41,14 +43,18 @@ void engine_init_child_at_fork_handler_v1(void)
 		g_sec_digests_qnode_pool->pool_use_num = 0;
 	if (g_sec_ciphers_qnode_pool)
 		g_sec_ciphers_qnode_pool->pool_use_num = 0;
+	if (g_sec_aeads_qnode_pool)
+		g_sec_aeads_qnode_pool->pool_use_num = 0;
 	if (g_hpre_rsa_qnode_pool)
 		g_hpre_rsa_qnode_pool->pool_use_num = 0;
 	if (g_hpre_dh_qnode_pool)
 		g_hpre_dh_qnode_pool->pool_use_num = 0;
+	if (g_hpre_sm2_qnode_pool)
+		g_hpre_sm2_qnode_pool->pool_use_num = 0;
 
 	(void)hpre_module_init();
 	(void)hpre_module_dh_init();
-	(void)cipher_module_init();
+	(void)cipher_module_init();//cipher + aead
 	(void)digest_module_init();
 #ifndef KAE_GMSSL
 	(void)hpre_module_sm2_init();

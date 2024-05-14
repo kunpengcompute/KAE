@@ -22,7 +22,7 @@ kae_la_SOURCES+=v1/alg/ciphers/sw/vpsms4_ex-armv8.s
 else
 kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/alg/digest/uadk_digest.c v2/async/uadk_async.c \
 		v2/alg/rsa/uadk_rsa.c v2/alg/pkey/uadk_sm2.c v2/alg/pkey/uadk_pkey.c v2/alg/dh/uadk_dh.c v2/alg/pkey/uadk_ec.c v2/alg/pkey/uadk_ecx.c \
-		utils/engine_log.c utils/engine_config.c utils/engine_utils.c
+		utils/engine_log.c utils/engine_config.c utils/engine_utils.c v2/alg/ciphers/uadk_aead.c v2/alg/ciphers/uadk_cipher_adapter.c
 endif #WD_KAE_GMSSL
 
 AUTOMAKE_OPTIONS = subdir-objects
@@ -33,6 +33,7 @@ kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 		 v1/alg/ciphers/sec_ciphers_soft.c \
 		 v1/alg/ciphers/sec_ciphers_utils.c \
 		 v1/alg/ciphers/sec_ciphers_wd.c \
+		 v1/alg/ciphers/sec_ciphers_aead.c\
 		 v1/alg/dh/hpre_dh.c \
 		 v1/alg/dh/hpre_dh_soft.c \
 		 v1/alg/dh/hpre_dh_wd.c \

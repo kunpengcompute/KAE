@@ -76,6 +76,10 @@ int sec_ciphers_get_cipher_mode(int nid)
 #endif
 		c_mode = OFB;
 		break;
+	case NID_aes_128_gcm:
+	case NID_aes_192_gcm:
+	case NID_aes_256_gcm:
+		c_mode = GCM;
 	default:
 		US_WARN("nid=%d don't support by sec engine.", nid);
 		break;
@@ -113,6 +117,9 @@ int sec_ciphers_get_cipher_alg(int nid)
 	case NID_aes_256_ctr:
 	case NID_aes_128_xts:
 	case NID_aes_256_xts:
+	case NID_aes_128_gcm:
+	case NID_aes_192_gcm:
+	case NID_aes_256_gcm:
 		c_alg = AES;
 		break;
 	default:
