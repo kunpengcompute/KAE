@@ -133,7 +133,7 @@ static void common_test(int windowBits, int level, bool is_pref = false, ofstrea
         if (is_pref) {
             uLong time_uncomp = (end.tv_sec - start.tv_sec) * 1e6 + (end.tv_usec - start.tv_usec);
             double rate_uncomp = 1.0 * uncompress_size / compress_size * 100.0;
-            double speed_uncomp = (compress_size * 1.0 / 1e9) / (1.0 * time_uncomp / 1e6);
+            double speed_uncomp = (uncompress_size * 1.0 / 1e9) / (1.0 * time_uncomp / 1e6);
             (*ostrm) << uncompress_size << "," << rate_uncomp << "%%," << time_uncomp << "," << speed_uncomp << ",";
         }
 
@@ -261,7 +261,7 @@ void* ZlibPthreadFunc(void *args)
     }
     gettimeofday(&comp_stop, NULL);
     time1 = (comp_stop.tv_sec - comp_start.tv_sec) * 1000000 + comp_stop.tv_usec - comp_start.tv_usec;
-    speed1 = 1000000.0 / time1 * 1000 * pdata->compress_size / (1 << 30);
+    speed1 = 1000000.0 / time1 * 1000 * pdata->uncompress_size / (1 << 30);
     fprintf(stderr, "kaezip mult-thread decompress perf result:\n");
     fprintf(stderr, "     time used: %lu us, speed = %.3f GB/s\n\n", time1, speed1);
 

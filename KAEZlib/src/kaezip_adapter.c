@@ -193,6 +193,7 @@ int kz_inflate(z_streamp strm, int flush)
     int ret = Z_ERRNO;
     int alg_type;
     unsigned long kaezip_ctx;
+    flush = (flsuh == Z_PARTIAL_FLUSH ? Z_NO_FLUSH : flush);
 
     switch (g_platform)
     {
@@ -203,7 +204,7 @@ int kz_inflate(z_streamp strm, int flush)
         alg_type = kz_getAutoInflateAlgType(strm);
         (void)kz_do_inflateInit(strm, alg_type);
         kaezip_ctx = getInflateKaezipCtx(strm);
-        if (kaezip_ctx != 0 && flush != Z_PARTIAL_FLUSH && flush != Z_TREES) {
+        if (kaezip_ctx != 0 && flush != Z_TREES) {
             ret = kz_inflate_v1(strm, flush);
         } else {
             US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
