@@ -181,7 +181,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes)
         }
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / 1024 / 1024 / 1024;
+        float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / (1 << 30);
         printf("kaezstd %s perf result:\n", "compress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
@@ -309,7 +309,7 @@ void DoCompressStream2Perf(int multi, int streamLen, int cLevel, int loopTimes)
         }
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1 * 5 * loopTimes * multi * streamLen / 1024 / 1024 / 1024;
+        float speed1 = 1000000.0 / time1 * 5 * loopTimes * multi * streamLen / (1 << 30);
         printf("kaezstd %s perf result:\n", "compress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
     }
@@ -401,7 +401,7 @@ int main(int argc, char **argv)
         "compress function: %d, loop times: %d, g_threadnum: %d\n",
         multi, streamLen, cLevel, cFunction, loopTimes, g_threadnum);
 
-    streamLen = 1000 * streamLen;
+    streamLen = 1024 * streamLen;
 
     switch (cFunction)
     {

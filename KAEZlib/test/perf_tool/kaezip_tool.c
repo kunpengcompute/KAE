@@ -165,7 +165,7 @@ int do_perf(const char* in_filename, uLong stream_len, int loop_times, int level
     gettimeofday(&stop, NULL);
     uLong time2 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
 
-    float speed2 = 1000000.0 / time2 * (compressedSize) / (1 << 20) * loop_times; //单位MB/s  
+    float speed2 = 1000000.0 / time2 * (decompressedSize) / (1 << 20) * loop_times; //单位MB/s  
     
     //判断及打印信息
     if(decompressedSize != stream_len){
@@ -250,7 +250,7 @@ int do_mul_perf(const char* in_filename, uLong stream_len, int loop_times, int l
 
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-        float speed1 = 1000000.0 / time1  * multi * stream_len / 1024 / 1024;
+        float speed1 = 1000000.0 / time1  * multi * stream_len / (1 << 20);
 
         printf("kaezstd multi process perf result: [process num is %d, time used: %lu us, speed = %.3f MB/s]\n", multi, time1, speed1);
     }
@@ -300,6 +300,10 @@ int do_compress(const char* inputFile, const char* outputFile, int level)
     }
     gettimeofday(&stop, NULL);
 
+    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+    float speed1 = 1000000.0 / time1 * stream_len / (1 << 20); //单位MB/s  
+    printf("zip compress file %s result: time used: %lu us, speed is %.3f MB/s\n", inputFile, time1, speed1);
+
     //write compressed file
      if (fwrite(outbuf, 1, compressedSize, fileoutput) != compressedSize) {
         printf("Failed to write fileoutput file.\n");
@@ -308,10 +312,6 @@ int do_compress(const char* inputFile, const char* outputFile, int level)
         free(outbuf);
         return 1;
     }
-
-    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-    float speed1 = 1000000.0 / time1 * stream_len / (1 << 20); //单位MB/s  
-    printf("zip compress file %s result: time used: %lu us, speed is %.3f MB/s\n", inputFile, time1, speed1);
 
     fclose(fileoutput);
     free(inbuf);
@@ -358,6 +358,10 @@ int do_uncompress(const char* inputFile, const char* outputFile, int level)
     }
     gettimeofday(&stop, NULL);
 
+    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+    float speed1 = 1000000.0 / time1 * decompressSize / (1 << 20); //单位MB/s  
+    printf("zip compress file %s result: time used: %lu us, speed is %.3f MB/s\n", inputFile, time1, speed1);
+
     //write compressed file
      if (fwrite(outbuf, 1, decompressSize, fileoutput) != decompressSize) {
         printf("Failed to write fileoutput file.\n");
@@ -366,10 +370,6 @@ int do_uncompress(const char* inputFile, const char* outputFile, int level)
         free(outbuf);
         return 1;
     }
-
-    uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
-    float speed1 = 1000000.0 / time1 * stream_len / (1 << 20); //单位MB/s  
-    printf("zip compress file %s result: time used: %lu us, speed is %.3f MB/s\n", inputFile, time1, speed1);
 
     fclose(fileoutput);
     free(inbuf);

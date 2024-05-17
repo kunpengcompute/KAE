@@ -194,6 +194,7 @@ free_init:
         if (multi == 0) { multi = 1; }
         gettimeofday(&stop, NULL);
         uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+        stream_len = compress ? stream_len : output_sz;
         float speed1 = 1000000.0 / time1 * loop_times * multi * stream_len / (1 << 30);
         printf("kaezip %s perf result:\n", compress ? "compress" : "decompress");
         printf("     time used: %lu us, speed = %.3f GB/s\n", time1, speed1);
