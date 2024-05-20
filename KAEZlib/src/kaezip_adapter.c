@@ -193,7 +193,7 @@ int kz_inflate(z_streamp strm, int flush)
     int ret = Z_ERRNO;
     int alg_type;
     unsigned long kaezip_ctx;
-    flush = (flsuh == Z_PARTIAL_FLUSH ? Z_NO_FLUSH : flush);
+    flush = (flush == Z_PARTIAL_FLUSH ? Z_NO_FLUSH : flush);
 
     switch (g_platform)
     {
