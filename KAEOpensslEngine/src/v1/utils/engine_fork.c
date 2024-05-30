@@ -49,9 +49,10 @@ void engine_init_child_at_fork_handler_v1(void)
 		g_hpre_rsa_qnode_pool->pool_use_num = 0;
 	if (g_hpre_dh_qnode_pool)
 		g_hpre_dh_qnode_pool->pool_use_num = 0;
+#ifndef KAE_GMSSL	
 	if (g_hpre_sm2_qnode_pool)
 		g_hpre_sm2_qnode_pool->pool_use_num = 0;
-
+#endif
 	(void)hpre_module_init();
 	(void)hpre_module_dh_init();
 	(void)cipher_module_init();//cipher + aead
