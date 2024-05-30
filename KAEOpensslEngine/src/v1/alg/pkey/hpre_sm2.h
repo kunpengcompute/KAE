@@ -22,7 +22,9 @@
 #include "uadk/v1/wd_ecc.h"
 #include "../../wdmngr/wd_queue_memory.h"
 
+#ifndef KAE_GMSSL
 extern KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
+#endif
 
 #define HPRE_SM2_RETURN_FAIL_IF(cond, mesg, ret) \
 	do { \

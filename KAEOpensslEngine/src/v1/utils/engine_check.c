@@ -85,7 +85,9 @@ static void *kae_checking_q_loop_fn(void *args)
 		kae_queue_pool_check_and_release(wd_aead_get_qnode_pool(), wd_aead_free_engine_ctx);
 		kae_queue_pool_check_and_release(wd_digests_get_qnode_pool(), wd_digests_free_engine_ctx);
 		kae_queue_pool_check_and_release(wd_hpre_get_qnode_pool(), NULL);
+#ifndef KAE_GMSSL
 		kae_queue_pool_check_and_release(wd_hpre_sm2_get_qnode_pool(), NULL);
+#endif
 		kae_queue_pool_check_and_release(wd_hpre_dh_get_qnode_pool(), NULL);
 	}
 	US_INFO("check thread exit normally.");
@@ -102,7 +104,9 @@ static void kae_checking_q_thread_destroy(void)
 	(void)wd_ciphers_uninit_qnode_pool();
 	(void)wd_hpre_dh_uninit_qnode_pool();
 	(void)wd_hpre_uninit_qnode_pool();
+#ifndef KAE_GMSSL
 	(void)wd_sm2_uninit_qnode_pool();
+#endif
 	(void)wd_aead_uninit_qnode_pool();
 }
 
