@@ -271,7 +271,7 @@ function check_enviroment()
 {
         IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
         CPUPAET=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
-        if [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd01" ] && [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd02" ];then
+        if [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd01" ] && [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd02" ] && [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd03" ];then
             echo "Only installed on kunpeng CPUs"
             exit 1
         fi
@@ -284,10 +284,8 @@ function build_all_components()
     build_engine
     build_zlib
     if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-        #NOSVA
         echo "this cpu not support kaezstd."
-    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-        #SVA
+    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ] && [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd03" ];then
         build_zstd
     else
         echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
