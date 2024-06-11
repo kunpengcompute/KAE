@@ -285,7 +285,7 @@ function build_all_components()
     build_zlib
     if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
         echo "this cpu not support kaezstd."
-    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ] && [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd03" ];then
+    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ] || [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd03" ];then
         build_zstd
     else
         echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
