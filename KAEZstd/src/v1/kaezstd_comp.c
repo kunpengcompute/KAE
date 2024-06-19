@@ -50,12 +50,13 @@ int kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 
     US_DEBUG("kaezstd compress srcSize : %lu", srcSize);
     kaezip_ctx->in           = (void*)src;
-    kaezip_ctx->in_len       = (srcSize < KAEZIP_STREAM_CHUNK_IN) ? srcSize : KAEZIP_STREAM_CHUNK_IN;
+    kaezip_ctx->in_len       = srcSize;
     kaezip_ctx->out          = NULL;
     kaezip_ctx->consumed     = 0;
     kaezip_ctx->produced     = 0;
     kaezip_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaezip_ctx->flush = (srcSize <= KAEZIP_STREAM_CHUNK_IN) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
+    kaezip_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
+            (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
     kaezip_ctx->do_comp_len = kaezip_ctx->in_len;
 
     kaezip_set_input_data(kaezip_ctx);
