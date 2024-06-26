@@ -45,9 +45,11 @@ static void __attribute((constructor)) kaezip_getmode_from_env(void)
         return;
     }
     if (strcasecmp(kz_env_mode, "SYNC") == 0) {
-	g_kaezip_mode = KAEZIP_SYNC;
+	    g_kaezip_mode = KAEZIP_SYNC;
+        US_INFO("KAEZIP USING SYNC MODE");
     } else if (strcasecmp(kz_env_mode, "ASYNC") == 0) {
         g_kaezip_mode = KAEZIP_ASYNC;
+        US_INFO("KAEZIP USING ASYNC MODE");
     }
 }
 
