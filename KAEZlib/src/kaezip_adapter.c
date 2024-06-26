@@ -25,7 +25,6 @@ static int g_platform = -1;
 static void uadk_get_accel_platform(void)
 {
     if (g_platform >= 0) {
-        US_INFO("g_platform is %d, inited!\n", g_platform);
         return;
     }
     //	init log
@@ -37,17 +36,19 @@ static void uadk_get_accel_platform(void)
         free(dev);
         if (flag & 0x1) {
             g_platform = HW_V2;
-            return;
+            goto end;
         }
     }
     //  check no-sva
     int nosva_dev_num = wd_get_available_dev_num("zlib");
     if (nosva_dev_num > 0) {
         g_platform = HW_V1;
-        return;
+        goto end;
     }
     //  hardware don't support, use zlib original interface
     g_platform = HW_NONE;
+end:
+    US_INFO("g_platform is %d, inited!\n", g_platform);
 }
 
 /* -----------------------------------------------DEFLATE----------------------------------------------- */

@@ -227,8 +227,8 @@ void kaezip_set_fmt_tail(kaezip_ctx_t *kaezip_ctx)
 
 void kaezip_deflate_addcrc(kaezip_ctx_t *kz_ctx)
 {
-    if (kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) {
-        US_DEBUG("kaezip status wrong, not crc uncheck");
+    if ((kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) || (kz_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE)) {
+        US_DEBUG("kaezip status wrong or its RAW_DEFLATE, not crc uncheck");
         return;
     }
 
