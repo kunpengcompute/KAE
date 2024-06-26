@@ -64,6 +64,12 @@ static cipher_info_t g_sec_ciphers_info[] = {
 	{NID_aes_128_gcm, 16, 16, 12, EVP_CIPH_GCM_MODE, 1, NULL},
 	{NID_aes_192_gcm, 16, 24, 12, EVP_CIPH_GCM_MODE, 1, NULL},
 	{NID_aes_256_gcm, 16, 32, 12, EVP_CIPH_GCM_MODE, 1, NULL},
+	{NID_aes_128_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE, 1, NULL},
+	{NID_aes_192_ofb128, 1, 24, 16, EVP_CIPH_OFB_MODE, 1, NULL},
+	{NID_aes_256_ofb128, 1, 32, 16, EVP_CIPH_OFB_MODE, 1, NULL},
+	{NID_aes_128_cfb128, 1, 16, 16, EVP_CIPH_CFB_MODE, 1, NULL},
+	{NID_aes_192_cfb128, 1, 24, 16, EVP_CIPH_CFB_MODE, 1, NULL},
+	{NID_aes_256_cfb128, 1, 32, 16, EVP_CIPH_CFB_MODE, 1, NULL},
 #ifdef KAE_GMSSL
     {NID_sms4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
     {NID_sms4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
@@ -74,6 +80,7 @@ static cipher_info_t g_sec_ciphers_info[] = {
 	{NID_sm4_ctr, 1, 16, 16, EVP_CIPH_CTR_MODE, 1, NULL},
 	{NID_sm4_cbc, 16, 16, 16, EVP_CIPH_CBC_MODE | EVP_CIPH_FLAG_DEFAULT_ASN1, 1, NULL},
 	{NID_sm4_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE, 1, NULL},
+	{NID_sm4_cfb128, 1, 16, 16, EVP_CIPH_CFB_MODE, 1, NULL},
 	{NID_sm4_ecb, 16, 16, 0, EVP_CIPH_ECB_MODE, 1, NULL},
 #endif
 };
@@ -95,7 +102,12 @@ static int g_known_cipher_nids[CIPHERS_COUNT] = {
 	NID_aes_128_gcm,
 	NID_aes_192_gcm,
 	NID_aes_256_gcm,
-
+	NID_aes_128_ofb128,
+	NID_aes_192_ofb128,
+	NID_aes_256_ofb128,
+	NID_aes_128_cfb128,
+	NID_aes_192_cfb128,
+	NID_aes_256_cfb128,
 #ifdef KAE_GMSSL
     NID_sms4_ctr,
     NID_sms4_cbc,
@@ -106,6 +118,7 @@ static int g_known_cipher_nids[CIPHERS_COUNT] = {
 	NID_sm4_ctr,
 	NID_sm4_cbc,
 	NID_sm4_ofb128,
+	NID_sm4_cfb128,
 	NID_sm4_ecb,
 #endif 
 };
@@ -688,6 +701,12 @@ static EVP_CIPHER * sec_cipher_create_ciphers(int index)
 		case NID_aes_256_ecb:
 		case NID_aes_128_xts:
 		case NID_aes_256_xts:
+		case NID_aes_128_ofb128:
+		case NID_aes_192_ofb128:
+		case NID_aes_256_ofb128:
+		case NID_aes_128_cfb128:
+		case NID_aes_192_cfb128:
+		case NID_aes_256_cfb128:
 #ifdef KAE_GMSSL
 		case NID_sms4_ctr:
 		case NID_sms4_cbc: 
@@ -702,6 +721,7 @@ static EVP_CIPHER * sec_cipher_create_ciphers(int index)
 		case NID_sm4_cbc:
 		case NID_sm4_ecb:
 		case NID_sm4_ofb128:
+		case NID_sm4_cfb128:
 		case NID_sm4_ctr:
 			cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[index]);
 			break;

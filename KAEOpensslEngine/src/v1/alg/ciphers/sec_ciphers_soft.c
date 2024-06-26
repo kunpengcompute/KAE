@@ -42,9 +42,12 @@ static cipher_threshold_table_t g_sec_ciphers_pkt_threshold_table[] = {
 	{ NID_aes_256_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 	{ NID_aes_128_xts, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 	{ NID_aes_256_xts, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
-	// { NID_aes_128_gcm, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
-	// { NID_aes_192_gcm, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
-	// { NID_aes_256_gcm, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_128_cfb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_192_cfb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_256_cfb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_128_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_192_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_aes_256_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 #ifdef KAE_GMSSL
     { NID_sms4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
     { NID_sms4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
@@ -55,6 +58,7 @@ static cipher_threshold_table_t g_sec_ciphers_pkt_threshold_table[] = {
 	{ NID_sm4_cbc, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 	{ NID_sm4_ctr, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 	{ NID_sm4_ofb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
+	{ NID_sm4_cfb128, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 	{ NID_sm4_ecb, CRYPTO_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT },
 #endif
 };
@@ -73,6 +77,12 @@ static sw_cipher_t g_sec_ciphers_sw_cipher_table[] = {
 	{ NID_aes_256_ctr, EVP_aes_256_ctr },
 	{ NID_aes_128_xts, EVP_aes_128_xts },
 	{ NID_aes_256_xts, EVP_aes_256_xts },
+	{ NID_aes_128_ofb128, EVP_aes_128_ofb },
+	{ NID_aes_192_ofb128, EVP_aes_192_ofb },
+	{ NID_aes_256_ofb128, EVP_aes_256_ofb },
+	{ NID_aes_128_cfb128, EVP_aes_128_cfb },
+	{ NID_aes_192_cfb128, EVP_aes_192_cfb },
+	{ NID_aes_256_cfb128, EVP_aes_256_cfb },
 
 #ifdef KAE_GMSSL
     { NID_sms4_cbc, EVP_sms4_cbc },
@@ -84,6 +94,7 @@ static sw_cipher_t g_sec_ciphers_sw_cipher_table[] = {
 	{ NID_sm4_cbc, EVP_sm4_cbc },
 	{ NID_sm4_ctr, EVP_sm4_ctr },
 	{ NID_sm4_ofb128, EVP_sm4_ofb },
+	{ NID_sm4_cfb128, EVP_sm4_cfb },
 	{ NID_sm4_ecb, EVP_sm4_ecb },
 #endif
 };

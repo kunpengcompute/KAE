@@ -74,7 +74,16 @@ int sec_ciphers_get_cipher_mode(int nid)
 #else
 	case NID_sm4_ofb128:
 #endif
+	case NID_aes_128_ofb128:
+	case NID_aes_192_ofb128:
+	case NID_aes_256_ofb128:
 		c_mode = OFB;
+		break;
+	case NID_aes_128_cfb128:
+	case NID_aes_192_cfb128:
+	case NID_aes_256_cfb128:	
+	case NID_sm4_cfb128:
+		c_mode = CFB;
 		break;
 	case NID_aes_128_gcm:
 	case NID_aes_192_gcm:
@@ -102,6 +111,7 @@ int sec_ciphers_get_cipher_alg(int nid)
 	case NID_sm4_ctr:
 	case NID_sm4_cbc:
 	case NID_sm4_ofb128:
+	case NID_sm4_cfb128:
 	case NID_sm4_ecb:
 #endif
 		c_alg = SM4;
@@ -120,6 +130,12 @@ int sec_ciphers_get_cipher_alg(int nid)
 	case NID_aes_128_gcm:
 	case NID_aes_192_gcm:
 	case NID_aes_256_gcm:
+	case NID_aes_128_ofb128:
+	case NID_aes_192_ofb128:
+	case NID_aes_256_ofb128:
+	case NID_aes_128_cfb128:
+	case NID_aes_192_cfb128:
+	case NID_aes_256_cfb128:
 		c_alg = AES;
 		break;
 	default:
