@@ -1012,7 +1012,7 @@ EVP_CIPHER *uadk_create_cipher_meth(int nid)
 		cipher = uadk_sm4_ofb128;
 		break;
 	case NID_sm4_cfb128:
-		UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_OFB_MODE,
+		UADK_CIPHER_DESCR(sm4_cfb128, 1, 16, 16, EVP_CIPH_CFB_MODE,
 				sizeof(struct cipher_priv_ctx), uadk_e_cipher_init,
 				uadk_e_do_cipher, uadk_e_cipher_cleanup,
 				EVP_CIPHER_set_asn1_iv, EVP_CIPHER_get_asn1_iv);
