@@ -12,6 +12,7 @@
 #include "kaezstd_common.h"
 
 int  kaezstd_init_v1(ZSTD_CCtx* zc);
+void kaezstd_reset_v1(ZSTD_CCtx* zc);
 void kaezstd_release_v1(ZSTD_CCtx* zc);
 
 #endif

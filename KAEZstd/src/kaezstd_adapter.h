@@ -18,6 +18,7 @@ enum {
 static int g_platform = -1;
 
 extern int  kaezstd_init_v1(ZSTD_CCtx* zc);
+extern void kaezstd_reset_v1(ZSTD_CCtx* zc);
 extern void kaezstd_release_v1(ZSTD_CCtx* zc);
 extern void kaezstd_setstatus_v1(ZSTD_CCtx* zc, unsigned int status);
 extern int  kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize);

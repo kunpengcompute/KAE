@@ -53,7 +53,7 @@ int kaezstd_compress_v2(ZSTD_CCtx* zc, const void* src, size_t srcSize)
     KaeZstdConfig *config = NULL;
     int ret;
 
-    US_DEBUG("KAE zstd compress.");
+    US_INFO("KAE zstd compress, srcSize is %lu", srcSize);
     if (zc == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_ZSTD_INVAL_PARA;
@@ -64,19 +64,16 @@ int kaezstd_compress_v2(ZSTD_CCtx* zc, const void* src, size_t srcSize)
     config->req.src = (void*)src;
     config->req.src_len = srcSize;
     config->req.dst_len = REQ_DSTBUFF_LEN;
-    config->req.last = zc->kaeFrameMode;
+    config->req.last = (zc->kaeFrameMode == 1) ? 1 : (srcSize & 0x3) ? 1 : 0;
 
     ret = wd_do_comp_strm(config->sess, &(config->req));
     if (ret) {
         US_ERR("wd_do_comp_strm = %d\n", ret);
         return ret;
+    } else {
+        US_DEBUG("lit_num = %u, seq_num = %u, lit_length_overflow_type = %d, lit_length_overflow_pos = %u\n",
+            config->tuple.litlen, config->tuple.seqnum, config->tuple.longLengthType, config->tuple.longLengthPos);
     }
 
-    ret = kaezstd_data_parsing(zc, config);
-    if (ret) {
-        US_ERR("data_parsing = %d\n", ret);
-        return ret;
-    }
-
-    return ret;
+    return kaezstd_data_parsing(zc, config);
 }

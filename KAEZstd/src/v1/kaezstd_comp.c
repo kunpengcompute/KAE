@@ -48,14 +48,15 @@ int kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize)
         return KAE_ZSTD_INVAL_PARA;
     }
 
-    US_DEBUG("kaezstd compress srcSize : %lu", srcSize);
+    US_INFO("kaezstd compress srcSize : %lu", srcSize);
     kaezip_ctx->in           = (void*)src;
-    kaezip_ctx->in_len       = (srcSize < KAEZIP_STREAM_CHUNK_IN) ? srcSize : KAEZIP_STREAM_CHUNK_IN;
+    kaezip_ctx->in_len       = srcSize;
     kaezip_ctx->out          = NULL;
     kaezip_ctx->consumed     = 0;
     kaezip_ctx->produced     = 0;
     kaezip_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaezip_ctx->flush = (srcSize <= KAEZIP_STREAM_CHUNK_IN) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
+    kaezip_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
+            (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
     kaezip_ctx->do_comp_len = kaezip_ctx->in_len;
 
     kaezip_set_input_data(kaezip_ctx);
@@ -67,9 +68,9 @@ int kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize)
         return ret;
     } else {
         struct wcrypto_lz77_zstd_format* zstd_data = &kaezip_ctx->zstd_data;
-        US_INFO("lit_num = %u, seq_num = %u, lit_length_overflow_cnt = %u, lit_length_overflow_pos = %u\n",
-            zstd_data->lit_num, zstd_data->seq_num,
-            zstd_data->lit_length_overflow_cnt, zstd_data->lit_length_overflow_pos);
+        US_DEBUG("frameMode = %u, flush = %d, lit_num = %u, seq_num = %u, lit_length_overflow_cnt = %u, lit_length_overflow_pos = %u\n",
+            zc->kaeFrameMode, kaezip_ctx->flush,
+            zstd_data->lit_num, zstd_data->seq_num, zstd_data->lit_length_overflow_cnt, zstd_data->lit_length_overflow_pos);
     }
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {

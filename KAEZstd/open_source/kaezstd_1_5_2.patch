@@ -1,6 +1,6 @@
-diff -uprN zstd/examples/Makefile zstd-new/examples/Makefile
+diff -uprN zstd/examples/Makefile zstd_new/examples/Makefile
 --- zstd/examples/Makefile	2023-02-20 15:05:23.000000000 +0800
-+++ zstd-new/examples/Makefile	2024-03-29 10:10:58.848000000 +0800
++++ zstd_new/examples/Makefile	2024-06-24 10:46:28.458827810 +0800
 @@ -12,7 +12,8 @@ LIBDIR =../lib
  CPPFLAGS += -I$(LIBDIR)
  LIB = $(LIBDIR)/libzstd.a
@@ -11,9 +11,9 @@ diff -uprN zstd/examples/Makefile zstd-new/examples/Makefile
  .PHONY: default
  default: all
  
-diff -uprN zstd/lib/common/error_private.c zstd-new/lib/common/error_private.c
+diff -uprN zstd/lib/common/error_private.c zstd_new/lib/common/error_private.c
 --- zstd/lib/common/error_private.c	2023-02-20 15:06:06.000000000 +0800
-+++ zstd-new/lib/common/error_private.c	2024-03-29 10:10:58.848000000 +0800
++++ zstd_new/lib/common/error_private.c	2024-06-24 10:46:28.458827810 +0800
 @@ -12,7 +12,7 @@
  
  #include "error_private.h"
@@ -23,9 +23,9 @@ diff -uprN zstd/lib/common/error_private.c zstd-new/lib/common/error_private.c
  {
  #ifdef ZSTD_STRIP_ERROR_STRINGS
      (void)code;
-diff -uprN zstd/lib/common/error_private.h zstd-new/lib/common/error_private.h
+diff -uprN zstd/lib/common/error_private.h zstd_new/lib/common/error_private.h
 --- zstd/lib/common/error_private.h	2023-02-20 15:05:23.000000000 +0800
-+++ zstd-new/lib/common/error_private.h	2024-03-29 10:10:58.852000000 +0800
++++ zstd_new/lib/common/error_private.h	2024-06-24 10:46:28.458827810 +0800
 @@ -68,7 +68,7 @@ ERR_STATIC ERR_enum ERR_getErrorCode(siz
  *  Error Strings
  ******************************************/
@@ -35,9 +35,9 @@ diff -uprN zstd/lib/common/error_private.h zstd-new/lib/common/error_private.h
  
  ERR_STATIC const char* ERR_getErrorName(size_t code)
  {
-diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress.c
+diff -uprN zstd/lib/compress/zstd_compress.c zstd_new/lib/compress/zstd_compress.c
 --- zstd/lib/compress/zstd_compress.c	2023-02-20 15:06:06.000000000 +0800
-+++ zstd-new/lib/compress/zstd_compress.c	2024-03-30 09:30:14.212000000 +0800
++++ zstd_new/lib/compress/zstd_compress.c	2024-06-24 11:53:27.386827810 +0800
 @@ -28,6 +28,9 @@
  #include "zstd_ldm.h"
  #include "zstd_compress_superblock.h"
@@ -86,7 +86,17 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
      case ZSTD_c_windowLog:
      case ZSTD_c_hashLog:
      case ZSTD_c_chainLog:
-@@ -1909,7 +1929,10 @@ static size_t ZSTD_resetCCtx_internal(ZS
+@@ -1210,6 +1230,9 @@ size_t ZSTD_CCtx_refPrefix_advanced(
+  *  Also dumps dictionary */
+ size_t ZSTD_CCtx_reset(ZSTD_CCtx* cctx, ZSTD_ResetDirective reset)
+ {
++#ifdef CONF_KAEZSTD
++    if (cctx->kaeInited == 1) { kaezstd_reset(cctx); }
++#endif
+     if ( (reset == ZSTD_reset_session_only)
+       || (reset == ZSTD_reset_session_and_parameters) ) {
+         cctx->streamStage = zcss_init;
+@@ -1909,7 +1932,10 @@ static size_t ZSTD_resetCCtx_internal(ZS
                  RETURN_ERROR_IF(zc->blockState.prevCBlock == NULL, memory_allocation, "couldn't allocate prevCBlock");
                  zc->blockState.nextCBlock = (ZSTD_compressedBlockState_t*) ZSTD_cwksp_reserve_object(ws, sizeof(ZSTD_compressedBlockState_t));
                  RETURN_ERROR_IF(zc->blockState.nextCBlock == NULL, memory_allocation, "couldn't allocate nextCBlock");
@@ -98,7 +108,7 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
                  RETURN_ERROR_IF(zc->entropyWorkspace == NULL, memory_allocation, "couldn't allocate entropyWorkspace");
          }   }
  
-@@ -2844,7 +2867,15 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
+@@ -2844,7 +2870,15 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
          if (curr > ms->nextToUpdate + 384)
              ms->nextToUpdate = curr - MIN(192, (U32)(curr - ms->nextToUpdate - 384));
      }
@@ -115,7 +125,7 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
      /* select and store sequences */
      {   ZSTD_dictMode_e const dictMode = ZSTD_matchState_dictMode(ms);
          size_t lastLLSize;
-@@ -2889,6 +2920,9 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
+@@ -2889,6 +2923,9 @@ static size_t ZSTD_buildSeqStore(ZSTD_CC
          {   const BYTE* const lastLiterals = (const BYTE*)src + srcSize - lastLLSize;
              ZSTD_storeLastLiterals(&zc->seqStore, lastLiterals, lastLLSize);
      }   }
@@ -125,7 +135,7 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
      return ZSTDbss_compress;
  }
  
-@@ -3963,7 +3997,11 @@ static size_t ZSTD_compress_frameChunk(Z
+@@ -3963,7 +4000,11 @@ static size_t ZSTD_compress_frameChunk(Z
  
          /* Ensure hash/chain table insertion resumes no sooner than lowlimit */
          if (ms->nextToUpdate < ms->window.lowLimit) ms->nextToUpdate = ms->window.lowLimit;
@@ -138,7 +148,7 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
          {   size_t cSize;
              if (ZSTD_useTargetCBlockSize(&cctx->appliedParams)) {
                  cSize = ZSTD_compressBlock_targetCBlockSize(cctx, op, dstCapacity, ip, blockSize, lastBlock);
-@@ -3982,6 +4020,11 @@ static size_t ZSTD_compress_frameChunk(Z
+@@ -3982,6 +4023,11 @@ static size_t ZSTD_compress_frameChunk(Z
  
                  if (cSize == 0) {  /* block is not compressible */
                      cSize = ZSTD_noCompressBlock(op, dstCapacity, ip, blockSize, lastBlock);
@@ -150,19 +160,19 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
                      FORWARD_IF_ERROR(cSize, "ZSTD_noCompressBlock failed");
                  } else {
                      U32 const cBlockHeader = cSize == 1 ?
-@@ -3989,6 +4032,11 @@ static size_t ZSTD_compress_frameChunk(Z
+@@ -3989,6 +4035,11 @@ static size_t ZSTD_compress_frameChunk(Z
                          lastBlock + (((U32)bt_compressed)<<1) + (U32)(cSize << 3);
                      MEM_writeLE24(op, cBlockHeader);
                      cSize += ZSTD_blockHeaderSize;
 +#ifdef CONF_KAEZSTD
 +                    if (cctx->kaeInited == 1) {
-+                        kaezstd_setstatus(cctx, TUPLE_STATUS_COMPRESS);
++                        kaezstd_setstatus(cctx, cSize == 1 ? TUPLE_STATUS_RLEBLOCK : TUPLE_STATUS_COMPRESS);
 +                    }
 +#endif
                  }
              }
  
-@@ -4571,6 +4619,9 @@ size_t ZSTD_compressBegin_usingDict(ZSTD
+@@ -4571,6 +4622,9 @@ size_t ZSTD_compressBegin_usingDict(ZSTD
      {
          ZSTD_parameters const params = ZSTD_getParams_internal(compressionLevel, ZSTD_CONTENTSIZE_UNKNOWN, dictSize, ZSTD_cpm_noAttachDict);
          ZSTD_CCtxParams_init_internal(&cctxParams, &params, (compressionLevel == 0) ? ZSTD_CLEVEL_DEFAULT : compressionLevel);
@@ -172,7 +182,7 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
      }
      DEBUGLOG(4, "ZSTD_compressBegin_usingDict (dictSize=%u)", (unsigned)dictSize);
      return ZSTD_compressBegin_internal(cctx, dict, dictSize, ZSTD_dct_auto, ZSTD_dtlm_fast, NULL,
-@@ -4716,6 +4767,9 @@ size_t ZSTD_compress_usingDict(ZSTD_CCtx
+@@ -4716,6 +4770,9 @@ size_t ZSTD_compress_usingDict(ZSTD_CCtx
          ZSTD_parameters const params = ZSTD_getParams_internal(compressionLevel, srcSize, dict ? dictSize : 0, ZSTD_cpm_noAttachDict);
          assert(params.fParams.contentSizeFlag == 1);
          ZSTD_CCtxParams_init_internal(&cctx->simpleApiParams, &params, (compressionLevel == 0) ? ZSTD_CLEVEL_DEFAULT: compressionLevel);
@@ -182,9 +192,9 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd-new/lib/compress/zstd_compress
      }
      DEBUGLOG(4, "ZSTD_compress_usingDict (srcSize=%u)", (unsigned)srcSize);
      return ZSTD_compress_advanced_internal(cctx, dst, dstCapacity, src, srcSize, dict, dictSize, &cctx->simpleApiParams);
-diff -uprN zstd/lib/compress/zstd_compress_internal.h zstd-new/lib/compress/zstd_compress_internal.h
+diff -uprN zstd/lib/compress/zstd_compress_internal.h zstd_new/lib/compress/zstd_compress_internal.h
 --- zstd/lib/compress/zstd_compress_internal.h	2023-02-20 15:06:06.000000000 +0800
-+++ zstd-new/lib/compress/zstd_compress_internal.h	2024-03-29 10:13:46.852000000 +0800
++++ zstd_new/lib/compress/zstd_compress_internal.h	2024-06-24 10:46:28.458827810 +0800
 @@ -18,6 +18,9 @@
  /*-*************************************
  *  Dependencies
@@ -208,9 +218,9 @@ diff -uprN zstd/lib/compress/zstd_compress_internal.h zstd-new/lib/compress/zstd
      ZSTD_compressionStage_e stage;
      int cParamsChanged;                  /* == 1 if cParams(except wlog) or compression level are changed in requestedParams. Triggers transmission of new params to ZSTDMT (if available) then reset to 0. */
      int bmi2;                            /* == 1 if the CPU supports BMI2 and 0 otherwise. CPU support is determined dynamically once per context lifetime. */
-diff -uprN zstd/lib/libzstd.mk zstd-new/lib/libzstd.mk
+diff -uprN zstd/lib/libzstd.mk zstd_new/lib/libzstd.mk
 --- zstd/lib/libzstd.mk	2023-02-20 15:06:06.000000000 +0800
-+++ zstd-new/lib/libzstd.mk	2024-03-29 10:10:58.852000000 +0800
++++ zstd_new/lib/libzstd.mk	2024-06-24 10:46:28.458827810 +0800
 @@ -99,6 +99,10 @@ ASFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS) $
  LDFLAGS  += $(MOREFLAGS)
  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)

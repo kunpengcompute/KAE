@@ -22,12 +22,22 @@ int kaezstd_init_v1(ZSTD_CCtx* zc)
     return KAE_ZSTD_SUCC;
 }
 
+void kaezstd_reset_v1(ZSTD_CCtx* zc)
+{
+    kaezip_ctx_t* kaezip_ctx = (kaezip_ctx_t*)zc->kaeConfig;
+    if (kaezip_ctx) {
+        kaezip_ctx->status = KAEZIP_COMP_INIT;
+        kaezip_ctx->zstd_data.blk_type = 2; //  zstd compressed block
+        US_DEBUG("kaezstd reset v1");
+    }
+}
+
 void kaezstd_release_v1(ZSTD_CCtx* zc)
 {
     kaezip_ctx_t* kaezip_ctx = (kaezip_ctx_t*)zc->kaeConfig;
     if (kaezip_ctx) {
         kaezip_put_ctx(kaezip_ctx);
-        US_INFO("kaezstd release");
+        US_INFO("kaezstd release v1");
     }
     zc->kaeConfig = 0;
 }

@@ -15,7 +15,6 @@
 static void uadk_get_accel_platform(void)
 {
     if (g_platform >= 0) {
-        US_INFO("kaezstd v%d inited!\n", g_platform);
         return;
     }
     //  init log
@@ -27,17 +26,19 @@ static void uadk_get_accel_platform(void)
         free(dev);
         if (flag & 0x1) {
             g_platform = HW_V2;
-            return;
+            goto end;
         }
     }
     //  check no-sva
     int nosva_dev_num = wd_get_available_dev_num("lz77_zstd");
     if (nosva_dev_num > 0) {
         g_platform = HW_V1;
-        return;
+        goto end;
     }
     //  hardware don't support, use zstd original interface
     g_platform = HW_NONE;
+end:
+     US_INFO("kaezstd v%d inited!\n", g_platform);
 }
 
 int kaezstd_init(ZSTD_CCtx* zc)
@@ -60,6 +61,25 @@ int kaezstd_init(ZSTD_CCtx* zc)
     }
     US_INFO("kaezstd_init return code is %d\n", ret);
     return ret;
+}
+
+void kaezstd_reset(ZSTD_CCtx* zc)
+{
+    uadk_get_accel_platform();
+
+    switch (g_platform)
+    {
+    case HW_NONE:
+        break;
+    case HW_V1:
+        kaezstd_reset_v1(zc);
+        break;
+    case HW_V2:
+        break;
+    default:
+        break;
+    }
+    US_INFO("kaezstd_reset");
 }
 
 void kaezstd_release(ZSTD_CCtx* zc)
@@ -99,7 +119,7 @@ void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
     default:
         break;
     }
-    US_INFO("kaezstd_setstatus %d\n", status);
+    US_INFO("kaezstd_set blk_type %d\n", status);
 }
 
 int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize)
