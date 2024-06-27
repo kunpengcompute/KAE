@@ -27,6 +27,7 @@ typedef struct {
 }KAEZstdVersion;
 extern int kaezstd_get_version(KAEZstdVersion* ver);
 extern int kaezstd_init(ZSTD_CCtx* zc);
+extern void kaezstd_reset(ZSTD_CCtx* zc);
 extern void kaezstd_release(ZSTD_CCtx* zc);
 extern void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status);
 extern int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize);
