@@ -11,7 +11,7 @@
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
 
-enum kaezip_comp_status {
+enum kaezstd_comp_status {
     KAEZIP_COMP_INIT = 0,
     KAEZIP_COMP_DOING,
     KAEZIP_COMP_CRC_UNCHECK,
@@ -20,7 +20,7 @@ enum kaezip_comp_status {
     KAEZIP_COMP_VERIFY_ERR,
 };
 
-enum kaezip_decomp_status {
+enum kaezstd_decomp_status {
     KAEZIP_DECOMP_INIT = 0,
     KAEZIP_DECOMP_DOING,
     KAEZIP_DECOMP_END_BUT_DATAREMAIN,
@@ -35,7 +35,7 @@ struct wcrypto_end_block {
     unsigned int     b_set;
 };
 
-struct kaezip_ctx {
+struct kaezstd_ctx {
     void            *in;
     unsigned int    in_len;
     void            *out;
@@ -48,7 +48,7 @@ struct kaezip_ctx {
     int              comp_alg_type; // WCRYPTO_LZ77_ZSTD
     int              comp_type;     // WCRYPTO_DEFLATE / WCRYPTO_INFLATE
     unsigned int     do_comp_len;   // a compress proccess cost len
-    int              status;        // enum kaezip_comp_status
+    int              status;        // enum kaezstd_comp_status
 
     struct wcrypto_end_block        end_block;
     KAE_QUEUE_DATA_NODE_S*          q_node;
@@ -57,18 +57,18 @@ struct kaezip_ctx {
     struct wcrypto_lz77_zstd_format zstd_data;
     void*                           wd_ctx;
 };
-typedef struct kaezip_ctx   kaezip_ctx_t;
+typedef struct kaezstd_ctx   kaezstd_ctx_t;
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype);
-void          kaezip_put_ctx(kaezip_ctx_t* kz_ctx);
-void          kaezip_init_ctx(kaezip_ctx_t* kz_ctx);
-void          kaezip_free_ctx(void* kz_ctx);
+kaezstd_ctx_t* kaezstd_get_ctx(int alg_comp_type, int comp_optype);
+void          kaezstd_put_ctx(kaezstd_ctx_t* kz_ctx);
+void          kaezstd_init_ctx(kaezstd_ctx_t* kz_ctx);
+void          kaezstd_free_ctx(void* kz_ctx);
 
-void          kaezip_set_input_data(kaezip_ctx_t *kz_ctx);
-void          kaezip_get_output_data(kaezip_ctx_t *kz_ctx);
+void          kaezstd_set_input_data(kaezstd_ctx_t *kz_ctx);
+void          kaezstd_get_output_data(kaezstd_ctx_t *kz_ctx);
 
-int           kaezip_get_remain_data(kaezip_ctx_t *kz_ctx);
-int           kaezip_driver_do_comp(kaezip_ctx_t *kaezip_ctx);
+int           kaezstd_get_remain_data(kaezstd_ctx_t *kz_ctx);
+int           kaezstd_driver_do_comp(kaezstd_ctx_t *kaezstd_ctx);
 
 #endif
 
