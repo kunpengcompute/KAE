@@ -301,6 +301,17 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
 	if (do_cipher_len == 0)
 		return;
 
+ 	int iv_bytes = priv_ctx->e_cipher_ctx->op_data.iv_bytes; // equels 16
+ 	unsigned char K[iv_bytes]; // next iv in OFB c_mode
+	if (priv_ctx->c_mode == OFB) {
+		int ofb_offset = priv_ctx->do_cipher_len - iv_bytes;
+		int i;
+		for (i = 0; i < iv_bytes; i++) {
+			K[i] = *((unsigned char *)priv_ctx->in + ofb_offset + i) ^
+					*((unsigned char *)priv_ctx->out + ofb_offset + i);
+		}
+	}
+
 	priv_ctx->in += priv_ctx->do_cipher_len;
 	priv_ctx->out += priv_ctx->do_cipher_len;
 	priv_ctx->left_len -= priv_ctx->do_cipher_len;
@@ -327,8 +338,7 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
 		}
 		break;
 	case OFB:
-		kae_memcpy(priv_ctx->iv, (uint8_t *)priv_ctx->e_cipher_ctx->op_data.iv,
-				priv_ctx->e_cipher_ctx->op_data.iv_bytes);
+		kae_memcpy(priv_ctx->iv, K, priv_ctx->e_cipher_ctx->op_data.iv_bytes);
 		break;
 	default:
 		US_WARN("mode=%d don't support.", priv_ctx->c_mode);
