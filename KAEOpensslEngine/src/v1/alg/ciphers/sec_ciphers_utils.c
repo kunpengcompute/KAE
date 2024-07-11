@@ -82,7 +82,9 @@ int sec_ciphers_get_cipher_mode(int nid)
 	case NID_aes_128_cfb128:
 	case NID_aes_192_cfb128:
 	case NID_aes_256_cfb128:	
+#ifndef KAE_GMSSL
 	case NID_sm4_cfb128:
+#endif
 		c_mode = CFB;
 		break;
 	case NID_aes_128_gcm:
