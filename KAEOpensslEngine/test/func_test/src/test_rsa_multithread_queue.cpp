@@ -40,13 +40,13 @@ static int rsa_encrypt_dencrypt(void)
     unsigned char *verData = (unsigned char *)malloc(key_len + 1);
     memset(verData, 0, key_len + 1);
 
-    enclen = rsa_encrypt(rsa, encData, srcStr, RSA_PKCS1_PADDING);
+    enclen = rsa_public_encrypt(rsa, encData, srcStr, RSA_PKCS1_PADDING);
     if(enclen <= 0) {
         printf("Encryption failed.\n");
         return FALSE;
     }
 
-    declen = rsa_decrypt(rsa, decData, encData, enclen, RSA_PKCS1_PADDING);
+    declen = rsa_private_decrypt(rsa, decData, encData, enclen, RSA_PKCS1_PADDING);
     if(declen <= 0) {
         printf("Decryption failed.\n");
         return FALSE;
@@ -57,13 +57,13 @@ static int rsa_encrypt_dencrypt(void)
         return FALSE;
     }
 
-    siglen = rsa_sign(rsa, signData, srcStr, RSA_PKCS1_PADDING);
+    siglen = rsa_private_encrypt(rsa, signData, srcStr, RSA_PKCS1_PADDING); // 注意这里是想验证加解密还是签名验签
     if(siglen <= 0) {
         printf("Failed to sign the signature.\n");
         return FALSE;
     }
 
-    verlen = rsa_verify(rsa, verData, signData, siglen, RSA_PKCS1_PADDING);
+    verlen = rsa_public_decrypt(rsa, verData, signData, siglen, RSA_PKCS1_PADDING);
     if(verlen <= 0) {
         printf("Failed to verify the signature.\n");
         return FALSE;
