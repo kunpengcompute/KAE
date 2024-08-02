@@ -91,6 +91,7 @@ int sec_ciphers_get_cipher_mode(int nid)
 	case NID_aes_192_gcm:
 	case NID_aes_256_gcm:
 		c_mode = GCM;
+		break;
 	default:
 		US_WARN("nid=%d don't support by sec engine.", nid);
 		break;

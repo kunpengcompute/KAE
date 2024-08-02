@@ -103,7 +103,7 @@ static aead_engine_ctx_t *wd_aeads_new_engine_ctx(KAE_QUEUE_DATA_NODE_S *q_node,
 	}
 
 	if (e_aead_ctx->op_data.iv == NULL) {
-		e_aead_ctx->op_data.iv = e_aead_ctx->setup.br.alloc(e_aead_ctx->setup.br.usr, 12);
+		e_aead_ctx->op_data.iv = e_aead_ctx->setup.br.alloc(e_aead_ctx->setup.br.usr, 16);
 	}
 	
 
@@ -260,12 +260,6 @@ static int sec_aes_gcm_init(EVP_CIPHER_CTX *ctx, const unsigned char *ckey,
 	nid = EVP_CIPHER_CTX_nid(ctx);
 	priv_ctx->c_mode = sec_ciphers_get_cipher_mode(nid);
 	priv_ctx->c_alg = sec_ciphers_get_cipher_alg(nid);
-
-    //iv
-    if (iv) {
-		memset(priv_ctx->iv, 0, 16);
-		memcpy(priv_ctx->iv, iv, 12);//AES_GCM_IV_LEN
-	}
 	priv_ctx->iv_len = 12; //AES_GCM_IV_LEN
 
     // engine_ctx
@@ -286,7 +280,7 @@ static int sec_aes_gcm_init(EVP_CIPHER_CTX *ctx, const unsigned char *ckey,
     // opdata
 	priv_ctx->data_buf = priv_ctx->e_aead_ctx->op_data.in;
 	priv_ctx->out_data_buf = priv_ctx->e_aead_ctx->op_data.out;
-	priv_ctx->iv = priv_ctx->e_aead_ctx->op_data.iv;
+
     // ckey akey
     if (ckey) {
         ckey_len = EVP_CIPHER_CTX_key_length(ctx);
@@ -295,6 +289,16 @@ static int sec_aes_gcm_init(EVP_CIPHER_CTX *ctx, const unsigned char *ckey,
         wcrypto_set_aead_ckey(priv_ctx->e_aead_ctx->wd_ctx, priv_ctx->key, ckey_len);
         priv_ctx->key_len = ckey_len;  //感觉多余，考虑是否删除该成员变量
     }
+
+	 //iv
+    if (iv) {
+		memset(priv_ctx->e_aead_ctx->op_data.iv, 0, 16);
+		memcpy(priv_ctx->e_aead_ctx->op_data.iv, iv, 12);//AES_GCM_IV_LEN
+		priv_ctx->iv_len = 12;
+
+	}
+
+	priv_ctx->mac_len = AES_GCM_TAG_LEN;
 
     ret = wcrypto_aead_setauthsize(priv_ctx->e_aead_ctx->wd_ctx, 16);
 	if (ret) {
@@ -327,9 +331,9 @@ int wd_aead_do_crypto_impl(struct aead_priv_ctx *priv)
 	aead_engine_ctx_t *e_aead_ctx = priv->e_aead_ctx;
 
 	// 输入参数
-	e_aead_ctx->op_data.in_bytes = priv->aad_len + priv->data_len + priv->mac_len;
 	e_aead_ctx->op_data.out_buf_bytes = OUTPUT_CACHE_SIZE;
 	e_aead_ctx->op_data.iv_bytes = priv->iv_len;
+	e_aead_ctx->op_data.assoc_size = AES_GCM_TAG_LEN;
 
 again:
 	ret = wcrypto_do_aead(e_aead_ctx->wd_ctx, &e_aead_ctx->op_data, NULL);
@@ -362,7 +366,6 @@ int wd_aead_do_crypto_impl_async(struct aead_priv_ctx *priv, op_done_t *op_done)
 	aead_engine_ctx_t *e_aead_ctx = priv->e_aead_ctx;
 
 	// 输入参数
-	e_aead_ctx->op_data.in_bytes = priv->aad_len + priv->data_len + priv->mac_len;
 	e_aead_ctx->op_data.out_buf_bytes = OUTPUT_CACHE_SIZE;
 	e_aead_ctx->op_data.iv_bytes = priv->iv_len;
 
@@ -403,47 +406,56 @@ static int sec_aes_do_aes_gcm_first(struct aead_priv_ctx *priv, unsigned char *o
 	memcpy(priv->data_buf, in, inlen);
 	priv->aad_len = inlen;
 
-	return 1;
+	return priv->aad_len;
 }
 
-static int do_aes_aead(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
+static int do_aes_aead_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 				    unsigned char *out, const unsigned char *in, size_t inlen, op_done_t *op_done)
 {
-	unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
 	int enc;
-
-	// 得预处理，把输出的数据按uadk要求准备
-	memcpy(priv->data_buf + priv->aad_len, in, inlen);
-	priv->data_len = inlen;
 	enc = EVP_CIPHER_CTX_encrypting(ctx);
-	priv->e_aead_ctx->op_data.out_bytes = priv->aad_len + priv->data_len + priv->mac_len;
+	
 	if (!enc) {
+		unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
 		memcpy(priv->data_buf + priv->aad_len + priv->data_len, ctx_buf, AES_GCM_TAG_LEN);
-		priv->mac_len = AES_GCM_TAG_LEN;
+		priv->e_aead_ctx->op_data.in_bytes = priv->data_len;
 		priv->e_aead_ctx->op_data.out_bytes = priv->aad_len + priv->data_len;
+	} else {
+		priv->e_aead_ctx->op_data.in_bytes = priv->data_len;
+		priv->e_aead_ctx->op_data.out_bytes = priv->aad_len + priv->data_len + priv->mac_len;
 	}
 
-	//给硬件计算数据
 	if (op_done) {
 		// async
-		wd_aead_do_crypto_impl_async(priv, op_done);
+		if(wd_aead_do_crypto_impl_async(priv, op_done) != KAE_SUCCESS)
+			return KAE_FAIL;
 	} else {
 		// sync
-		wd_aead_do_crypto_impl(priv);
+		if(wd_aead_do_crypto_impl(priv) != KAE_SUCCESS)
+			return KAE_FAIL;
 	}
 
-	memcpy(out, priv->out_data_buf + priv->aad_len, inlen);
+	memcpy(out, priv->out_data_buf + priv->aad_len, priv->data_len);
 
 	if (enc) {
-		memcpy(priv->mac, priv->out_data_buf + priv->aad_len + priv->data_len, AES_GCM_TAG_LEN);
-		priv->mac_len = AES_GCM_TAG_LEN;
+		unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
+		memcpy(ctx_buf, priv->out_data_buf + priv->aad_len + priv->data_len, priv->mac_len);
 	}
 
-	return inlen; // 成功就返回out数据长度
+
+	return priv->data_len;
 }
 
 static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 				    unsigned char *out, const unsigned char *in, size_t inlen)
+{
+	memcpy(priv->data_buf + priv->aad_len, in, inlen);
+	priv->data_len += inlen;
+	return 0; //只囤包，不计算
+}
+
+static int sec_aes_do_aes_gcm_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
+				   unsigned char *out, const unsigned char *in, size_t inlen)
 {
 	// add async parm
 	int job_ret;
@@ -461,11 +473,11 @@ static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *
 	} else {
 		US_DEBUG("NO ASYNC Job or async disable, back to SYNC!");
 		async_cleanup_op_done_v1(&op_done);
-		return do_aes_aead(ctx, priv, out, in, inlen, NULL); //sync
+		return do_aes_aead_final(ctx, priv, out, in, inlen, NULL); //sync
 	}
 
 	// async
-	if (do_aes_aead(ctx, priv, out, in, inlen, &op_done) == KAE_FAIL) 
+	if (do_aes_aead_final(ctx, priv, out, in, inlen, &op_done) == KAE_FAIL) 
 		goto err;
 	
 	do {
@@ -485,25 +497,12 @@ static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *
 	async_cleanup_op_done_v1(&op_done);
 
 	US_DEBUG(" Cipher Async Job Finish! priv_ctx = %p\n", priv);
-	return 1;
+	return priv->data_len;
 err:
 	US_ERR("async job err");
 	(void)async_clear_async_event_notification_v1();
 	async_cleanup_op_done_v1(&op_done);
 	return KAE_FAIL;
-}
-
-static int sec_aes_do_aes_gcm_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
-				   unsigned char *out, const unsigned char *in, size_t inlen)
-{
-	unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
-	int enc;
-
-	enc = EVP_CIPHER_CTX_encrypting(ctx);
-	if (enc)
-		memcpy(ctx_buf, priv->mac, priv->mac_len);
-
-	return 0;
 }
 
 static int sec_aes_do_aes_gcm(EVP_CIPHER_CTX *ctx, unsigned char *out,
@@ -519,7 +518,7 @@ static int sec_aes_do_aes_gcm(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 	if (in) {
 		if (out == NULL)
-			return sec_aes_do_aes_gcm_first(priv, out, in, inlen);
+			return sec_aes_do_aes_gcm_first(priv, NULL, in, inlen);
 		return sec_aes_do_aes_gcm_update(ctx, priv, out, in, inlen);
 	}
 	return sec_aes_do_aes_gcm_final(ctx, priv, out, NULL, 0);
