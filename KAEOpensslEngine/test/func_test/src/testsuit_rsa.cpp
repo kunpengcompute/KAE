@@ -15,7 +15,7 @@ protected:
 
 };
 //硬算生成私钥
-TEST_F(RsaTestGroup, case1)
+TEST_F(RsaTestGroup, case0)
 {
     OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
     ENGINE *engine = ENGINE_by_id("kae");
@@ -36,7 +36,46 @@ TEST_F(RsaTestGroup, case1)
 
 }
 
-//硬算加解密、签名验签
+//硬算加解密--公钥加密私钥解密
+TEST_F(RsaTestGroup, case1)
+{
+    OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+    ENGINE *engine = ENGINE_by_id("kae");
+    ASSERT_FALSE(engine == NULL);
+    
+    unsigned long e = RSA_F4;  // 65537
+    BIGNUM *e_value = BN_new();
+    BN_set_word(e_value, e);
+
+    RSA *rsa = RSA_new_method(engine);
+    ASSERT_FALSE(rsa == NULL);
+    
+    int bit = 2048;
+    RSA_generate_key_ex(rsa, bit, e_value, NULL); //创建⼀对rsa的公钥私钥
+    ASSERT_GE(RSA_check_key_ex(rsa, NULL) , 0);
+  
+    int enclen, declen;
+    unsigned char *srcStr = (unsigned char *)"000056789";
+    int key_len = RSA_size(rsa);
+    unsigned char *encData = (unsigned char *)malloc(key_len + 1);
+    memset(encData, 0, key_len + 1);
+    unsigned char *decData = (unsigned char *)malloc(key_len + 1);
+    memset(decData, 0, key_len + 1);
+
+    // srcStr  ==公钥加密==》 encData
+    enclen = rsa_public_encrypt(rsa, encData, srcStr, RSA_PKCS1_PADDING);
+    ASSERT_GT(enclen , 0);
+
+    // encData ==私钥解密==》 decData
+    declen = rsa_private_decrypt(rsa, decData, encData, enclen, RSA_PKCS1_PADDING);
+    ASSERT_GE(declen , 0);
+
+    EXPECT_EQ(memcmp(decData, srcStr, declen), 0);
+
+    RSA_free(rsa);
+}
+
+////硬算加解密--私钥加密公钥解密
 TEST_F(RsaTestGroup, case2)
 {
     OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
@@ -50,37 +89,27 @@ TEST_F(RsaTestGroup, case2)
     RSA *rsa = RSA_new_method(engine);
     ASSERT_FALSE(rsa == NULL);
     
-    int bit = 1024;
-    RSA_generate_key_ex(rsa, bit, e_value, NULL);
+    int bit = 2048;
+    RSA_generate_key_ex(rsa, bit, e_value, NULL); //创建⼀对rsa的公钥私钥
     ASSERT_GE(RSA_check_key_ex(rsa, NULL) , 0);
   
-    int enclen, declen, siglen, verlen;
+    int enclen, declen;
     unsigned char *srcStr = (unsigned char *)"000056789";
     int key_len = RSA_size(rsa);
     unsigned char *encData = (unsigned char *)malloc(key_len + 1);
     memset(encData, 0, key_len + 1);
     unsigned char *decData = (unsigned char *)malloc(key_len + 1);
     memset(decData, 0, key_len + 1);
-    unsigned char *signData = (unsigned char *)malloc(key_len + 1);
-    memset(signData, 0, key_len + 1);
-    unsigned char *verData = (unsigned char *)malloc(key_len + 1);
-    memset(verData, 0, key_len + 1);
 
-    enclen = rsa_encrypt(rsa, encData, srcStr, RSA_PKCS1_PADDING);
+    // srcStr  ==私钥加密==》 encData
+    enclen = rsa_private_encrypt(rsa, encData, srcStr, RSA_PKCS1_PADDING);
     ASSERT_GT(enclen , 0);
 
-    declen = rsa_decrypt(rsa, decData, encData, enclen, RSA_PKCS1_PADDING);
-    ASSERT_GE(declen , 0);
+    // encData ==公钥解密==》 decData
+    declen = rsa_public_decrypt(rsa, decData, encData, enclen, RSA_PKCS1_PADDING);
+    ASSERT_GT(declen , 0);
 
-    EXPECT_EQ(memcmp(decData, srcStr, declen), 0);
-
-    siglen = rsa_sign(rsa, signData, srcStr, RSA_PKCS1_PADDING);
-    ASSERT_GT(siglen , 0);
-
-    verlen = rsa_verify(rsa, verData, signData, siglen, RSA_PKCS1_PADDING);
-    ASSERT_GT(verlen , 0);
-
-    EXPECT_EQ(memcmp(verData, srcStr, declen) , 0);
+    EXPECT_EQ(memcmp(decData, srcStr, declen) , 0);
 
     RSA_free(rsa);
 }
@@ -137,8 +166,8 @@ TEST_F(RsaTestGroup, case3)
 	
     RSA_free(rsa);
 }
-//Evp加解密签名验签 不传引擎
 
+//Evp这些用例当前没走到硬算，API方式被劫持到其他接口了，但是cli的方式调用正常，需要分析。
 TEST_F(RsaTestGroup, case4)
 {
     OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
@@ -195,69 +224,76 @@ TEST_F(RsaTestGroup, case4)
     RSA_free(rsa);
 }
 
-//RSA不同加密长度 NO_PADDING模式
+//RSA不同加密长度 NO_PADDING模式:输入必须和RSA秘钥模长度一致，如果输入明文过长，必须切割,输出长度为RSA秘钥模长度。
 TEST_F(RsaTestGroup, case5)
 {   
     int ret = 0;	
 
-    char srcStr2[127]="a";
+    char srcStr2[128+1]="a";//128*8=1024
 	
     for(int i = 0;i<11;i++)
     {
         strcat(srcStr2,"00000000abc");
     }
     strcat(srcStr2,"abcbfd");
+    EXPECT_EQ(strlen(srcStr2),128);
     ret = rsa_various_padding_mode(1024, (unsigned char *)srcStr2, RSA_NO_PADDING);
     EXPECT_EQ(ret , 1);
-    
-    char srcStr3[254]="a";
+
+    char srcStr3[256+1]="a";//256*8=2048
 
     for(int i = 0;i<22;i++)
     {
-        strcat(srcStr3,"00000000abc");
+        strcat(srcStr3,"00000000abc");//11*22=242
     }
-    strcat(srcStr3,"aBCddddddppps");
+    strcat(srcStr3,"aBCddddddppps");//1+242+13=256=2048bits
+    EXPECT_EQ(strlen(srcStr3),256);
     ret = rsa_various_padding_mode(2048, (unsigned char *)srcStr3, RSA_NO_PADDING);
     EXPECT_EQ(ret , 1);
 
-    char srcStr4[384]="a";
+    char srcStr4[384+1]="a";//384*8=3072
 	
     for(int i = 0;i<34;i++)
     {
         strcat(srcStr4,"00000000abc");
     }
     strcat(srcStr4,"adfsdfsty");
+    EXPECT_EQ(strlen(srcStr4),384);
     ret = rsa_various_padding_mode(3072, (unsigned char *)srcStr4, RSA_NO_PADDING);
     EXPECT_EQ(ret , 1);
 
-    char srcStr5[512]="a";
+    char srcStr5[512+1]="a";//512*8=4096
 	
     for(int i = 0;i<46;i++)
     {
         strcat(srcStr5,"00000000abc");
     }
     strcat(srcStr5,"adddf");
+    EXPECT_EQ(strlen(srcStr5),512);
     ret = rsa_various_padding_mode(4096, (unsigned char *)srcStr5, RSA_NO_PADDING);
     EXPECT_EQ(ret , 1);
     
 }
 
   
-//RSA不同加密长度 RSA_PKCS1_OAEP_PADDING模式  1024/8-42
+//RSA不同加密长度 RSA_PKCS1_OAEP_PADDING模式:输入明文长度小于RSA_size(rsa)-41,输出长度为RSA秘钥模长度。
 TEST_F(RsaTestGroup, case6)
 {
     int ret = 0;
     char srcStr1[] = "0000000789";
 
-    char srcStr2[86]="0";
+    char srcStr2[86+1]="a";
 	
     for(int i = 0;i<8;i++)
     {
         strcat(srcStr2,srcStr1);
     }
-    strcat(srcStr2,"abcde");
+    strcat(srcStr2,"abcds");
+
+    // printf("[%d][%s]\n", strlen(srcStr2), srcStr2);
+    
     for (int j = 0; j < 250; j++) {
-        ret = rsa_various_padding_mode(1024, (unsigned char *)srcStr2, RSA_PKCS1_OAEP_PADDING);
+        ret = rsa_various_padding_mode(1024, (unsigned char *)srcStr2, RSA_PKCS1_OAEP_PADDING); //1024/8-41=87 (应该选86及以下)
         EXPECT_EQ(ret , 1);
     }
     
@@ -300,7 +336,7 @@ TEST_F(RsaTestGroup, case6)
     }
 }
 
-//RSA不同加密长度 RSA_PKCS1_PADDING模式 1024/8-11
+//RSA不同加密长度 RSA_PKCS1_PADDING模式 1024/8-11 :输入至少小于RSA_size(rsa)-11,输出长度为RSA秘钥模长度。
 TEST_F(RsaTestGroup, case7)
 {
     int ret = 0;
@@ -315,6 +351,7 @@ TEST_F(RsaTestGroup, case7)
         strcat(srcStr2,srcStr1);
     }
     strcat(srcStr2,"aB");
+    //printf("[%d][%s]\n", strlen(srcStr2), srcStr2);
     ret = rsa_various_padding_mode(3072, (unsigned char *)srcStr2, RSA_PKCS1_PADDING);
     EXPECT_EQ(ret , 1);
     char srcStr3[501]="a";
