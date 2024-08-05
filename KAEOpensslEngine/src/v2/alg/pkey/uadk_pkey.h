@@ -58,7 +58,7 @@ struct uadk_pkey_meth {
 bool uadk_is_all_zero(const unsigned char *data, size_t dlen);
 bool uadk_support_algorithm(const char *alg);
 int uadk_ecc_get_rand(char *out, size_t out_len, void *usr);
-void uadk_ecc_cb(void *req_t);
+void uadk_e_ecc_cb(void *req_t);
 void uadk_ecc_fill_req(struct wd_ecc_req *req,
 			      unsigned int op, void *in, void *out);
 int uadk_ecc_set_private_key(handle_t sess, const EC_KEY *eckey);

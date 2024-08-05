@@ -34,9 +34,6 @@ static int cipher_hw_v2_nids[] = {
 	NID_sm4_ecb,
 	NID_des_ede3_cbc,
 	NID_des_ede3_ecb,
-	NID_aes_128_gcm,
-	NID_aes_192_gcm,
-	NID_aes_256_gcm
 };
 
 static int cipher_hw_v3_nids[] = {

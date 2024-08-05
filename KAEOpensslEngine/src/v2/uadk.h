@@ -23,6 +23,11 @@
 #define ENV_STRING_LEN		256
 #define ENGINE_SEND_MAX_CNT	90000000
 #define ENGINE_RECV_MAX_CNT	60000000
+#define ENGINE_ENV_RECV_MAX_CNT	60000
+#define UADK_UNINIT		0
+#define UADK_INIT_SUCCESS	1
+#define UADK_INIT_FAIL		2
+#define UADK_DEVICE_ERROR	3
 
 enum {
 	HW_V2,
@@ -46,5 +51,6 @@ void uadk_e_ecc_lock_init(void);
 void uadk_e_rsa_lock_init(void);
 void uadk_e_dh_lock_init(void);
 void uadk_e_cipher_lock_init(void);
+void uadk_e_aead_lock_init(void);
 void uadk_e_digest_lock_init(void);
 #endif

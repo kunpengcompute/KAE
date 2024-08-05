@@ -320,6 +320,8 @@ static int uadk_destroy(ENGINE *e)
 	if (uadk_dh)
 		uadk_e_destroy_dh();
 #endif
+
+	async_poll_task_free();
 	pthread_mutex_lock(&uadk_engine_mutex);
 	uadk_inited = 0;
 	pthread_mutex_unlock(&uadk_engine_mutex);
@@ -447,7 +449,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 			fprintf(stderr, "uadk bind sm2 failed\n");
 		}else{
 			uadk_sm2_nosva = 1;
-			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
+			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 dh)");
 		}
 	}else{
 		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");

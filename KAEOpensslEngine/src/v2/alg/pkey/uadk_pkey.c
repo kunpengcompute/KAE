@@ -51,7 +51,7 @@ struct ecc_res_config {
 /* ECC global hardware resource is saved here */
 struct ecc_res {
 	struct wd_ctx_config *ctx_res;
-	int pid;
+	int status;
 	int numa_id;
 	pthread_spinlock_t lock;
 } ecc_res;
@@ -77,7 +77,7 @@ static int ecc_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 	return 0;
 }
 
-void uadk_ecc_cb(void *req_t)
+void uadk_e_ecc_cb(void *req_t)
 {
 	struct wd_ecc_req *req_new = (struct wd_ecc_req *)req_t;
 	struct uadk_e_cb_info *cb_param;
@@ -106,6 +106,13 @@ void uadk_ecc_cb(void *req_t)
 	}
 }
 
+static void uadk_e_ecc_set_status(void)
+{
+	pthread_spin_lock(&ecc_res.lock);
+	ecc_res.status = UADK_DEVICE_ERROR;
+	pthread_spin_unlock(&ecc_res.lock);
+}
+
 static int uadk_ecc_poll(void *ctx)
 {
 	unsigned int recv = 0;
@@ -115,12 +122,15 @@ static int uadk_ecc_poll(void *ctx)
 
 	do {
 		ret = wd_ecc_poll_ctx(CTX_ASYNC, expt, &recv);
-		if (!ret && recv == expt)
+		if (!ret && recv == expt) {
 			return 0;
-		else if (ret == -EAGAIN)
+		} else if (ret == -EAGAIN) {
 			rx_cnt++;
-		else
+		} else {
+			if (ret == -WD_HW_EACCESS)
+				uadk_e_ecc_set_status();
 			return -1;
+		}
 	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to recv msg: timeout!\n");
@@ -167,10 +177,13 @@ static int uadk_e_ecc_env_poll(void *ctx)
 
 	do {
 		ret = wd_ecc_poll(expt, &recv);
-		if (ret < 0 || recv == expt)
+		if (ret < 0 || recv == expt) {
+			if (ret == -WD_HW_EACCESS)
+				uadk_e_ecc_set_status();
 			return ret;
+		}
 		rx_cnt++;
-	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
+	} while (rx_cnt < ENGINE_ENV_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to poll msg: timeout!\n");
 
@@ -198,7 +211,8 @@ static int uadk_e_wd_ecc_general_init(struct uacce_dev *dev,
 				      struct wd_sched *sched)
 {
 	struct wd_ctx_config *ctx_cfg;
-	int ret, i;
+	__u32 i;
+	int ret;
 
 	ctx_cfg = calloc(1, sizeof(struct wd_ctx_config));
 	if (!ctx_cfg)
@@ -256,14 +270,17 @@ static int uadk_wd_ecc_init(struct ecc_res_config *config, struct uacce_dev *dev
 	return ret;
 }
 
-
 static void uadk_wd_ecc_uninit(void)
 {
 	struct wd_ctx_config *ctx_cfg = ecc_res.ctx_res;
-	int i, ret;
+	__u32 i;
+	int ret;
 
-	if (ecc_res.pid != getpid())
+	if (ecc_res.status == UADK_UNINIT)
 		return;
+
+	if (ecc_res.status == UADK_INIT_FAIL)
+		goto clear_status;
 
 	ret = uadk_e_is_env_enabled("ecc");
 	if (ret == ENV_ENABLED) {
@@ -276,67 +293,104 @@ static void uadk_wd_ecc_uninit(void)
 		free(ctx_cfg);
 		ecc_res.ctx_res = NULL;
 	}
-	ecc_res.pid = 0;
 	ecc_res.numa_id = 0;
+
+clear_status:
+	ecc_res.status = UADK_UNINIT;
+}
+
+static int uadk_ecc_do_sync(handle_t sess, struct wd_ecc_req *req)
+{
+	int ret;
+
+	ret = wd_do_ecc_sync(sess, req);
+	if (ret < 0) {
+		if (ret == -WD_HW_EACCESS)
+			uadk_e_ecc_set_status();
+		return UADK_E_FAIL;
+	}
+
+	return 1;
+}
+
+static int uadk_ecc_do_async(handle_t sess, struct wd_ecc_req *req,
+			     struct async_op *op, void *usr)
+{
+	struct uadk_e_cb_info *cb_param;
+	int ret = 0;
+	int cnt = 0;
+	int idx;
+
+	cb_param = malloc(sizeof(struct uadk_e_cb_info));
+	if (!cb_param) {
+		fprintf(stderr, "failed to alloc cb_param.\n");
+		return ret;
+	}
+
+	cb_param->op = op;
+	cb_param->priv = req;
+	req->cb_param = cb_param;
+	req->cb = uadk_e_ecc_cb;
+	req->status = -1;
+	ret = async_get_free_task(&idx);
+	if (!ret)
+		goto free_cb_param;
+
+	op->idx = idx;
+	do {
+		ret = wd_do_ecc_async(sess, req);
+		if (unlikely(ret < 0)) {
+			if (unlikely(ret == -WD_HW_EACCESS))
+				uadk_e_ecc_set_status();
+			else if (unlikely(cnt++ > ENGINE_SEND_MAX_CNT))
+				fprintf(stderr, "do ecc async operation timeout.\n");
+			else
+				continue;
+
+			async_free_poll_task(op->idx, 0);
+			ret = 0;
+			goto free_cb_param;
+		}
+	} while (ret == -EBUSY);
+
+	ret = async_pause_job((void *)usr, op, ASYNC_TASK_ECC);
+	if (!ret)
+		goto free_cb_param;
+
+	if (req->status) {
+		ret = 0;
+		goto free_cb_param;
+	}
+
+free_cb_param:
+	free(cb_param);
+	req->cb_param = NULL;
+	return ret;
 }
 
 int uadk_ecc_crypto(handle_t sess, struct wd_ecc_req *req, void *usr)
 {
-	US_DEBUG("uadk_ecc_crypto start");
-	struct uadk_e_cb_info cb_param;
 	struct async_op op;
-	int idx, ret;
+	int ret;
 
 	ret = async_setup_async_event_notification(&op);
 	if (!ret) {
 		fprintf(stderr, "failed to setup async event notification.\n");
-		return 0;
+		return ret;
 	}
 
-	if (op.job != NULL) {
-		cb_param.op = &op;
-		cb_param.priv = req;
-		req->cb_param = &cb_param;
-		req->cb = (void *)uadk_ecc_cb;
-		req->status = -1;
-		ret = async_get_free_task(&idx);
-		if (!ret)
-			goto err;
+	if (!op.job)
+		return uadk_ecc_do_sync(sess, req);
 
-		op.idx = idx;
-
-		do {
-			ret = wd_do_ecc_async(sess, req);
-			if (ret < 0 && ret != -EBUSY) {
-				async_free_poll_task(op.idx, 0);
-				goto err;
-			}
-		} while (ret == -EBUSY);
-
-		ret = async_pause_job((void *)usr, &op, ASYNC_TASK_ECC, idx);
-		if (!ret)
-			goto err;
-		if (req->status)
-			return 0;
-		US_DEBUG("do ecc job async successed");
-	} else {
-		ret = wd_do_ecc_sync(sess, req);
-		if (ret < 0){
-			US_DEBUG("wd_do_ecc_sync failed");
-			return 0;
-		}
-		US_DEBUG("wd_do_ecc_sync successed");
-	}
-	return 1;
-err:
-	US_DEBUG("wd_do_ecc_sync failed");
+	ret = uadk_ecc_do_async(sess, req, &op, usr);
 	(void)async_clear_async_event_notification();
-	return 0;
+
+	return ret;
 }
 
 bool uadk_is_all_zero(const unsigned char *data, size_t dlen)
 {
-	int i;
+	size_t i;
 
 	for (i = 0; i < dlen; i++) {
 		if (data[i])
@@ -381,7 +435,7 @@ int uadk_ecc_set_public_key(handle_t sess, const EC_KEY *eckey)
 		ret = UADK_DO_SOFT;
 	}
 
-	free(point_bin);
+	OPENSSL_free(point_bin);
 
 	return ret;
 }
@@ -511,54 +565,52 @@ bool uadk_support_algorithm(const char *alg)
 
 	if (list) {
 		wd_free_list_accels(list);
-		US_DEBUG("uadk support alg: %s", alg);
 		return true;
 	}
 
-	US_DEBUG("uadk not support alg: %s", alg);
 	return false;
 }
 
 int uadk_init_ecc(void)
 {
-	struct uacce_dev *dev;
+	struct uacce_dev *dev = NULL;
 	int ret;
 
-	if (ecc_res.pid != getpid()) {
-		pthread_spin_lock(&ecc_res.lock);
-		if (ecc_res.pid == getpid()) {
-			pthread_spin_unlock(&ecc_res.lock);
-			return 0;
-		}
+	if (ecc_res.status != UADK_UNINIT)
+		return ecc_res.status;
 
-		/* Find an ecc device, no difference for sm2/ecdsa/ecdh/x25519/x448 */
-		dev = wd_get_accel_dev("ecdsa");
-		if (!dev) {
-			pthread_spin_unlock(&ecc_res.lock);
-			fprintf(stderr, "failed to get device for ecc\n");
-			return -ENOMEM;
-		}
+	pthread_spin_lock(&ecc_res.lock);
+	if (ecc_res.status != UADK_UNINIT)
+		goto unlock;
 
-		ret = uadk_wd_ecc_init(&ecc_res_config, dev);
-		if (ret) {
-			fprintf(stderr, "failed to init ec(%d).\n", ret);
-			goto err_unlock;
-		}
-
-		ecc_res.numa_id = dev->numa_id;
-		ecc_res.pid = getpid();
-		pthread_spin_unlock(&ecc_res.lock);
-		free(dev);
+	/* Find an ecc device, no difference for sm2/ecdsa/ecdh/x25519/x448 */
+	dev = wd_get_accel_dev("ecdsa");
+	if (!dev) {
+		fprintf(stderr, "no device available, switch to software!\n");
+		goto err_init;
 	}
 
-	return 0;
+	ret = uadk_wd_ecc_init(&ecc_res_config, dev);
+	if (ret) {
+		fprintf(stderr, "device unavailable(%d), switch to software!\n", ret);
+		goto err_init;
+	}
 
-err_unlock:
+	ecc_res.numa_id = dev->numa_id;
+	ecc_res.status = UADK_INIT_SUCCESS;
 	pthread_spin_unlock(&ecc_res.lock);
 	free(dev);
-	return ret;
-}
 
+	return ecc_res.status;
+
+err_init:
+	ecc_res.status = UADK_INIT_FAIL;
+unlock:
+	pthread_spin_unlock(&ecc_res.lock);
+	if (dev)
+		free(dev);
+	return ecc_res.status;
+}
 
 static void uadk_uninit_ecc(void)
 {
@@ -567,10 +619,11 @@ static void uadk_uninit_ecc(void)
 
 const EVP_PKEY_METHOD *get_openssl_pkey_meth(int nid)
 {
+#if OPENSSL_VERSION_NUMBER < 0x30000000
 	size_t count = EVP_PKEY_meth_get_count();
 	const EVP_PKEY_METHOD *pmeth;
 	int pkey_id = -1;
-	int i;
+	size_t i;
 
 	for (i = 0; i < count; i++) {
 		pmeth = EVP_PKEY_meth_get0(i);
@@ -581,21 +634,21 @@ const EVP_PKEY_METHOD *get_openssl_pkey_meth(int nid)
 
 	fprintf(stderr, "not find openssl method %d\n", nid);
 	return NULL;
+#else
+	return EVP_PKEY_meth_find(nid);
+#endif
 }
 
 static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			  const int **nids, int nid)
 {
-	US_DEBUG("get_pkey_meths start\n");
 	int ret;
 
 	if (!pmeth) {
-		US_DEBUG("pmeth is NULL");
 		*nids = pkey_nids;
 		return ARRAY_SIZE(pkey_nids);
 	}
 
-	US_DEBUG("switch alg to create EVP_PKEY_METHOD by nids\n");
 	switch (nid) {
 	case EVP_PKEY_SM2:
 		ret = uadk_sm2_create_pmeth(&pkey_meth);
@@ -603,7 +656,6 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register sm2 pmeth.\n");
 			return 0;
 		}
-		US_DEBUG("successed to register sm2 pmeth.\n");
 		*pmeth = pkey_meth.sm2;
 		break;
 	case EVP_PKEY_EC:
@@ -612,7 +664,6 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register ec pmeth.\n");
 			return 0;
 		}
-		US_DEBUG("successed to register ec pmeth.\n");
 		*pmeth = pkey_meth.ec;
 		break;
 	case EVP_PKEY_X448:
@@ -621,7 +672,6 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register x448 pmeth.\n");
 			return 0;
 		}
-		US_DEBUG("successed to register x448 pmeth.\n");
 		*pmeth = pkey_meth.x448;
 		break;
 	case EVP_PKEY_X25519:
@@ -630,7 +680,6 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			fprintf(stderr, "failed to register x25519 pmeth.\n");
 			return 0;
 		}
-		US_DEBUG("successed to register x25519 pmeth.\n");
 		*pmeth = pkey_meth.x25519;
 		break;
 	default:
@@ -638,26 +687,30 @@ static int get_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 		return 0;
 	}
 
-	US_DEBUG("successed to get_pkey_meths");
 	return 1;
 }
 
 static int uadk_ecc_bind_pmeth(ENGINE *e)
 {
-	US_DEBUG("uadk_e_bind_dh to set the implementation of the pkey method");
 	return ENGINE_set_pkey_meths(e, get_pkey_meths);
+}
+
+static void uadk_e_ecc_clear_status(void)
+{
+	ecc_res.status = UADK_UNINIT;
 }
 
 void uadk_e_ecc_lock_init(void)
 {
+	pthread_atfork(NULL, NULL, uadk_e_ecc_clear_status);
 	pthread_spin_init(&ecc_res.lock, PTHREAD_PROCESS_PRIVATE);
 }
 
 int uadk_e_bind_ecc(ENGINE *e)
 {
-	US_DEBUG("uadk_e_bind_ecc start.\n");
 	static const char * const ecc_alg[] = {"sm2", "ecdsa", "ecdh", "x25519", "x448"};
-	int i, size, ret;
+	__u32 i, size;
+	int ret;
 	bool sp;
 
 	/* Enumerate ecc algs to check whether it is supported and set tags */
@@ -671,17 +724,15 @@ int uadk_e_bind_ecc(ENGINE *e)
 	ret = uadk_ecc_bind_pmeth(e);
 	if (!ret) {
 		fprintf(stderr, "failed to bind ecc pmeth\n");
-		US_ERR("failed to bind ecc pmeth\n");		
 		return ret;
 	}
 
 	ret = uadk_bind_ec(e);
 	if (!ret) {
 		fprintf(stderr, "failed to bind ec\n");
-		US_ERR("failed to bind ec\n");
 		return ret;
 	}
-	US_DEBUG("uadk_e_bind_ecc successed.\n");
+
 	return ret;
 }
 

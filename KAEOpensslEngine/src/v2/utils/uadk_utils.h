@@ -17,7 +17,6 @@
 #ifndef UADK_UTILS
 #define UADK_UTILS
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 void *uadk_memcpy(void *dstpp, const void *srcpp, size_t len);

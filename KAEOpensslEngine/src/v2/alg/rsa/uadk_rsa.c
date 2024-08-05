@@ -61,6 +61,8 @@
 #define PRIME_CHECK_BIT_NUM		4
 
 static RSA_METHOD *rsa_hw_meth;
+static EVP_PKEY_METHOD *g_hpre_pkey_meth;
+static const int RSAPKEYMETH_IDX;
 
 struct bignum_st {
 	BN_ULONG *d;
@@ -134,8 +136,8 @@ struct rsa_res_config {
 /* Save rsa global hardware resource */
 struct rsa_res {
 	struct wd_ctx_config *ctx_res;
-	int pid;
 	int numa_id;
+	int status;
 	pthread_spinlock_t lock;
 } g_rsa_res;
 
@@ -508,18 +510,18 @@ static int add_rsa_pubenc_padding(int flen, const unsigned char *from,
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
 		break;
+# if OPENSSL_VERSION_NUMBER < 0x30000000
 	case RSA_SSLV23_PADDING:
 		ret = RSA_padding_add_SSLv23(buf, num, from, flen);
 		break;
+#endif
 	case RSA_NO_PADDING:
 		ret = RSA_padding_add_none(buf, num, from, flen);
 		break;
 	default:
-		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
 		ret = UADK_E_FAIL;
 	}
 
-	US_DEBUG("add_rsa_pubenc_padding successed!\n");
 	return ret;
 }
 
@@ -541,22 +543,22 @@ static int check_rsa_pridec_padding(unsigned char *to, int num,
 		if (!ret)
 			fprintf(stderr, "RSA_PKCS1_OAEP_PADDING err\n");
 		break;
+# if OPENSSL_VERSION_NUMBER < 0x30000000
 	case RSA_SSLV23_PADDING:
 		ret = RSA_padding_check_SSLv23(to, num, buf, len, num);
 		break;
+#endif
 	case RSA_NO_PADDING:
-		kae_memcpy(to, buf, len);
+		memcpy(to, buf, len);
 		ret = len;
 		break;
 	default:
-		US_ERR("RSA UNKNOWN PADDING TYPE!\n");
 		ret = UADK_E_FAIL;
 	}
 
-	if (ret == CHECK_PADDING_FAIL){
-		US_ERR("FAIT ret = %d",ret);
+	if (ret == CHECK_PADDING_FAIL)
 		ret = UADK_E_FAIL;
-	}
+
 	return ret;
 }
 
@@ -577,14 +579,14 @@ static int add_rsa_prienc_padding(int flen, const unsigned char *from,
 		if (!ret)
 			fprintf(stderr, "RSA_X931_PADDING err\n");
 		break;
+	case RSA_NO_PADDING:
+		ret = RSA_padding_add_none(to_buf, tlen, from, flen);
+		break;
 	default:
 		ret = UADK_E_FAIL;
-		US_ERR("RSA UNKNOWN PADDING TYPE!");
 	}
-	if (ret <= 0){
-		US_DEBUG("padding error:ret=%d",ret);
+	if (ret <= 0)
 		ret = UADK_E_FAIL;
-	}
 
 	return ret;
 }
@@ -593,32 +595,31 @@ static int check_rsa_pubdec_padding(unsigned char *to, int num,
 				    const unsigned char *buf, int len,
 				    int padding)
 {
-	int ret;
-
+	int pid = getpid();
+	int ret = 1;
+	//fprintf(stderr, "[debugggg-check-padding,-%d-] to is %p, num is %d, buf is %p, len is %d, padding is %d\n", pid, to, num, buf, len, padding);
 	switch (padding) {
 	case RSA_PKCS1_PADDING:
 		ret = RSA_padding_check_PKCS1_type_1(to, num, buf, len, num);
-		if (!ret){
-			US_ERR("RSA_padding_check_PKCS1_type_1 failed");
+		if (!ret || ret < 0)
 			fprintf(stderr, "RSA_PKCS1_PADDING err\n");
-		}
 		break;
 	case RSA_X931_PADDING:
 		ret = RSA_padding_check_X931(to, num, buf, len, num);
-		if (!ret){
-			US_ERR("RSA_padding_check_X931 failed");
+		if (!ret || ret < 0)
 			fprintf(stderr, "RSA_X931_PADDING err\n");
-		}
+		break;
+	case RSA_NO_PADDING:
+		memcpy(to, buf, len);
+		ret = len;
 		break;
 	default:
-		US_ERR("RSA UNKNOWN PADDING TYPE!");
 		ret = UADK_E_FAIL;
 	}
 
-	if (ret == CHECK_PADDING_FAIL){
-		US_ERR("FAIT ret = %d",ret);
+	if (ret == CHECK_PADDING_FAIL)
 		ret = UADK_E_FAIL;
-	}
+
 	return ret;
 }
 
@@ -687,6 +688,13 @@ static int rsa_poll_policy(handle_t h_sched_ctx, __u32 expect, __u32 *count)
 	return UADK_E_POLL_SUCCESS;
 }
 
+static void uadk_e_rsa_set_status(void)
+{
+	pthread_spin_lock(&g_rsa_res.lock);
+	g_rsa_res.status = UADK_DEVICE_ERROR;
+	pthread_spin_unlock(&g_rsa_res.lock);
+}
+
 static int uadk_e_rsa_poll(void *ctx)
 {
 	__u64 rx_cnt = 0;
@@ -696,12 +704,15 @@ static int uadk_e_rsa_poll(void *ctx)
 
 	do {
 		ret = wd_rsa_poll_ctx(CTX_ASYNC, expt, &recv);
-		if (!ret && recv == expt)
+		if (!ret && recv == expt) {
 			return UADK_E_POLL_SUCCESS;
-		else if (ret == -EAGAIN)
+		} else if (ret == -EAGAIN) {
 			rx_cnt++;
-		else
+		} else {
+			if (ret == -WD_HW_EACCESS)
+				uadk_e_rsa_set_status();
 			return UADK_E_POLL_FAIL;
+		}
 	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to recv msg: timeout!\n");
@@ -732,10 +743,13 @@ static int uadk_e_rsa_env_poll(void *ctx)
 
 	do {
 		ret = wd_rsa_poll(expt, &recv);
-		if (ret < 0 || recv == expt)
+		if (ret < 0 || recv == expt) {
+			if (ret == -WD_HW_EACCESS)
+				uadk_e_rsa_set_status();
 			return ret;
+		}
 		rx_cnt++;
-	} while (rx_cnt < ENGINE_RECV_MAX_CNT);
+	} while (rx_cnt < ENGINE_ENV_RECV_MAX_CNT);
 
 	fprintf(stderr, "failed to poll msg: timeout!\n");
 
@@ -816,62 +830,69 @@ free_cfg:
 
 static int uadk_e_rsa_init(void)
 {
-	struct uacce_dev *dev;
+	struct uacce_dev *dev = NULL;
 	int ret;
 
-	if (g_rsa_res.pid != getpid()) {
-		pthread_spin_lock(&g_rsa_res.lock);
-		if (g_rsa_res.pid == getpid()) {
-			pthread_spin_unlock(&g_rsa_res.lock);
-			return UADK_E_INIT_SUCCESS;
-		}
+	if (g_rsa_res.status != UADK_UNINIT)
+		return g_rsa_res.status;
 
-		dev = wd_get_accel_dev("rsa");
-		if (!dev) {
-			pthread_spin_unlock(&g_rsa_res.lock);
-			fprintf(stderr, "failed to get device for rsa\n");
-			return -ENOMEM;
-		}
+	pthread_spin_lock(&g_rsa_res.lock);
+	if (g_rsa_res.status != UADK_UNINIT)
+		goto unlock;
 
-		ret = uadk_e_wd_rsa_init(&rsa_res_config, dev);
-		if (ret)
-			goto err_unlock;
-
-		g_rsa_res.numa_id = dev->numa_id;
-		g_rsa_res.pid = getpid();
-		pthread_spin_unlock(&g_rsa_res.lock);
-		free(dev);
+	dev = wd_get_accel_dev("rsa");
+	if (!dev) {
+		fprintf(stderr, "no device available, switch to software!\n");
+		goto err_init;
 	}
 
-	return UADK_E_INIT_SUCCESS;
+	ret = uadk_e_wd_rsa_init(&rsa_res_config, dev);
+	if (ret) {
+		fprintf(stderr, "device unavailable(%d), switch to software!\n", ret);
+		goto err_init;
+	}
 
-err_unlock:
+	g_rsa_res.numa_id = dev->numa_id;
+	g_rsa_res.status = UADK_INIT_SUCCESS;
 	pthread_spin_unlock(&g_rsa_res.lock);
 	free(dev);
-	(void)fprintf(stderr, "failed to init rsa(%d)\n", ret);
 
-	return ret;
+	return g_rsa_res.status;
+
+err_init:
+	g_rsa_res.status = UADK_INIT_FAIL;
+unlock:
+	pthread_spin_unlock(&g_rsa_res.lock);
+	if (dev)
+		free(dev);
+	return g_rsa_res.status;
 }
 
 static void uadk_e_rsa_uninit(void)
 {
 	struct wd_ctx_config *ctx_cfg = g_rsa_res.ctx_res;
-	int i, ret;
+	__u32 i;
+	int ret;
 
-	if (g_rsa_res.pid == getpid()) {
-		ret = uadk_e_is_env_enabled("rsa");
-		if (ret == ENV_ENABLED) {
-			wd_rsa_env_uninit();
-		} else {
-			wd_rsa_uninit();
-			for (i = 0; i < ctx_cfg->ctx_num; i++)
-				wd_release_ctx(ctx_cfg->ctxs[i].ctx);
-			free(ctx_cfg->ctxs);
-			free(ctx_cfg);
-		}
+	if (g_rsa_res.status == UADK_UNINIT)
+		return;
 
-		g_rsa_res.pid = 0;
+	if (g_rsa_res.status == UADK_INIT_FAIL)
+		goto clear_status;
+
+	ret = uadk_e_is_env_enabled("rsa");
+	if (ret == ENV_ENABLED) {
+		wd_rsa_env_uninit();
+	} else {
+		wd_rsa_uninit();
+		for (i = 0; i < ctx_cfg->ctx_num; i++)
+			wd_release_ctx(ctx_cfg->ctxs[i].ctx);
+		free(ctx_cfg->ctxs);
+		free(ctx_cfg);
 	}
+
+clear_status:
+	g_rsa_res.status = UADK_UNINIT;
 }
 
 static struct uadk_rsa_sess *rsa_new_eng_session(RSA *rsa)
@@ -1103,70 +1124,96 @@ static void uadk_e_rsa_cb(void *req_t)
 	}
 }
 
+static int rsa_do_sync(struct uadk_rsa_sess *rsa_sess)
+{
+	int ret;
+
+	ret = wd_do_rsa_sync(rsa_sess->sess, &rsa_sess->req);
+	if (ret) {
+		if (ret == -WD_HW_EACCESS)
+			uadk_e_rsa_set_status();
+		return UADK_E_FAIL;
+	}
+
+	return UADK_E_SUCCESS;
+}
+
+static int rsa_do_async(struct uadk_rsa_sess *rsa_sess, struct async_op *op)
+{
+	struct uadk_e_cb_info *cb_param;
+	int ret = 0;
+	int cnt = 0;
+	int idx;
+
+	cb_param = malloc(sizeof(struct uadk_e_cb_info));
+	if (!cb_param) {
+		fprintf(stderr, "failed to alloc cb_param.\n");
+		return ret;
+	}
+
+	cb_param->op = op;
+	cb_param->priv = &rsa_sess->req;
+	rsa_sess->req.cb = uadk_e_rsa_cb;
+	rsa_sess->req.cb_param = cb_param;
+	rsa_sess->req.status = -1;
+	ret = async_get_free_task(&idx);
+	if (!ret)
+		goto free_cb_param;
+
+	op->idx = idx;
+	do {
+		ret = wd_do_rsa_async(rsa_sess->sess, &rsa_sess->req);
+		if (unlikely(ret < 0)) {
+			if (unlikely(ret == -WD_HW_EACCESS))
+				uadk_e_rsa_set_status();
+			else if (unlikely(cnt++ > ENGINE_SEND_MAX_CNT))
+				fprintf(stderr, "do rsa async operation timeout.\n");
+			else
+				continue;
+
+			async_free_poll_task(op->idx, 0);
+			ret = UADK_E_FAIL;
+			goto free_cb_param;
+		}
+	} while (ret == -EBUSY);
+
+	ret = async_pause_job(rsa_sess, op, ASYNC_TASK_RSA);
+	if (!ret)
+		goto free_cb_param;
+
+	if (rsa_sess->req.status)
+		ret = UADK_E_FAIL;
+
+free_cb_param:
+	free(cb_param);
+	rsa_sess->req.cb_param = NULL;
+	return ret;
+}
+
 static int rsa_do_crypto(struct uadk_rsa_sess *rsa_sess)
 {
-	US_DEBUG("rsa_do_crypto start!\n");
-	struct uadk_e_cb_info cb_param;
 	struct async_op op;
-	int idx, ret;
+	int ret;
 
 	ret = async_setup_async_event_notification(&op);
 	if (!ret) {
 		fprintf(stderr, "failed to setup async event notification.\n");
-		US_ERR("async_setup_async_event_notification failed!");
 		return UADK_E_FAIL;
 	}
 
 	if (!op.job) {
-		US_DEBUG("wd_do_rsa_sync start");
-		ret = wd_do_rsa_sync(rsa_sess->sess, &(rsa_sess->req));
-		if (!ret){
-			US_DEBUG("wd_do_rsa_sync successed\n");
-			return UADK_E_SUCCESS;
-		}else{
-			US_ERR("wd_do_rsa_sync failed\n");
-			goto err;
-		}
+		ret = rsa_do_sync(rsa_sess);
+		return ret;
 	}
-	cb_param.op = &op;
-	cb_param.priv = &(rsa_sess->req);
-	rsa_sess->req.cb = (void *)uadk_e_rsa_cb;
-	rsa_sess->req.cb_param = &cb_param;
-	rsa_sess->req.status = -1;
 
-	ret = async_get_free_task(&idx);
-	if (ret == 0)
-		goto err;
-
-	op.idx = idx;
-	do {
-		US_DEBUG("wd_do_rsa_async start");
-		ret = wd_do_rsa_async(rsa_sess->sess, &(rsa_sess->req));
-		if (ret < 0 && ret != -EBUSY) {
-			async_free_poll_task(op.idx, 0);
-			goto err;
-		}
-	} while (ret == -EBUSY);
-
-	ret = async_pause_job(rsa_sess, &op, ASYNC_TASK_RSA, idx);
-	if (!ret)
-		goto err;
-
-	if (rsa_sess->req.status)
-		return UADK_E_FAIL;
-
-	US_DEBUG("rsa do async job success");
-	return UADK_E_SUCCESS;
-
-err:
-	US_ERR("rsa do async job err");
+	ret = rsa_do_async(rsa_sess, &op);
 	(void)async_clear_async_event_notification();
-	return UADK_E_FAIL;
+
+	return ret;
 }
 
 static int uadk_e_soft_rsa_keygen(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
 {
-	US_DEBUG("uadk_e_soft_rsa_keygen start");
 	const RSA_METHOD *default_meth = RSA_PKCS1_OpenSSL();
 	int ret;
 
@@ -1221,16 +1268,15 @@ static int rsa_fill_keygen_data(struct uadk_rsa_sess *rsa_sess,
 					     keygen_param->wd_e,
 					     keygen_param->wd_p,
 					     keygen_param->wd_q);
-	if (!rsa_sess->req.src){
-		US_ERR("create rsa kgen in fail\n");
+	if (!rsa_sess->req.src)
+		return UADK_E_FAIL;
+
+	rsa_sess->req.dst = wd_rsa_new_kg_out(rsa_sess->sess);
+	if (!rsa_sess->req.dst) {
+		wd_rsa_del_kg_in(rsa_sess->sess, rsa_sess->req.src);
 		return UADK_E_FAIL;
 	}
 
-	rsa_sess->req.dst = wd_rsa_new_kg_out(rsa_sess->sess);
-	if (!rsa_sess->req.dst){
-		US_ERR("create rsa kgen out fail\n");
-		return UADK_E_FAIL;
-	}
 	return UADK_E_SUCCESS;
 }
 
@@ -1372,7 +1418,7 @@ static void rsa_free_pub_bn_ctx(unsigned char **from_buf)
 }
 
 static int rsa_create_pri_bn_ctx(RSA *rsa, struct rsa_prikey_param *pri,
-				 unsigned char **from_buf, int *num_bytes)
+				 unsigned char **from_buf, int *num_bytes, int flen)
 {
 	RSA_get0_key(rsa, &pri->n, &pri->e, &pri->d);
 	if (!(pri->n) || !(pri->e) || !(pri->d))
@@ -1390,6 +1436,9 @@ static int rsa_create_pri_bn_ctx(RSA *rsa, struct rsa_prikey_param *pri,
 	if (!(*num_bytes))
 		return UADK_E_FAIL;
 
+	if (flen > *num_bytes)
+		return UADK_E_FAIL;
+
 	*from_buf = OPENSSL_malloc(*num_bytes);
 	if (!(*from_buf))
 		return -ENOMEM;
@@ -1404,7 +1453,6 @@ static void rsa_free_pri_bn_ctx(unsigned char **from_buf)
 
 static int uadk_e_rsa_keygen(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
 {
-	US_DEBUG("uadk_e_rsa_keygen start to generate key");
 	struct rsa_keygen_param *keygen_param = NULL;
 	struct rsa_keygen_param_bn *bn_param = NULL;
 	struct uadk_rsa_sess *rsa_sess = NULL;
@@ -1414,62 +1462,51 @@ static int uadk_e_rsa_keygen(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
 	int ret;
 
 	ret = rsa_check_bit_useful(bits, 0);
-	if (!ret || ret == SOFT){
-		US_ERR("op sizes not supported by hpre engine then back to soft!\n");
-		goto exe_soft;
-	}
+	if (!ret)
+		return UADK_E_FAIL;
+	else if (ret == SOFT)
+		goto soft_log;
 
 	ret = uadk_e_rsa_init();
-	if (ret){
-		US_ERR("uadk_e_rsa_init failed!\n");
+	if (ret != UADK_INIT_SUCCESS)
 		goto exe_soft;
-	}
 
 	ret = rsa_keygen_param_alloc(&keygen_param, &bn_param, &key_pair, &bn_ctx);
-	if (ret == -ENOMEM){
-		US_ERR("rsa_keygen_param_alloc failed!\n");
-		goto exe_soft;
-	}
+	if (ret == -ENOMEM)
+		return ret;
 
 	rsa_sess = rsa_get_eng_session(rsa, bits, is_crt);
 	if (!rsa_sess) {
 		ret = UADK_DO_SOFT;
-		US_WARN("get eng session fail then switch to soft");
 		goto free_keygen;
 	}
 
 	ret = rsa_primes_gen(bits, e, bn_param->p, bn_param->q, cb);
 	if (!ret) {
-		US_WARN("rsa_primes_gen fail then switch to soft");
 		ret = UADK_DO_SOFT;
 		goto free_sess;
 	}
 
 	if (!BN_copy(bn_param->e, e)) {
-		US_WARN("BN_copy fail then switch to soft");
 		ret = UADK_DO_SOFT;
 		goto free_sess;
 	}
 
 	ret = rsa_fill_keygen_data(rsa_sess, key_pair, keygen_param, bn_param);
 	if (!ret) {
-		US_WARN("rsa_fill_keygen_data fail then switch to soft");
 		ret = UADK_DO_SOFT;
 		goto free_sess;
 	}
 
 	ret = rsa_do_crypto(rsa_sess);
 	if (!ret || rsa_sess->req.status) {
-		US_WARN("rsa_do_crypto fail then switch to soft");
 		ret = UADK_DO_SOFT;
 		goto free_kg_in_out;
 	}
 
 	ret = rsa_get_keygen_param(&rsa_sess->req, rsa_sess->sess, rsa, bn_param, &bn_ctx);
-	if (!ret){
-		US_WARN("rsa_get_keygen_param fail then switch to soft");
+	if (!ret)
 		ret = UADK_DO_SOFT;
-	}
 
 free_kg_in_out:
 	rsa_free_keygen_data(rsa_sess);
@@ -1479,16 +1516,15 @@ free_keygen:
 	rsa_keygen_param_free(&keygen_param, &bn_param, &key_pair, &bn_ctx, ret);
 	if (ret != UADK_DO_SOFT)
 		return ret;
+soft_log:
+	fprintf(stderr, "rsa_keygen switch to execute openssl software calculation.\n");
 exe_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
-	US_ERR("uadk_e_rsa_keygen failed,switch to execute openssl software calculation.\n");
 	return uadk_e_soft_rsa_keygen(rsa, bits, e, cb);
 }
 
 static int uadk_e_rsa_public_encrypt(int flen, const unsigned char *from,
 				     unsigned char *to, RSA *rsa, int padding)
 {
-	US_DEBUG("uadk_e_rsa_public_encrypt start!\n");
 	struct rsa_pubkey_param *pub_enc = NULL;
 	struct uadk_rsa_sess *rsa_sess = NULL;
 	unsigned char *from_buf = NULL;
@@ -1496,57 +1532,53 @@ static int uadk_e_rsa_public_encrypt(int flen, const unsigned char *from,
 	BIGNUM *enc_bn = NULL;
 
 	ret = check_rsa_input_para(flen, from, to, rsa);
-	if (!ret || ret == SOFT){
-		US_ERR("check_rsa_input_para failed\n");
-		goto exe_soft;
-	}
+	if (!ret)
+		return UADK_E_FAIL;
+	else if (ret == SOFT)
+		goto soft_log;
 
 	ret = uadk_e_rsa_init();
-	if (ret){
-		US_ERR("check_rsa_input_para  failed\n");
+	if (ret != UADK_INIT_SUCCESS)
 		goto exe_soft;
-	}
 
 	ret = rsa_pkey_param_alloc(&pub_enc, NULL);
-	if (ret == -ENOMEM){
-		US_ERR("rsa_pkey_param_alloc failed!\n");
-		goto exe_soft;
-	}
+	if (ret == -ENOMEM)
+		return ret;
 
 	is_crt = check_rsa_is_crt(rsa);
 
 	rsa_sess = rsa_get_eng_session(rsa, RSA_bits(rsa), is_crt);
 	if (!rsa_sess) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_eng_session failed!\n");
 		goto free_pkey;
 	}
 
 	ret = rsa_create_pub_bn_ctx(rsa, pub_enc, &from_buf, &num_bytes);
-	if (ret <= 0 || flen > num_bytes) {
+	if (ret <= 0) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_create_pub_bn_ctx failed!\n");
 		goto free_sess;
+	}
+
+	if (flen > num_bytes) {
+		ret = UADK_DO_SOFT;
+		goto free_buf;
 	}
 
 	ret = add_rsa_pubenc_padding(flen, from, from_buf, num_bytes, padding);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("add_rsa_pubenc_padding failed!\n");
 		goto free_buf;
 	}
 
 	ret = rsa_fill_pubkey(pub_enc, rsa_sess, from_buf, to);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_fill_pubkey failed!\n");
 		goto free_buf;
 	}
 
 	ret = rsa_do_crypto(rsa_sess);
 	if (!ret || rsa_sess->req.status) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_do_crypto failed!\n");
 		goto free_buf;
 	}
 
@@ -1554,15 +1586,12 @@ static int uadk_e_rsa_public_encrypt(int flen, const unsigned char *from,
 			   rsa_sess->req.dst_bytes, NULL);
 	if (!enc_bn) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bin2bn failed!\n");
 		goto free_buf;
 	}
 
 	ret = BN_bn2binpad(enc_bn, to, num_bytes);
-	if (ret == -1){
+	if (ret == -1)
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bn2binpad failed!\n");
-	}
 
 	BN_free(enc_bn);
 
@@ -1572,14 +1601,11 @@ free_sess:
 	rsa_free_eng_session(rsa_sess);
 free_pkey:
 	rsa_pkey_param_free(&pub_enc, NULL);
-	if (ret != UADK_DO_SOFT){
-		US_DEBUG("uadk_e_rsa_public_encrypt successed!\n");
+	if (ret != UADK_DO_SOFT)
 		return ret;
-	}
-
+soft_log:
+	fprintf(stderr, "rsa_public_encrypt switch to execute openssl software calculation.\n");
 exe_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
-	US_ERR("uadk_e_rsa_public_encrypt failed ,switch to RSA_meth_get_pub_enc.\n");
 	return RSA_meth_get_pub_enc(RSA_PKCS1_OpenSSL())
 				   (flen, from, to, rsa, padding);
 }
@@ -1587,7 +1613,6 @@ exe_soft:
 static int uadk_e_rsa_private_decrypt(int flen, const unsigned char *from,
 				      unsigned char *to, RSA *rsa, int padding)
 {
-	US_DEBUG("uadk_e_rsa_private_decrypt start!\n");
 	struct rsa_prikey_param *pri = NULL;
 	unsigned char *from_buf = NULL;
 	struct uadk_rsa_sess *rsa_sess;
@@ -1595,43 +1620,36 @@ static int uadk_e_rsa_private_decrypt(int flen, const unsigned char *from,
 	BIGNUM *dec_bn = NULL;
 
 	ret = check_rsa_input_para(flen, from, to, rsa);
-	if (!ret || ret == SOFT){
-		US_ERR("check_rsa_input_para failed ,then switch to soft!\n");
-		goto exe_soft;
-	}
+	if (!ret)
+		return UADK_E_FAIL;
+	else if (ret == SOFT)
+		goto soft_log;
 
 	ret = uadk_e_rsa_init();
-	if (ret){
-		US_ERR("uadk_e_rsa_init failed ,then switch to soft!\n");
+	if (ret != UADK_INIT_SUCCESS)
 		goto exe_soft;
-	}
 
 	ret = rsa_pkey_param_alloc(NULL, &pri);
-	if (ret == -ENOMEM){
-		US_ERR("rsa_pkey_param_alloc failed ,then switch to soft!\n");
-		goto exe_soft;
-	}
+	if (ret == -ENOMEM)
+		return ret;
 
 	pri->is_crt = check_rsa_is_crt(rsa);
 
 	rsa_sess = rsa_get_eng_session(rsa, RSA_bits(rsa), pri->is_crt);
 	if (!rsa_sess) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_eng_session failed ,then switch to soft!\n");
 		goto free_pkey;
 	}
 
-	ret = rsa_create_pri_bn_ctx(rsa, pri, &from_buf, &num_bytes);
-	if (ret <= 0 || flen > num_bytes) {
+	ret = rsa_create_pri_bn_ctx(rsa, pri, &from_buf, &num_bytes, flen);
+	if (ret <= 0) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_create_pri_bn_ctx failed ,then switch to soft!\n");
 		goto free_sess;
 	}
 
 	ret = rsa_fill_prikey(rsa, rsa_sess, pri, from_buf, to);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_fill_prikey failed ,then switch to soft!\n");
 		goto free_buf;
 	}
 
@@ -1640,7 +1658,6 @@ static int uadk_e_rsa_private_decrypt(int flen, const unsigned char *from,
 	ret = rsa_do_crypto(rsa_sess);
 	if (!ret || rsa_sess->req.status) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_do_crypto failed ,then switch to soft!\n");
 		goto free_buf;
 	}
 
@@ -1648,22 +1665,18 @@ static int uadk_e_rsa_private_decrypt(int flen, const unsigned char *from,
 			   rsa_sess->req.dst_bytes, NULL);
 	if (!dec_bn) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bin2bn failed ,then switch to soft!\n");
 		goto free_buf;
 	}
 
 	len = BN_bn2binpad(dec_bn, from_buf, num_bytes);
 	if (!len) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bn2binpad failed ,then switch to soft!\n");
 		goto free_dec_bn;
 	}
 
 	ret = check_rsa_pridec_padding(to, num_bytes, from_buf, len, padding);
-	if (!ret){
+	if (!ret)
 		ret = UADK_DO_SOFT;
-		US_ERR("check_rsa_pridec_padding failed ,then switch to soft!\n");
-	}
 
 free_dec_bn:
 	BN_free(dec_bn);
@@ -1673,13 +1686,11 @@ free_sess:
 	rsa_free_eng_session(rsa_sess);
 free_pkey:
 	rsa_pkey_param_free(NULL, &pri);
-	if (ret != UADK_DO_SOFT){
-		US_DEBUG("uadk_e_rsa_private_decrypt successed!\n");
+	if (ret != UADK_DO_SOFT)
 		return ret;
-	}
+soft_log:
+	fprintf(stderr, "rsa_private_decrypt switch to execute openssl software calculation.\n");
 exe_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
-	US_ERR("uadk_e_rsa_private_decrypt failed ,switch to RSA_meth_get_priv_dec");
 	return RSA_meth_get_priv_dec(RSA_PKCS1_OpenSSL())
 				    (flen, from, to, rsa, padding);
 }
@@ -1687,7 +1698,6 @@ exe_soft:
 static int uadk_e_rsa_private_sign(int flen, const unsigned char *from,
 				   unsigned char *to, RSA *rsa, int padding)
 {
-	US_DEBUG("uadk_e_rsa_private_sign start!\n");
 	struct uadk_rsa_sess *rsa_sess = NULL;
 	struct rsa_prikey_param *pri = NULL;
 	unsigned char *from_buf = NULL;
@@ -1697,57 +1707,48 @@ static int uadk_e_rsa_private_sign(int flen, const unsigned char *from,
 	int num_bytes, ret;
 
 	ret = check_rsa_input_para(flen, from, to, rsa);
-	if (!ret || ret == SOFT){
-		US_ERR("check_rsa_input_para failed!\n");
-		goto exe_soft;
-	}
+	if (!ret)
+		return UADK_E_FAIL;
+	else if (ret == SOFT)
+		goto soft_log;
 
 	ret = uadk_e_rsa_init();
-	if (ret){
-		US_ERR("uadk_e_rsa_init failed!\n");
+	if (ret != UADK_INIT_SUCCESS)
 		goto exe_soft;
-	}
 
 	ret = rsa_pkey_param_alloc(NULL, &pri);
-	if (ret == -ENOMEM){
-		US_ERR("rsa_pkey_param_alloc failed!\n");
-		goto exe_soft;
-	}
+	if (ret == -ENOMEM)
+		return ret;
 
 	pri->is_crt = check_rsa_is_crt(rsa);
 
 	rsa_sess = rsa_get_eng_session(rsa, RSA_bits(rsa), pri->is_crt);
 	if (!rsa_sess) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_eng_session failed!\n");
 		goto free_pkey;
 	}
 
-	ret = rsa_create_pri_bn_ctx(rsa, pri, &from_buf, &num_bytes);
-	if (ret <= 0 || flen > num_bytes) {
+	ret = rsa_create_pri_bn_ctx(rsa, pri, &from_buf, &num_bytes, flen);
+	if (ret <= 0) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_create_pri_bn_ctx failed!\n");
 		goto free_sess;
 	}
 
 	ret = add_rsa_prienc_padding(flen, from, from_buf, num_bytes, padding);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("add_rsa_prienc_padding failed!\n");
 		goto free_buf;
 	}
 
 	ret = rsa_fill_prikey(rsa, rsa_sess, pri, from_buf, to);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_fill_prikey failed!\n");
 		goto free_buf;
 	}
 
 	ret = rsa_do_crypto(rsa_sess);
 	if (!ret || rsa_sess->req.status) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_do_crypto failed!\n");
 		goto free_buf;
 	}
 
@@ -1755,21 +1756,18 @@ static int uadk_e_rsa_private_sign(int flen, const unsigned char *from,
 			   rsa_sess->req.dst_bytes, NULL);
 	if (!sign_bn) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bin2bn failed! sign_bn is NULL\n");
 		goto free_buf;
 	}
 
 	to_bn = BN_bin2bn(from_buf, num_bytes, NULL);
 	if (!to_bn) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bin2bn failed! to_bn is NULL\n");
 		goto free_sign_bn;
 	}
 
 	ret = rsa_get_sign_res(padding, to_bn, pri->n, sign_bn, &res);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_sign_res failed!\n");
 		goto free_to_bn;
 	}
 
@@ -1785,13 +1783,11 @@ free_sess:
 	rsa_free_eng_session(rsa_sess);
 free_pkey:
 	rsa_pkey_param_free(NULL, &pri);
-	if (ret != UADK_DO_SOFT){
-		US_DEBUG("uadk_e_rsa_private_sign successed!\n");
+	if (ret != UADK_DO_SOFT)
 		return ret;
-	}
+soft_log:
+	fprintf(stderr, "rsa_private_sign switch to execute openssl software calculation.\n");
 exe_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
-	US_ERR("uadk_e_rsa_private_sign failed ,switch to RSA_meth_get_priv_enc");
 	return RSA_meth_get_priv_enc(RSA_PKCS1_OpenSSL())
 				    (flen, from, to, rsa, padding);
 }
@@ -1799,54 +1795,55 @@ exe_soft:
 static int uadk_e_rsa_public_verify(int flen, const unsigned char *from,
 				    unsigned char *to, RSA *rsa, int padding)
 {
-	US_DEBUG("uadk_e_rsa_public_verify start!\n");
+	int pid = getpid();
 	struct uadk_rsa_sess *rsa_sess = NULL;
 	struct rsa_pubkey_param *pub = NULL;
 	int num_bytes, is_crt, len, ret;
 	unsigned char *from_buf = NULL;
 	BIGNUM *verify_bn = NULL;
 
+	//fprintf(stderr, "[debugggg-%d-] rsa is %p, flen is %d, from is %p, to is %p, padding is %d\n", pid, rsa, flen, from, to, padding);
+
 	ret = check_rsa_input_para(flen, from, to, rsa);
-	if (!ret){
-		US_ERR("check_rsa_input_para failed ,the params invalid!\n");
+	if (!ret) {
+		fprintf(stderr, "get_priv_enc check_rsa_input_para failed.\n");
 		return UADK_E_FAIL;
-	}else if (ret == SOFT){
-		US_ERR("check_rsa_input_para failed ,switch to soft!\n");
-		goto exe_soft;
+	}
+	else if (ret == SOFT) {
+		fprintf(stderr, "get_priv_enc check_rsa_input_para failed, goto soft.\n");
+		goto soft_log;
 	}
 
 	ret = uadk_e_rsa_init();
-	if (ret){
-		US_ERR("uadk_e_rsa_init failed!\n");
+	if (ret != UADK_INIT_SUCCESS)
 		goto exe_soft;
-	}	
 
 	ret = rsa_pkey_param_alloc(&pub, NULL);
-	if (ret == -ENOMEM){
-		US_ERR("rsa_pkey_param_alloc failed!\n");
-		goto exe_soft;
-	}
+	if (ret == -ENOMEM)
+		return ret;
 
 	is_crt = check_rsa_is_crt(rsa);
 
 	rsa_sess = rsa_get_eng_session(rsa, RSA_bits(rsa), is_crt);
 	if (!rsa_sess) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_eng_session failed!\n");
 		goto free_pkey;
 	}
 
 	ret = rsa_create_pub_bn_ctx(rsa, pub, &from_buf, &num_bytes);
-	if (ret <= 0 || flen > num_bytes) {
+	if (ret <= 0) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_create_pub_bn_ctx failed!\n");
 		goto free_sess;
+	}
+
+	if (flen > num_bytes) {
+		ret = UADK_DO_SOFT;
+		goto free_buf;
 	}
 
 	ret = rsa_fill_pubkey(pub, rsa_sess, from_buf, to);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_fill_pubkey failed!\n");
 		goto free_buf;
 	}
 
@@ -1854,7 +1851,6 @@ static int uadk_e_rsa_public_verify(int flen, const unsigned char *from,
 	ret = rsa_do_crypto(rsa_sess);
 	if (!ret || rsa_sess->req.status) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_do_crypto failed!\n");
 		goto free_buf;
 	}
 
@@ -1862,29 +1858,28 @@ static int uadk_e_rsa_public_verify(int flen, const unsigned char *from,
 			    rsa_sess->req.dst_bytes, NULL);
 	if (!verify_bn) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bin2bn failed!\n");
 		goto free_buf;
 	}
 
 	ret = rsa_get_verify_res(padding, pub->n, verify_bn);
 	if (!ret) {
 		ret = UADK_DO_SOFT;
-		US_ERR("rsa_get_verify_res failed!\n");
 		goto free_verify_bn;
 	}
 
 	len = BN_bn2binpad(verify_bn, from_buf, num_bytes);
 	if (!len) {
 		ret = UADK_DO_SOFT;
-		US_ERR("BN_bn2binpad failed!\n");
 		goto free_verify_bn;
 	}
 
 	ret = check_rsa_pubdec_padding(to, num_bytes, from_buf, len, padding);
-	if (!ret){
-		US_ERR("check_rsa_pubdec_padding failed");
+	if (!ret) {
+		fprintf(stderr, "check_rsa_pubdec_padding failed, ret is %d.\n", ret);
+		fprintf(stderr, "\n\nto is %p, from_buf is %p, num_bytes is %d, len is %d.\n\n\n", to, from_buf, num_bytes, len);
 		ret = UADK_DO_SOFT;
 	}
+
 
 free_verify_bn:
 	BN_free(verify_bn);
@@ -1894,13 +1889,11 @@ free_sess:
 	rsa_free_eng_session(rsa_sess);
 free_pkey:
 	rsa_pkey_param_free(&pub, NULL);
-	if (ret != UADK_DO_SOFT){
-		US_DEBUG("uadk_e_rsa_public_verify successed!\n");
+	if (ret != UADK_DO_SOFT)
 		return ret;
-	}
+soft_log:
+	fprintf(stderr, "get_priv_enc switch to execute openssl software calculation.\n");
 exe_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
-	US_DEBUG("uadk_e_rsa_public_verify failed,switch to execute RSA_meth_get_pub_dec!\n");
 	return RSA_meth_get_pub_dec(RSA_PKCS1_OpenSSL())
 				   (flen, from, to, rsa, padding);
 }
@@ -1930,7 +1923,7 @@ static RSA_METHOD *uadk_e_get_rsa_methods(void)
 				      RSA_PKCS1_OpenSSL()));
 	(void)RSA_meth_set_mod_exp(rsa_hw_meth, RSA_meth_get_mod_exp(
 				   RSA_PKCS1_OpenSSL()));
-	US_DEBUG("successed to set RSA method");
+
 	return rsa_hw_meth;
 }
 
@@ -1942,13 +1935,30 @@ static void uadk_e_delete_rsa_meth(void)
 	}
 }
 
+static EVP_PKEY_METHOD *uadk_rsa_get_pkey_meth(void)
+{
+	const EVP_PKEY_METHOD *def_rsa = EVP_PKEY_meth_get0(RSAPKEYMETH_IDX);
+
+	if (g_hpre_pkey_meth == NULL) {
+		g_hpre_pkey_meth = EVP_PKEY_meth_new(EVP_PKEY_RSA, 0);
+		if (g_hpre_pkey_meth == NULL) {
+			fprintf(stderr, "failed to new pkey meth");
+			return NULL;
+		}
+
+		EVP_PKEY_meth_copy(g_hpre_pkey_meth, def_rsa);
+	}
+
+	return g_hpre_pkey_meth;
+}
+
 /**
  * uadk_e_bind_rsa() - Set the access to get rsa methods to the ENGINE.
  * @e: uadk engine
  */
 int uadk_e_bind_rsa(ENGINE *e)
 {
-	US_DEBUG("uadk_e_bind_rsa to set the implementation of the RSA encryption algorithm.");
+	(void)uadk_rsa_get_pkey_meth();
 	return ENGINE_set_RSA(e, uadk_e_get_rsa_methods());
 }
 
@@ -1959,7 +1969,13 @@ void uadk_e_destroy_rsa(void)
 	uadk_e_rsa_uninit();
 }
 
+static void uadk_e_rsa_clear_status(void)
+{
+	g_rsa_res.status = UADK_UNINIT;
+}
+
 void uadk_e_rsa_lock_init(void)
 {
+	pthread_atfork(NULL, NULL, uadk_e_rsa_clear_status);
 	pthread_spin_init(&g_rsa_res.lock, PTHREAD_PROCESS_PRIVATE);
 }

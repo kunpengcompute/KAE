@@ -75,7 +75,7 @@ static void init_dtb_param(void *dtb, char *start,
 {
 	struct wd_dtb *tmp = dtb;
 	char *buff = start;
-	int i = 0;
+	__u32 i = 0;
 
 	while (i++ < num) {
 		tmp->data = buff;
@@ -329,6 +329,10 @@ static int set_digest(handle_t sess, struct wd_dtb *e,
 
 	if (dlen << TRANS_BITS_BYTES_SHIFT > order_bits) {
 		m = BN_new();
+		if (!m) {
+			fprintf(stderr, "failed to BN_new BIGNUM m\n");
+			return -1;
+		}
 
 		/* Need to truncate digest if it is too long: first truncate
 		 * whole bytes
@@ -406,6 +410,11 @@ static ECDSA_SIG *openssl_do_sign(const unsigned char *dgst, int dlen,
 	EC_KEY_METHOD *openssl_meth;
 
 	openssl_meth = (EC_KEY_METHOD *)EC_KEY_OpenSSL();
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get OpenSSL method\n");
+		return NULL;
+	}
+
 	EC_KEY_METHOD_get_sign(openssl_meth, NULL, NULL,
 			       &sign_sig_pfunc);
 	if (!sign_sig_pfunc) {
@@ -475,19 +484,19 @@ static ECDSA_SIG *ecdsa_do_sign(const unsigned char *dgst, int dlen,
 
 	ret = ecdsa_do_sign_check(eckey, dgst, dlen, in_kinv, in_r);
 	if (ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_e_ecc_get_support_state(ECDSA_SUPPORT);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_init_ecc();
-	if (ret)
+	if (ret != UADK_INIT_SUCCESS)
 		goto do_soft;
 
 	sess = ecc_alloc_sess(eckey, "ecdsa");
 	if (!sess)
-		goto do_soft;
+		goto soft_log;
 
 	memset(&req, 0, sizeof(req));
 	tdgst.data = (void *)dgst;
@@ -510,7 +519,6 @@ static ECDSA_SIG *ecdsa_do_sign(const unsigned char *dgst, int dlen,
 	wd_ecc_del_out(sess, req.dst);
 	wd_ecc_free_sess(sess);
 
-	US_DEBUG("ecdsa_do_sign successed");
 	return sig;
 
 uninit_iot:
@@ -518,9 +526,9 @@ uninit_iot:
 	wd_ecc_del_out(sess, req.dst);
 free_sess:
 	wd_ecc_free_sess(sess);
+soft_log:
+	fprintf(stderr, "ecdsa_do_sign switch to execute openssl software calculation.\n");
 do_soft:
-	US_ERR("ecdsa_do_sign failed,switch to execute openssl software calculation.\n");
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_sign(dgst, dlen, in_kinv, in_r, eckey);
 }
 
@@ -528,7 +536,6 @@ static int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
 		      unsigned char *sig, unsigned int *siglen,
 		      const BIGNUM *kinv, const BIGNUM *r, EC_KEY *eckey)
 {
-	US_DEBUG("ecdsa_sign start!\n");
 	ECDSA_SIG *s;
 
 	if (!dgst || dlen <= 0) {
@@ -542,8 +549,11 @@ static int ecdsa_sign(int type, const unsigned char *dgst, int dlen,
 		goto err;
 	}
 
-	*siglen = i2d_ECDSA_SIG(s, &sig);
+	if (siglen)
+		*siglen = i2d_ECDSA_SIG(s, &sig);
+
 	ECDSA_SIG_free(s);
+
 	return 1;
 
 err:
@@ -651,6 +661,11 @@ static int openssl_do_verify(const unsigned char *dgst, int dlen,
 	EC_KEY_METHOD *openssl_meth;
 
 	openssl_meth = (EC_KEY_METHOD *)EC_KEY_OpenSSL();
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get OpenSSL method\n");
+		return -1;
+	}
+
 	EC_KEY_METHOD_get_verify(openssl_meth, NULL,
 				 &verify_sig_pfunc);
 	if (!verify_sig_pfunc) {
@@ -671,19 +686,19 @@ static int ecdsa_do_verify(const unsigned char *dgst, int dlen,
 
 	ret = ecdsa_do_verify_check(eckey, dgst, dlen, sig);
 	if (ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_e_ecc_get_support_state(ECDSA_SUPPORT);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_init_ecc();
-	if (ret)
+	if (ret != UADK_INIT_SUCCESS)
 		goto do_soft;
 
 	sess = ecc_alloc_sess(eckey, "ecdsa");
 	if (!sess)
-		goto do_soft;
+		goto soft_log;
 
 	memset(&req, 0, sizeof(req));
 	tdgst.data = (void *)dgst;
@@ -705,23 +720,21 @@ static int ecdsa_do_verify(const unsigned char *dgst, int dlen,
 	wd_ecc_del_in(sess, req.src);
 	wd_ecc_free_sess(sess);
 
-	US_DEBUG("ecdsa_do_verify successed");
 	return ret;
 
 uninit_iot:
 	wd_ecc_del_in(sess, req.src);
 free_sess:
 	wd_ecc_free_sess(sess);
+soft_log:
+	fprintf(stderr, "ecdsa_do_verify switch to execute openssl software calculation.\n");
 do_soft:
-	US_ERR("ecdsa_do_verify failed, switch to execute openssl software calculation.\n");
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_verify(dgst, dlen, sig, eckey);
 }
 
 static int ecdsa_verify(int type, const unsigned char *dgst, int dlen,
 			const unsigned char *sig, int siglen, EC_KEY *eckey)
 {
-	US_DEBUG("ecdsa_verify start\n");
 	const unsigned char *p = sig;
 	unsigned char *der = NULL;
 	int ret = -1;
@@ -796,7 +809,6 @@ static int sm2_set_key_to_ec_key(EC_KEY *ec, struct wd_ecc_req *req)
 	y_offset = 1 + ECC_POINT_SIZE(SM2_KEY_BYTES) - pubkey->y.dsize;
 	memcpy(buff + x_offset, pubkey->x.data, pubkey->x.dsize);
 	memcpy(buff + y_offset, pubkey->y.data, pubkey->y.dsize);
-
 	tmp = BN_bin2bn(buff, ECC_POINT_SIZE(SM2_KEY_BYTES) + 1, NULL);
 	ptr = EC_POINT_bn2point(group, tmp, point, NULL);
 	BN_free(tmp);
@@ -822,6 +834,11 @@ static int openssl_do_generate(EC_KEY *eckey)
 	EC_KEY_METHOD *openssl_meth;
 
 	openssl_meth = (EC_KEY_METHOD *)EC_KEY_OpenSSL();
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get OpenSSL method\n");
+		return -1;
+	}
+
 	EC_KEY_METHOD_get_keygen(openssl_meth, &gen_key_pfunc);
 	if (!gen_key_pfunc) {
 		fprintf(stderr, "gen_key_pfunc is NULL\n");
@@ -963,23 +980,23 @@ static int sm2_generate_key(EC_KEY *eckey)
 
 	ret = ecc_genkey_check(eckey);
 	if (ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = eckey_create_key(eckey);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_e_ecc_get_support_state(SM2_SUPPORT);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_init_ecc();
-	if (ret)
+	if (ret != UADK_INIT_SUCCESS)
 		goto do_soft;
 
 	sess = ecc_alloc_sess(eckey, "sm2");
 	if (!sess)
-		goto do_soft;
+		goto soft_log;
 
 	memset(&req, 0, sizeof(req));
 	ret = sm2_keygen_init_iot(sess, &req);
@@ -1003,8 +1020,9 @@ uninit_iot:
 	wd_ecc_del_out(sess, req.dst);
 free_sess:
 	wd_ecc_free_sess(sess);
+soft_log:
+	fprintf(stderr, "sm2_generate_key switch to execute openssl software calculation.\n");
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_generate(eckey);
 }
 
@@ -1023,7 +1041,6 @@ static int ecdh_keygen_init_iot(handle_t sess, struct wd_ecc_req *req,
 
 	return 1;
 }
-
 
 static int ecdh_compkey_init_iot(handle_t sess, struct wd_ecc_req *req,
 				 const EC_POINT *pubkey, const EC_KEY *ecdh)
@@ -1194,23 +1211,23 @@ static int ecdh_generate_key(EC_KEY *ecdh)
 
 	ret = ecc_genkey_check(ecdh);
 	if (ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = ecdh_create_key(ecdh);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_e_ecc_get_support_state(ECDH_SUPPORT);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_init_ecc();
-	if (ret)
+	if (ret != UADK_INIT_SUCCESS)
 		goto do_soft;
 
 	sess = ecc_alloc_sess(ecdh, "ecdh");
 	if (!sess)
-		goto do_soft;
+		goto soft_log;
 
 	memset(&req, 0, sizeof(req));
 	ret = ecdh_keygen_init_iot(sess, &req, ecdh);
@@ -1238,8 +1255,9 @@ uninit_iot:
 	wd_ecc_del_out(sess, req.dst);
 free_sess:
 	wd_ecc_free_sess(sess);
+soft_log:
+	fprintf(stderr, "ecdh_generate_key switch to execute openssl software calculation.\n");
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_generate(ecdh);
 }
 
@@ -1263,6 +1281,11 @@ static int openssl_do_compute(unsigned char **pout,
 	EC_KEY_METHOD *openssl_meth;
 
 	openssl_meth = (EC_KEY_METHOD *)EC_KEY_OpenSSL();
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get OpenSSL method\n");
+		return -1;
+	}
+
 	EC_KEY_METHOD_get_compute_key(openssl_meth, &comp_key_pfunc);
 	if (!comp_key_pfunc) {
 		fprintf(stderr, "comp_key_pfunc is NULL\n");
@@ -1307,19 +1330,19 @@ static int ecdh_compute_key(unsigned char **out, size_t *outlen,
 
 	ret = ecc_compkey_check(out, outlen, pub_key, ecdh);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_e_ecc_get_support_state(ECDH_SUPPORT);
 	if (!ret)
-		goto do_soft;
+		goto soft_log;
 
 	ret = uadk_init_ecc();
-	if (ret)
+	if (ret != UADK_INIT_SUCCESS)
 		goto do_soft;
 
 	sess = ecc_alloc_sess(ecdh, "ecdh");
 	if (!sess)
-		goto do_soft;
+		goto soft_log;
 
 	memset(&req, 0, sizeof(req));
 	ret = ecdh_compkey_init_iot(sess, &req, pub_key, ecdh);
@@ -1353,8 +1376,9 @@ uninit_iot:
 	wd_ecc_del_out(sess, req.dst);
 free_sess:
 	wd_ecc_free_sess(sess);
+soft_log:
+	fprintf(stderr, "ecdh_compute_key switch to execute openssl software calculation.\n");
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_do_compute(out, outlen, pub_key, ecdh);
 }
 
@@ -1370,7 +1394,6 @@ static void ec_key_meth_set_ecdsa(EC_KEY_METHOD *meth)
 	EC_KEY_METHOD_set_verify(meth,
 				 ecdsa_verify,
 				 ecdsa_do_verify);
-	US_DEBUG("ec_key_meth_set_ecdsa successed!\n");
 }
 
 static void ec_key_meth_set_ecdh(EC_KEY_METHOD *meth)
@@ -1381,12 +1404,10 @@ static void ec_key_meth_set_ecdh(EC_KEY_METHOD *meth)
 
 	EC_KEY_METHOD_set_keygen(meth, ecc_generate_key);
 	EC_KEY_METHOD_set_compute_key(meth, ecdh_compute_key);
-	US_DEBUG("ec_key_meth_set_ecdh successed!\n");
 }
 
 static EC_KEY_METHOD *uadk_get_ec_methods(void)
-{	
-	US_DEBUG("uadk_get_ec_methods start.\n");
+{
 	EC_KEY_METHOD *def_ec_method;
 
 	if (uadk_ec_method != NULL)
@@ -1429,6 +1450,12 @@ int uadk_ec_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 	}
 
 	openssl_meth = get_openssl_pkey_meth(EVP_PKEY_EC);
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get ec pkey methods\n");
+		EVP_PKEY_meth_free(meth);
+		return 0;
+	}
+
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 
 	pkey_meth->ec = meth;
