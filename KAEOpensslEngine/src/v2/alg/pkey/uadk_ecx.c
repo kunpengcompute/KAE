@@ -43,13 +43,13 @@ struct ecx_key {
 
 struct ecx_ctx {
 	handle_t sess;
-	int key_size;
+	__u32 key_size;
 	int nid;
 };
 
-static int reverse_bytes(unsigned char *to_buf, unsigned int size)
+static int reverse_bytes(unsigned char *to_buf, __u32 size)
 {
-	unsigned char *tmp_buf = to_buf + size - 1;
+	unsigned char *tmp_buf;
 	unsigned char tmp;
 
 	if (!size) {
@@ -62,6 +62,7 @@ static int reverse_bytes(unsigned char *to_buf, unsigned int size)
 		return UADK_E_FAIL;
 	}
 
+	tmp_buf = to_buf + size - 1;
 	while (to_buf < tmp_buf) {
 		tmp = *tmp_buf;
 		*tmp_buf-- = *to_buf;
@@ -85,10 +86,8 @@ static int x25519_init(EVP_PKEY_CTX *ctx)
 	}
 
 	ret = uadk_init_ecc();
-	if (ret) {
-		fprintf(stderr, "failed to uadk_init_ecc, ret = %d\n", ret);
+	if (ret != UADK_INIT_SUCCESS)
 		return UADK_E_FAIL;
-	}
 
 	x25519_ctx = calloc(1, sizeof(struct ecx_ctx));
 	if (!x25519_ctx) {
@@ -141,10 +140,8 @@ static int x448_init(EVP_PKEY_CTX *ctx)
 	}
 
 	ret = uadk_init_ecc();
-	if (ret) {
-		fprintf(stderr, "failed to do uadk_init_ecc, ret = %d\n", ret);
+	if (ret != UADK_INIT_SUCCESS)
 		return UADK_E_FAIL;
-	}
 
 	x448_ctx = calloc(1, sizeof(struct ecx_ctx));
 	if (!x448_ctx) {
@@ -235,7 +232,7 @@ static int ecx_get_nid(EVP_PKEY_CTX *ctx)
 	return nid;
 }
 
-static int ecx_create_privkey(struct ecx_key **ecx_key, int key_size)
+static int ecx_create_privkey(struct ecx_key **ecx_key, __u32 key_size)
 {
 	unsigned char *privkey;
 	int ret;
@@ -294,12 +291,12 @@ static int ecx_keygen_set_private_key(struct ecx_ctx *ecx_ctx,
 static int ecx_keygen_set_pkey(EVP_PKEY *pkey, struct ecx_ctx *ecx_ctx,
 			       struct wd_ecc_req *req, struct ecx_key *ecx_key)
 {
+	__u32 key_size = ecx_ctx->key_size;
 	struct wd_ecc_point *pubkey = NULL;
-	int key_size = ecx_ctx->key_size;
 	int ret;
 
 	if (key_size > ECX_MAX_KEYLEN) {
-		fprintf(stderr, "invalid key size, key_size = %d\n", key_size);
+		fprintf(stderr, "invalid key size, key_size = %u\n", key_size);
 		return UADK_E_FAIL;
 	}
 
@@ -309,8 +306,7 @@ static int ecx_keygen_set_pkey(EVP_PKEY *pkey, struct ecx_ctx *ecx_ctx,
 		return UADK_E_FAIL;
 	}
 
-	memcpy(ecx_key->pubkey, (const unsigned char *)pubkey->x.data,
-	       key_size);
+	memcpy(ecx_key->pubkey, (const unsigned char *)pubkey->x.data, key_size);
 	/* Trans public key from big-endian to little-endian */
 	ret = reverse_bytes(ecx_key->pubkey, key_size);
 	if (!ret) {
@@ -442,7 +438,7 @@ free_key:
 uninit_ctx:
 	x25519_uninit(ctx);
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	fprintf(stderr, "x25519_keygen switch to execute openssl software calculation.\n");
 	return openssl_do_ecx_genkey(ctx, pkey);
 }
 
@@ -500,7 +496,7 @@ free_key:
 uninit_ctx:
 	x448_uninit(ctx);
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	fprintf(stderr, "x448_keygen switch to execute openssl software calculation.\n");
 	return openssl_do_ecx_genkey(ctx, pkey);
 }
 
@@ -508,7 +504,7 @@ static int ecx_compkey_init_iot(struct ecx_ctx *ecx_ctx, struct wd_ecc_req *req,
 				struct ecx_key *peer_ecx_key,
 				struct ecx_key *ecx_key)
 {
-	int key_size = ecx_ctx->key_size;
+	__u32 key_size = ecx_ctx->key_size;
 	char buf_y[ECX_MAX_KEYLEN] = {0};
 	handle_t sess = ecx_ctx->sess;
 	struct wd_ecc_point in_pubkey;
@@ -707,7 +703,7 @@ uninit_iot:
 uninit_ctx:
 	x25519_uninit(ctx);
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	fprintf(stderr, "x25519_derive switch to execute openssl software calculation.\n");
 	return openssl_do_derive(ctx, key, keylen);
 }
 
@@ -793,7 +789,7 @@ uninit_iot:
 uninit_ctx:
 	x448_uninit(ctx);
 do_soft:
-	fprintf(stderr, "switch to execute openssl software calculation.\n");
+	fprintf(stderr, "x448_derive switch to execute openssl software calculation.\n");
 	return openssl_do_derive(ctx, key, keylen);
 }
 
@@ -812,6 +808,11 @@ int uadk_x25519_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 	}
 
 	openssl_meth = get_openssl_pkey_meth(EVP_PKEY_X25519);
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get x25519 pkey methods\n");
+		EVP_PKEY_meth_free(meth);
+		return UADK_E_FAIL;
+	}
 
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 
@@ -853,6 +854,11 @@ int uadk_x448_create_pmeth(struct uadk_pkey_meth *pkey_meth)
 	}
 
 	openssl_meth = get_openssl_pkey_meth(EVP_PKEY_X448);
+	if (!openssl_meth) {
+		fprintf(stderr, "failed to get x448 pkey methods\n");
+		EVP_PKEY_meth_free(meth);
+		return UADK_E_FAIL;
+	}
 
 	EVP_PKEY_meth_copy(meth, openssl_meth);
 

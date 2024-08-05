@@ -50,7 +50,7 @@ static void *memcpy_large(void *dstpp, const void *srcpp, size_t len)
 
 			: [res] "+r"(dstpp)
 			: [src] "r"(srcpp), [count] "r"(len)
-			  : "x3", "x4", "x5", "x14", "q0", "q1"
+			  : "x3", "x4", "x5", "x14", "v0", "v1"
 				  );
 
 	return dstpp;
