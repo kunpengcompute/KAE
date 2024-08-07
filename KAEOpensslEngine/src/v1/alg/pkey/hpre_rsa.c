@@ -28,6 +28,7 @@
 #include "../../utils/engine_types.h"
 #include "../../../utils/engine_log.h"
 #include "../dh/hpre_dh.h"
+#include "hpre_sm2.h"
 
 #ifndef OPENSSL_NO_RSA
 const int RSAPKEYMETH_IDX;
@@ -309,8 +310,8 @@ static int hpre_evp_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig, size_t s
 }
 #endif
 
-#define PKEY_METHOD_TYPE_NUM   3
-const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX};
+#define PKEY_METHOD_TYPE_NUM   4
+const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX, EVP_PKEY_SM2};
 
 static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
 		const int **pnids, int nid)
@@ -323,7 +324,7 @@ static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
 
 	if (pmeth == NULL && pnids != NULL) {
 		*pnids = g_pkey_method_types;
-		return PKEY_METHOD_TYPE_NUM;
+		return BLOCKSIZES_OF(g_pkey_method_types);
 	}
 	if (pmeth == NULL)
 		return 0;
@@ -348,6 +349,9 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 		break;
 	case EVP_PKEY_DHX:
 		*pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DHX);
+		break;
+	case EVP_PKEY_SM2:
+		*pmeth = get_sm2_pkey_meth();
 		break;
 	default:
 		*pmeth = NULL;

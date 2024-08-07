@@ -158,6 +158,7 @@ int hpre_module_sm2_init(void);
 void wd_sm2_uninit_qnode_pool(void);
 void hpre_sm2_set_enabled(int nid, int enabled);
 KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void);
+EVP_PKEY_METHOD *get_sm2_pkey_meth(void);
 
 #endif
 

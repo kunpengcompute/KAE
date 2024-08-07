@@ -390,6 +390,20 @@ static void bind_fn_kae_alg(ENGINE *e)
 	US_DEBUG("start bind_fn_kae_alg (bind v1 algs)");
 	int dev_num;
 
+#ifndef KAE_GMSSL
+	dev_num = wd_get_nosva_dev_num("sm2");
+	if (dev_num > 0) {
+		if (!hpre_module_sm2_init()){
+			fprintf(stderr, "uadk bind sm2 failed\n");
+		}else{
+			uadk_sm2_nosva = 1;
+			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 dh)");
+		}
+	}else{
+		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
+	}
+#endif
+
 	dev_num = wd_get_nosva_dev_num("cipher");
 	if (dev_num > 0) {
 		cipher_module_init();
@@ -419,6 +433,7 @@ static void bind_fn_kae_alg(ENGINE *e)
 	dev_num = wd_get_nosva_dev_num("rsa");
 	if (dev_num > 0) {
 		hpre_module_init();
+		ENGINE_set_pkey_meths(e, hpre_pkey_meths);
 		if (!ENGINE_set_RSA(e, hpre_get_rsa_methods())){
 			fprintf(stderr, "uadk bind rsa failed\n");
 		}else{
@@ -441,20 +456,6 @@ static void bind_fn_kae_alg(ENGINE *e)
 	}else{
 		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
 	}
-#ifndef KAE_GMSSL
-	dev_num = wd_get_nosva_dev_num("sm2");
-	if (dev_num > 0) {
-		hpre_module_sm2_init();
-		if (!ENGINE_set_pkey_meths(e, hpre_get_sm2_pkey_meths)){
-			fprintf(stderr, "uadk bind sm2 failed\n");
-		}else{
-			uadk_sm2_nosva = 1;
-			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 dh)");
-		}
-	}else{
-		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
-#endif
 }
 #endif
 
