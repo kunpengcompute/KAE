@@ -64,7 +64,7 @@ void wd_hpre_uninit_qnode_pool(void);
 
 KAE_QUEUE_POOL_HEAD_S *wd_hpre_get_qnode_pool(void);
 
-hpre_engine_ctx_t *hpre_get_eng_ctx(RSA *rsa, int bits);
+hpre_engine_ctx_t *hpre_get_eng_ctx(RSA *rsa, int bits, int type);
 
 void hpre_free_eng_ctx(hpre_engine_ctx_t *eng_ctx);
 

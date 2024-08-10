@@ -469,7 +469,7 @@ static int hpre_rsa_public_encrypt(int flen, const unsigned char *from,
 		return hpre_rsa_soft_calc(flen, from, to, rsa, padding, PUB_ENC);
 	}
 
-	eng_ctx = hpre_get_eng_ctx(rsa, 0);
+	eng_ctx = hpre_get_eng_ctx(rsa, 0, 0);
 	if (eng_ctx == NULL) {
 		US_WARN("get eng ctx fail then switch to soft!");
 		rsa_soft_mark = 1;
@@ -557,7 +557,7 @@ static int hpre_rsa_private_encrypt(int flen, const unsigned char *from,
 		return hpre_rsa_soft_calc(flen, from, to, rsa, padding, PRI_ENC);
 	}
 
-	eng_ctx = hpre_get_eng_ctx(rsa, 0);
+	eng_ctx = hpre_get_eng_ctx(rsa, 0, 0);
 	if (eng_ctx == NULL) {
 		US_WARN("get eng ctx fail then switch to soft!");
 		rsa_soft_mark = 1;
@@ -661,7 +661,7 @@ static int hpre_rsa_public_decrypt(int flen, const unsigned char *from,
 		goto end_soft;
 	}
 
-	eng_ctx = hpre_get_eng_ctx(rsa, 0);
+	eng_ctx = hpre_get_eng_ctx(rsa, 0, 0);
 	if (eng_ctx == NULL) {
 		US_WARN("get eng ctx fail then switch to soft!");
 		rsa_soft_mark = 1;
@@ -755,7 +755,7 @@ static int hpre_rsa_private_decrypt(int flen, const unsigned char *from,
 		return hpre_rsa_soft_calc(flen, from, to, rsa, padding, PRI_DEC);
 	}
 
-	hpre_engine_ctx_t *eng_ctx = hpre_get_eng_ctx(rsa, 0);
+	hpre_engine_ctx_t *eng_ctx = hpre_get_eng_ctx(rsa, 0, 0);
 
 	if (eng_ctx == NULL) {
 		US_WARN("get eng ctx fail then switch to soft!");
@@ -847,7 +847,7 @@ static int hpre_rsa_keygen(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
 		return hpre_rsa_soft_genkey(rsa, bits, e, cb);
 	}
 
-	hpre_engine_ctx_t *eng_ctx = hpre_get_eng_ctx(rsa, bits);
+	hpre_engine_ctx_t *eng_ctx = hpre_get_eng_ctx(rsa, bits, 1);
 
 	if (eng_ctx == NULL) {
 		US_WARN("get eng ctx fail then switch to soft!");

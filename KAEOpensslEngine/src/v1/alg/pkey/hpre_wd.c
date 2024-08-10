@@ -113,7 +113,6 @@ static int hpre_init_eng_ctx(hpre_engine_ctx_t *eng_ctx, int bits)
 			eng_ctx->priv_ctx.key_size = bits >> BIT_BYTES_SHIFT;
 
 		eng_ctx->rsa_setup.key_bits = eng_ctx->priv_ctx.key_size << BIT_BYTES_SHIFT;
-		eng_ctx->rsa_setup.is_crt = ISSET;
 		eng_ctx->rsa_setup.cb = (wcrypto_cb)hpre_rsa_cb;
 		eng_ctx->rsa_setup.br.alloc = kae_wd_alloc_blk;
 		eng_ctx->rsa_setup.br.free = kae_wd_free_blk;
@@ -131,7 +130,7 @@ static int hpre_init_eng_ctx(hpre_engine_ctx_t *eng_ctx, int bits)
 	return OPENSSL_SUCCESS;
 }
 
-hpre_engine_ctx_t *hpre_get_eng_ctx(RSA *rsa, int bits)
+hpre_engine_ctx_t *hpre_get_eng_ctx(RSA *rsa, int bits, int type)
 {
 	hpre_engine_ctx_t *eng_ctx = hpre_new_eng_ctx(rsa);
 
@@ -139,6 +138,10 @@ hpre_engine_ctx_t *hpre_get_eng_ctx(RSA *rsa, int bits)
 		US_WARN("new eng ctx fail then switch to soft!");
 		return NULL;
 	}
+	if (hpre_rsa_iscrt(rsa) || type == ISSET)
+		eng_ctx->rsa_setup.is_crt = ISSET;
+	else
+		eng_ctx->rsa_setup.is_crt = 0;
 
 	if (hpre_init_eng_ctx(eng_ctx, bits) == 0) {
 		hpre_free_eng_ctx(eng_ctx);
