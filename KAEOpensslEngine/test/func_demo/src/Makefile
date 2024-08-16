@@ -56,6 +56,16 @@ INCDIR += -I $(SRCDIRS)/cipher/
 SOURCES += $(foreach d,$(SRCDIRS)/cipher/,$(wildcard $(addprefix $(d)*,$(SRCEXTS))))
 endif
 
+ifeq (y,${KAE_DEMO_RSA})
+INCDIR += -I $(SRCDIRS)/rsa/
+SOURCES += $(foreach d,$(SRCDIRS)/rsa/,$(wildcard $(addprefix $(d)*,$(SRCEXTS))))
+endif
+
+ifeq (y,${KAE_DEMO_DIGEST})
+INCDIR += -I $(SRCDIRS)/digest/
+SOURCES += $(foreach d,$(SRCDIRS)/digest/,$(wildcard $(addprefix $(d)*,$(SRCEXTS))))
+endif
+
 OBJS    = $(foreach x,$(SRCEXTS), \
       $(patsubst %$(x), %.o, $(filter %$(x),$(SOURCES))))
 
