@@ -10,6 +10,8 @@ extern "C" {
 
 int rand_buffer(unsigned char *buf, unsigned long len);
 void handleErrors(void);
+void PRINTMSG(unsigned char *msg, int size);
+void generateRandomASCII(char* msg, int size);
 
 #ifdef __cplusplus  
 }  

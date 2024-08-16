@@ -2,7 +2,7 @@
  * @Author: l00584920 liuyang645@huawei.com
  * @Date: 2024-07-30 20:49:22
  * @LastEditors: l00584920 liuyang645@huawei.com
- * @LastEditTime: 2024-07-31 14:50:10
+ * @LastEditTime: 2024-08-08 17:35:05
  * @FilePath: \KAE_kae2\KAE\KAEOpensslEngine\test\func_demo\src\demo_utils.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -29,3 +29,25 @@ void handleErrors(void)
     ERR_print_errors_fp(stderr);
     abort();
 }
+
+void PRINTMSG(unsigned char *msg, int size) {  
+    if (msg == NULL || size <= 0) return; // 检查有效性  
+
+    for (int i = 0; i < size; i++) {  
+         printf("0x%02X ", msg[i]); // 打印每个字符  
+    }  
+    putchar('\n'); // 打印换行符  
+} 
+
+void generateRandomASCII(char* msg, int size) {  
+    if (size <= 0 || msg == NULL) return; // 检查有效性  
+
+    // 设置随机数种子  
+    srand((unsigned int)time(NULL));  
+
+    for (int i = 0; i < size; i++) {  
+        // 生成随机字符：范围为可打印的ASCII字符（32到126）  
+        msg[i] = (char)(rand() % (126 - 32 + 1) + 32);  
+    }  
+    msg[size] = '\0'; // 添加字符串结束符  
+}  
