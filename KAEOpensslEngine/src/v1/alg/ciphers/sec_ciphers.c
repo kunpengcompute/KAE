@@ -61,9 +61,9 @@ static cipher_info_t g_sec_ciphers_info[] = {
 	{NID_aes_256_ctr, 1, 32, 16, EVP_CIPH_CTR_MODE, 1, NULL},
 	{NID_aes_128_xts, 1, 32, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
 	{NID_aes_256_xts, 1, 64, 16, EVP_CIPH_XTS_MODE | EVP_CIPH_CUSTOM_IV, 1, NULL},
-	{NID_aes_128_gcm, 16, 16, 12, EVP_CIPH_GCM_MODE, 1, NULL},
-	{NID_aes_192_gcm, 16, 24, 12, EVP_CIPH_GCM_MODE, 1, NULL},
-	{NID_aes_256_gcm, 16, 32, 12, EVP_CIPH_GCM_MODE, 1, NULL},
+	{NID_aes_128_gcm, 16, 16, 12, EVP_CIPH_GCM_MODE, 0, NULL},
+	{NID_aes_192_gcm, 16, 24, 12, EVP_CIPH_GCM_MODE, 0, NULL},
+	{NID_aes_256_gcm, 16, 32, 12, EVP_CIPH_GCM_MODE, 0, NULL},
 	{NID_aes_128_ofb128, 1, 16, 16, EVP_CIPH_OFB_MODE, 1, NULL},
 	{NID_aes_192_ofb128, 1, 24, 16, EVP_CIPH_OFB_MODE, 1, NULL},
 	{NID_aes_256_ofb128, 1, 32, 16, EVP_CIPH_OFB_MODE, 1, NULL},
@@ -788,6 +788,15 @@ static EVP_CIPHER *get_ciphers_default_method(int nid)
 		break;
 	case NID_sm4_ecb:
 		cipher = (EVP_CIPHER *)EVP_sm4_ecb();
+		break;
+	case NID_aes_128_gcm:
+		cipher = (EVP_CIPHER *)EVP_aes_128_gcm();
+		break;
+	case NID_aes_192_gcm:
+		cipher = (EVP_CIPHER *)EVP_aes_192_gcm();
+		break;
+	case NID_aes_256_gcm:
+		cipher = (EVP_CIPHER *)EVP_aes_256_gcm();
 		break;
 	default:
 		US_WARN("nid = %d not support.", nid);
