@@ -49,6 +49,7 @@ TEST_F(RsaTestSuit, case0)
 
     RSA_free(rsa); 
     ENGINE_free(engine);
+    ERR_print_errors_fp(stderr);
 
 }
 
@@ -104,6 +105,7 @@ TEST_F(RsaTestSuit, case_rsa1)
     free(decData);
     RSA_free(rsa);
     ENGINE_free(engine);
+    ERR_print_errors_fp(stderr);
 }
 
 // 硬算签名验签
@@ -172,6 +174,8 @@ TEST_F(RsaTestSuit, case_rsa2)
     EVP_MD_CTX_free(mdctx2);
 	RSA_free(rsa);
     ENGINE_free(engine);
+    // ERR_print_errors_fp(stderr);注入故障会产生错误信息
+    ERR_clear_error();
 
 }
 
@@ -233,4 +237,5 @@ TEST_F(RsaTestSuit, case_rsa3)
     free(decData);
     RSA_free(rsa);
     ENGINE_free(engine);
+    ERR_print_errors_fp(stderr);
 }

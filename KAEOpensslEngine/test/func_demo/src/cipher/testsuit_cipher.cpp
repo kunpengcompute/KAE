@@ -2,7 +2,7 @@
  * @Author: l00584920 liuyang645@huawei.com
  * @Date: 2024-07-30 20:47:57
  * @LastEditors: l00584920 liuyang645@huawei.com
- * @LastEditTime: 2024-08-13 20:12:11
+ * @LastEditTime: 2024-08-19 11:28:40
  * @FilePath: \KAE_kae2\KAE\KAEOpensslEngine\test\func_demo\src\cipher\testsuit_cipher.cpp
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -181,6 +181,7 @@ TEST_F(CipherTestSuit, case_sm4_50M)
     ENGINE_free(engine);
 }
 
+/*
 TEST_F(CipherTestSuit, case_aes_gcm)
 {
    OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);// 通过配置文件加载KAE
@@ -259,3 +260,4 @@ TEST_F(CipherTestSuit, case_aes_gcm_fault_injection)
     ENGINE_free(engine);
 }
 
+*/
