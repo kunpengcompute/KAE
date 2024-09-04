@@ -311,7 +311,12 @@ static int hpre_evp_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig, size_t s
 #endif
 
 #define PKEY_METHOD_TYPE_NUM   4
+
+#ifdef EVP_PKEY_SM2
 const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX, EVP_PKEY_SM2};
+#else
+const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX};
+#endif 
 
 static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
 		const int **pnids, int nid)
@@ -350,9 +355,11 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 	case EVP_PKEY_DHX:
 		*pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DHX);
 		break;
+#ifdef EVP_PKEY_SM2
 	case EVP_PKEY_SM2:
 		*pmeth = get_sm2_pkey_meth();
 		break;
+#endif
 	default:
 		*pmeth = NULL;
 		break;
