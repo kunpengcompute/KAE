@@ -15,6 +15,7 @@
 
 #define KAEZSTD_DEBUG_FILE_PATH   "/var/log/kaezstd.log"
 #define KAEZSTD_DEBUG_FILE_PATH_OLD "/var/log/kaezstd.log.old"
+#define KAEZSTD_DEBUG_FILE_PATH_LOCK "/var/log/.kaezstd.log.lock"
 #define KAE_LOG_MAX_SIZE 209715200
 
 extern FILE *g_kaezstd_debug_log_file;
@@ -40,7 +41,16 @@ void ENGINE_LOG_LIMIT(int level, int times, int limit, const char *fmt, ...);
         struct tm *log_tm_p = NULL;                                                                     \
         time_t timep = time((time_t *)NULL);                                                            \
         log_tm_p = localtime(&timep);                                                                   \
-        flock(g_kaezstd_debug_log_file->_fileno, LOCK_EX);                                                  \
+        int log_lock_fd = open(KAEZSTD_DEBUG_FILE_PATH_LOCK, O_CREAT | O_RDWR, 0666);                   \
+        if (log_lock_fd < 0) {                                                                          \
+            perror("[kae]:open log lock file error");                                                   \
+            break;                                                                                      \
+        }                                                                                               \
+        if (flock(log_lock_fd, LOCK_EX) != 0) {                                                         \
+            perror("[kae]:flock error, check /var/log/.kaezstd.log.lock");                              \
+            close(log_lock_fd);                                                                         \
+            break;                                                                                      \
+        }                                                                                               \
         pthread_mutex_lock(&g_kaezstd_debug_file_mutex);                                                        \
         fseek(g_kaezstd_debug_log_file, 0, SEEK_END);                                                       \
         if (log_tm_p != NULL) {                                                                         \
@@ -57,8 +67,9 @@ void ENGINE_LOG_LIMIT(int level, int times, int limit, const char *fmt, ...);
             if(ftruncate(g_kaezstd_debug_log_file->_fileno, 0));                                                \
             fseek(g_kaezstd_debug_log_file, 0, SEEK_SET);                                                   \
         }                                                                                               \
-            pthread_mutex_unlock(&g_kaezstd_debug_file_mutex);                                                  \
-            flock(g_kaezstd_debug_log_file->_fileno, LOCK_UN);                                              \
+        pthread_mutex_unlock(&g_kaezstd_debug_file_mutex);                                              \
+        flock(log_lock_fd, LOCK_UN);                                                                    \
+        close(log_lock_fd);                                                                             \
     } while (0)
 
 #define US_ERR(fmt, args...)          KAEZSTD_CRYPTO(KAE_ERROR, fmt, ##args)
