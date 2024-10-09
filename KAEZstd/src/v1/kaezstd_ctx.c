@@ -46,6 +46,59 @@ void kaezstd_free_ctx(void* kz_ctx)
     return;
 }
 
+static int kaezstd_get_comp_lv()
+{
+    char *zstd_str = getenv("KAE_ZSTD_COMP_TYPE");
+    if (zstd_str == NULL) {
+        US_DEBUG("KAE_ZSTD_COMP_TYPE is NULL, use default lv 9\n");
+        return 9;
+    }
+    int zstd_val = atoi(zstd_str);
+    if (zstd_val != 8 && zstd_val != 9) {
+        US_DEBUG("KAE_ZSTD_COMP_TYPE value %d out of range, use default lv 9", zstd_val);
+        return 9;
+    }
+    US_DEBUG("KAE_ZSTD_COMP_TYPE value is: %d ", zstd_val);
+    return zstd_val;
+}
+
+static int kaezstd_get_win_size()
+{
+    char *zstd_str = getenv("KAE_ZSTD_WINTYPE");
+    if (zstd_str == NULL) {
+        US_DEBUG("KAE_ZSTD_WINTYPE is NULL, use default winsize 4\n");
+        return 4;
+    }
+    int winsize = atoi(zstd_str);
+
+    int wintype = 0;
+
+    switch (winsize) {
+	case 4:
+		wintype = WCRYPTO_COMP_WS_4K;
+		break;
+	case 8:
+		wintype = WCRYPTO_COMP_WS_8K;
+		break;
+	case 16:
+		wintype = WCRYPTO_COMP_WS_16K;
+		break;
+    case 24:
+		wintype = WCRYPTO_COMP_WS_24K;
+		break;
+    case 32:
+		wintype = WCRYPTO_COMP_WS_32K;
+		break;
+	default:
+		wintype = WCRYPTO_COMP_WS_32K;
+        US_DEBUG("KAE_ZSTD_WINTYPE value out of range ：%d ,use default winsize 32", winsize);
+        break;
+	}
+
+    US_DEBUG("KAE_ZSTD_WINTYPE wintype is ：%d ", wintype);
+    return wintype;
+}
+
 static kaezstd_ctx_t* kaezstd_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype)
 {
     kaezstd_ctx_t *kz_ctx = NULL;
@@ -55,6 +108,9 @@ static kaezstd_ctx_t* kaezstd_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_com
         return NULL;
     }
     memset(kz_ctx, 0, sizeof(kaezstd_ctx_t));
+    
+    kz_ctx->setup.win_size  = kaezstd_get_win_size();
+    kz_ctx->setup.comp_lv = kaezstd_get_comp_lv();
 
     kz_ctx->setup.br.alloc = kaezstd_wd_alloc_blk;
     kz_ctx->setup.br.free = kaezstd_wd_free_blk;
