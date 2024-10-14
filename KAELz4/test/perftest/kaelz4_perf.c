@@ -56,7 +56,6 @@ uint8_t *CompressInputGet(size_t inputSize)
 static void DoBlockCompressPerf_next(int streamLen, int cLevel, int bsize)
 {
     int inpOffset = 0;
-    int DataLen = streamLen;
 
     for (; ;)
     {

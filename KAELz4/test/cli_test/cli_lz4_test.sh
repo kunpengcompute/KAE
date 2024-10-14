@@ -7,8 +7,10 @@ EXE="$lz4_executable $kaelz4_executable"
 # 压缩级别
 compression_level="1"
 
+SRC_PATH=$(pwd)
+
 # 测试文件名称
-BASE_TESTDATA_ADD="/home/zhd/dataset/silesia/"
+BASE_TESTDATA_ADD="${SRC_PATH}/../../../scripts/compressTestDataset/"
 test_file_name="ooffice osdb samba webster xml x-ray"
 blocksize="4 5 6 7"
 
