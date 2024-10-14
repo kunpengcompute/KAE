@@ -1,0 +1,877 @@
+diff -uprN lzbench-master/lz4/lz4_accelerater.h lzbench-master-KAELz4/lz4/lz4_accelerater.h
+--- lzbench-master/lz4/lz4_accelerater.h	1970-01-01 08:00:00.000000000 +0800
++++ lzbench-master-KAELz4/lz4/lz4_accelerater.h	2024-09-23 23:22:52.935696840 +0800
+@@ -0,0 +1,131 @@
++/* *
++ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
++ * Create: 2023-04
++ */
++
++#ifndef LZ4_ACCELERATER_H
++#define LZ4_ACCELERATER_H
++
++#include <arm_neon.h>
++#include "stddef.h"
++#define NO_PREFETCH
++#define RAW_LZ4
++
++#define G_KZLPRIME5BYTES (889523592379ULL)
++#define G_KZLPRIME8BYTES (11400714785074694791ULL)
++
++#ifndef KZL_FORCE_INLINE
++#  ifdef _MSC_VER
++#    define KZL_FORCE_INLINE static __forceinline
++#  else
++#    if defined (__cplusplus) || defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L   /* C99 */
++#      ifdef __GNUC__
++#        define KZL_FORCE_INLINE static inline __attribute__((always_inline))
++#      else
++#        define KZL_FORCE_INLINE static inline
++#      endif
++#    else
++#      define KZL_FORCE_INLINE static
++#    endif
++#  endif
++#endif
++
++#if defined(__GNUC__) && (__GNUC__ >= 4)
++#    define KZL_MEMCPY_2(dst, src, size) __builtin_memcpy(dst, src, size)
++#    define KZL_MEMCPY_4(dst, src, size) __builtin_memcpy(dst, src, size)
++#    define KZL_MEMCPY_8(dst, src, size) vst1_u8((dst), vld1_u8(src))
++#    define KZL_MEMCPY_16(dst, src, size) vst1q_u8((dst), vld1q_u8(src))
++#    define KZL_MEMCPY_32(dst, src, size) vst1q_u8((dst), vld1q_u8(src)); vst1q_u8(((dst)+16), vld1q_u8(((src)+16)))
++#    define KZL_MEMCPY_16X1(dst, src, size) vst1q_u64((dst), vld1q_u64(src))
++#    define KZL_MEMCPY_32X1(dst, src, size) vst1q_u64((dst), vld1q_u64(src)); \
++                vst1q_u64(((dst)+16), vld1q_u64(((src)+16)))
++#endif
++
++/* prefetch 321
++ * can be disabled, by declaring NO_PREFETCH build macro */
++#if defined(NO_PREFETCH)
++#    define PREFETCH_L1(ptr)  (void)(ptr)  /* disabled */
++#    define PREFETCH_L2(ptr)  (void)(ptr)  /* disabled */
++#    define PREFETCH_L3(ptr)  (void)(ptr)  /* disabled */
++#else
++#  if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))  /* _mm_prefetch() is not defined outside of x86/x64 */
++#    include <mmintrin.h>   /* https://msdn.microsoft.com/fr-fr/library/84szxsww(v=vs.90).aspx */
++#    define PREFETCH_L1(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T0)
++#    define PREFETCH_L2(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T1)
++#    define PREFETCH_L2(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T2)
++#  elif defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
++#    define PREFETCH_L1(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 3 /* locality */)
++#    define PREFETCH_L2(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 2 /* locality */)
++#    define PREFETCH_L3(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 1 /* locality */)
++#  elif defined(__aarch64__)
++#    define PREFETCH_L1(ptr)  __asm__ __volatile__("prfm pldl1keep, %0" ::"Q"(*(ptr)))
++#    define PREFETCH_L2(ptr)  __asm__ __volatile__("prfm pldl2keep, %0" ::"Q"(*(ptr)))
++#    define PREFETCH_L3(ptr)  __asm__ __volatile__("prfm pldl3keep, %0" ::"Q"(*(ptr)))
++#  else
++#    define PREFETCH_L1(ptr) (void)(ptr)  /* disabled */
++#    define PREFETCH_L2(ptr) (void)(ptr)  /* disabled */
++#    define PREFETCH_L3(ptr) (void)(ptr)  /* disabled */
++#  endif
++#endif  /* NO_PREFETCH */
++
++#define L1_CACHELINE_SIZE 64
++#define L2_CACHELINE_SIZE 64
++#define L3_CACHELINE_SIZE 128
++
++#define PREFETCH_AREA_L1(p, s)  {            \
++                const char* const ptr = (const char*)(p);  \
++                size_t const size = (size_t)(s);     \
++                size_t pos;                          \
++                for (pos=0; pos<size; pos+=L1_CACHELINE_SIZE) {  \
++                    PREFETCH_L1(ptr + pos);         \
++                }                                     \
++            }
++
++#define PREFETCH_AREA_L2(p, s)  {            \
++            const char* const ptr = (const char*)(p);  \
++            size_t const size = (size_t)(s);     \
++            size_t pos;                          \
++            for (pos=0; pos<size; pos+=L2_CACHELINE_SIZE) {  \
++                PREFETCH_L2(ptr + pos);         \
++            }                                     \
++        }
++
++#define PREFETCH_AREA_L3(p, s)  {            \
++            const char* const ptr = (const char*)(p);  \
++            size_t const size = (size_t)(s);     \
++            size_t pos;                          \
++            for (pos=0; pos<size; pos+=L3_CACHELINE_SIZE) {  \
++                PREFETCH_L3(ptr + pos);         \
++            }                                     \
++        }
++
++enum PrefetchCpuCacheType {
++    L1CACHE = 1,
++    L2CACHE = 2,
++    L3CACHE = 3
++};
++
++typedef enum PrefetchCpuCacheType CpuCacheType;
++
++#define SEQUENCE_MOVE 24
++#define HASH_SIZE 64
++
++KZL_FORCE_INLINE uint32_t KZL_LittleEndianfastHash5(uint64_t sequence, uint8_t HashLogUsage)
++{
++    // for data ≤ 64KB
++    return (uint32_t)(((sequence << SEQUENCE_MOVE) * G_KZLPRIME5BYTES) >> (HASH_SIZE - HashLogUsage));
++}
++
++KZL_FORCE_INLINE uint32_t KZL_BigEndianfastHash5(uint64_t sequence, uint8_t HashLogUsage)
++{
++    // for data > 64KB
++    return (uint32_t)(((sequence >> SEQUENCE_MOVE) * G_KZLPRIME8BYTES) >> (HASH_SIZE - HashLogUsage));
++}
++
++void accerlerater(int srcSize, uint8_t *acceleration);
++void skipTrigger(int srcSize, uint8_t *skipStep);
++void PrefetchCpuCacheArea(const void* p, size_t s, CpuCacheType cacheType);
++
++int PlatformIsSupport(void);
++
++#endif
+diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
+--- lzbench-master/lz4/lz4.c	2024-09-23 20:38:46.000000000 +0800
++++ lzbench-master-KAELz4/lz4/lz4.c	2024-09-23 23:17:20.491696840 +0800
+@@ -56,7 +56,13 @@
+  */
+ #define LZ4_ACCELERATION_MAX 65537
+ 
++#ifdef CONF_KAELZ4
++#include "kaelz4.h"
++#include "kaelz4_log.h"
++#define TOKEN_NUM_CONTROL 0 // 用于控制生成压缩块中三元组数目，来保证解压速度（对齐实际match length需+3）
++#endif
+ 
++#include "lz4_accelerater.h"
+ /*-************************************
+ *  CPU Feature Detection
+ **************************************/
+@@ -358,6 +364,14 @@ typedef enum {
+ #  endif
+ #endif
+ 
++#if !defined(KZL_MEMMOVE)
++#  if defined(__GNUC__) && (__GNUC__ >= 4)
++#    define KZL_MEMMOVE __builtin_memmove
++#  else
++#    define KZL_MEMMOVE memmove
++#  endif
++#endif
++
+ static unsigned LZ4_isLittleEndian(void)
+ {
+     const union { U32 u; BYTE c[4]; } one = { 1 };   /* don't use static : performance detrimental */
+@@ -420,16 +434,21 @@ static void LZ4_write32(void* memPtr, U3
+ 
+ static U16 LZ4_readLE16(const void* memPtr)
+ {
++#ifdef RAW_LZ4
+     if (LZ4_isLittleEndian()) {
+         return LZ4_read16(memPtr);
+     } else {
+         const BYTE* p = (const BYTE*)memPtr;
+         return (U16)((U16)p[0] + (p[1]<<8));
+     }
++#else
++    return LZ4_read16(memPtr);
++#endif
+ }
+ 
+ static void LZ4_writeLE16(void* memPtr, U16 value)
+ {
++#ifdef RAW_LZ4
+     if (LZ4_isLittleEndian()) {
+         LZ4_write16(memPtr, value);
+     } else {
+@@ -437,6 +456,9 @@ static void LZ4_writeLE16(void* memPtr,
+         p[0] = (BYTE) value;
+         p[1] = (BYTE)(value>>8);
+     }
++#else
++    LZ4_write16(memPtr, value);
++#endif
+ }
+ 
+ /* customized variant of memcpy, which can overwrite up to 8 bytes beyond dstEnd */
+@@ -447,7 +469,7 @@ void LZ4_wildCopy8(void* dstPtr, const v
+     const BYTE* s = (const BYTE*)srcPtr;
+     BYTE* const e = (BYTE*)dstEnd;
+ 
+-    do { LZ4_memcpy(d,s,8); d+=8; s+=8; } while (d<e);
++    do { KZL_MEMCPY_8(d,s,8); d+=8; s+=8; } while (d<e);
+ }
+ 
+ static const unsigned inc32table[8] = {0, 1, 2,  1,  0,  4, 4, 4};
+@@ -482,11 +504,11 @@ LZ4_memcpy_using_offset_base(BYTE* dstPt
+         dstPtr[2] = srcPtr[2];
+         dstPtr[3] = srcPtr[3];
+         srcPtr += inc32table[offset];
+-        LZ4_memcpy(dstPtr+4, srcPtr, 4);
++        KZL_MEMCPY_4(dstPtr+4, srcPtr, 4);
+         srcPtr -= dec64table[offset];
+         dstPtr += 8;
+     } else {
+-        LZ4_memcpy(dstPtr, srcPtr, 8);
++        KZL_MEMCPY_8(dstPtr, srcPtr, 8);
+         dstPtr += 8;
+         srcPtr += 8;
+     }
+@@ -504,7 +526,7 @@ LZ4_wildCopy32(void* dstPtr, const void*
+     const BYTE* s = (const BYTE*)srcPtr;
+     BYTE* const e = (BYTE*)dstEnd;
+ 
+-    do { LZ4_memcpy(d,s,16); LZ4_memcpy(d+16,s+16,16); d+=32; s+=32; } while (d<e);
++    do { KZL_MEMCPY_32(d,s,32); d+=32; s+=32; } while (d<e);
+ }
+ 
+ /* LZ4_memcpy_using_offset()  presumes :
+@@ -522,30 +544,30 @@ LZ4_memcpy_using_offset(BYTE* dstPtr, co
+         MEM_INIT(v, *srcPtr, 8);
+         break;
+     case 2:
+-        LZ4_memcpy(v, srcPtr, 2);
+-        LZ4_memcpy(&v[2], srcPtr, 2);
++        KZL_MEMCPY_2(v, srcPtr, 2);
++        KZL_MEMCPY_2(v+2, srcPtr, 2);
+ #if defined(_MSC_VER) && (_MSC_VER <= 1933) /* MSVC 2022 ver 17.3 or earlier */
+ #  pragma warning(push)
+ #  pragma warning(disable : 6385) /* warning C6385: Reading invalid data from 'v'. */
+ #endif
+-        LZ4_memcpy(&v[4], v, 4);
++        KZL_MEMCPY_4(v+4, v, 4);
+ #if defined(_MSC_VER) && (_MSC_VER <= 1933) /* MSVC 2022 ver 17.3 or earlier */
+ #  pragma warning(pop)
+ #endif
+         break;
+     case 4:
+-        LZ4_memcpy(v, srcPtr, 4);
+-        LZ4_memcpy(&v[4], srcPtr, 4);
++        KZL_MEMCPY_4(v, srcPtr, 4);
++        KZL_MEMCPY_4(v+4, srcPtr, 4);
+         break;
+     default:
+         LZ4_memcpy_using_offset_base(dstPtr, srcPtr, dstEnd, offset);
+         return;
+     }
+ 
+-    LZ4_memcpy(dstPtr, v, 8);
++    KZL_MEMCPY_8(dstPtr, v, 8);
+     dstPtr += 8;
+     while (dstPtr < dstEnd) {
+-        LZ4_memcpy(dstPtr, v, 8);
++        KZL_MEMCPY_8(dstPtr, v, 8);
+         dstPtr += 8;
+     }
+ }
+@@ -557,6 +579,7 @@ LZ4_memcpy_using_offset(BYTE* dstPtr, co
+ **************************************/
+ static unsigned LZ4_NbCommonBytes (reg_t val)
+ {
++#ifdef RAW_LZ4
+     assert(val != 0);
+     if (LZ4_isLittleEndian()) {
+         if (sizeof(val) == 8) {
+@@ -651,6 +674,13 @@ static unsigned LZ4_NbCommonBytes (reg_t
+ #       endif
+         }
+     }
++#else // no define RAW_LZ4
++        if (sizeof(val) == 8) {
++            return (unsigned)__builtin_ctzll((U64)val) >> 3;
++        } else /* 32 bits */ {
++            return (unsigned)__builtin_ctz((U32)val) >> 3;
++            }
++#endif
+ }
+ 
+ 
+@@ -753,6 +783,8 @@ int LZ4_decompress_safe_partial_forceExt
+ /*-******************************
+ *  Compression functions
+ ********************************/
++#define g_prime5bytes 889523592379ULL
++
+ LZ4_FORCE_INLINE U32 LZ4_hash4(U32 sequence, tableType_t const tableType)
+ {
+     if (tableType == byU16)
+@@ -764,12 +796,10 @@ LZ4_FORCE_INLINE U32 LZ4_hash4(U32 seque
+ LZ4_FORCE_INLINE U32 LZ4_hash5(U64 sequence, tableType_t const tableType)
+ {
+     const U32 hashLog = (tableType == byU16) ? LZ4_HASHLOG+1 : LZ4_HASHLOG;
+-    if (LZ4_isLittleEndian()) {
+-        const U64 prime5bytes = 889523592379ULL;
+-        return (U32)(((sequence << 24) * prime5bytes) >> (64 - hashLog));
++    if (__builtin_expect(LZ4_isLittleEndian(), 1)) {
++        return KZL_LittleEndianfastHash5(sequence, hashLog);
+     } else {
+-        const U64 prime8bytes = 11400714785074694791ULL;
+-        return (U32)(((sequence >> 24) * prime8bytes) >> (64 - hashLog));
++        return KZL_BigEndianfastHash5(sequence, hashLog);
+     }
+ }
+ 
+@@ -779,6 +809,11 @@ LZ4_FORCE_INLINE U32 LZ4_hashPosition(co
+     return LZ4_hash4(LZ4_read32(p), tableType);
+ }
+ 
++LZ4_FORCE_INLINE U32 LZ4_hashPositionIgnoreBufferLength(const void* const p, tableType_t const tableType)
++{
++    return LZ4_hash5(LZ4_read_ARCH(p), tableType);
++}
++
+ LZ4_FORCE_INLINE void LZ4_clearHash(U32 h, void* tableBase, tableType_t const tableType)
+ {
+     switch (tableType)
+@@ -793,6 +828,7 @@ LZ4_FORCE_INLINE void LZ4_clearHash(U32
+ 
+ LZ4_FORCE_INLINE void LZ4_putIndexOnHash(U32 idx, U32 h, void* tableBase, tableType_t const tableType)
+ {
++#ifdef RAW_LZ4
+     switch (tableType)
+     {
+     default: /* fallthrough */
+@@ -801,12 +837,16 @@ LZ4_FORCE_INLINE void LZ4_putIndexOnHash
+     case byU32: { U32* hashTable = (U32*) tableBase; hashTable[h] = idx; return; }
+     case byU16: { U16* hashTable = (U16*) tableBase; assert(idx < 65536); hashTable[h] = (U16)idx; return; }
+     }
++#else
++    U16* hashTable = (U16*) tableBase; assert(idx < 65536); hashTable[h] = (U16)idx; return;
++#endif
+ }
+ 
+ LZ4_FORCE_INLINE void LZ4_putPositionOnHash(const BYTE* p, U32 h,
+                                   void* tableBase, tableType_t const tableType,
+                             const BYTE* srcBase)
+ {
++#ifdef RAW_LZ4
+     switch (tableType)
+     {
+     case clearedTable: { /* illegal! */ assert(0); return; }
+@@ -814,11 +854,14 @@ LZ4_FORCE_INLINE void LZ4_putPositionOnH
+     case byU32: { U32* hashTable = (U32*) tableBase; hashTable[h] = (U32)(p-srcBase); return; }
+     case byU16: { U16* hashTable = (U16*) tableBase; hashTable[h] = (U16)(p-srcBase); return; }
+     }
++#else
++    U16* hashTable = (U16*) tableBase; hashTable[h] = (U16)(p-srcBase); return;
++#endif
+ }
+ 
+ LZ4_FORCE_INLINE void LZ4_putPosition(const BYTE* p, void* tableBase, tableType_t tableType, const BYTE* srcBase)
+ {
+-    U32 const h = LZ4_hashPosition(p, tableType);
++    U32 const h = LZ4_hashPositionIgnoreBufferLength(p, tableType);
+     LZ4_putPositionOnHash(p, h, tableBase, tableType, srcBase);
+ }
+ 
+@@ -856,7 +899,7 @@ LZ4_getPosition(const BYTE* p,
+                 const void* tableBase, tableType_t tableType,
+                 const BYTE* srcBase)
+ {
+-    U32 const h = LZ4_hashPosition(p, tableType);
++    U32 const h = LZ4_hashPositionIgnoreBufferLength(p, tableType);
+     return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
+ }
+ 
+@@ -980,6 +1023,303 @@ LZ4_FORCE_INLINE int LZ4_compress_generi
+ 
+     if (inputSize<LZ4_minLength) goto _last_literals;        /* Input too small, no compression (all literals) */
+ 
++    //=======================================================================================
++#ifdef CONF_KAELZ4
++    if ((dictDirective == noDict) && (outputDirective == notLimited)) {
++        US_DEBUG("dictDirective = NO DICT.");
++        // 1.kae上下文初始化函数调用
++        LZ4_CCtx ctxBody;
++        ctxBody.kaeInited = 0;
++        ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
++        ctxBody.kaeConfig = NULL;
++
++        ctxBody.seqStore.llCode = NULL;
++        ctxBody.seqStore.mlCode = NULL;
++        ctxBody.seqStore.ofCode = NULL;
++        ctxBody.seqStore.lit = NULL;
++        ctxBody.seqStore.litStart = NULL;
++        ctxBody.seqStore.sequencesStart = NULL;
++        ctxBody.seqStore.sequences = NULL;
++        
++        ctxBody.compressionLevel = 8;
++        ctxBody.kaeLevel = 8;
++        ctxBody.seqnum = 0;
++
++        int ret;
++        ret = kaelz4_init(&ctxBody); // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
++        if (ret == 0) {
++            ctxBody.kaeInited = 1;
++        } else {
++            ctxBody.kaeInited = 0;
++            goto _softVersion;       // 初始化异常则切换软算版本，保证压缩继续进行
++        }
++        US_DEBUG("ctxBody.kaeInited: %d.\n", ctxBody.kaeInited);
++
++        // 2.调用kae硬化压缩接口，进行硬化压缩, 返回的是三元组和literal，将返回的三元组和literal按照lz4压缩块的格式进行重新组织
++        seqDef* sequencespoint = ctxBody.seqStore.sequencesStart;
++        BYTE* litpoint = ctxBody.seqStore.litStart;
++        U32 lastRun = 0;
++        U32 specialFlag = 0;
++
++        // 转换衔接
++        size_t srcSize = inputSize;
++        size_t dstCapacity = maxOutputSize;
++        const void* src = source;
++        void* dst = dest;
++
++        size_t remainingLength = srcSize; // 该值用于保存剩余的待压缩数据长度
++        size_t hardwareBlockSize = 65536; // 硬件卸载支持的最大literal为32k, 这里按lz4最大查找的64K来设定
++
++        // 针对ZSTD和LZ4的matchlength转换定义的数据结构
++        US_DEBUG("INPUTSIZE:%d, dstCapacity:%d, maxOutputSize:%d.", inputSize, dstCapacity, maxOutputSize);
++        BYTE* templit = (BYTE*)malloc(inputSize * sizeof(BYTE));  // 用于暂存mlbase为3的还原字段
++        if (templit == NULL) {      // 内存开辟失败，本次压缩异常返回
++            return 0;
++        }
++        U32 tempLiteralLength = 0;  // 用于标记templit中暂存字段数
++        BYTE *temp_point = templit; // 用于记录当前暂存数据在数组中的位置
++
++        int sequenceCount = 0;
++        U64 offset_hist[3] = {1, 4, 8};
++        
++        uint32_t offBase = 0;
++        uint32_t litLength = 0;
++        uint16_t mlBase = 0;
++
++        U32 idx = 0;
++        const BYTE *translit = NULL; // 用于每次定位到mlbase=3的字符串所在
++        BYTE* token = NULL;
++        int len = 0;
++        unsigned matchCode = 0; // 即mlBase
++
++        // 针对ZSTD 128K remaining会覆盖CTX的问题进行的拆分(具体按64K切分，对于末尾的literal，进行src前移，放到下一轮再压)
++        while (remainingLength) {
++            US_DEBUG("remainingLength:%d, hardware:%d\n", remainingLength, hardwareBlockSize);
++            if (remainingLength > hardwareBlockSize) {
++                srcSize = hardwareBlockSize;
++                // part1.基于KAE接口进行硬化压缩
++                result  = kaelz4_compress(&ctxBody, src, srcSize);
++                // 对末尾无三元组literal的处理(这里不处理，放到最后literal处理)
++            } else {
++                result = kaelz4_compress(&ctxBody, src, srcSize - MFLIMIT);
++            }
++
++            if (result) return 0; // 硬件压缩失败处理
++
++            sequencespoint = ctxBody.seqStore.sequencesStart;
++            litpoint = ctxBody.seqStore.litStart;
++        
++            // part2.硬件压缩结果在ctxBody中，下面需要对ctx中的sequence逐个解析对应过来
++            int i = 0;
++            sequenceCount = 0;
++            offset_hist[0] = 1; offset_hist[1] = 4; offset_hist[2] = 8;
++            
++            while (sequenceCount < ctxBody.seqnum) {
++                US_DEBUG("sequenceCount:%d, ctxBody.seqnum:%d.", sequenceCount, ctxBody.seqnum);
++                sequenceCount++; // sequence计数
++                offBase = sequencespoint->offBase;
++                litLength = sequencespoint->litLength;
++                mlBase = sequencespoint->mlBase;
++                US_DEBUG("%d:Before trans: offBase %d-litLength %d-mlbase %d-remainingLength %d\n", i++, offBase, litLength, mlBase, remainingLength);
++
++                /* 1.从repcode还原出raw offset，根据的zstd的table的逻辑，具体查看mannual文档 */
++                size_t realoffset;
++                if (offBase <= 3) {
++                    idx = offBase - 1;
++                    if (litLength == 0) {
++                        idx++;
++                    }
++                    if (idx == 0) {
++                        realoffset = offset_hist[0];
++                    } else {
++                        realoffset = idx < 3 ? offset_hist[idx] : offset_hist[0] - 1;
++                        if (idx > 1) {
++                            offset_hist[2] = offset_hist[1];
++                        }
++                        offset_hist[1] = offset_hist[0];
++                        offset_hist[0] = realoffset;
++                    }
++                } else {
++                    realoffset = offBase - 3;
++                    offset_hist[2] = offset_hist[1];
++                    offset_hist[1] = offset_hist[0];
++                    offset_hist[0] = realoffset;
++                }
++                offBase = realoffset; // 真正的offset
++
++                /* 2.基于mlBase是否为0（即3），对offset和literal length进行校正 */
++                if (mlBase <= TOKEN_NUM_CONTROL) {
++                    US_DEBUG("litLength:%d, tempLiteralLength:%d", litLength, tempLiteralLength);
++                    // 针对zstd硬算返回match length为3的情况，为保证存量可解，准备还原为纯literal形式的sequence
++                    translit = ip + litLength - offBase; // 定位到3match所在位置
++                    // 就是说并不是补-offset就能找到，事实上找不到，得用src！！！
++                    temp_point = templit + tempLiteralLength; // 定位到数组当前可用位置
++                    // 先把literal部分复制到暂存区
++                    LZ4_wildCopy8(temp_point, litpoint, temp_point + litLength);
++                    litpoint += litLength;
++                    temp_point += litLength;
++                    tempLiteralLength += litLength;
++                    // 再把3 match粘过去
++                    LZ4_wildCopy8(temp_point, translit, temp_point + mlBase + 3);
++                    temp_point += mlBase + 3;
++                    tempLiteralLength += mlBase + 3;
++                    US_DEBUG("%d:3match After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
++                    sequencespoint++;
++                    // 追踪 
++                    ip += litLength + mlBase + 3;
++
++                    continue; // 存完即可开启下一轮，因为无需组织token了
++                } else {
++                    /* 3.对matchlength进行讨论校正 */
++                    mlBase = sequencespoint->mlBase + 3 - 4;  // ZSTD里定义的是mlength-minmatch(3)，和lz4里的4还是有区别的!
++                    // 根据暂存字面段，对offset和literal length进行修正
++                    litLength += tempLiteralLength;
++                    // 追踪
++                    ip += litLength - tempLiteralLength + mlBase + 4;
++                }
++                US_DEBUG("%d:After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
++
++                sequencespoint++;
++                // 特殊场景判断，倒数第二个sequence的mlBase小于12Bytes，则解压会异常(暂未触发)
++
++                // 2.1 token填充
++                token = op++;
++                if (litLength >= RUN_MASK) { // 情况1：litLength大于15，就是说token的高4位放不下
++                    len = (int)(litLength - RUN_MASK);
++                    *token = (RUN_MASK << ML_BITS);
++                    for(; len >= 255; len -= 255) *op++ = 255;
++                        *op++ = (BYTE)len;
++                } else {
++                    *token = (BYTE)(litLength << ML_BITS); // 情况2：小于15，token的高4位放得下
++                }
++                //  2.2 literal填充
++                litLength -= tempLiteralLength; // 填完token后还原回去
++                if (tempLiteralLength != 0) {
++                    // 先把literal填上，然后把matchlength的补后面
++                    LZ4_wildCopy8(op, templit, op + tempLiteralLength);
++                    op += tempLiteralLength;
++                }
++                LZ4_wildCopy8(op, litpoint, op + litLength);
++                op += litLength;
++                litpoint += litLength;
++                tempLiteralLength = 0;
++                temp_point = templit;
++
++                // 2.3 offset填充
++                // 前面对于filloutput形式输出的讨论要注意（就是如果匹配过于靠近end，那么将会去到last literal）
++                LZ4_writeLE16(op, (U16)(offBase));
++                op += 2;
++                if (offBase > 65535) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
++                    US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
++                    return 0;
++                }
++                // 2.4 matchlength填充
++                matchCode = mlBase;
++                if (matchCode >= ML_MASK) { // 情况1：大于15，则无法完全填充到token的第二字段（4-bits）
++                    *token += ML_MASK;
++                    matchCode -= ML_MASK;
++                    LZ4_write32(op, 0xFFFFFFFF);
++                    while (matchCode >= 4*255) {
++                        op += 4;
++                        LZ4_write32(op, 0xFFFFFFFF);
++                        matchCode -= 4*255;
++                    }
++                    op += matchCode / 255;
++                    *op++ = (BYTE)(matchCode % 255);
++                } else { // 情况2：小于15，则可以直接填充到token的第二字段（4-bits）
++                    *token += (BYTE)(matchCode);
++                }
++            }
++
++        _lastLiteral:
++            // 2.5 last literal的处理
++            if (specialFlag) { // 这个标志位表明最后的字段没有被压缩，因此不从literal里拿，而直接从src获取
++                lastRun = 0;
++            } else {           // 这个分支就是每轮正常的最后一个无三元组的literal字段处理
++                lastRun = (U32)(ctxBody.seqStore.lit - litpoint);
++            }
++            US_DEBUG("Deal with last literal: %d， remaining-length:%d.\n", lastRun, remainingLength);
++            /* 对每个子块，最后会余下暂存数组中的字符和最后literal的字符，对于这两部分，需要拼起来放到下一个子块的literal前:
++			   (1) 对于非最后一个子块，则将最后的literal先暂存到暂存数组，并更新tempLiteralLength即可
++			   (2) 对最后一个子块，就按原先最后的处理逻辑来处理 */
++            if (remainingLength > hardwareBlockSize) { // 场景1：如果不是最后一个子块，那么将剩余literal放到暂存数组即可
++                LZ4_wildCopy8(temp_point, litpoint, temp_point + lastRun);
++                temp_point += lastRun;
++                tempLiteralLength += lastRun;
++                US_DEBUG("Remaining for next subblock, tempLiteralLength:%d.", tempLiteralLength);
++                // 更新参数
++                src += hardwareBlockSize; // 因为前面是关于本128K的三元组处理完了，tempLiteralLength是三元组剩的，而这个128k的最后的literal还没处理
++                remainingLength -= hardwareBlockSize; // 要和src对齐
++
++                if (remainingLength < hardwareBlockSize) {
++                    srcSize = remainingLength;
++                } else {
++                    srcSize = hardwareBlockSize;
++                }
++                ip = src;
++                if (remainingLength <= MFLIMIT) {
++                    specialFlag = 1;
++                    goto _lastLiteral;
++                }
++            } else { // 场景2：最后一个子块，则需要按原流程处理暂存数组和literal
++                lastRun += tempLiteralLength; // 把暂存的补进来
++                int saveChar = 0;
++                if (remainingLength >= MFLIMIT) {
++                    saveChar = MFLIMIT;                 // 把预留的12个原始字符纳入统计
++                } else {
++                    saveChar = remainingLength;
++                }
++                lastRun += saveChar;
++
++                // 更新参数
++                srcSize = 0;
++                src += remainingLength; // src直接指到最终
++                ip = src;
++                // 组织token
++                if (lastRun >= RUN_MASK) { 
++                    size_t accumulator = lastRun - RUN_MASK;
++                    *op++ = RUN_MASK << ML_BITS;
++                    for(; accumulator >= 255 ; accumulator-=255) *op++ = 255;
++                        *op++ = (BYTE) accumulator;
++                } else {
++                    *op++ = (BYTE)(lastRun<<ML_BITS);
++                }
++                US_DEBUG("last literal length: %d.\n", lastRun);
++
++                LZ4_memcpy(op, templit, tempLiteralLength); // 把暂存数组中的字符拷过来
++                op += tempLiteralLength;
++
++                lastRun -= saveChar;
++				LZ4_memcpy(op, litpoint, lastRun-tempLiteralLength); // 把last literal拷过来
++                op += lastRun - tempLiteralLength;
++
++                LZ4_memcpy(op, src + srcSize - saveChar, saveChar);  // 把预留的12个字符拷过来
++                op += saveChar;
++                tempLiteralLength = 0;
++                remainingLength = 0;
++            }
++            int tempresult = (int)(((char*)op) - ((char*)dst));
++            US_DEBUG("subblock compress over, compressed block size:%d\n", tempresult);
++    
++            ctxBody.seqStore.lit = ctxBody.seqStore.litStart;
++            ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart;
++        }
++        // 返回值计算和打印回显
++        result = (int)(((char*)op) - ((char*)dst));
++        assert(result > 0);
++        US_DEBUG("LZ4_compress_generic: compressed %ld bytes into %ld bytes\n", inputSize, result);
++        // 压缩硬件资源释放
++        ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
++        ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
++        if (ctxBody.kaeInited == 1) {
++            kaelz4_release(&ctxBody);
++        }
++        free(templit); // 释放掉前面开辟的暂存数组
++        return result;
++    }
++_softVersion:
++#endif
++    //=======================================================================================
+     /* First Byte */
+     LZ4_putPosition(ip, cctx->hashTable, tableType, base);
+     ip++; forwardH = LZ4_hashPosition(ip, tableType);
+@@ -1353,6 +1693,7 @@ int LZ4_compress_fast_extState(void* sta
+         if (inputSize < LZ4_64Klimit) {
+             return LZ4_compress_generic(ctx, source, dest, inputSize, NULL, 0, notLimited, byU16, noDict, noDictIssue, acceleration);
+         } else {
++            // return LZ4_compress_generic(ctx, source, dest, inputSize, NULL, 0, notLimited, byU32, noDict, noDictIssue, acceleration);
+             const tableType_t tableType = ((sizeof(void*)==4) && ((uptrval)source > LZ4_DISTANCE_MAX)) ? byPtr : byU32;
+             return LZ4_compress_generic(ctx, source, dest, inputSize, NULL, 0, notLimited, tableType, noDict, noDictIssue, acceleration);
+         }
+@@ -1749,7 +2090,7 @@ int LZ4_saveDict (LZ4_stream_t* LZ4_dict
+     if (dictSize > 0) {
+         const BYTE* const previousDictEnd = dict->dictionary + dict->dictSize;
+         assert(dict->dictionary);
+-        LZ4_memmove(safeBuffer, previousDictEnd - dictSize, (size_t)dictSize);
++        KZL_MEMMOVE(safeBuffer, previousDictEnd - dictSize, (size_t)dictSize);
+     }
+ 
+     dict->dictionary = (const BYTE*)safeBuffer;
+@@ -1826,7 +2167,7 @@ LZ4_decompress_unsafe_generic(
+             ip += ll;
+             if ((size_t)(oend-op) < MFLIMIT) {
+                 if (op==oend) break;  /* end of block */
+-                DEBUGLOG(5, "invalid: literals end at distance %zi from end of block", oend-op);
++                DEBUGLOG(5, "invalid: literals end at distance %zi from end of block. literal:%zi", oend-op, ll);
+                 /* incorrect end of block :
+                  * last match must start at least MFLIMIT==12 bytes before end of output block */
+                 return -1;
+@@ -2020,7 +2361,7 @@ LZ4_decompress_generic(
+                 /* We don't need to check oend, since we check it once for each loop below */
+                 if (ip > iend-(16 + 1/*max lit + offset + nextToken*/)) { goto safe_literal_copy; }
+                 /* Literals can only be <= 14, but hope compilers optimize better when copy by a register size */
+-                LZ4_memcpy(op, ip, 16);
++                KZL_MEMCPY_16(op, ip, 16);
+                 ip += length; op = cpy;
+             }
+ 
+@@ -2055,9 +2396,9 @@ LZ4_decompress_generic(
+                         assert(match <= op);
+                         assert(op + 18 <= oend);
+ 
+-                        LZ4_memcpy(op, match, 8);
+-                        LZ4_memcpy(op+8, match+8, 8);
+-                        LZ4_memcpy(op+16, match+16, 2);
++                        KZL_MEMCPY_8(op, match, 8); // 懂了。。就是matchlength这里加上了MINMATCH也指定小于18，所以一把粘过来了，用多少看op+=length控制
++                        KZL_MEMCPY_8(op+8, match+8, 8);
++                        KZL_MEMCPY_2(op+16, match+16, 2);
+                         op += length;
+                         continue;
+             }   }   }
+@@ -2076,7 +2417,7 @@ LZ4_decompress_generic(
+ 
+                 if (length <= (size_t)(lowPrefix-match)) {
+                     /* match fits entirely within external dictionary : just copy */
+-                    LZ4_memmove(op, dictEnd - (lowPrefix-match), length);
++                    KZL_MEMMOVE(op, dictEnd - (lowPrefix-match), length);
+                     op += length;
+                 } else {
+                     /* match stretches into both external dictionary and current block */
+@@ -2115,7 +2456,6 @@ LZ4_decompress_generic(
+             assert(ip < iend);
+             token = *ip++;
+             length = token >> ML_BITS;  /* literal length */
+-
+             /* A two-stage shortcut for the most common case:
+              * 1) If the literal length is 0..14, and there is enough space,
+              * enter the shortcut and copy 16 bytes on behalf of the literals
+@@ -2130,6 +2470,7 @@ LZ4_decompress_generic(
+               && likely((ip < shortiend) & (op <= shortoend)) ) {
+                 /* Copy the literals */
+                 LZ4_memcpy(op, ip, 16);
++                // endOnInput ? (vst1q_u64(op, vld1q_u64(ip))) : vst1_u8(op, vld1_u8(ip));
+                 op += length; ip += length;
+ 
+                 /* The second stage: prepare for match copying, decode full info.
+@@ -2144,9 +2485,9 @@ LZ4_decompress_generic(
+                   && (offset >= 8)
+                   && (dict==withPrefix64k || match >= lowPrefix) ) {
+                     /* Copy the match. */
+-                    LZ4_memcpy(op + 0, match + 0, 8);
+-                    LZ4_memcpy(op + 8, match + 8, 8);
+-                    LZ4_memcpy(op +16, match +16, 2);
++                    KZL_MEMCPY_8(op + 0, match + 0, 8);
++                    KZL_MEMCPY_8(op + 8, match + 8, 8);
++                    KZL_MEMCPY_2(op +16, match +16, 2);
+                     op += length + MINMATCH;
+                     /* Both stages worked, load the next token. */
+                     continue;
+@@ -2212,7 +2553,7 @@ LZ4_decompress_generic(
+                         goto _output_error;
+                     }
+                 }
+-                LZ4_memmove(op, ip, length);  /* supports overlapping memory regions, for in-place decompression scenarios */
++                KZL_MEMMOVE(op, ip, length);  /* supports overlapping memory regions, for in-place decompression scenarios */
+                 ip += length;
+                 op += length;
+                 /* Necessarily EOF when !partialDecoding.
+@@ -2258,7 +2599,7 @@ LZ4_decompress_generic(
+ 
+                 if (length <= (size_t)(lowPrefix-match)) {
+                     /* match fits entirely within external dictionary : just copy */
+-                    LZ4_memmove(op, dictEnd - (lowPrefix-match), length);
++                    KZL_MEMMOVE(op, dictEnd - (lowPrefix-match), length);
+                     op += length;
+                 } else {
+                     /* match stretches into both external dictionary and current block */
+@@ -2304,10 +2645,10 @@ LZ4_decompress_generic(
+                 op[2] = match[2];
+                 op[3] = match[3];
+                 match += inc32table[offset];
+-                LZ4_memcpy(op+4, match, 4);
++                KZL_MEMCPY_4(op+4, match, 4);
+                 match -= dec64table[offset];
+             } else {
+-                LZ4_memcpy(op, match, 8);
++                KZL_MEMCPY_8(op, match, 8);
+                 match += 8;
+             }
+             op += 8;
+@@ -2322,12 +2663,11 @@ LZ4_decompress_generic(
+                 }
+                 while (op < cpy) { *op++ = *match++; }
+             } else {
+-                LZ4_memcpy(op, match, 8);
++                KZL_MEMCPY_8(op, match, 8);
+                 if (length > 16)  { LZ4_wildCopy8(op+8, match+8, cpy); }
+             }
+             op = cpy;   /* wildcopy correction */
+         }
+-
+         /* end of decoding */
+         DEBUGLOG(5, "decoded %i bytes", (int) (((char*)op)-dst));
+         return (int) (((char*)op)-dst);     /* Nb of output bytes decoded */
+diff -uprN lzbench-master/lz4/lz4frame.c lzbench-master-KAELz4/lz4/lz4frame.c
+--- lzbench-master/lz4/lz4frame.c	2024-09-23 20:38:46.000000000 +0800
++++ lzbench-master-KAELz4/lz4/lz4frame.c	2024-09-23 23:17:42.659696840 +0800
+@@ -438,8 +438,9 @@ size_t LZ4F_compressFrame_usingCDict(LZ4
+ 
+     prefs.frameInfo.blockSizeID = LZ4F_optimalBSID(prefs.frameInfo.blockSizeID, srcSize);
+     prefs.autoFlush = 1;
+-    if (srcSize <= LZ4F_getBlockSize(prefs.frameInfo.blockSizeID))
++    if (cdict == NULL) {   /* 非字典模式下，全使能硬算，frame内block均为独立形态 */
+         prefs.frameInfo.blockMode = LZ4F_blockIndependent;   /* only one block => no need for inter-block link */
++    }
+ 
+     MEM_INIT(&options, 0, sizeof(options));
+     options.stableSrc = 1;
+@@ -831,9 +832,15 @@ static size_t LZ4F_makeBlock(void* dst,
+     BYTE* const cSizePtr = (BYTE*)dst;
+     U32 cSize;
+     assert(compress != NULL);
+-    cSize = (U32)compress(lz4ctx, (const char*)src, (char*)(cSizePtr+BHSize),
+-                          (int)(srcSize), (int)(srcSize-1),
+-                          level, cdict);
++    if (cdict == NULL) {
++        cSize = (U32)compress(lz4ctx, (const char*)src, (char*)(cSizePtr+BHSize),
++                        (int)(srcSize), (int)(LZ4_compressBound(srcSize)),
++                        level, cdict);
++    } else {
++        cSize = (U32)compress(lz4ctx, (const char*)src, (char*)(cSizePtr+BHSize),
++                        (int)(srcSize), (int)(srcSize-1),
++                        level, cdict);
++    }
+ 
+     if (cSize == 0 || cSize >= srcSize) {
+         cSize = (U32)srcSize;
+diff -uprN lzbench-master/lz4/Makefile lzbench-master-KAELz4/lz4/Makefile
+--- lzbench-master/lz4/Makefile	2024-09-23 20:38:46.000000000 +0800
++++ lzbench-master-KAELz4/lz4/Makefile	2024-09-23 23:18:20.623696840 +0800
+@@ -53,6 +53,12 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -
+              -Wswitch-enum -Wdeclaration-after-statement -Wstrict-prototypes \
+              -Wundef -Wpointer-arith -Wstrict-aliasing=1
+ CFLAGS  += $(DEBUGFLAGS)
++
++KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -DCONF_KAELZ4
++KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.1.0.0
++CFLAGS+=$(KAELZ4_CFLAGS)
++LDFLAGS+=$(KAELZ4_LDFLAGS)
++
+ FLAGS    = $(CFLAGS) $(CPPFLAGS) $(LDFLAGS)
+ 
+ SRCFILES := $(sort $(wildcard *.c))
+diff -uprN lzbench-master/Makefile lzbench-master-KAELz4/Makefile
+--- lzbench-master/Makefile	2024-09-23 20:38:46.000000000 +0800
++++ lzbench-master-KAELz4/Makefile	2024-09-23 23:22:18.211696840 +0800
+@@ -91,6 +91,11 @@ CFLAGS_O2 = $(MOREFLAGS) $(CODE_FLAGS) $
+ LDFLAGS += $(MOREFLAGS) -lz
+ LDFLAGS += -lzstd
+ 
++KAEZSTD_CFLAGS  = -I/usr/local/kaelz4/include -DCONF_KAELZ4
++KAEZSTD_LDFLAGS = -lrt -L/usr/local/kaelz4/lib -Wl,-rpath=/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.1.0.0
++CFLAGS  += $(KAEZSTD_CFLAGS)
++LDFLAGS += $(KAEZSTD_LDFLAGS)
++
+ LZO_FILES = lzo/lzo1.o lzo/lzo1a.o lzo/lzo1a_99.o lzo/lzo1b_1.o lzo/lzo1b_2.o lzo/lzo1b_3.o lzo/lzo1b_4.o lzo/lzo1b_5.o
+ LZO_FILES += lzo/lzo1b_6.o lzo/lzo1b_7.o lzo/lzo1b_8.o lzo/lzo1b_9.o lzo/lzo1b_99.o lzo/lzo1b_9x.o lzo/lzo1b_cc.o
+ LZO_FILES += lzo/lzo1b_d1.o lzo/lzo1b_d2.o lzo/lzo1b_rr.o lzo/lzo1b_xx.o lzo/lzo1c_1.o lzo/lzo1c_2.o lzo/lzo1c_3.o

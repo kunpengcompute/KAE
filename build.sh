@@ -7,6 +7,7 @@ KAE_UADK_DIR=${SRC_PATH}/uadk
 KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
 KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
 KAE_ZSTD_DIR=${SRC_PATH}/KAEZstd
+KAE_LZ4_DIR=${SRC_PATH}/KAELz4
 
 KAE_BUILD=${SRC_PATH}/kae_build/
 KAE_BUILD_LIB=${SRC_PATH}/kae_build/lib
@@ -105,6 +106,7 @@ function build_rpm()
     build_engine
     build_zlib
     build_zstd
+    build_lz4
     ## copy driver
     mkdir -p $KAE_BUILD/driver
 
@@ -242,6 +244,19 @@ function zstd_clean()
         rm -rf /usr/local/kaezstd/
 }
 
+function build_lz4()
+{
+        cd ${SRC_PATH}/KAELz4
+        sh build.sh install
+}
+
+function lz4_clean()
+{
+        cd ${SRC_PATH}/KAELz4
+        sh build.sh uninstall
+        rm -rf /usr/local/kaelz4/
+}
+
 function help()
 {
 	echo "build KAE"
@@ -289,6 +304,7 @@ function build_all_components()
         echo "this cpu not support kaezstd."
     elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ] || [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd03" ];then
         build_zstd
+        build_lz4
     else
         echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
     fi
@@ -300,6 +316,7 @@ function clear_all_components()
     engine_clean || true  
     zlib_clean || true  
     zstd_clean || true  
+    lz4_clean || true
     uadk_clean || true  
 }
 
@@ -349,6 +366,12 @@ function main()
                 zstd_clean
             else
                 build_zstd
+            fi
+    elif [ "$1" = "lz4" ];then
+            if [ "$2" = "clean" ];then
+                lz4_clean
+            else
+                build_lz4
             fi
 	elif [ "$1" = "rpm" ];then
             set +e
