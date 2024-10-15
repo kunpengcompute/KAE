@@ -426,16 +426,27 @@ OpenSSL 1.1.1a或以上版本已正确安装。
    rsa 2048 bits 0.000175s 0.000021s   5730.1  46591.8
   ```
 
-通过**ldd**命令查看zlib加速库是否链接到libwd和libkaezip。
+* 步骤9
+  KAEZip 安装：编译安装 zlib 库
+  a. 从zlib官网下载[zlib-1.2.11.tar.gz](https://www.zlib.net/fossils/zlib-1.2.11.tar.gz)，拷贝到“kae_zip_engine/open_source”路径下。
+  b. 编译安装zlib库。
+  ```shell
+  cd kae_zip_engine
+  sh setup.sh install
+  ```
+  c.更多详细说明详见[KAEZip源码安装官网文档](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/compress/devg-kaezip/kunpengaccel_kaezip_0028.html)。
 
-```shell
-ldd /usr/local/kaezip/lib/libz.so.1.2.11
-  linux-vdso.so.1 =>  (0x0000ffff80280000)
-  libc.so.6 => /lib64/libc.so.6 (0x0000ffff80080000)
-  libwd.so.1 => /lib64/libwd.so.1 (0x0000ffff80040000)
-  /lib/ld-linux-aarch64.so.1 (0x0000ffff80290000)
-  libkaezip.so => /usr/local/kaezip/lib/libkaezip.so (0x0000ffff80830000)
-```
+* 步骤10
+  通过**ldd**命令查看zlib加速库是否链接到libwd和libkaezip。
+
+  ```shell
+  ldd /usr/local/kaezip/lib/libz.so.1.2.11
+    linux-vdso.so.1 =>  (0x0000ffff80280000)
+    libc.so.6 => /lib64/libc.so.6 (0x0000ffff80080000)
+    libwd.so.1 => /lib64/libwd.so.1 (0x0000ffff80040000)
+    /lib/ld-linux-aarch64.so.1 (0x0000ffff80290000)
+    libkaezip.so => /usr/local/kaezip/lib/libkaezip.so (0x0000ffff80830000)
+  ```
 
 ### 2.4.2 KAE2.0版本
 
