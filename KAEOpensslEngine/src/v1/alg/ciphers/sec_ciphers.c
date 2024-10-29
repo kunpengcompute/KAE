@@ -492,7 +492,7 @@ static int sec_ciphers_async_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, op_don
 	int ret = 0;
 	int cnt = 0;
 	cipher_priv_ctx_t *priv_ctx = e_cipher_ctx->priv_ctx;
-	enum task_type type = ASYNC_TASK_CIPHER;
+	enum task_type_wd type = ASYNC_TASK_WD_CIPHER;
 	void *tag = e_cipher_ctx;
 
 	priv_ctx->do_cipher_len = wd_ciphers_get_do_cipher_len(priv_ctx->offset, priv_ctx->left_len);
@@ -891,8 +891,8 @@ int cipher_module_init(void)
 	sec_create_ciphers();
 
 	// reg async interface here
-	async_register_poll_fn_v1(ASYNC_TASK_CIPHER, sec_cipher_engine_ctx_poll);
-	async_register_poll_fn_v1(ASYNC_TASK_AEAD, sec_aead_engine_ctx_poll);
+	async_register_poll_fn_v1(ASYNC_TASK_WD_CIPHER, sec_cipher_engine_ctx_poll);
+	async_register_poll_fn_v1(ASYNC_TASK_WD_AEAD, sec_aead_engine_ctx_poll);
 
 	return 1;
 }

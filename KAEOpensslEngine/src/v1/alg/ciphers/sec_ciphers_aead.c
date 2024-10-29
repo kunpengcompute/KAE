@@ -356,7 +356,7 @@ int wd_aead_do_crypto_impl_async(struct aead_priv_ctx *priv, op_done_t *op_done)
 {
 	int ret = -WD_EINVAL;
 	int cnt = 0;
-	enum task_type type = ASYNC_TASK_AEAD;
+	enum task_type_wd type = ASYNC_TASK_WD_AEAD;
 	
 	if (unlikely(priv == NULL) || unlikely(priv->e_aead_ctx == NULL)) {
 		US_ERR("do cipher priv or e_aead_ctx NULL!");

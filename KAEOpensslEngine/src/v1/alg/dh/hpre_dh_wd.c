@@ -401,7 +401,7 @@ static int hpre_dh_async(hpre_dh_engine_ctx_t *eng_ctx,
 {
 	int ret = 0;
 	int cnt = 0;
-	enum task_type type = ASYNC_TASK_DH;
+	enum task_type_wd type = ASYNC_TASK_WD_DH;
 	void *tag = eng_ctx;
 
 	do {

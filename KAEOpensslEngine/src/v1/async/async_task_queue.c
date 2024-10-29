@@ -42,12 +42,14 @@ async_poll_queue_t g_async_poll_queue = {
 	.init_mark = 0,
 };
 
-async_recv_t g_async_recv_func[MAX_ALG_SIZE];
+async_recv_t g_async_recv_func[ASYNC_TASK_WD_MAX];
 
 int async_register_poll_fn_v1(int type, async_recv_t func)
 {
-	if (type < 0 || type >= MAX_ALG_SIZE)
+	if (type < 0 || type >= ASYNC_TASK_WD_MAX) {
+		US_ERR("alg register async func fail! alg type=%d", type);
 		return -1;
+    }
 
 	g_async_recv_func[type] = func;
 	return 0;
@@ -116,7 +118,7 @@ async_poll_task *async_get_queue_task_v1(void)
 	return cur_task;
 }
 
-static int async_add_queue_task(void *eng_ctx, op_done_t *op_done, enum task_type type)
+static int async_add_queue_task(void *eng_ctx, op_done_t *op_done, enum task_type_wd type)
 {
 	async_poll_task *task_queue;
 	async_poll_task *task;
@@ -161,7 +163,7 @@ static void async_poll_queue_free(void)
 	g_async_poll_queue.async_poll_task_queue_head = NULL;
 }
 
-int async_add_poll_task_v1(void *eng_ctx, op_done_t *op_done, enum task_type type)
+int async_add_poll_task_v1(void *eng_ctx, op_done_t *op_done, enum task_type_wd type)
 {
 	US_DEBUG("start to add task to poll queue");
 	return async_add_queue_task(eng_ctx, op_done, type);

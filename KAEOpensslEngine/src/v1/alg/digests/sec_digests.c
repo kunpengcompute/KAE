@@ -386,7 +386,7 @@ static int sec_digests_async_dowork(sec_digest_priv_t *md_ctx, op_done_t *op_don
 {
 	int ret = 0;
 	int cnt = 0;
-	enum task_type type = ASYNC_TASK_DIGEST;
+	enum task_type_wd type = ASYNC_TASK_WD_DIGEST;
 
 	SEC_DIGESTS_RETURN_FAIL_IF(md_ctx == NULL, "md_ctx is NULL.", KAE_FAIL);
 	digest_engine_ctx_t *e_digest_ctx = md_ctx->e_digest_ctx;
@@ -632,7 +632,7 @@ int digest_module_init(void)
 	wd_digests_init_qnode_pool();
 	sec_create_digests();
 	// reg async interface here
-	async_register_poll_fn_v1(ASYNC_TASK_DIGEST, sec_digest_engine_ctx_poll);
+	async_register_poll_fn_v1(ASYNC_TASK_WD_DIGEST, sec_digest_engine_ctx_poll);
 
 	return 1;
 }
