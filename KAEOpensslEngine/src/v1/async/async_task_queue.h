@@ -21,16 +21,23 @@
 #include <pthread.h>
 #include "async_callback.h"
 #include <uadk/v1/wd.h>
-#include "../../v2/async/uadk_async.h"
 
 #include <semaphore.h>
 
-#define MAX_ALG_SIZE 6
+enum task_type_wd {
+	ASYNC_TASK_WD_CIPHER = 0x1,
+	ASYNC_TASK_WD_DIGEST,
+	ASYNC_TASK_WD_AEAD,
+	ASYNC_TASK_WD_RSA,
+	ASYNC_TASK_WD_DH,
+	ASYNC_TASK_WD_ECC,
+	ASYNC_TASK_WD_MAX
+};
 
 typedef int (*async_recv_t)(void *engine_ctx);
 
 struct async_wd_polling_arg {
-	enum task_type type;
+	enum task_type_wd type;
 	void *eng_ctx;
 	op_done_t *op_done;
 };
@@ -52,13 +59,13 @@ typedef struct async_poll_queue_t {
 } async_poll_queue_t;
 
 extern async_poll_queue_t g_async_poll_queue;
-extern async_recv_t g_async_recv_func[MAX_ALG_SIZE];
+extern async_recv_t g_async_recv_func[ASYNC_TASK_WD_MAX];
 
 int async_register_poll_fn_v1(int type, async_recv_t async_recv);
 int async_poll_task_init_v1(void);
 async_poll_task *async_get_queue_task_v1(void);
 
-int async_add_poll_task_v1(void *ctx, op_done_t *op_done, enum task_type type);
+int async_add_poll_task_v1(void *ctx, op_done_t *op_done, enum task_type_wd type);
 void async_poll_task_free_v1(void);
 
 #endif

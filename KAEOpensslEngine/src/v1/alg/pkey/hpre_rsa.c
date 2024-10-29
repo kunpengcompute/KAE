@@ -166,7 +166,7 @@ int hpre_module_init(void)
 #endif
 
 	/* register async poll func */
-	async_register_poll_fn_v1(ASYNC_TASK_RSA, hpre_engine_ctx_poll);
+	async_register_poll_fn_v1(ASYNC_TASK_WD_RSA, hpre_engine_ctx_poll);
 
 	return 1;
 }
@@ -312,7 +312,7 @@ static int hpre_evp_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig, size_t s
 
 #define PKEY_METHOD_TYPE_NUM   4
 
-#ifdef EVP_PKEY_SM2
+#ifndef KAE_GMSSL
 const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX, EVP_PKEY_SM2};
 #else
 const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX};
@@ -355,7 +355,7 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 	case EVP_PKEY_DHX:
 		*pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DHX);
 		break;
-#ifdef EVP_PKEY_SM2
+#ifndef KAE_GMSSL
 	case EVP_PKEY_SM2:
 		*pmeth = get_sm2_pkey_meth();
 		break;

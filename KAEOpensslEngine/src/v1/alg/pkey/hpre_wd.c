@@ -377,7 +377,7 @@ int hpre_rsa_async(hpre_engine_ctx_t *eng_ctx,
 {
 	int ret = 0;
 	int cnt = 0;
-	enum task_type type = ASYNC_TASK_RSA;
+	enum task_type_wd type = ASYNC_TASK_WD_RSA;
 	void *tag = eng_ctx;
 
 	do {

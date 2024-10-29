@@ -1021,7 +1021,7 @@ static int hpre_async_do_sm2(struct hpre_sm2_engine_ctx *eng_ctx,
 {
 	int ret = 0;
 	int cnt = 0;
-	enum task_type type = ASYNC_TASK_ECC;
+	enum task_type_wd type = ASYNC_TASK_WD_ECC;
 	void *tag = eng_ctx;
 
 	do {
@@ -2037,7 +2037,7 @@ int hpre_module_sm2_init(void) {
 	(void)get_sm2_pkey_meth();
 
 	/* register async poll func */
-	async_register_poll_fn_v1(ASYNC_TASK_ECC, sm2_engine_ctx_poll);//ASYNC_TASK_ECC 按SVA代码包含sm2
+	async_register_poll_fn_v1(ASYNC_TASK_WD_ECC, sm2_engine_ctx_poll);//ASYNC_TASK_WD_ECC 按SVA代码包含sm2
 
     return OPENSSL_SUCCESS;
 }

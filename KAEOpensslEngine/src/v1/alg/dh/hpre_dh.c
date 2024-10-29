@@ -106,7 +106,7 @@ int hpre_module_dh_init(void)
 #endif
 
 	/* register async poll func */
-	async_register_poll_fn_v1(ASYNC_TASK_DH, hpre_dh_ctx_poll);
+	async_register_poll_fn_v1(ASYNC_TASK_WD_DH, hpre_dh_ctx_poll);
 
 	return HPRE_DH_SUCCESS;
 }
