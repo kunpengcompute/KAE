@@ -20,10 +20,10 @@ function build_check_OS_version()
 {
     local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
     if [ "$KERNEL_VERSION" == "6.6.0" ]; then
-        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver-OLK-6.6
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
     elif [ "$KERNEL_VERSION" == "5.10.0" ]; then
-        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
     else 
         echo "[KAE error]:unsupport kernel version"
