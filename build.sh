@@ -14,7 +14,7 @@ KAE_BUILD_LIB=${SRC_PATH}/kae_build/lib
 KAE_BUILD_HEAD=${SRC_PATH}/kae_build/head
 
 IMPLEMENTER=""
-CPUPAET=""
+CPUPART=""
 
 function build_check_OS_version()
 {
@@ -284,11 +284,11 @@ function help()
 	echo "sh build.sh cleanup -- clean up all component"
 }
 
-function check_enviroment()
+function check_environment()
 {
         IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
-        CPUPAET=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
-        if [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd01" ] && [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd02" ] && [ "${IMPLEMENTER}-${CPUPAET}" != "0x48-0xd03" ];then
+        CPUPART=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+        if [ "${IMPLEMENTER}" != "0x48" ];then
             echo "Only installed on kunpeng CPUs"
             exit 1
         fi
@@ -300,100 +300,119 @@ function build_all_components()
     build_uadk
     build_engine
     build_zlib
-    if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-        echo "this cpu not support kaezstd."
-    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ] || [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd03" ];then
+    if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
+        echo "this cpu not support kaezstd and kaelz4."
+    else
         build_zstd
         build_lz4
-    else
-        echo "unknow cpu type:${IMPLEMENTER}-${CPUPAET}"
     fi
 }
 
 function clear_all_components()
 {
     driver_clean || true  
+    uadk_clean   || true 
     engine_clean || true  
-    zlib_clean || true  
-    zstd_clean || true  
-    lz4_clean || true
-    uadk_clean || true  
-}
-
-function main()
-{
-        check_enviroment
-        build_check_OS_version
-
-	if [ "$1" = "all" ];then
-	    echo "build all"
-        build_all_components
-	elif [ "$1" = "driver" ];then
-            echo "build driver"
-            if [ "$2" = "clean" ];then
-                driver_clean
-            elif [ "$2" = "sva" ];then
-                build_driver_sva
-            else
-                build_driver
-            fi
-	elif [ "$1" = "uadk" ];then
-            if [ "$2" = "clean" ];then
-                uadk_clean
-            else
-	        build_uadk
-	    fi
-	elif [ "$1" = "engine" ];then
-            if [ "$2" = "clean" ];then
-                engine_clean
-            else
-                build_engine
-            fi
-    elif [ "$1" = "engine_gmssl" ];then
-            if [ "$2" = "clean" ];then
-                engine_clean_gmssl
-            else
-                build_engine_gmssl
-            fi
-	elif [ "$1" = "zlib" ];then
-            if [ "$2" = "clean" ];then
-                zlib_clean
-            else
-                build_zlib
-            fi
-	elif [ "$1" = "zstd" ];then
-            if [ "$2" = "clean" ];then
-                zstd_clean
-            else
-                build_zstd
-            fi
-    elif [ "$1" = "lz4" ];then
-            if [ "$2" = "clean" ];then
-                lz4_clean
-            else
-                build_lz4
-            fi
-	elif [ "$1" = "rpm" ];then
-            set +e
-            clear_all_components
-            set -e
-            build_rpm
-    elif [ "$1" = "rpmpack" ];then
-            rm -rf /root/rpmbuild
-            rm -rf $KAE_BUILD
-            mkdir -p $KAE_BUILD
-            mkdir -p /root/rpmbuild/SOURCES/
-            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .
-            rpmbuild -bb $KAE_SPEC_FILE
-            cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD
-    elif [ "$1" = "cleanup" ];then
-	    echo "cleanup all"
-        clear_all_components
-	    rm -rf $KAE_BUILD/*
+    zlib_clean   || true  
+ 
+    if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
+        echo "this cpu not support kaezstd and kaelz4."
     else
-	    help
-	fi
+        zstd_clean || true  
+        lz4_clean  || true
+    fi
 }
+
+main() {  
+    check_environment  
+    build_check_OS_version  
+  
+    case "$1" in  
+        "all")  
+            build_all_components  
+            ;;  
+        "driver")  
+            if [ "$2" = "clean" ]; then  
+                driver_clean
+            elif [ "$2" = "sva" ]; then  
+                build_driver_sva
+            else  
+                build_driver
+            fi  
+            ;;  
+        "uadk")  
+            if [ "$2" = "clean" ]; then  
+                uadk_clean
+            else  
+	            build_uadk
+            fi  
+            ;;  
+        "engine")  
+            if [ "$2" = "clean" ]; then  
+                engine_clean
+            else  
+                build_engine
+            fi  
+            ;;  
+        "engine_gmssl")  
+            if [ "$2" = "clean" ]; then  
+                engine_clean_gmssl
+            else  
+                build_engine_gmssl
+            fi  
+            ;;  
+        "zlib")  
+            if [ "$2" = "clean" ]; then  
+                zlib_clean
+            else  
+                build_zlib
+            fi  
+            ;;  
+        "zstd")  
+            if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+                echo "This CPU does not support zstd."  
+            else  
+                if [ "$2" = "clean" ]; then  
+                    zstd_clean
+                else  
+                    build_zstd
+                fi  
+            fi  
+            ;;  
+        "lz4")  
+            if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+                echo "This CPU does not support lz4."  
+            else  
+                if [ "$2" = "clean" ]; then  
+                    lz4_clean
+                else  
+                    build_lz4
+                fi  
+            fi  
+            ;;  
+        "rpm")  
+            set +e  
+            clear_all_components  
+            set -e  
+            build_rpm  
+            ;;  
+        "rpmpack")  
+            rm -rf /root/rpmbuild/SOURCES/kae* /root/rpmbuild/RPMS/aarch64/kae-* $KAE_BUILD
+            mkdir -p $KAE_BUILD /root/rpmbuild/SOURCES  
+            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .  
+            rpmbuild -bb $KAE_SPEC_FILE  
+            cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD  
+            ;;  
+        "cleanup")  
+            echo "Cleanup all"  
+            clear_all_components  
+            rm -rf $KAE_BUILD/*  
+            ;;  
+        *)  
+            help  
+            ;;  
+    esac  
+}  
 
 main "$@"
 exit $?
