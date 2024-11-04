@@ -399,7 +399,7 @@ main() {
         "rpmpack")  
             rm -rf /root/rpmbuild/SOURCES/kae* /root/rpmbuild/RPMS/aarch64/kae-* $KAE_BUILD
             mkdir -p $KAE_BUILD /root/rpmbuild/SOURCES  
-            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.2.tar.gz .  
+            tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.3.tar.gz .  
             rpmbuild -bb $KAE_SPEC_FILE  
             cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD  
             ;;  
