@@ -43,6 +43,7 @@ struct evp_md_st {
 } /* EVP_MD */ ;
 typedef struct evp_md_st EVP_MD;
 
+# if OPENSSL_VERSION_NUMBER < 0x30000000
 struct evp_md_ctx_st {
     const EVP_MD *digest;
     ENGINE *engine; /* functional reference if 'digest' is
@@ -54,6 +55,28 @@ struct evp_md_ctx_st {
     /* Update function: usually copied from EVP_MD */
     int (*update)(EVP_MD_CTX *ctx, const void *data, size_t count);
 } /* EVP_MD_CTX */;
+# else
+struct evp_md_ctx_st {
+	const EVP_MD *reqdigest;    /* The original requested digest */
+	const EVP_MD *digest;
+	ENGINE *engine;             /* functional reference if 'digest' is
+				     * ENGINE-provided
+				     */
+	unsigned long flags;
+	void *md_data;
+	/* Public key context for sign/verify */
+	EVP_PKEY_CTX *pctx;
+	/* Update function: usually copied from EVP_MD */
+	int (*update)(EVP_MD_CTX *ctx, const void *data, size_t count);
+
+	/*
+	 * Opaque ctx returned from a providers digest algorithm implementation
+	 * OSSL_FUNC_digest_newctx()
+	 */
+	void *algctx;
+	EVP_MD *fetched_digest;
+} /* EVP_MD_CTX */;
+#endif
 typedef struct evp_md_ctx_st EVP_MD_CTX;
 
 #define MAX_SEND_TRY_CNTS 50
@@ -87,6 +110,7 @@ struct sec_digest_priv {
 	uint32_t                e_nid; // digest nid
 	digest_engine_ctx_t	*e_digest_ctx;
 	EVP_MD_CTX		*soft_ctx;
+	const EVP_MD *soft_md;
 	uint32_t                switch_flag;
 	uint32_t                copy;
 	uint32_t                app_datasize;

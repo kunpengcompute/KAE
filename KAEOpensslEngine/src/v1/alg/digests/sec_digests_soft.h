@@ -21,9 +21,23 @@
 
 #include "sec_digests.h"
 
-int sec_digests_soft_init(sec_digest_priv_t *ctx, uint32_t e_nid);
-int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, uint32_t e_nid);
-int sec_digests_soft_final(EVP_MD_CTX *ctx, unsigned char *digest, uint32_t e_nid);
+/* copied form openssl/include/internal/sm3.h
+ * OpenSSL 3.0 has no <openssl/sm3.h>
+ */
+#define SM3_DIGEST_LENGTH 32
+#define SM3_WORD unsigned int
+#define SM3_CBLOCK      64
+#define SM3_LBLOCK      (SM3_CBLOCK/4)
+typedef struct SM3state_st {
+	SM3_WORD A, B, C, D, E, F, G, H;
+	SM3_WORD Nl, Nh;
+	SM3_WORD data[SM3_LBLOCK];
+	unsigned int num;
+} SM3_CTX;
+
+int sec_digests_soft_init(sec_digest_priv_t *ctx);
+int sec_digests_soft_update(sec_digest_priv_t *ctx, const void *data, size_t data_len);
+int sec_digests_soft_final(sec_digest_priv_t *ctx, unsigned char *digest);
 int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest);
 void sec_digests_soft_cleanup(sec_digest_priv_t *md_ctx);
 int sec_digests_soft_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from);
