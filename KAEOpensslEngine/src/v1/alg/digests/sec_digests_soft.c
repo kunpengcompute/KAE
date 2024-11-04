@@ -15,91 +15,93 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <openssl/evp.h>
+#include <openssl/md5.h>
 
 #include <asm/byteorder.h>
 #include "sec_digests_soft.h"
 #include "../../utils/engine_opensslerr.h"
 #include "../../../utils/engine_log.h"
 
-static const EVP_MD *sec_digests_soft_md(uint32_t e_nid)
+static int sec_digests_soft_md(sec_digest_priv_t *priv)
 {
-	const EVP_MD *g_digest_md = NULL;
+	int app_datasize = 0;
 
-	switch (e_nid) {
+	if (priv->soft_md)
+		return 1;
+
+	switch (priv->e_nid) {
 	case NID_sm3:
-		g_digest_md = EVP_sm3();
+		priv->soft_md = EVP_sm3();
 		break;
 	case NID_md5:
-		g_digest_md = EVP_md5();
+		priv->soft_md = EVP_md5();
 		break;
 	default:
 		break;
 	}
-	return g_digest_md;
+
+	if (unlikely(priv->soft_md == NULL))
+		return 0;
+
+	app_datasize = EVP_MD_meth_get_app_datasize(priv->soft_md);
+	if (app_datasize == 0) {
+		/* OpenSSL 3.0 has no app_datasize, need set manually
+		 * check crypto/evp/legacy_md5.c: md5_md as example
+		 */
+		switch (priv->e_nid) {
+		case NID_sm3:
+			app_datasize = sizeof(EVP_MD *) + sizeof(SM3_CTX);
+			break;
+		case NID_md5:
+			app_datasize = sizeof(EVP_MD *) + sizeof(MD5_CTX);
+			break;
+		default:
+			break;
+		}
+	}
+
+	if (priv->soft_ctx == NULL) {
+		EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+
+		if (ctx == NULL)
+			return 0;
+
+		ctx->md_data = OPENSSL_malloc(app_datasize);
+		if (ctx->md_data == NULL)
+			return 0;
+
+		priv->soft_ctx = ctx;
+		priv->app_datasize = app_datasize;
+	}
+	return 1;
 }
 
-int sec_digests_soft_init(sec_digest_priv_t *ctx, uint32_t e_nid)
+int sec_digests_soft_init(sec_digest_priv_t *priv)
 {
-	if (ctx->soft_ctx == NULL) {
-		ctx->soft_ctx = EVP_MD_CTX_new();
-        memset(ctx->soft_ctx, 0, sizeof(EVP_MD_CTX));
-    }
-	const EVP_MD *digest_md = NULL;
+	if (sec_digests_soft_md(priv) == 0)
+		return 0;
 
-	digest_md = sec_digests_soft_md(e_nid);
-	if (digest_md == NULL) {
-		US_WARN("switch to soft:don't support by sec engine.");
-		return OPENSSL_FAIL;
-	}
-	int ctx_len = EVP_MD_meth_get_app_datasize(digest_md);
-
-	if (ctx->soft_ctx->md_data == NULL) {
-        ctx->soft_ctx->md_data = OPENSSL_malloc(ctx_len);
-        memset(ctx->soft_ctx->md_data, 0, ctx_len);
-    }
-	if (!ctx->soft_ctx->md_data) {
-		KAEerr(KAE_F_DIGEST_SOFT_INIT, KAE_R_MALLOC_FAILURE);
-		US_ERR("malloc md_data failed");
-		return OPENSSL_FAIL;
-	}
-	ctx->app_datasize = ctx_len;
-	return EVP_MD_meth_get_init (digest_md)(ctx->soft_ctx);
+	return EVP_MD_meth_get_init(priv->soft_md)(priv->soft_ctx);
 }
 
-int sec_digests_soft_update(EVP_MD_CTX *ctx, const void *data, size_t data_len, uint32_t e_nid)
+int sec_digests_soft_update(sec_digest_priv_t *priv, const void *data, size_t len)
 {
-	const EVP_MD *digest_md = NULL;
-
-	digest_md = sec_digests_soft_md(e_nid);
-	if (digest_md == NULL) {
-		US_ERR("switch to soft:don't support by sec engine.");
-		return OPENSSL_FAIL;
-	}
-	return EVP_MD_meth_get_update(digest_md)(ctx, data, data_len);
+	return EVP_MD_meth_get_update(priv->soft_md)(priv->soft_ctx, data, len);
 }
 
-int sec_digests_soft_final(EVP_MD_CTX *ctx, unsigned char *digest, uint32_t e_nid)
+int sec_digests_soft_final(sec_digest_priv_t *priv, unsigned char *digest)
 {
-	US_WARN_LIMIT("call sec_digest_soft_final");
-
-	const EVP_MD *digest_md = NULL;
-
-	digest_md = sec_digests_soft_md(e_nid);
-	if (digest_md == NULL) {
-		US_WARN("switch to soft:don't support by sec engine.");
-		return OPENSSL_FAIL;
-	}
-
-	return EVP_MD_meth_get_final(digest_md)(ctx, digest);
+	return EVP_MD_meth_get_final(priv->soft_md)(priv->soft_ctx, digest);
 }
 
 int sec_digests_soft_work(sec_digest_priv_t *md_ctx, int len, unsigned char *digest)
 {
 	int ret;
-    ret = sec_digests_soft_init(md_ctx, md_ctx->e_nid);
+    ret = sec_digests_soft_init(md_ctx);
 	if (len != 0)
-		ret |= sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff, len, md_ctx->e_nid);
-    ret |= sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
+		ret |= sec_digests_soft_update(md_ctx, md_ctx->last_update_buff, len);
+    ret |= sec_digests_soft_final(md_ctx, digest);
     sec_digests_soft_cleanup(md_ctx);
 	return ret;
 }
@@ -136,7 +138,7 @@ int sec_digests_soft_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
     // 需要重新给目的上下文分配ctx
     if (to_ctx->soft_ctx) {
 		to_ctx->soft_ctx = NULL;
-		ret = sec_digests_soft_init(to_ctx, to_ctx->e_nid);
+		ret = sec_digests_soft_init(to_ctx);
 		if (ret != OPENSSL_SUCCESS) {
             return OPENSSL_FAIL;
         }

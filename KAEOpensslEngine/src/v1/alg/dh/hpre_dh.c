@@ -293,8 +293,6 @@ static int hpre_dh_generate_key(DH *dh)
 		US_ERR("invalid g or p.");
 		return HPRE_DH_FAIL;
 	}
-	// check whether it is dsa parameter.
-	CHECK_AND_GOTO(q != NULL, end_soft, "q is not null, then switch to soft!");
 
 	// check whether bits exceeds the limit.
 	if (bits > OPENSSL_DH_MAX_MODULUS_BITS) {
@@ -380,8 +378,6 @@ static int hpre_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh
 		US_ERR("invalid g or p.");
 		return HPRE_DH_FAIL;
 	}
-	// check whether it is dsa parameter.
-	CHECK_AND_GOTO(q != NULL, end_soft, "q is not null, then switch to soft!");
 
 	// check whether bits exceeds the limit.
 	if (bits > OPENSSL_DH_MAX_MODULUS_BITS) {

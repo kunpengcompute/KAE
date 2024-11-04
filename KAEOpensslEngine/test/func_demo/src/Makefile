@@ -22,26 +22,23 @@ endif
 SRCDIRS   := ${WORK_PATH}/
 SRCEXTS   := .c .cpp # C program
 
+#openssl header and lib
+INCDIR += -I /usr/include/openssl
+LIBDIR := -L/usr/local/lib
+LIBDIR += -L/usr/lib/
+
 # Include
 INCDIR += -I $(WORK_PATH)/
-INCDIR += -I $(WORK_PATH)/../../kae_engine/src/utils
-INCDIR += -I /usr/include/openssl
-# INCDIR += -I $(WORK_PATH)/../../uadk
 INCDIR += -I $(WORK_PATH)/../../uadk/include
-# INCDIR += -I /usr/include/gtest
 INCDIR += -I $(WORK_PATH)/../../gtest-download/googletest-release-1.11.0/googletest/include
 
 # Include Libs.
-LIBDIR := -L/usr/local/lib
-LIBDIR += -L/usr/lib/
 LIBDIR += -L $(WORK_PATH)/../test_tool_bins/gtest
-
-#LIBS += -L/usr/lib/lgtest.a
-#LIBS += -L/usr/lib/lgtest_main.a
 LIBS += -lgtest_main -lgtest -lcrypto -lpthread -lm -lssl 
 
 # The flags
 CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11 -Wl,-rpath,/usr/local/lib
+
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS)
 
@@ -73,9 +70,6 @@ OBJS    = $(foreach x,$(SRCEXTS), \
 
 all : deps $(TARGET)
   
-
-
-
 deps:
 # Rules for creating the dependency files (.d).
 %.d : %.cpp
