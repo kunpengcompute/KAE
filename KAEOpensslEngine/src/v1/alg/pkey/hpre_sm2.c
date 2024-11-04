@@ -230,9 +230,9 @@ static int  hpre_sm2_init(EVP_PKEY_CTX *ctx)
 	return OPENSSL_SUCCESS;
 }
 
+// 这个函数应该可以优化吧，直接去找sm2的METHOD
 const EVP_PKEY_METHOD *hpre_get_openssl_pkey_meth(int nid)
 {
-#if OPENSSL_VERSION_NUMBER < 0x30000000
 	size_t count = EVP_PKEY_meth_get_count();
 	const EVP_PKEY_METHOD *pmeth;
 	int pkey_id = -1;
@@ -247,9 +247,6 @@ const EVP_PKEY_METHOD *hpre_get_openssl_pkey_meth(int nid)
 
 	fprintf(stderr, "not find openssl method %d\n", nid);
 	return NULL;
-#else
-	return EVP_PKEY_meth_find(nid);
-#endif
 }
 
 static int hpre_sm2_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src)
@@ -1226,7 +1223,7 @@ uninit_iot:
 		return ret;
 do_soft:
 
-	fprintf(stderr, "hpre_sm2_encrypt switch to execute openssl software calculation.\n");
+	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_soft_encrypt(ctx, out, outlen, in, inlen);
 }
 
@@ -1498,7 +1495,7 @@ free_c1:
 	if (ret == OPENSSL_SUCCESS) //得考虑异常情况不走soft，抛异常
 		return ret;
 do_soft:
-	fprintf(stderr, "hpre_sm2_decrypt switch to execute openssl software calculation.\n");
+	fprintf(stderr, "switch to execute openssl software calculation.\n");
 	return openssl_soft_decrypt(ctx, out, outlen, in, inlen);
 }
 
@@ -1908,23 +1905,6 @@ do_soft:
 	return openssl_soft_verify(ctx, sig, siglen, tbs, tbslen);
 }
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000
-static int hpre_ec_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY *pkey)
-{
-	const EVP_PKEY_METHOD *sw_sm2_pmeth = NULL;
-    int (*pkeygen) (EVP_PKEY_CTX *ctx, EVP_PKEY *pkey) = NULL;
-    if ((sw_sm2_pmeth = EVP_PKEY_meth_find(EVP_PKEY_EC)) == NULL) {
-        fprintf(stderr, "Failed to generate sm2 pmeth\n");
-        return -1;
-    }
-
-    EVP_PKEY_meth_get_keygen((EVP_PKEY_METHOD *)sw_sm2_pmeth, NULL, &pkeygen);
-    pkeygen(ctx, pkey);
-    *(int *)pkey = EVP_PKEY_SM2;
-    return 1;
-}
-#endif
-
 static EVP_PKEY_METHOD *hpre_sm2_create_pmeth()
 {
 	const EVP_PKEY_METHOD *openssl_meth;
@@ -1938,7 +1918,7 @@ static EVP_PKEY_METHOD *hpre_sm2_create_pmeth()
 		fprintf(stderr, "failed to EVP_PKEY_meth_new\n");
 		return NULL;
 	}
-#if OPENSSL_VERSION_NUMBER < 0x30000000
+
 	openssl_meth = hpre_get_openssl_pkey_meth(EVP_PKEY_SM2);
 	if (!openssl_meth) {
 		fprintf(stderr, "failed to get sm2 pkey methods\n");
@@ -1947,13 +1927,8 @@ static EVP_PKEY_METHOD *hpre_sm2_create_pmeth()
 	}
 
 	EVP_PKEY_meth_copy(meth, openssl_meth);// 把一些软算功能信息复制过去
-#endif
 
 	EVP_PKEY_meth_set_init(meth, hpre_sm2_init);
-#if OPENSSL_VERSION_NUMBER >= 0x30000000
-/* Only used for OpenSSL 3 legacy engine API */
-	EVP_PKEY_meth_set_keygen(meth, NULL, hpre_ec_keygen);
-#endif
 	EVP_PKEY_meth_set_copy(meth, hpre_sm2_copy);
 	EVP_PKEY_meth_set_ctrl(meth, hpre_sm2_ctrl, hpre_sm2_ctrl_str);
 	EVP_PKEY_meth_set_digest_custom(meth, hpre_sm2_digest_custom);
