@@ -866,7 +866,7 @@ diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-KAELz4/lib/Makefile
  CFLAGS  += $(DEBUGFLAGS)
 +
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.1.0.0
++KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.3
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
 +
@@ -881,7 +881,7 @@ diff -uprN lz4-1.9.4/programs/Makefile lz4-1.9.4-KAELz4/programs/Makefile
  endif
  
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.1.0.0
++KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.3
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
 +
@@ -930,7 +930,7 @@ diff -uprN lz4-1.9.4/tests/Makefile lz4-1.9.4-KAELz4/tests/Makefile
  CPPFLAGS+= -I$(LZ4DIR) -I$(PRGDIR) -DXXH_NAMESPACE=LZ4_
 +
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.1.0.0
++KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.3
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
 +

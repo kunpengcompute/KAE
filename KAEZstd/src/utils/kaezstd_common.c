@@ -38,7 +38,7 @@ int kaezstd_get_version(KAEZstdVersion* ver)
     versionCpy(ver->productName, "Kunpeng Boostkit");
     versionCpy(ver->productVersion, "23.0.RC2");
     versionCpy(ver->componentName, "KAEZstd");
-    versionCpy(ver->componentVersion, "2.0.2");
+    versionCpy(ver->componentVersion, "2.0.3");
     return KAE_ZSTD_SUCC;
 }
 

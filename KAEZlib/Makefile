@@ -17,7 +17,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaezip
 CC=gcc
 
 LIBNAME := libkaezip.so
-VERSION = 2.0.2
+VERSION = 2.0.3
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = libkaezip.so
 
