@@ -3,7 +3,6 @@ ACLOCAL_AMFLAGS = -I m4
 
 DEPSHEADDIR = $(CURDIR)/../../kae_build/head/
 WD_CFLAGS = -I$(DEPSHEADDIR)
-WD_CFLAGS += $(includes_openssl)
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk/v1
 AM_LDFLAGS = -L$(DEPSHEADDIR)/../lib

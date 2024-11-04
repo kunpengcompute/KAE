@@ -4,46 +4,32 @@ ENV=""
 SYNC_MULTIS="1 4 16 32 64"
 ASYNC_MULTIS="1 2 4 16"
 EXE="openssl"
-ENGINE_DIR=""
+ENGINE_DIR="/usr/local/lib/engines-1.1"
 ENGINE_NAME="kae"
 
 function check_enviroment()
 {
-	openssl_path=$1
-	if [ "$1" = "" ];then
-		openssl_path=$(which openssl | awk -F'/bin' '{print $1}')
-	fi
-	
-    IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
-    CPUPAET=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
-    if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
-        ENV="920"
-        # EXE="openssl_arm"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
-        ENGINE_NAME="kae"
-    elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
-        ENV="920B"
-        # EXE="./openssl_arm"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
-        ENGINE_NAME="kae"
-    elif [ $(arch) == "x86_64" ];then
-        ENV="X86"
-        # EXE="./openssl_x86"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
-        ENGINE_NAME="qatengine"
-    else
-        ENV="UNKNOW CPU"
-        # EXE="openssl"
-    fi
-	
-	$openssl_path/bin/openssl version
-	if $openssl3_path/bin/openssl version | grep -q "OpenSSL 3."; then    
-        ENGINE_DIR="${ENGINE_DIR}-3.0"    
-    elif $openssl3_path/bin/openssl version | grep -q "OpenSSL 1."; then    
-		ENGINE_DIR="${ENGINE_DIR}-1.1"
-    else 
-        echo "OpenSSL version is not support"   
-    fi
+        IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
+        CPUPAET=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+        if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
+            ENV="920"
+            # EXE="openssl_arm"
+            ENGINE_DIR="/usr/local/lib/engines-1.1"
+            ENGINE_NAME="kae"
+        elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
+            ENV="920B"
+            # EXE="./openssl_arm"
+            ENGINE_DIR="/usr/local/lib/engines-1.1"
+            ENGINE_NAME="kae"
+        elif [ $(arch) == "x86_64" ];then
+            ENV="X86"
+            # EXE="./openssl_x86"
+            ENGINE_DIR="/usr/lib64/engines-1.1"
+            ENGINE_NAME="qatengine"
+        else
+            ENV="UNKNOW CPU"
+            # EXE="openssl"
+        fi
 }
 
 ##########################################

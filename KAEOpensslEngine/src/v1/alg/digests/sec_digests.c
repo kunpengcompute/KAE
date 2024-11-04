@@ -16,10 +16,6 @@
  * limitations under the License.
  */
 
-#include <openssl/engine.h>
-#include <openssl/md5.h>
-#include <openssl/evp.h>
-
 #include "sec_digests.h"
 #include "sec_digests_soft.h"
 #include "sec_digests_wd.h"
@@ -175,10 +171,10 @@ do_soft_digest:
 			&& md_ctx->last_update_buff
 			&& md_ctx->last_update_bufflen != 0) {
 		md_ctx->switch_flag = 1;
-		sec_digests_soft_init(md_ctx);
-		ret = sec_digests_soft_update(md_ctx, md_ctx->last_update_buff,
-				md_ctx->last_update_bufflen);
-		ret &= sec_digests_soft_update(md_ctx, tmpdata, left_len);
+		sec_digests_soft_init(md_ctx, md_ctx->e_nid);
+		ret = sec_digests_soft_update(md_ctx->soft_ctx, md_ctx->last_update_buff,
+				md_ctx->last_update_bufflen, md_ctx->e_nid);
+		ret &= sec_digests_soft_update(md_ctx->soft_ctx, tmpdata, left_len, md_ctx->e_nid);
 
 		return ret;
 	}
@@ -198,7 +194,7 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
         if (md_ctx->e_digest_ctx == NULL) {
             US_WARN("failed to get engine ctx");
             //如果硬件申请不行就走软算
-            if (sec_digests_soft_init(md_ctx) != OPENSSL_SUCCESS) {
+            if (sec_digests_soft_init(md_ctx, md_ctx->e_nid) != OPENSSL_SUCCESS) {
                 US_ERR("do sec digest soft init failed");
                 return OPENSSL_FAIL;
             }
@@ -207,7 +203,7 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
     }
     
     if (md_ctx->switch_flag == 1) {
-        return sec_digests_soft_update(md_ctx, data, data_len);
+        return sec_digests_soft_update(md_ctx->soft_ctx, data, data_len, md_ctx->e_nid);
     }
 
     if (md_ctx->e_digest_ctx == NULL) {
@@ -243,7 +239,7 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
     SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL), "md_ctx is NULL.", OPENSSL_FAIL);
     
     if (md_ctx->switch_flag == 1) {
-        ret = sec_digests_soft_final(md_ctx, digest);
+        ret = sec_digests_soft_final(md_ctx->soft_ctx, digest, md_ctx->e_nid);
         sec_digests_soft_cleanup(md_ctx);
         goto end;
     }
@@ -498,45 +494,32 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from) // stream mo
  */
 static EVP_MD *sec_set_digests_methods(struct digest_info digestinfo)
 {
-	// const EVP_MD *default_digest = NULL;
-	int md_size = 0;
-	int blk_size = 0;
-	int res = 1;
+	const EVP_MD *default_digest = NULL;
 
 	if (digestinfo.digest == NULL) {
 		switch (digestinfo.nid) {
 		case NID_sm3:
-			digestinfo.digest = EVP_MD_meth_new(NID_sm3, NID_sm3WithRSAEncryption);
-			md_size = SM3_DIGEST_LENGTH;
-			blk_size = SM3_CBLOCK;
+			default_digest = EVP_sm3();
 			break;
 		case NID_md5:
-			digestinfo.digest = EVP_MD_meth_new(NID_md5, NID_md5WithRSAEncryption);
-			md_size = MD5_DIGEST_LENGTH;
-			blk_size = MD5_CBLOCK;
+			default_digest = EVP_md5();
 			break;
 		default:
 			return NULL;
 		}
 	}
-
-	res &= EVP_MD_meth_set_result_size(digestinfo.digest, md_size);
-    res &= EVP_MD_meth_set_input_blocksize(digestinfo.digest, blk_size);
-	res &= EVP_MD_meth_set_app_datasize(digestinfo.digest, sizeof(EVP_MD *) + sizeof(sec_digest_priv_t));
-    res &= EVP_MD_meth_set_flags(digestinfo.digest, 0);
-
-	res &= EVP_MD_meth_set_init(digestinfo.digest, sec_digests_init);
-	res &= EVP_MD_meth_set_update(digestinfo.digest, sec_digests_update);
-	res &= EVP_MD_meth_set_final(digestinfo.digest, sec_digests_final);
-	res &= EVP_MD_meth_set_cleanup(digestinfo.digest, sec_digests_cleanup);
-	res &= EVP_MD_meth_set_copy(digestinfo.digest, sec_digests_copy);
-	
-	
-	if (res != 1) {
-		US_ERR("sec set digest methods failed!\n");
+	digestinfo.digest = (EVP_MD *)EVP_MD_meth_dup(default_digest);
+	if (digestinfo.digest == NULL) {
+		US_ERR("dup digest failed!");
 		return NULL;
 	}
 
+	EVP_MD_meth_set_init(digestinfo.digest, sec_digests_init);
+	EVP_MD_meth_set_update(digestinfo.digest, sec_digests_update);
+	EVP_MD_meth_set_final(digestinfo.digest, sec_digests_final);
+	EVP_MD_meth_set_cleanup(digestinfo.digest, sec_digests_cleanup);
+	EVP_MD_meth_set_copy(digestinfo.digest, sec_digests_copy);
+	EVP_MD_meth_set_app_datasize(digestinfo.digest, sizeof(sec_digest_priv_t));
 	return digestinfo.digest;
 }
 
