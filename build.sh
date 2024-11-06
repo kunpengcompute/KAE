@@ -26,69 +26,69 @@ function build_check_OS_version()
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
     else 
-        echo "[KAE error]:unsupport kernel version"
+		echo "[KAE error]:unsupport kernel version"
     fi
 }
 
 function build_all_comp_sva()
 {
-        if [ -d $KAE_BUILD ]; then
-                rm -rf $KAE_BUILD/*
-        else
-                mkdir $KAE_BUILD
-        fi
+    if [ -d $KAE_BUILD ]; then
+        rm -rf $KAE_BUILD/*
+    else
+        mkdir $KAE_BUILD
+    fi
 
-        mkdir -p $KAE_BUILD_LIB
-        mkdir -p $KAE_BUILD_HEAD
-        # 编译Kernel
-        cd ${KAE_KERNEL_DIR}
-        make -j
+    mkdir -p $KAE_BUILD_LIB
+    mkdir -p $KAE_BUILD_HEAD
+    # 编译Kernel
+    cd ${KAE_KERNEL_DIR}
+    make -j
 
-        cp ${KAE_KERNEL_DIR}/hisilicon/sec2/hisi_sec2.ko $KAE_BUILD_LIB
-        cp ${KAE_KERNEL_DIR}/hisilicon/hpre/hisi_hpre.ko $KAE_BUILD_LIB
-        cp ${KAE_KERNEL_DIR}/hisilicon/hisi_qm.ko $KAE_BUILD_LIB
-        cp ${KAE_KERNEL_DIR}/uacce/uacce.ko $KAE_BUILD_LIB
-        cp ${KAE_KERNEL_DIR}/hisilicon/zip/hisi_zip.ko $KAE_BUILD_LIB
+    cp ${KAE_KERNEL_DIR}/hisilicon/sec2/hisi_sec2.ko $KAE_BUILD_LIB
+    cp ${KAE_KERNEL_DIR}/hisilicon/hpre/hisi_hpre.ko $KAE_BUILD_LIB
+    cp ${KAE_KERNEL_DIR}/hisilicon/hisi_qm.ko $KAE_BUILD_LIB
+    cp ${KAE_KERNEL_DIR}/uacce/uacce.ko $KAE_BUILD_LIB
+    cp ${KAE_KERNEL_DIR}/hisilicon/zip/hisi_zip.ko $KAE_BUILD_LIB
 
-        # 编译uadk
-        cd $KAE_UADK_DIR
-        sh autogen.sh
-        sh conf.sh
-        make -j
+    # 编译uadk
+    cd $KAE_UADK_DIR
+    sh autogen.sh
+    sh conf.sh
+    make -j
 
-        cp ${KAE_UADK_DIR}/.libs/lib* $KAE_BUILD_LIB
-        mkdir -p $KAE_BUILD_HEAD/uadk
-        mkdir -p $KAE_BUILD_HEAD/uadk/v1
-        cp -r ${KAE_UADK_DIR}/include/* $KAE_BUILD_HEAD/uadk
+    cp ${KAE_UADK_DIR}/.libs/lib* $KAE_BUILD_LIB
+    mkdir -p $KAE_BUILD_HEAD/uadk
+    mkdir -p $KAE_BUILD_HEAD/uadk/v1
+    cp -r ${KAE_UADK_DIR}/include/* $KAE_BUILD_HEAD/uadk
         
-        cp -r ${KAE_UADK_DIR}/v1/*.h $KAE_BUILD_HEAD/uadk/v1
+    cp -r ${KAE_UADK_DIR}/v1/*.h $KAE_BUILD_HEAD/uadk/v1
 
-        # 编译openssl
-        cd $KAE_OPENSSL_DIR
-        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-        autoreconf -i
-        ./configure --libdir=/usr/local/lib/engines-1.1/
-        make -j
+    # 编译openssl
+    cd $KAE_OPENSSL_DIR
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+    ./configure --libdir=/usr/local/lib/engines-1.1/
+    make -j
 
-        cp $KAE_OPENSSL_DIR/src/.libs/*kae*so* $KAE_BUILD_LIB
+    cp $KAE_OPENSSL_DIR/src/.libs/*kae*so* $KAE_BUILD_LIB
 
-        # 编译zlib
-        cd $KAE_ZLIB_DIR
-        sh setup.sh devbuild KAE2
+    # 编译zlib
+    cd $KAE_ZLIB_DIR
+    sh setup.sh devbuild KAE2
 
-        cp $KAE_ZLIB_DIR/lib* $KAE_BUILD_LIB
-        cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD_LIB
+    cp $KAE_ZLIB_DIR/lib* $KAE_BUILD_LIB
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD_LIB
 
-        # 编译zstd
-        cd $KAE_ZSTD_DIR
-        sh build.sh devbuild
+    # 编译zstd
+    cd $KAE_ZSTD_DIR
+    sh build.sh devbuild
 
-        cp $KAE_ZSTD_DIR/lib* $KAE_BUILD_LIB
-        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD_LIB
-        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdgrep $KAE_BUILD_LIB
-        cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdless $KAE_BUILD_LIB
-        cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.so* $KAE_BUILD_LIB
-        cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.a $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/lib* $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdgrep $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdless $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.so* $KAE_BUILD_LIB
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.a $KAE_BUILD_LIB
 }
 
 function build_rpm()
@@ -138,110 +138,150 @@ function build_rpm()
 
 function build_driver()
 {
-        cd ${KAE_KERNEL_DIR}
-        make -j
-        make nosva #默认使用nosva模式
-        # make install
+    cd ${KAE_KERNEL_DIR}
+    make -j
+    make nosva #默认使用nosva模式
+    # make install
 }
 
 function build_driver_sva()
 {
-        cd ${KAE_KERNEL_DIR}
-        make -j
-        # make nosva #默认使用nosva模式
-        make install
+    cd ${KAE_KERNEL_DIR}
+    make -j
+    # make nosva #默认使用nosva模式
+    make install
 }
 
 function driver_clean()
 {
-        cd ${KAE_KERNEL_DIR}
-        make uninstall
-        make clean
+    cd ${KAE_KERNEL_DIR}
+    make uninstall
+    make clean
 }
 
 function build_uadk()
 {
-        cd ${SRC_PATH}
-        patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
-        patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
-       	patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
-        patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
+    cd ${SRC_PATH}
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
 	cd ${SRC_PATH}/uadk
-        sh autogen.sh
-        sh conf.sh
-        make -j64
-        make install
+    sh autogen.sh
+    sh conf.sh
+    make -j64
+    make install
 }
 
 function uadk_clean()
 {
-        cd ${SRC_PATH}/uadk
-        make uninstall
-        make clean
-        sh cleanup.sh
+    cd ${SRC_PATH}/uadk
+    make uninstall
+    make clean
+    sh cleanup.sh
 }
 
 function build_engine()
 {
-            cd ${SRC_PATH}/KAEOpensslEngine
-            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-            autoreconf -i
-            ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
-            make -j
-            make install
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+    ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
+    make -j
+    make install
 }
 
 function engine_clean()
 {
-        cd ${SRC_PATH}/KAEOpensslEngine
-        make uninstall
-        make clean
-        rm -rf /usr/local/gmssl/lib/engines-1.1
+    cd ${SRC_PATH}/KAEOpensslEngine
+    make uninstall
+    make clean
+    rm -rf /usr/local/lib/engines-1.1
+}
+
+function build_engine_openssl3()
+{
+    openssl3_install_path=$1
+    if [ "$1" = "" ];then
+        openssl3_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+
+    if [ ! -f "$openssl3_install_path/include/openssl/opensslv.h" ]; then  
+        echo "openssl3 install path is wrong, $openssl3_install_path/include/openssl/opensslv.h is not exist."  
+        exit 1  
+    else  
+        if $openssl3_install_path/bin/openssl version | grep -q "OpenSSL 3."; then    
+            echo "OpenSSL version is 3.x."    
+        elif $openssl3_install_path/bin/openssl version | grep -q "OpenSSL 1."; then    
+            $openssl3_install_path/bin/openssl version  
+            echo "OpenSSL version is 1.x, please use openssl3.0 install path"    
+            exit 1
+        else 
+            $openssl3_install_path/bin/openssl version 
+            echo "OpenSSL version is not support"   
+            exit 1
+        fi
+    fi
+
+    ./configure --libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=$openssl3_install_path  #/usr/local/ssl3 
+    make -j
+    make install
+}
+
+function engine_clean_openssl3()
+{
+    cd ${SRC_PATH}/KAEOpensslEngine
+    make uninstall
+    make clean
+    rm -rf /usr/local/lib/engines-3.0
 }
 
 function build_engine_gmssl()
 {
-            cd ${SRC_PATH}/KAEOpensslEngine
-            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-            autoreconf -i
-            # gmssl当前仅支持no-sva设备
-            ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
-            make -j
-            make install
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+    # gmssl当前仅支持no-sva设备
+    ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
+    make -j
+    make install
 }
 
 function engine_clean_gmssl()
 {
-        cd ${SRC_PATH}/KAEOpensslEngine
-        make uninstall
-        make clean
-        rm -rf /usr/local/gmssl/lib/engines-1.1
+    cd ${SRC_PATH}/KAEOpensslEngine
+    make uninstall
+    make clean
+    rm -rf /usr/local/gmssl/lib/engines-1.1
 }
 
 function build_zlib()
 {
-            cd ${SRC_PATH}/KAEZlib
-            sh setup.sh install
+    cd ${SRC_PATH}/KAEZlib
+    sh setup.sh install
 }
 
 function zlib_clean()
 {
-        cd ${SRC_PATH}/KAEZlib
-        sh setup.sh uninstall
-        rm -rf /usr/local/kaezip
+    cd ${SRC_PATH}/KAEZlib
+    sh setup.sh uninstall
+    rm -rf /usr/local/kaezip
 }
 
 function build_zstd()
 {
-        cd ${SRC_PATH}/KAEZstd
-        sh build.sh install
+    cd ${SRC_PATH}/KAEZstd
+    sh build.sh install
 }
 
 function zstd_clean()
 {
-        cd ${SRC_PATH}/KAEZstd
-        sh build.sh uninstall
-        rm -rf /usr/local/kaezstd/
+    cd ${SRC_PATH}/KAEZstd
+    sh build.sh uninstall
+    rm -rf /usr/local/kaezstd/
 }
 
 function build_lz4()
@@ -271,6 +311,9 @@ function help()
 
 	echo "sh build.sh engine -- install KAE openssl engine"
 	echo "sh build.sh engine clean -- uninstall KAE openssl engine"
+
+    echo "sh build.sh engine3 <openssl3.0 install path>-- install KAE openssl3.0 engine"
+	echo "sh build.sh engine3 clean -- uninstall KAE openssl3.0 engine"
 
     echo "sh build.sh engine_gmssl -- install KAE gmssl engine"
 	echo "sh build.sh engine_gmssl clean -- uninstall KAE gmssl engine"
@@ -354,6 +397,13 @@ main() {
                 build_engine
             fi  
             ;;  
+        "engine3")
+            if [ "$2" = "clean" ]; then
+                engine_clean_openssl3
+            else
+                build_engine_openssl3 $2
+            fi
+            ;;
         "engine_gmssl")  
             if [ "$2" = "clean" ]; then  
                 engine_clean_gmssl
