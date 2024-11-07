@@ -478,7 +478,7 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 {
 	struct uacce_qfile_region *qfr = q->qfrs[UACCE_QFRT_SS];
 	unsigned long size = vma->vm_end - vma->vm_start;
-	unsigned long max_size = PAGE_SIZE << (MAX_ORDER - 1);
+	unsigned long max_size = PAGE_SIZE << MAX_ORDER;
 	struct device *pdev = q->uacce->parent;
 	struct uacce_device *uacce = q->uacce;
 	unsigned long start = vma->vm_start;
