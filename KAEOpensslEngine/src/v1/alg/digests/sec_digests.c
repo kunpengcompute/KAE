@@ -498,39 +498,62 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from) // stream mo
  */
 static EVP_MD *sec_set_digests_methods(struct digest_info digestinfo)
 {
-	// const EVP_MD *default_digest = NULL;
+#ifdef KAE_GMSSL
+	const EVP_MD *default_digest = NULL;
+#else
 	int md_size = 0;
 	int blk_size = 0;
 	int res = 1;
+#endif
 
 	if (digestinfo.digest == NULL) {
 		switch (digestinfo.nid) {
 		case NID_sm3:
+#ifdef KAE_GMSSL		
+			default_digest = EVP_sm3();
+#else	
 			digestinfo.digest = EVP_MD_meth_new(NID_sm3, NID_sm3WithRSAEncryption);
 			md_size = SM3_DIGEST_LENGTH;
 			blk_size = SM3_CBLOCK;
+#endif
 			break;
 		case NID_md5:
+#ifdef KAE_GMSSL
+			default_digest = EVP_md5();
+#else
 			digestinfo.digest = EVP_MD_meth_new(NID_md5, NID_md5WithRSAEncryption);
 			md_size = MD5_DIGEST_LENGTH;
 			blk_size = MD5_CBLOCK;
+#endif
 			break;
 		default:
 			return NULL;
 		}
 	}
 
-	res &= EVP_MD_meth_set_result_size(digestinfo.digest, md_size);
-    res &= EVP_MD_meth_set_input_blocksize(digestinfo.digest, blk_size);
-	res &= EVP_MD_meth_set_app_datasize(digestinfo.digest, sizeof(EVP_MD *) + sizeof(sec_digest_priv_t));
-    res &= EVP_MD_meth_set_flags(digestinfo.digest, 0);
-
+#ifdef KAE_GMSSL
+	digestinfo.digest = (EVP_MD *)EVP_MD_meth_dup(default_digest);
+	if (digestinfo.digest == NULL) {
+		US_ERR("dup digest failed!");
+		return NULL;
+	}
 	res &= EVP_MD_meth_set_init(digestinfo.digest, sec_digests_init);
 	res &= EVP_MD_meth_set_update(digestinfo.digest, sec_digests_update);
 	res &= EVP_MD_meth_set_final(digestinfo.digest, sec_digests_final);
 	res &= EVP_MD_meth_set_cleanup(digestinfo.digest, sec_digests_cleanup);
 	res &= EVP_MD_meth_set_copy(digestinfo.digest, sec_digests_copy);
-	
+	res &= EVP_MD_meth_set_app_datasize(digestinfo.digest, sizeof(sec_digest_priv_t));
+#else	
+	res &= EVP_MD_meth_set_result_size(digestinfo.digest, md_size);
+    res &= EVP_MD_meth_set_input_blocksize(digestinfo.digest, blk_size);
+	res &= EVP_MD_meth_set_app_datasize(digestinfo.digest, sizeof(EVP_MD *) + sizeof(sec_digest_priv_t));
+    res &= EVP_MD_meth_set_flags(digestinfo.digest, 0);
+	res &= EVP_MD_meth_set_init(digestinfo.digest, sec_digests_init);
+	res &= EVP_MD_meth_set_update(digestinfo.digest, sec_digests_update);
+	res &= EVP_MD_meth_set_final(digestinfo.digest, sec_digests_final);
+	res &= EVP_MD_meth_set_cleanup(digestinfo.digest, sec_digests_cleanup);
+	res &= EVP_MD_meth_set_copy(digestinfo.digest, sec_digests_copy);
+#endif
 	
 	if (res != 1) {
 		US_ERR("sec set digest methods failed!\n");
