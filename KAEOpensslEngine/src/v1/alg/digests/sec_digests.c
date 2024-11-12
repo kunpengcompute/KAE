@@ -500,11 +500,10 @@ static EVP_MD *sec_set_digests_methods(struct digest_info digestinfo)
 {
 #ifdef KAE_GMSSL
 	const EVP_MD *default_digest = NULL;
-#else
+#endif
 	int md_size = 0;
 	int blk_size = 0;
 	int res = 1;
-#endif
 
 	if (digestinfo.digest == NULL) {
 		switch (digestinfo.nid) {
