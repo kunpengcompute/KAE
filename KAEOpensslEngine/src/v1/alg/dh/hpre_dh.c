@@ -294,6 +294,11 @@ static int hpre_dh_generate_key(DH *dh)
 		return HPRE_DH_FAIL;
 	}
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000
+	// check whether it is dsa parameter.
+	CHECK_AND_GOTO(q != NULL, end_soft, "q is not null, then switch to soft!");
+#endif
+
 	// check whether bits exceeds the limit.
 	if (bits > OPENSSL_DH_MAX_MODULUS_BITS) {
 		KAEerr(KAE_F_HPRE_DH_KEYGEN, KAE_R_DH_KEY_SIZE_TOO_LARGE);
@@ -378,6 +383,11 @@ static int hpre_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh
 		US_ERR("invalid g or p.");
 		return HPRE_DH_FAIL;
 	}
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000
+	// check whether it is dsa parameter.
+	CHECK_AND_GOTO(q != NULL, end_soft, "q is not null, then switch to soft!");
+#endif
 
 	// check whether bits exceeds the limit.
 	if (bits > OPENSSL_DH_MAX_MODULUS_BITS) {
