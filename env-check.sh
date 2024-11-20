@@ -142,18 +142,23 @@ checkOS () {
 # 检查驱动
 checkDriver(){
   echo "check2、检查driver驱动====>"
+  isFileExist=0
+  isDerverExist=0
   driverinfo=$(ls -l /sys/class/uacce/)
   if [[ $driverinfo = *hisi_hpre* ]]; then
+    isFileExist=1
     successecho "已检测到hisi_hpre引擎文件"
   else 
     errorecho "未检测到hisi_hpre加速引擎文件系统！！！ 加解密可能有问题，检查 ls -l /sys/class/uacce/"
   fi 
   if [[ $driverinfo = *hisi_sec* ]]; then
+    isFileExist=1
     successecho "已检测到hisi_sec引擎文件"
   else 
     errorecho "未检测到hisi_sec加速引擎文件系统！！！加解密可能有问题，检查 ls -l /sys/class/uacce/"
   fi 
   if [[ $driverinfo = *hisi_zip* ]]; then
+    isFileExist=1
     successecho "已检测到hisi_zip引擎文件"
   else 
     errorecho "未检测到hisi_zip加速引擎文件系统！！！解压缩可能有问题，检查 ls -l /sys/class/uacce/"
@@ -168,13 +173,21 @@ checkDriver(){
   driverUacce2=$(lsmod|grep hisi_qm)
 
   if [[( $driverUacce = *hisi_qm* ) && ( $driverUacce = *hisi_sec2*) && ( $driverUacce = *hisi_hpre*) && ( $driverUacce = *hisi_zip*) ]];  then
+    isDerverExist=1
     successecho "内核uacce模块加载成功 lsmod|grep uacce"
   elif [[( $driverUacce2 = *hisi_sec2*) && ( $driverUacce2 = *hisi_hpre*) && ( $driverUacce2 = *hisi_zip*)]]; then
+    isDerverExist=1
     successecho "内核uacce模块加载成功 lsmod|grep hisi_qm"
   else
     warnecho "内核uacce模块可能存在卸载情况！！ 查看命令 lsmod | grep uacce "
     warnecho "内核手动卸载模块命令(以hisi_sec2为例)：rmmod hisi_sec2  ；加载模块命令：modprobe hisi_sec2 。如果手动执行后仍然不成功，尝试重启设备后安装内核驱动"
   fi
+
+  if [[ $isFileExist == 0 && $isDerverExist == 1 ]]; then
+    errorecho "当前uacce内核模块是默认的，直接编译driver模块会不生效，需要卸载原驱动并使用KAE编译生成的hisi_hpre hisi_zip hisi_sec2驱动。"
+    errorecho "推荐卸载重装命令: sh build.sh driver clean  &&  sh build.sh driver"
+  fi
+
 }
 checkUadk(){
   echo "check3、检查uadk驱动====>"
