@@ -214,17 +214,18 @@ static int kaezstd_alg_init2(void)
     if (ret && ret != -WD_EEXIST) {
         WD_ERR("failed to init wd_comp_init2_ ret is :%d!\n", ret);
 	ret = KAE_ZSTD_INIT_FAIL;
-	goto out_freebmp;
+	goto out_freedev;
     }
     atexit(zstd_uadk_uninit);  // 注册退出处理函数
     zstd_config.status = 1;
 
+out_freedev:
+    free(dev);
 out_freebmp:
     numa_free_nodemask(cparams.bmp);
 
 out_freectx:
     free(ctx_set_num);
-    free(dev);
     return ret;
 }
 

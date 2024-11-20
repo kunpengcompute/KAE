@@ -361,11 +361,11 @@ void kaezstd_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_pr
         pthread_mutex_destroy(&cur_pool->kae_queue_mutex);
         pthread_mutex_destroy(&cur_pool->destroy_mutex);
 
-        temp_pool = cur_pool;
+        temp_pool = cur_pool->next;
 
         kae_free(cur_pool);
 
-        cur_pool = temp_pool->next;
+        cur_pool = temp_pool;
     }
 
     return;
