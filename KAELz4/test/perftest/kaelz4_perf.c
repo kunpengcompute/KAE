@@ -10,14 +10,16 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
-#include <lz4.h>      // presumes lz4 library is installed
+#include <lz4.h>  // presumes lz4 library is installed
 #define __USE_GNU
 #include <sched.h>
 #include <pthread.h>
 
 uint8_t *g_inbuf = NULL;
 int g_threadnum = 15;
-int core_seq = 0;
+int core_seq = 2;           // 绑核开始的 cpuid。
+int g_show_perf_print = 0;  // 是否展示性能数据，默认0不展示。 1：仅展示最后一次时延和压缩比例。 2：展示每次的单次时延
+int g_use_cpu_number = 1;   // 使用的加速器数量。使得绑核值会均匀分到几个加速器上
 
 enum CompressFunc {
     LZ4_BLOCKCOMPRESS,
@@ -50,47 +52,84 @@ uint8_t *CompressInputGet(size_t inputSize)
 
     return inbuf;
 }
+static int read_inputFile(const char *fileName, void **input)
+{
+    FILE *sourceFile = fopen(fileName, "r");
+    if (sourceFile == NULL) {
+        fprintf(stderr, "%s not exist!\n", fileName);
+        return 0;
+    }
+    int fd = fileno(sourceFile);
+    struct stat fs;
+    (void)fstat(fd, &fs);
 
+    int input_size = fs.st_size;
+    *input = malloc(input_size);
+    if (*input == NULL) {
+        return 0;
+    }
+    (void)fread(*input, 1, input_size, sourceFile);
+    fclose(sourceFile);
+
+    return input_size;
+}
 
 // 块压缩模式：数据切块随后调用LZ4压缩接口
 static void DoBlockCompressPerf_next(int streamLen, int cLevel, int bsize)
 {
     int inpOffset = 0;
+    int totalout = 0;
+    int totalIn = streamLen;
+    uint64_t timeonce;
 
-    for (; ;)
-    {
+    for (;;) {
         int inpBytes = 0;
-        char *src = &g_inbuf[inpOffset];
-        if (streamLen <= 0)
-        {
+        char tmp = (char)g_inbuf[inpOffset];
+        char *src = &tmp;
+        if (streamLen <= 0) {
             break;
         }
-        if (streamLen >= bsize)
-        {
+        if (streamLen >= bsize) {
             inpOffset += bsize;
             inpBytes = bsize;
-        }
-        else
-        {
+        } else {
             inpOffset += streamLen;
             inpBytes = streamLen;
         }
         streamLen -= inpBytes;
 
-        char *const dst = (char*) malloc(LZ4_COMPRESSBOUND(inpBytes));
+        char *const dst = (char *)malloc(LZ4_COMPRESSBOUND(inpBytes));
+        struct timeval startOneTime, stopOneTime;
+        gettimeofday(&startOneTime, NULL);
         const int cmpBytes = LZ4_compress_fast(src, dst, inpBytes, LZ4_COMPRESSBOUND(inpBytes), cLevel);
+        gettimeofday(&stopOneTime, NULL);
+        timeonce = (stopOneTime.tv_sec - startOneTime.tv_sec) * 1000000 + stopOneTime.tv_usec - startOneTime.tv_usec;
+        if (g_show_perf_print == 2) {
+            printf("单次 时延: %.4f milliseconds\n", timeonce / 1000.0);
+        }
+
+        totalout += cmpBytes;
+
         free(dst);
 
-        if (cmpBytes <= 0)
-        {
+        if (cmpBytes <= 0) {
             break;
             printf("LZ4 compress error\n");
         }
     }
+
+    if (g_show_perf_print == 1) {
+        float compressRate = (float)totalout / (float)totalIn;
+        // 单次时延和压缩比数据计算
+        printf("the last compression delay is %.2f milliseconds. compress rate = %.3f \n ",
+            timeonce / 1000.0,
+            compressRate);
+    }
 }
 
-void* thread_function(void* arg) {
-    struct ThreadArgs* args = (struct ThreadArgs*)arg;
+void *thread_function(void *arg)
+{
+    struct ThreadArgs *args = (struct ThreadArgs *)arg;
     int streamLen = args->streamLen;
     int cLevel = args->cLevel;
     int loopTimes = args->loopTimes;
@@ -98,7 +137,7 @@ void* thread_function(void* arg) {
     int bsize = args->blocksize;
     // 绑核操作
     cpu_set_t cpuSet;
-    CPU_ZERO(&cpuSet); // 清空cpuSet
+    CPU_ZERO(&cpuSet);  // 清空cpuSet
     // 将线程绑定到第0个CPU内核
     CPU_SET(core_id, &cpuSet);
 
@@ -115,22 +154,40 @@ void* thread_function(void* arg) {
     return NULL;
 }
 
-void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int bsize)
+void DoCompressPerf(int multi, int streamLenP, int cLevel, int loopTimes, int bsize, const char *in_filename)
 {
     pid_t pidChild = 0;
     struct timeval start, stop;
     int core_id = 0;
 
-    g_inbuf = CompressInputGet(streamLen);
+    int streamLen = streamLenP;
+    if (in_filename != NULL) {
+        void *inbuf = NULL;
+        streamLen = read_inputFile(in_filename, &inbuf);
+        g_inbuf = inbuf;
+    } else {
+        g_inbuf = CompressInputGet(streamLenP);
+    }
     if (g_inbuf == NULL) {
         return;
     }
 
     for (int i = 0; i < multi; i++) {
-         pidChild = fork();
-         if (pidChild == 0) {
-             //子进程
-            core_id = i + core_seq; //开始绑核的cpuid
+        pidChild = fork();
+        if (pidChild == 0) {
+            if (g_use_cpu_number > 1) {
+                // 子进程开始绑核的cpuid。
+                //  针对一组numa80个核的机器，连续并均匀分配到N个不同加速器。连续分配测速会小一点
+                //  core_id = (int)(i / g_use_cpu_number) + core_seq + (80 * (i % g_use_cpu_number)) ;
+
+                // 开始绑核的cpuid：间隔不连续绑核。均匀分片到前N个CPU上。
+                core_id = i + core_seq + (80 * (i % g_use_cpu_number));
+            } else {
+                core_id = i + core_seq;  // 单个numa连续绑核
+            }
+            if (g_use_cpu_number > 1) {
+                printf("bind core: %d.\n", core_id);
+            }
             break;
         } else if (pidChild < 0) {
             printf("%s fork failed\n", __func__);
@@ -162,7 +219,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int bsi
                 if (errno == EINTR) {
                     continue;
                 }
-             free(g_inbuf);
+                free(g_inbuf);
                 break;
             }
         }
@@ -172,7 +229,7 @@ void DoCompressPerf(int multi, int streamLen, int cLevel, int loopTimes, int bsi
         if (multi == 0) {
             multi = 1;
         }
-        
+
         gettimeofday(&stop, NULL);
         uint64_t time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
         float speed1 = 1000000.0 / time1 * loopTimes * multi * g_threadnum * streamLen / (1 << 30);
@@ -190,6 +247,8 @@ static void Usage(void)
     printf("  -c: compress level\n");
     printf("  -b: block size(KB)\n");
     printf("  -s: core sequence\n");
+    printf("  -C: bind cpu numbers\n");
+    printf("  -f: use this file for input data\n");
     printf("  -t: thread number\n");
     printf("  example: ./kaelz4_perf -c 1 -l 64000 -m 10 -b 64\n");
 }
@@ -197,19 +256,22 @@ static void Usage(void)
 int main(int argc, char **argv)
 {
     int o = 0;
-    const char *optstring = "c:l:h:b:m:n:s:t:";
+    const char *optstring = "c:l:hb:m:n:s:t:f:C:";
     int multi = 10;
     int loopTimes = 1;
     int streamLen = 64000;
-    int cLevel = 1; // 压缩等级
-    int bsize = 64; // 切块大小
-    enum CompressFunc cFunction = LZ4_BLOCKCOMPRESS; // 压缩模式
+    int cLevel = 1;                                   // 压缩等级
+    int bsize = 64;                                   // 切块大小
+    enum CompressFunc cFunction = LZ4_BLOCKCOMPRESS;  // 压缩模式
+    char input_filename[128] = {0};
     while ((o = getopt(argc, argv, optstring)) != -1) {
-        if (optstring == NULL)
-        {
+        if (optstring == NULL) {
             continue;
         }
         switch (o) {
+            case 'C':
+                g_use_cpu_number = atoi(optarg);
+                break;
             case 't':
                 g_threadnum = atoi(optarg);
                 if (g_threadnum < 0) {
@@ -254,10 +316,9 @@ int main(int argc, char **argv)
                 break;
             case 'b':
                 bsize = atoi(optarg);
-                if (bsize < 0 || bsize > 64) {
-                    printf("Error: compress function is out of range\n");
-                    exit(1);
-                }
+                break;
+            case 'f':
+                strcpy(input_filename, optarg);
                 break;
             case 'h':
                 Usage();
@@ -274,17 +335,23 @@ int main(int argc, char **argv)
         printf("\ndefault input parameter used\n");
     }
     printf("kaelz4 perf parameter: multi process %d, stream length: %d(KB), block size: %d(KB), compress level: %d, "
-        "compress function: %d, loop times: %d, g_threadnum: %d, core sequence: %d ~ %d\n",
-        multi, streamLen, bsize, cLevel, cFunction, loopTimes, g_threadnum, core_seq, core_seq + multi - 1);
+           "compress function: %d, loop times: %d, g_threadnum: %d, core sequence start: %d, use %d cpu. \n",
+        multi,
+        streamLen,
+        bsize,
+        cLevel,
+        cFunction,
+        loopTimes,
+        g_threadnum,
+        core_seq,
+        g_use_cpu_number);
 
     streamLen = 1024 * streamLen;
     bsize = 1024 * bsize;
-
-    switch (cFunction)
-    {
+    const char *in_filename = input_filename[0] == 0 ? NULL : input_filename;
+    switch (cFunction) {
         case LZ4_BLOCKCOMPRESS:
-            //DoBlockCompressPerf_old(streamLen, cLevel, bsize);
-            DoCompressPerf(multi, streamLen, cLevel, loopTimes, bsize);
+            DoCompressPerf(multi, streamLen, cLevel, loopTimes, bsize, in_filename);
             break;
         default:
             printf("Error: no such compress funciton\n");
