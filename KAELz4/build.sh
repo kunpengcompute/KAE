@@ -33,7 +33,7 @@ function Dev_Build_kaelz4()
 {
     Target_lz4
     cd "${SRC_PATH}"
-	make clean && make
+	make clean
     make 
     echo "install kaelz4"
 

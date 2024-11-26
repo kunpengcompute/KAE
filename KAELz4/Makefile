@@ -39,11 +39,13 @@ INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/src/utils
 INCDIR += -I $(WORK_PATH)/open_source/lz4-1.9.4/lib
 INCDIR += -I ${WORK_PATH}/../uadk/include/
+INCDIR += -I ${WORK_PATH}/../kae_build/head/
 
 # Include Libs.
 LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64
 LIBDIR += -L/usr/lib
+LIBDIR += -L$(WORK_PATH)/../kae_build/lib/
 LIBS := -pthread -Wl,-rpath,/usr/local/lib -lwd -lwd_comp
 LIBS += -lc_nonshared
 

@@ -56,7 +56,7 @@ function Build_kaezip()
     #Install_warpdrive
     Target_zlib
     cd "${SRC_PATH}"
-	make clean && make KAE=KAE
+	make clean && make
     make install
 
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
@@ -119,13 +119,13 @@ function Operate()
     cd "${SRC_PATH}"/open_source
     case "$1" in 
         devbuild)
-            Dev_Build_kaezip "$2"
+            Dev_Build_kaezip
             ;;
         build)
-            Build_kaezip "$2"
+            Build_kaezip
             ;;
         install)
-            Build_kaezip "$2"
+            Build_kaezip
             Install_kaezip
             ;;
         uninstall)

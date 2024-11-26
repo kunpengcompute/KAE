@@ -81,11 +81,11 @@ all : $(TARGET)
 objs : $(OBJS)
 %.o : %.c
 	@echo compiling $(notdir $<)
-	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -D$(KAE) -o $@ $<
+	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
 $(TARGET): $(OBJS)
 	@echo Linking $@
-	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -D$(KAE) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
+	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
 rebuild: clean all
 
 clean :
