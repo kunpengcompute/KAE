@@ -3,6 +3,7 @@ set -e
 SRC_PATH=$(pwd)
 KAE_KERNEL_DIR=""
 KAE_SPEC_FILE=""
+OPENSSL_CONFIGURE_FLAG=""
 KAE_UADK_DIR=${SRC_PATH}/uadk
 KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
 KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
@@ -22,9 +23,11 @@ function build_check_OS_version()
     if [ "$KERNEL_VERSION" == "6.6.0" ]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=/usr/"
     elif [ "$KERNEL_VERSION" == "5.10.0" ]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS=\"-Wl,-z,relro,-z,now -fstack-protector-strong\""
     else 
 		echo "[KAE error]:unsupport kernel version"
     fi
@@ -98,42 +101,145 @@ function build_rpm()
     else
             mkdir $KAE_BUILD
     fi
+    mkdir -p $KAE_BUILD_LIB
+    mkdir -p $KAE_BUILD_HEAD
+
     local KERNEL_VERSION_BY_BUILDENV=`rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel | head -n 1`
 
-    # 编译
-    build_driver
-    build_uadk
-    build_engine
-    build_zlib
-    build_zstd
-    build_lz4
-    ## copy driver
+    # 编译 driver 
+    cd ${KAE_KERNEL_DIR}
+    make -j
+
     mkdir -p $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/sec2/hisi_sec2.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/hpre/hisi_hpre.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/hisi_qm.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/uacce/uacce.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/zip/hisi_zip.ko $KAE_BUILD/driver 
+    cp ${KAE_KERNEL_DIR}/conf/*.conf $KAE_BUILD/driver
 
-    cp /lib/modules/$KERNEL_VERSION_BY_BUILDENV/extra/*.ko $KAE_BUILD/driver
-    cp /etc/modprobe.d/*.conf $KAE_BUILD/driver
+    # 编译 uadk
+    cd ${SRC_PATH}
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
 
-    ## copy uadk
-    mkdir -p $KAE_BUILD/uadk/include
-    mkdir -p $KAE_BUILD/uadk/include/drv
+    cd $KAE_UADK_DIR
+    sh autogen.sh
+    # sh conf.sh
+    # 在 conf.sh中的内容后添加 --prefix 参数，为了使uadk编译生成的pkgconfig/*.pc文件中动态库的路径为RPM包编译时的临时目录，这样Opensslengine编译时才能够找到uadk动态库。
+    ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
+        --enable-perf=yes \
+        --host aarch64-linux-gnu \
+        --target aarch64-linux-gnu \
+        --includedir=/usr/local/include/ \
+        --disable-static --enable-shared \
+        --prefix=$KAE_BUILD/uadk/
+    make -j
+
     mkdir -p $KAE_BUILD/uadk/lib
+    mkdir -p $KAE_BUILD/uadk/include
+    mkdir -p $KAE_BUILD/uadk/include/v1
+    mkdir -p $KAE_BUILD/uadk/include/drv
+    mkdir -p $KAE_BUILD/uadk/pkgconfig
 
-    cp $KAE_UADK_DIR/include/*.h                       $KAE_BUILD/uadk/include
-    cp $KAE_UADK_DIR/include/drv/*.h                   $KAE_BUILD/uadk/include/drv
-    cp -r $KAE_UADK_DIR/.libs/*so*                     $KAE_BUILD/uadk/lib
+    cp ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/uadk/lib
+    cp -r $KAE_UADK_DIR/include/*.h              $KAE_BUILD/uadk/include
+    cp -r $KAE_UADK_DIR/v1/*.h                   $KAE_BUILD/uadk/include/v1
+    cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD/uadk/include/drv
+    cp -r $KAE_UADK_DIR/lib/*.pc                 $KAE_BUILD/uadk/pkgconfig
 
-    ## copy opensslengine
+    mkdir -p $KAE_BUILD_HEAD/uadk
+    mkdir -p $KAE_BUILD_HEAD/uadk/v1
+    mkdir -p $KAE_BUILD_HEAD/uadk/drv
+
+    cp -r $KAE_UADK_DIR/include/*.h              $KAE_BUILD_HEAD/uadk
+    cp -r $KAE_UADK_DIR/v1/*.h                   $KAE_BUILD_HEAD/uadk/v1
+    cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD_HEAD/uadk/drv
+
+    mkdir -p $KAE_BUILD/lib
+    cp ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/lib
+
+
+    # 编译openssl
+    cd $KAE_OPENSSL_DIR
+    export PKG_CONFIG_PATH=$KAE_BUILD/uadk/pkgconfig
+    autoreconf -i
+    ./configure $OPENSSL_CONFIGURE_FLAG
+    make -j
+
+
     mkdir -p $KAE_BUILD/KAEOpensslEngine/lib
     cp -r $KAE_OPENSSL_DIR/src/.libs/*so* $KAE_BUILD/KAEOpensslEngine/lib
 
-    ## copy zlib
-    mkdir -p $KAE_BUILD/KAEZlib
-    cp -r /usr/local/kaezip  $KAE_BUILD/KAEZlib
 
-    ## copy zstd
-    mkdir -p $KAE_BUILD/KAEZstd
-    cp -r /usr/local/kaezstd  $KAE_BUILD/KAEZstd
 
+    # 编译 zlib
+    cd $KAE_ZLIB_DIR
+    sh setup.sh devbuild KAE2
+
+    mkdir -p $KAE_BUILD/kaezip
+    mkdir -p $KAE_BUILD/kaezip/include
+    mkdir -p $KAE_BUILD/kaezip/lib
+    mkdir -p $KAE_BUILD/kaezip/lib/pkgconfig
+    mkdir -p $KAE_BUILD/kaezip/share/man/man3
+
+    cp $KAE_ZLIB_DIR/lib* $KAE_BUILD/kaezip/lib
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD/kaezip/lib
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.pc $KAE_BUILD/kaezip/lib/pkgconfig
+    cp $KAE_ZLIB_DIR/include/*.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zconf.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.3 $KAE_BUILD/kaezip/share/man/man3
+
+
+    # 编译 zstd
+    cd $KAE_ZSTD_DIR
+    sh build.sh devbuild
+
+    mkdir -p $KAE_BUILD/kaezstd/lib/pkgconfig
+    mkdir -p $KAE_BUILD/kaezstd/bin
+    mkdir -p $KAE_BUILD/kaezstd/include
+    mkdir -p $KAE_BUILD/kaezstd/share/man/man1
+
+    cp $KAE_ZSTD_DIR/lib* $KAE_BUILD/kaezstd/lib
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.so* $KAE_BUILD/kaezstd/lib
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.a $KAE_BUILD/kaezstd/lib
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/libzstd.pc $KAE_BUILD/kaezstd/lib/pkgconfig
+
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD/kaezstd/bin
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdgrep $KAE_BUILD/kaezstd/bin
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdless $KAE_BUILD/kaezstd/bin
+
+    cp $KAE_ZSTD_DIR/open_source/zstd/lib/*.h $KAE_BUILD/kaezstd/include
+    cp $KAE_ZSTD_DIR/include/*.h $KAE_BUILD/kaezstd/include
+
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd.1 $KAE_BUILD/kaezstd/share/man/man1
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdgrep.1 $KAE_BUILD/kaezstd/share/man/man1
+    cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstdless.1 $KAE_BUILD/kaezstd/share/man/man1
+
+    # 编译 lz4
+    cd ${SRC_PATH}/KAELz4
+    sh build.sh devbuild
+
+    mkdir -p $KAE_BUILD/kaelz4/lib
+    mkdir -p $KAE_BUILD/kaelz4/bin
+    mkdir -p $KAE_BUILD/kaelz4/include
+    mkdir -p $KAE_BUILD/kaelz4/share/man/man1
+
+    cp $KAE_LZ4_DIR/lib* $KAE_BUILD/kaelz4/lib
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/liblz4.so* $KAE_BUILD/kaelz4/lib
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/liblz4.a $KAE_BUILD/kaelz4/lib
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/programs/lz4 $KAE_BUILD/kaelz4/bin
+
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/*.h $KAE_BUILD/kaelz4/include
+    cp $KAE_LZ4_DIR/include/*.h $KAE_BUILD/kaelz4/include
+    cp $KAE_LZ4_DIR/src/utils/kaelz4_log.h $KAE_BUILD/kaelz4/include
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/programs/lz4.1 $KAE_BUILD/kaelz4/share/man/man1
 }
 
 function build_driver()
