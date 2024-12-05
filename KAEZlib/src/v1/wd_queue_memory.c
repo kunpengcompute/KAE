@@ -430,7 +430,7 @@ void kaezip_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_r
 
                     kaezip_free_wd_queue_memory(queue_data_node, release_fn);
 
-                    US_DEBUG("hpre queue list release success. queue node id =%d", i);
+                    US_DEBUG("kaezip queue list release success. queue node id =%d", i);
                 }
             }
         }

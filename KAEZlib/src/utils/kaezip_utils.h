@@ -50,6 +50,8 @@
 
 #define KAEZIP_FAILED           (-1)
 #define KAEZIP_SUCCESS          (0)
+#define KAEZIP_DRIVER_DO_TASK_NOW  (1)
+#define KAEZIP_SAVE_DATA_TO_BUFFER (2)
 
 #define KAEZIP_RETURN_FAIL_IF(cond, mesg, ret) \
         if (unlikely(cond)) {\
