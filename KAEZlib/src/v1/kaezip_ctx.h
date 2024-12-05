@@ -75,9 +75,12 @@ struct kaezip_ctx {
     const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
     int              flush;         // WCRYPTO_SYNC_FLUSH / WCRYPTO_FINISH
+    int              zflush;        // zlib flush value
     int              comp_alg_type; // WCRYPTO_ZLIB / WCRYPTO_GZIP
     int              comp_type;     // WCRYPTO_DEFLATE / WCRYPTO_INFLATE
     unsigned int     do_comp_len;   // a compress proccess cost len
+    unsigned int     buffer_len;    // input data length in buffer
+    unsigned int     buffer_remain; // remain data in buffer which not send to driver for 4Byte alignment
     int              status;        // enum kaezip_comp_status
 
     struct wcrypto_end_block        end_block;
@@ -95,6 +98,7 @@ void          kaezip_free_ctx(void* kz_ctx);
 
 int           kaezip_get_remain_data(kaezip_ctx_t *kz_ctx);
 int           kaezip_driver_do_comp(kaezip_ctx_t *kaezip_ctx);
+int           kaezip_driver_do_decomp(kaezip_ctx_t *kaezip_ctx);
 
 #endif
 

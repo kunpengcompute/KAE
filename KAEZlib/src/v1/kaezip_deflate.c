@@ -146,7 +146,8 @@ int kz_deflate_v1(z_streamp strm, int flush)
     if (kaezip_ctx->status == KAEZIP_COMP_END
             && flush == Z_FINISH
             && strm->avail_in == 0
-            && kaezip_ctx->remain == 0) {
+            && kaezip_ctx->remain == 0
+            && kaezip_ctx->buffer_len == 0) {
         return Z_STREAM_END;
     } else {
         return Z_OK;
@@ -211,6 +212,7 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
     kaezip_ctx->consumed     = 0;
     kaezip_ctx->produced     = 0;
     kaezip_ctx->avail_out    = strm->avail_out;
+    kaezip_ctx->zflush       = flush;
     if (flush == Z_FINISH) {
         kaezip_ctx->flush = (strm->avail_in <= KAEZIP_STREAM_CHUNK_IN) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
     } else {
@@ -221,7 +223,8 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
     if (kaezip_ctx->status != KAEZIP_COMP_END
             && flush == Z_FINISH
             && strm->avail_in == 0
-            && kaezip_ctx->remain == 0)  {
+            && kaezip_ctx->remain == 0
+            && kaezip_ctx->buffer_len == 0)  {
         kaezip_set_fmt_tail(kaezip_ctx);
         return KAEZIP_SUCCESS;
     }
@@ -232,7 +235,7 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
         return KAEZIP_FAILED;
     }
 
-    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, flush %d\n",
+    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, zflush %d\n",
         strm->avail_in, strm->avail_out, kaezip_ctx->consumed, kaezip_ctx->produced,
         kaezip_ctx->remain, kaezip_ctx->status, flush);
 

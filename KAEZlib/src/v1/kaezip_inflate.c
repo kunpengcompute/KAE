@@ -184,13 +184,13 @@ static int kaezip_do_inflate(z_streamp strm, int flush)
         }
     }
 
-    int ret = kaezip_driver_do_comp(kaezip_ctx);
+    int ret = kaezip_driver_do_decomp(kaezip_ctx);
     if (ret != KAEZIP_SUCCESS) {
         US_ERR("kae zip do inflate impl fail!");
         return KAEZIP_FAILED;
     }
 
-    US_DEBUG("kaezip do inflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, flush %d",
+    US_DEBUG("kaezip do inflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, zflush %d",
         strm->avail_in, strm->avail_out, kaezip_ctx->consumed, kaezip_ctx->produced,
         kaezip_ctx->remain, kaezip_ctx->status, flush);
 
