@@ -1,20 +1,7 @@
-diff --git KAE/.git/index KAE_uadk_patch/.git/index
-index fef674f..0fa47ba 100644
-Binary files KAE/.git/index and KAE_uadk_patch/.git/index differ
-diff --git KAE/uadk/Makefile.am KAE_uadk_patch/uadk/Makefile.am
-index e2a8ba1..b39afc2 100644
---- KAE/uadk/Makefile.am
-+++ KAE_uadk_patch/uadk/Makefile.am
-@@ -138,4 +138,3 @@ pkgconfigdir = $(libdir)/pkgconfig
- pkgconfig_DATA = lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
- CLEANFILES += $(pkgconfig_DATA)
- 
--SUBDIRS=. test v1/test uadk_tool sample
-diff --git KAE/uadk/cleanup.sh KAE_uadk_patch/uadk/cleanup.sh
-index 60adc98..bddbe26 100644
---- KAE/uadk/cleanup.sh
-+++ KAE_uadk_patch/uadk/cleanup.sh
-@@ -10,9 +10,7 @@ FILES="aclocal.m4 autom4te.cache compile config.guess config.h.in config.log \
+diff -Naru a/uadk/cleanup.sh b/uadk/cleanup.sh
+--- a/uadk/cleanup.sh	2024-12-20 11:13:50.000000000 +0800
++++ b/uadk/cleanup.sh	2024-12-20 11:15:59.679983640 +0800
+@@ -10,9 +10,7 @@
         ar-lib m4 Makefile.in missing src/Makefile src/Makefile.in	     \
         test/Makefile test/Makefile.in test/hisi_hpre_test/Makefile.in	     \
         test/hisi_hpre_test/Makefile test/hisi_sec_test/Makefile              \
@@ -25,11 +12,10 @@ index 60adc98..bddbe26 100644
         v1/Makefile.in v1/Makefile.in v1/test/Makefile v1/test/Makefile.in    \
         v1/test/test_mm/Makefile v1/test/test_mm/Makefile.in		     \
         v1/test/bmm_test/Makefile v1/test/bmm_test/Makefile.in"
-diff --git KAE/uadk/configure.ac KAE_uadk_patch/uadk/configure.ac
-index 2692175..81d5cad 100644
---- KAE/uadk/configure.ac
-+++ KAE_uadk_patch/uadk/configure.ac
-@@ -91,8 +91,6 @@ AC_CONFIG_FILES([Makefile
+diff -Naru a/uadk/configure.ac b/uadk/configure.ac
+--- a/uadk/configure.ac	2024-12-20 11:13:50.000000000 +0800
++++ b/uadk/configure.ac	2024-12-20 11:15:59.679983640 +0800
+@@ -91,8 +91,6 @@
  		 lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
  		 test/Makefile
  		 test/hisi_hpre_test/Makefile
@@ -38,18 +24,25 @@ index 2692175..81d5cad 100644
  		 sample/Makefile
  		 v1/test/Makefile
  		 v1/test/bmm_test/Makefile
-@@ -101,6 +99,5 @@ AC_CONFIG_FILES([Makefile
+@@ -101,6 +99,5 @@
  		 v1/test/hisi_trng_test/Makefile
  		 v1/test/hisi_sec_test/Makefile
  		 v1/test/hisi_sec_test_sgl/Makefile
 -		 v1/test/hisi_zip_test/Makefile
  		 v1/test/hisi_zip_test_sgl/Makefile])
  AC_OUTPUT
-diff --git KAE/uadk/test/Makefile.am KAE_uadk_patch/uadk/test/Makefile.am
-index 5666000..bee042f 100644
---- KAE/uadk/test/Makefile.am
-+++ KAE_uadk_patch/uadk/test/Makefile.am
-@@ -16,8 +16,5 @@ SUBDIRS = .
+diff -Naru a/uadk/Makefile.am b/uadk/Makefile.am
+--- a/uadk/Makefile.am	2024-12-20 11:13:50.000000000 +0800
++++ b/uadk/Makefile.am	2024-12-20 11:15:59.679983640 +0800
+@@ -138,4 +138,3 @@
+ pkgconfig_DATA = lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
+ CLEANFILES += $(pkgconfig_DATA)
+ 
+-SUBDIRS=. test v1/test uadk_tool sample
+diff -Naru a/uadk/test/Makefile.am b/uadk/test/Makefile.am
+--- a/uadk/test/Makefile.am	2024-12-20 11:13:50.000000000 +0800
++++ b/uadk/test/Makefile.am	2024-12-20 11:15:59.679983640 +0800
+@@ -16,8 +16,5 @@
  if HAVE_CRYPTO
  SUBDIRS += hisi_hpre_test
  
@@ -58,11 +51,10 @@ index 5666000..bee042f 100644
 -endif
  
  endif
-diff --git KAE/uadk/v1/test/Makefile.am KAE_uadk_patch/uadk/v1/test/Makefile.am
-index bd41cfe..8494a52 100644
---- KAE/uadk/v1/test/Makefile.am
-+++ KAE_uadk_patch/uadk/v1/test/Makefile.am
-@@ -2,9 +2,6 @@ AM_CFLAGS=-Wall -O0 -fno-strict-aliasing -I$(top_srcdir)/v1/internal -I$(top_src
+diff -Naru a/uadk/v1/test/Makefile.am b/uadk/v1/test/Makefile.am
+--- a/uadk/v1/test/Makefile.am	2024-12-20 11:13:50.000000000 +0800
++++ b/uadk/v1/test/Makefile.am	2024-12-20 11:15:59.679983640 +0800
+@@ -2,9 +2,6 @@
  
  SUBDIRS=. test_mm bmm_test
  

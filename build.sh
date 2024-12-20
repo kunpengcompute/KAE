@@ -124,6 +124,8 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
 
     cd $KAE_UADK_DIR
     sh autogen.sh
@@ -291,10 +293,16 @@ function uadk_clean()
 
 function build_engine()
 {
+    openssl_install_path=$1
+    if [ "$1" = "" ];then
+        openssl_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    openssl_install_path=${openssl_install_path%/}
+
     cd ${SRC_PATH}/KAEOpensslEngine
     export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
     autoreconf -i
-    ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
+    ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae --with-openssl_install_dir=$openssl_install_path CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
     make -j
     make install
 }
@@ -313,6 +321,8 @@ function build_engine_openssl3()
     if [ "$1" = "" ];then
         openssl3_install_path=$(which openssl | awk -F'/bin' '{print $1}')
     fi
+    openssl3_install_path=${openssl3_install_path%/}
+    
     cd ${SRC_PATH}/KAEOpensslEngine
     export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
     autoreconf -i
