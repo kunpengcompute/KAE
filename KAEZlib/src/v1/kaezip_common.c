@@ -187,18 +187,33 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
     uint32_t isize    = kz_ctx->op_data.isize;
 
     const char wd_deflate_end_block[] = {0x1, 0x0, 0x0, 0xff, 0xff};
-    KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_end_block, sizeof(wd_deflate_end_block));
+    const char wd_deflate_zeroInput_end_block[] = {0x3, 0x0};
+    // 当第一次输入亦是最后一次, 且avail_in为0, flush为Z_FINISH时
+    // 此时append的尾部需要特殊处理(极特殊情况, spark场景下发现)
+    if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+        KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_zeroInput_end_block, sizeof(wd_deflate_zeroInput_end_block));
+    } else if (alg_type != WCRYPTO_RAW_DEFLATE) {
+        KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_end_block, sizeof(wd_deflate_end_block));
+    }
 
     if (alg_type == WCRYPTO_ZLIB) {
-        checksum = (uint32_t)__cpu_to_be32(checksum);
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block), &checksum, sizeof(checksum));
+        if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+            checksum = 0x01000000;  // adler32初始值
+        } else {
+            checksum = (uint32_t)__cpu_to_be32(checksum);
+        }
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &checksum, sizeof(checksum));
     }
 
     if (alg_type == WCRYPTO_GZIP) {
-        checksum = ~checksum;
-        checksum = __kaezip_checksum_reverse(checksum);
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block), &checksum, sizeof(checksum));
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block) + sizeof(checksum), &isize, sizeof(isize));
+        if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+            checksum = isize = 0;
+        } else {
+            checksum = ~checksum;
+            checksum = __kaezip_checksum_reverse(checksum);
+        }
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &checksum, sizeof(checksum));
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &isize, sizeof(isize));
     }
 
     kz_ctx->end_block.b_set = 1;
