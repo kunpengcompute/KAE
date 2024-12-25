@@ -512,7 +512,7 @@ main() {
             if [ "$2" = "clean" ]; then  
                 engine_clean
             else  
-                build_engine
+                build_engine $2
             fi  
             ;;  
         "engine3")
