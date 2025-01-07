@@ -124,37 +124,41 @@ const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const vo
     return 0U;
 }
 
+// 参考deflate函数中获取header的逻辑 rfc-1950
+#define Z_DEFLATED   8
+char* kaezip_get_fmt_header_zlib(int level, int windowBits)
+{
+        /* zlib header */
+        static char zlib_head[2];
+        if (windowBits == 8) {
+            windowBits = 9; // 参考zlib初始化逻辑, 避免出现窗长为256的情况
+        }
+        uint32_t header = (Z_DEFLATED + ((windowBits - 8) << 4)) << 8;
+        uint32_t level_flags;
+
+        if (level < 2)
+            level_flags = 0;
+        else if (level < 6)
+            level_flags = 1;
+        else if (level == 6)
+            level_flags = 2;
+        else
+            level_flags = 3;
+        header |= (level_flags << 6);
+        // if (s->strstart != 0) header |= PRESET_DICT; 暂不支持字典模式
+        header += 31 - (header % 31);
+
+        zlib_head[1] = (char)(header & 0xFF); //CM
+        zlib_head[0] = (char)((header >> 8) & 0xFF); //MINFO
+        return zlib_head;
+}
+
 const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
 {
-    static const char zlib_head[][2] = {
-        {0x18, 0x1d},	{0x18, 0x5b},	{0x18, 0x99},	{0x18, 0xd7},
-        {0x18, 0x19},	{0x18, 0x57},	{0x18, 0x95},	{0x18, 0xd3},
-        {0x28, 0x15},	{0x28, 0x53},	{0x28, 0x91},	{0x28, 0xcf},
-        {0x38, 0x11},	{0x38, 0x4f},	{0x38, 0x8d},	{0x38, 0xcb},
-        {0x48, 0x0d},	{0x48, 0x4b},	{0x48, 0x89},	{0x48, 0xc7},
-        {0x58, 0x09},	{0x58, 0x47},	{0x58, 0x85},	{0x58, 0xc3},
-        {0x68, 0x05},	{0x68, 0x43},	{0x68, 0x81},	{0x68, 0xde},
-        {0x78, 0x01},	{0x78, 0x5e},	{0x78, 0x9c},	{0x78, 0xda}
-    };
     static const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03};
 
     if (alg_comp_type == WCRYPTO_ZLIB) {
-        int w = windowBits - 8;
-        int v;
-        if ((level < -1) || (level == 0) || (level > 9)) {
-            level = 1;
-        }
-        
-        if (level == 1) {
-            v = 0;
-        } else if (level <= 5) {
-            v = 1;
-        } else if (level == 6 || level == -1) {
-            v = 2;
-        } else {
-            v = 3;
-        }
-        return zlib_head[4 * w + v];
+        return kaezip_get_fmt_header_zlib(level, windowBits);
     } else if (alg_comp_type == WCRYPTO_GZIP) {
         return gzip_head;
     }
@@ -179,18 +183,33 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
     uint32_t isize    = kz_ctx->op_data.isize;
 
     const char wd_deflate_end_block[] = {0x1, 0x0, 0x0, 0xff, 0xff};
-    KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_end_block, sizeof(wd_deflate_end_block));
+    const char wd_deflate_zeroInput_end_block[] = {0x3, 0x0};
+    // 当第一次输入亦是最后一次, 且avail_in为0, flush为Z_FINISH时
+    // 此时append的尾部需要特殊处理
+    if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+        KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_zeroInput_end_block, sizeof(wd_deflate_zeroInput_end_block));
+    } else if (alg_type != WCRYPTO_RAW_DEFLATE) {
+        KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_end_block, sizeof(wd_deflate_end_block));
+    }
 
     if (alg_type == WCRYPTO_ZLIB) {
-        checksum = (uint32_t)__cpu_to_be32(checksum);
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block), &checksum, sizeof(checksum));
-    } 
+        if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+            checksum = 0x01000000;  // adler32初始值
+        } else {
+            checksum = (uint32_t)__cpu_to_be32(checksum);
+        }
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &checksum, sizeof(checksum));
+    }
     
     if (alg_type == WCRYPTO_GZIP) {
-        checksum = ~checksum;
-        checksum = __kaezip_checksum_reverse(checksum);
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block), &checksum, sizeof(checksum));
-        KAEZIP_APPEND_BLOCK(kz_ctx, sizeof(wd_deflate_end_block) + sizeof(checksum), &isize, sizeof(isize));
+        if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
+            checksum = isize = 0;
+        } else {
+            checksum = ~checksum;
+            checksum = __kaezip_checksum_reverse(checksum);
+        }
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &checksum, sizeof(checksum));
+        KAEZIP_APPEND_BLOCK(kz_ctx, kz_ctx->end_block.data_len, &isize, sizeof(isize));
     }
 
     kz_ctx->end_block.b_set = 1;
