@@ -133,11 +133,22 @@ int sec_digests_init(EVP_MD_CTX *ctx)
     return OPENSSL_SUCCESS;
 }
 
+static void sec_digests_set_msg_state(sec_digest_priv_t *md_ctx, bool is_end)
+{
+	if (unlikely(md_ctx->is_stream_copy)) {
+		md_ctx->e_digest_ctx->op_data.has_next = is_end ? WCRYPTO_DIGEST_STREAM_END : WCRYPTO_DIGEST_STREAM_DOING;
+		md_ctx->is_stream_copy = false;
+	} else {
+		md_ctx->e_digest_ctx->op_data.has_next = is_end ? WCRYPTO_DIGEST_END : WCRYPTO_DIGEST_DOING;
+	}
+}
+
 static int sec_digests_update_inner(sec_digest_priv_t *md_ctx, size_t data_len, const void *data)
 {
 	int ret = OPENSSL_FAIL;
 	size_t left_len = data_len;
 	const unsigned char *tmpdata = (const unsigned char *)data;
+    sec_digests_set_msg_state(md_ctx, false);
 
 	while (md_ctx->last_update_bufflen + left_len > INPUT_CACHE_SIZE) {
 		int copy_to_bufflen = INPUT_CACHE_SIZE - md_ctx->last_update_bufflen;
@@ -221,6 +232,7 @@ static int sec_digests_update(EVP_MD_CTX *ctx, const void *data,
 
     int nid = EVP_MD_nid(EVP_MD_CTX_md(ctx));
     md_ctx->e_nid = nid;
+    md_ctx->total_data_len += data_len;
     sec_digests_get_alg(md_ctx);
     unsigned char digest[MAX_OUTLEN] = {0};
     md_ctx->out = digest;
@@ -264,6 +276,7 @@ static int sec_digests_final(EVP_MD_CTX *ctx, unsigned char *digest)
         md_ctx->state = SEC_DIGEST_FINAL;
 
         md_ctx->out = digest;
+        sec_digests_set_msg_state(md_ctx, true);
         ret = sec_digests_dowork(md_ctx);
         if (ret != KAE_SUCCESS) {
             US_WARN("do sec digest failed, switch to soft digest");
@@ -401,6 +414,7 @@ static int sec_digests_async_dowork(sec_digest_priv_t *md_ctx, op_done_t *op_don
 
 	md_ctx->in = md_ctx->last_update_buff;
 	md_ctx->do_digest_len = wd_digests_get_do_digest_len(e_digest_ctx, leftlen);
+    e_digest_ctx->op_data.has_next = (md_ctx->state == SEC_DIGEST_FINAL) ? false : true;
 	wd_digests_set_input_data(e_digest_ctx);
 
 	do {
@@ -449,45 +463,58 @@ static int sec_digests_cleanup(EVP_MD_CTX *ctx)
     return OPENSSL_SUCCESS;
 }
 
-static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from) // stream mode still has bug maybe
+static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 {
-    sec_digest_priv_t *to_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(to);
-    sec_digest_priv_t *from_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(from);
+	sec_digest_priv_t *to_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(to);
+	sec_digest_priv_t *from_ctx = (sec_digest_priv_t *)EVP_MD_CTX_md_data(from);
+	struct wcrypto_digest_op_data *tp;
+	struct wcrypto_digest_op_data *fp;
 
-    if (!to_ctx)
+	if (!to_ctx)
 		return 1;
 	if (!from_ctx) {
 		US_ERR("priv get from digest ctx is NULL.\n");
 		return OPENSSL_FAIL;
 	}
 
-    if (from_ctx->switch_flag == 1) {
-        return sec_digests_soft_copy(to, from);
-    }
-
-	if (to_ctx && to_ctx->e_digest_ctx) {
-        to_ctx->e_digest_ctx->md_ctx = to_ctx;
+	if (to_ctx->soft_ctx) {
+		to_ctx->soft_ctx = NULL;
+		to_ctx->soft_ctx = EVP_MD_CTX_new();
 	}
 
-	// if (to_ctx->e_digest_ctx) {
-	// 	to_ctx->e_digest_ctx = NULL;
-    //     to_ctx->e_digest_ctx = wd_digests_get_engine_ctx(to_ctx);
-    //     if (to_ctx->e_digest_ctx == NULL) {
-    //         US_WARN("failed to get engine ctx");
-    //         return OPENSSL_FAIL;
-    //     }
-	// 	memcpy(to_ctx->in, from_ctx->in, from_ctx->app_datasize);
-    // }
+	if (to_ctx->e_digest_ctx) {
+		to_ctx->e_digest_ctx = NULL;
+		to_ctx->e_digest_ctx = wd_digests_get_engine_ctx(to_ctx);
 
+		if (to_ctx->e_digest_ctx == NULL) {
+			US_WARN("failed to get engine ctx");
+			return OPENSSL_FAIL;
+		}
 
-	/*
-	 * EVP_MD_CTX_copy will copy from->priv to to->priv,
-	 * including data pointer. Instead of coping data contents,
-	 * add a flag to prevent double-free.
-	 */
+		tp = &to_ctx->e_digest_ctx->op_data;
+		fp = &from_ctx->e_digest_ctx->op_data;
+		memcpy(tp->in, fp->in, fp->in_bytes);
+		memcpy(tp->out, fp->out, fp->out_bytes);
+		memcpy(tp->iv, fp->iv, fp->iv_bytes);
+		tp->in_bytes = fp->in_bytes;
+		tp->out_bytes = fp->out_bytes;
+		tp->status = fp->status;
+		tp->has_next = fp->has_next;
+		tp->iv_bytes = fp->iv_bytes;
 
-	// if (from_ctx && from_ctx->e_digest_ctx)
-	// 	to_ctx->copy = true;
+		to_ctx->last_update_buff = malloc(DIGEST_BLOCK_SIZE);
+
+		if (to_ctx->state != SEC_DIGEST_INIT) {
+			to_ctx->is_stream_copy = true;
+			/* Length that the hardware has processed should be equal to
+			 * total input data length minus software cache data length.
+			 */
+
+			to_ctx->long_data_len = to_ctx->total_data_len - to_ctx->last_update_bufflen;
+			tp->priv = (void *)&to_ctx->long_data_len;
+		}
+		memcpy(to_ctx->last_update_buff, from_ctx->last_update_buff, from_ctx->last_update_bufflen);
+	}
 
 	return 1;
 }

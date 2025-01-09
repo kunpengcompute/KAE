@@ -1,0 +1,97 @@
+diff -Naru a/uadk/v1/wd_digest.c b/uadk/v1/wd_digest.c
+--- a/uadk/v1/wd_digest.c	2025-01-06 14:18:52.000000000 +0800
++++ b/uadk/v1/wd_digest.c	2025-01-09 19:06:42.532108700 +0800
+@@ -444,7 +444,7 @@
+ 			return -WD_EINVAL;
+ 		}
+ 
+-		if (d_opdata[i]->has_next)
++		if (d_opdata[i]->has_next == WCRYPTO_DIGEST_DOING)
+ 			ret = stream_mode_param_check(d_ctx, d_opdata[i], num);
+ 		else
+ 			ret = block_mode_param_check(d_ctx, d_opdata[i]);
+@@ -465,6 +465,24 @@
+ 	return WD_SUCCESS;
+ }
+ 
++static int append_tag_restore_status(struct wcrypto_digest_ctx *ctxt,
++				     struct wcrypto_digest_op_data **opdata,
++				     struct wcrypto_digest_msg **req, __u32 ind)
++{
++	if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_END)
++		opdata[ind]->has_next = WCRYPTO_DIGEST_END;
++	else if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_DOING)
++		opdata[ind]->has_next = WCRYPTO_DIGEST_DOING;
++	else
++		return -WD_EINVAL;
++
++	ctxt->io_bytes = *(__u64 *)opdata[ind]->priv;
++	req[ind]->iv_bytes = opdata[ind]->out_bytes;
++	opdata[ind]->priv = NULL;
++
++	return WD_SUCCESS;
++}
++
+ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
+ 			 void **tag, __u32 num)
+ {
+@@ -482,8 +500,15 @@
+ 		return ret;
+ 
+ 	for (i = 0; i < num; i++) {
+-		cookies[i]->tag.priv = opdata[i]->priv;
+ 		req[i] = &cookies[i]->msg;
++		
++		if (opdata[i]->has_next > WCRYPTO_DIGEST_DOING) {
++			ret = append_tag_restore_status(ctxt, opdata, req, i);
++			if (unlikely(ret))
++				goto fail_with_cookies;
++		}
++
++		cookies[i]->tag.priv = opdata[i]->priv;
+ 		if (tag)
+ 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
+ 	}
+diff -Naru a/uadk/v1/wd_digest.h b/uadk/v1/wd_digest.h
+--- a/uadk/v1/wd_digest.h	2025-01-06 14:18:52.000000000 +0800
++++ b/uadk/v1/wd_digest.h	2025-01-09 19:06:42.532108700 +0800
+@@ -77,6 +77,21 @@
+ };
+ 
+ /**
++ * wcrypto_digest_msg_state - Message state of digest
++ * @WCRYPTO_DIGEST_END: Final message or single block message
++ * @WCRYPTO_DIGEST_DOING: First message or middle message
++ * @WCRYPTO_DIGEST_STREAM_END: Final message for appending tag mode
++ * @WCRYPTO_DIGEST_STREAM_DOING: Middle message for appending tag mode
++ */
++enum wcrypto_digest_msg_state {
++	WCRYPTO_DIGEST_END = 0x0,
++	WCRYPTO_DIGEST_DOING,
++	WCRYPTO_DIGEST_STREAM_END,
++	WCRYPTO_DIGEST_STREAM_DOING,
++	WCRYPTO_DIGEST_MSG_STATE_MAX,
++};
++
++/**
+  * different contexts for different users/threads
+  * @cb: call back functions of user
+  * @alg: digest algorithm type; denoted by enum wcrypto_digest_alg
+@@ -100,7 +115,7 @@
+  * @out_bytes:output data size
+  * @priv:reserved data field segment
+  * @status:I/O operation return status
+- * @has_next: is there next data block
++ * @has_next: message state, all types are defined in enum wcrypto_digest_msg_state
+  * @iv: initialization verctor data address
+  * @iv_bytes:initialization verctor data size
+  */
+@@ -111,7 +126,7 @@
+ 	__u32 out_bytes;
+ 	void *priv;
+ 	int status;
+-	bool has_next;
++	int has_next;
+ 	void *iv;
+ 	__u32 iv_bytes;
+ };

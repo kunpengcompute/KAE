@@ -126,6 +126,8 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch
 
     cd $KAE_UADK_DIR
     sh autogen.sh
@@ -276,6 +278,8 @@ function build_uadk()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch
 	cd ${SRC_PATH}/uadk
     sh autogen.sh
     sh conf.sh

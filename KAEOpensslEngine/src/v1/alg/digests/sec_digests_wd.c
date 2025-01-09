@@ -198,8 +198,6 @@ void wd_digests_set_input_data(digest_engine_ctx_t *e_digest_ctx)
 
 	e_digest_ctx->op_data.in_bytes = md_ctx->do_digest_len;
 	e_digest_ctx->op_data.out_bytes = md_ctx->out_len;
-
-	e_digest_ctx->op_data.has_next = (md_ctx->state == SEC_DIGEST_FINAL) ? false : true;
 }
 
 void wd_digests_get_output_data(digest_engine_ctx_t *e_digest_ctx)

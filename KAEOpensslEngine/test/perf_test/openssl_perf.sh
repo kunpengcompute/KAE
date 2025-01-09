@@ -4,7 +4,7 @@ ENV=""
 SYNC_MULTIS="1 4 16 32 64"
 ASYNC_MULTIS="1 2 4 16"
 EXE="openssl"
-ENGINE_DIR=""
+ENGINE_DIR="/usr/local/lib/engines"
 ENGINE_NAME="kae"
 
 function check_enviroment()
@@ -19,17 +19,14 @@ function check_enviroment()
     if [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd01" ];then
         ENV="920"
         # EXE="openssl_arm"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
         ENGINE_NAME="kae"
     elif [ "${IMPLEMENTER}-${CPUPAET}" == "0x48-0xd02" ];then
         ENV="920B"
         # EXE="./openssl_arm"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
         ENGINE_NAME="kae"
     elif [ $(arch) == "x86_64" ];then
         ENV="X86"
         # EXE="./openssl_x86"
-        ENGINE_DIR="/usr/local/lib/engines-3.0/"
         ENGINE_NAME="qatengine"
     else
         ENV="UNKNOW CPU"
@@ -246,16 +243,16 @@ function main(){
     echo "测试环境 , 算法 , 同步异步 , 进程数量 , 包长 , 软算速度 KB/s , 硬算速度 KB/s , 硬软比 " > $RESFILE
 
     #AES
-    DO_ALG "aes-256-cbc aes-256-ctr aes-256-ecb aes-256-xts aes-256-ofb aes-256-cfb"  "512 1024 4096 16384 65536 262144 1048576 2097152"
+    DO_ALG "aes-256-cbc aes-256-ctr aes-256-ecb aes-256-xts aes-256-ofb aes-256-cfb"  "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
     # #SM4
-    DO_ALG "sm4-cbc sm4-ctr sm4-ecb sm4-ofb sm4-cfb" "512 1024 4096 16384 65536 262144 1048576 2097152"
+    DO_ALG "sm4-cbc sm4-ctr sm4-ecb sm4-ofb sm4-cfb" "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
     #SM3
-    DO_ALG "sm3" "512 1024 4096 16384 65536 262144 1048576 2097152"
+    DO_ALG "sm3" "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
     #MD5
-    DO_ALG "md5" "512 1024 4096 16384 65536 262144 1048576 2097152"
+    DO_ALG "md5" "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
     #RSA
     DO_RSA "rsa2048 rsa4096"
