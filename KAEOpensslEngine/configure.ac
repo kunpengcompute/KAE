@@ -15,11 +15,13 @@ AM_PROG_LIBTOOL
 # 定义命令行参数
 AC_ARG_ENABLE([kae], [AS_HELP_STRING([--enable-kae], [Enable kae support])], [enable_kae="yes"], [enable_kae="no"])
 AC_ARG_ENABLE([kae-gmssl], [AS_HELP_STRING([--enable-kae-gmssl], [Enable kae gmssl support])], [enable_kae_gmssl="yes"], [enable_kae_gmssl="no"])
+AC_ARG_ENABLE([kae-tongsuo], [AS_HELP_STRING([--enable-kae-tongsuo], [Enable kae tongsuo support])], [enable_kae_tongsuo="yes"], [enable_kae_tongsuo="no"])
 AC_ARG_ENABLE(engine, AS_HELP_STRING([--enable-engine],[Enable engine in OpenSSL 3.0]))
 
 # 设置条件变量
 AM_CONDITIONAL([WD_KAE], [test "$enable_kae" = "yes"])
 AM_CONDITIONAL([WD_KAE_GMSSL], [test "$enable_kae_gmssl" = "yes"])
+AM_CONDITIONAL([WD_KAE_TONGSUO], [test "$enable_kae_tongsuo" = "yes"])
 AM_CONDITIONAL([WD_ENGINE], [test "$enable_engine" = "yes"])
 
 # 通过命令传入openssl的安装路径，不然就用默认的

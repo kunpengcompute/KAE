@@ -26,6 +26,10 @@ kae_la_SOURCES=v2/utils/uadk_utils.c e_uadk.c v2/alg/ciphers/uadk_cipher.c v2/al
 		utils/engine_log.c utils/engine_config.c utils/engine_utils.c v2/alg/ciphers/uadk_aead.c v2/alg/ciphers/uadk_cipher_adapter.c
 endif #WD_KAE_GMSSL
 
+if WD_KAE_TONGSUO
+kae_la_CFLAGS += -DKAE_TONGSUO
+endif
+
 AUTOMAKE_OPTIONS = subdir-objects
 
 if WD_KAE

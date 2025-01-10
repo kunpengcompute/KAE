@@ -380,6 +380,44 @@ function engine_clean_gmssl()
     rm -rf /usr/local/gmssl/lib/engines-1.1
 }
 
+function build_engine3_tongsuo()
+{
+    tongsuo_install_path=$1
+    if [ "$1" = "" ];then
+        tongsuo_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    tongsuo_install_path=${tongsuo_install_path%/}
+    
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+
+    if [ ! -f "$tongsuo_install_path/include/openssl/opensslv.h" ]; then  
+        echo "Tongsuo install path is wrong, $tongsuo_install_path/include/openssl/opensslv.h is not exist."  
+        exit 1  
+    else  
+        if $tongsuo_install_path/bin/openssl version | grep -q "OpenSSL 3."; then    
+            echo "Tongsuo's openssl version is 3.x."    
+        else 
+            $tongsuo_install_path/bin/openssl version 
+            echo "Tongsuo's openssl version is not support"   
+            exit 1
+        fi
+    fi
+
+    ./configure --libdir=/usr/local/tongsuo/lib/engines-3.0 --enable-kae --enable-engine --enable-kae-tongsuo --with-openssl_install_dir=$tongsuo_install_path
+    make -j
+    make install
+}
+
+function engine3_clean_tongsuo()
+{
+    cd ${SRC_PATH}/KAEOpensslEngine
+    make uninstall
+    make clean
+    rm -rf /usr/local/tongsuo/lib/engines-3.0
+}
+
 function build_zlib()
 {
     cd ${SRC_PATH}/KAEZlib
@@ -439,6 +477,9 @@ function help()
 
     echo "sh build.sh engine_gmssl -- install KAE gmssl engine"
 	echo "sh build.sh engine_gmssl clean -- uninstall KAE gmssl engine"
+
+    echo "sh build.sh engine3_tongsuo -- install KAE tongsuo engine"
+	echo "sh build.sh engine3_tongsuo clean -- uninstall KAE tongsuo engine"
 
 	echo "sh build.sh zlib -- install zlib using KAE"
 	echo "sh build.sh zlib clean -- uninstall zlib using KAE"
@@ -532,7 +573,14 @@ main() {
             else  
                 build_engine_gmssl
             fi  
-            ;;  
+            ;;
+        "engine3_tongsuo")
+            if [ "$2" = "clean" ]; then
+                engine3_clean_tongsuo
+            else
+                build_engine3_tongsuo $2
+            fi
+            ;;    
         "zlib")  
             if [ "$2" = "clean" ]; then  
                 zlib_clean

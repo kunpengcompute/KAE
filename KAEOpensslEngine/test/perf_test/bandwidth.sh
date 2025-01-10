@@ -1,5 +1,5 @@
 #!/bin/bash
-RESFILE="bandwidth.txt"
+RESFILE="bwidth.txt"
 ENV=""
 
 EXE="openssl"
@@ -46,9 +46,9 @@ function check_enviroment()
     fi
 	
 	$openssl_path/bin/openssl version
-	if $openssl3_path/bin/openssl version | grep -q "OpenSSL 3."; then    
+	if $openssl_path/bin/openssl version | grep -q "OpenSSL 3."; then    
         ENGINE_DIR="${ENGINE_DIR}-3.0"    
-    elif $openssl3_path/bin/openssl version | grep -q "OpenSSL 1."; then    
+    elif $openssl_path/bin/openssl version | grep -q "OpenSSL 1."; then    
 		ENGINE_DIR="${ENGINE_DIR}-1.1"
     else 
         echo "OpenSSL version is not support"   
@@ -235,17 +235,17 @@ function main(){
     #SM3
     DO_EVP_BD "sm3" "16384 262144 1048576"
 
+    #MD5
+    DO_EVP_BD "md5" "16384 262144 1048576"
+
     #RSA
     DO_RSA_BD "rsa2048 rsa4096"
 
-    #MD5
-    #DO_EVP_BD "md5" "16384 262144 1048576"
-
     #SM2
-    #DO_RSA_BD "sm2"
+    DO_RSA_BD "sm2"
 
     #DH
-    #DO_DH_BD "ffdh2048 ffdh4096"
+    DO_DH_BD "ffdh2048 ffdh4096"
 
 }
 

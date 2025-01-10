@@ -1,8 +1,9 @@
 #!/bin/bash
-RESFILE="res.txt"
+RESFILE="multi.txt"
 ENV=""
 SYNC_MULTIS="1 4 16 32 64"
-ASYNC_MULTIS="1 2 4 16"
+ASYNC_MULTIS="1 2 4 8 16" #920
+#ASYNC_MULTIS="1 2 16 32 64" #920
 EXE="openssl"
 ENGINE_DIR="/usr/local/lib/engines"
 ENGINE_NAME="kae"
@@ -34,9 +35,9 @@ function check_enviroment()
     fi
 	
 	$openssl_path/bin/openssl version
-	if $openssl3_path/bin/openssl version | grep -q "OpenSSL 3."; then    
+	if $openssl_path/bin/openssl version | grep -q "OpenSSL 3."; then    
         ENGINE_DIR="${ENGINE_DIR}-3.0"    
-    elif $openssl3_path/bin/openssl version | grep -q "OpenSSL 1."; then    
+    elif $openssl_path/bin/openssl version | grep -q "OpenSSL 1."; then    
 		ENGINE_DIR="${ENGINE_DIR}-1.1"
     else 
         echo "OpenSSL version is not support"   
@@ -245,7 +246,7 @@ function main(){
     #AES
     DO_ALG "aes-256-cbc aes-256-ctr aes-256-ecb aes-256-xts aes-256-ofb aes-256-cfb"  "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
-    # #SM4
+    #SM4
     DO_ALG "sm4-cbc sm4-ctr sm4-ecb sm4-ofb sm4-cfb" "16 64 256 512 1024 4096 16384 65536 262144 1048576 2097152"
 
     #SM3

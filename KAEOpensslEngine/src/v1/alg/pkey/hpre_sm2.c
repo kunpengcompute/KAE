@@ -322,8 +322,10 @@ static int hpre_sm2_get_hash_type(int nid_hash)
 		return WCRYPTO_HASH_SHA384;
 	case NID_sha512:
 		return WCRYPTO_HASH_SHA512;
+#ifndef KAE_TONGSUO
 	case NID_md4:
 		return WCRYPTO_HASH_MD4;
+#endif
 	case NID_md5:
 		return WCRYPTO_HASH_MD5;
 	case NID_sm3:
