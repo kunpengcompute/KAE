@@ -41,6 +41,7 @@ enum wd_type {
 	WD_RSA_TYPE,
 	WD_DH_TYPE,
 	WD_ECC_TYPE,
+	WD_AGG_TYPE,
 	WD_TYPE_MAX,
 };
 
@@ -97,12 +98,12 @@ struct wd_env_config {
 
 struct wd_config_variable {
 	const char *name;
-	char *def_val;
+	const char *def_val;
 	int (*parse_fn)(struct wd_env_config *, const char *);
 };
 
 struct wd_alg_ops {
-	char *alg_name;
+	const char *alg_name;
 	__u8 op_type_num;
 	int (*alg_init)(struct wd_ctx_config *, struct wd_sched *);
 	void (*alg_uninit)(void);
@@ -117,13 +118,13 @@ struct wd_ctx_attr {
 };
 
 struct wd_msg_handle {
-	int (*send)(handle_t sess, void *msg);
-	int (*recv)(handle_t sess, void *msg);
+	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 };
 
 struct wd_init_attrs {
 	__u32 sched_type;
-	char *alg;
+	const char *alg;
 	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
@@ -254,7 +255,7 @@ int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
  *
  * Return 0 if the datalist is not less than expected size.
  */
-int wd_check_datalist(struct wd_datalist *head, __u32 size);
+int wd_check_datalist(struct wd_datalist *head, __u64 size);
 
 
 /*
@@ -375,6 +376,7 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
 
 /**
  * wd_handle_msg_sync() - recv msg from hardware
+ * @drv: the driver to handle msg.
  * @msg_handle: callback of msg handle ops.
  * @ctx: the handle of context.
  * @msg: the msg of task.
@@ -383,8 +385,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en);
  *
  * Return 0 if successful or less than 0 otherwise.
  */
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
-		void *msg, __u64 *balance, bool epoll_en);
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
+		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en);
 
 /**
  * wd_init_check() - Check input parameters for wd_<alg>_init.
@@ -474,7 +476,7 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs);
  *
  * Return device driver if succeed and other NULL if fail.
  */
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name);
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name);
 void wd_alg_drv_unbind(struct wd_alg_driver *drv);
 
 /**
@@ -482,14 +484,13 @@ void wd_alg_drv_unbind(struct wd_alg_driver *drv);
  *			to the obtained queue resource and the applied driver.
  * @config: device resources requested by the current algorithm.
  * @driver: device driver for the current algorithm application.
- * @drv_priv: the parameter pointer of the current device driver.
  *
  * Return 0 if succeed and other error number if fail.
  */
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+		       struct wd_alg_driver *driver);
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv);
+			  struct wd_alg_driver *driver);
 
 /**
  * wd_dlopen_drv() - Open the dynamic library file of the device driver.
@@ -505,7 +506,7 @@ void wd_dlclose_drv(void *dlh_list);
  * @lib_path: the found dynamic library file path.
  * @is_dir: Specify whether to query the file dir or the file path.
  */
-int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir);
+int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir);
 
 /**
  * wd_dfx_msg_cnt() - Message counter interface for ctx
@@ -525,6 +526,29 @@ static inline void wd_dfx_msg_cnt(struct wd_ctx_config_internal *config,
 
 	sqn = config->ctxs[idx].sqn;
 	config->msg_cnt[sqn]++;
+}
+
+/**
+ * wd_ctx_spin_lock() - Lock interface, which is used in the synchronization process.
+ * @ctx: queue context.
+ * @type: the type of the driver.
+ *
+ * If the drvier type is not UADK_ALG_HW, the lock is not required.
+ */
+static inline void wd_ctx_spin_lock(struct wd_ctx_internal *ctx, int type)
+{
+	if (type != UADK_ALG_HW)
+		return;
+
+	pthread_spin_lock(&ctx->lock);
+}
+
+static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
+{
+	if (type != UADK_ALG_HW)
+		return;
+
+	pthread_spin_unlock(&ctx->lock);
 }
 
 #ifdef __cplusplus

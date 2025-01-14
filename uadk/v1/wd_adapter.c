@@ -18,9 +18,7 @@
 #include <string.h>
 #include <dirent.h>
 
-#include "config.h"
 #include "v1/wd_util.h"
-#include "v1/drv/dummy_drv.h"
 #include "v1/drv/hisi_qm_udrv.h"
 #include "v1/drv/hisi_rng_udrv.h"
 #include "v1/wd_adapter.h"
@@ -29,18 +27,6 @@
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
 
 static const struct wd_drv_dio_if hw_dio_tbl[] = { {
-		.hw_type = "dummy_v1",
-		.open = dummy_set_queue_dio,
-		.close = dummy_unset_queue_dio,
-		.send = dummy_add_to_dio_q,
-		.recv = dummy_get_from_dio_q,
-	}, {
-		.hw_type = "dummy_v2",
-		.open = dummy_set_queue_dio,
-		.close = dummy_unset_queue_dio,
-		.send = dummy_add_to_dio_q,
-		.recv = dummy_get_from_dio_q,
-	}, {
 		.hw_type = HISI_QM_API_VER_BASE WD_UACCE_API_VER_NOIOMMU_SUBFIX,
 		.open = qm_init_queue,
 		.close = qm_uninit_queue,
@@ -164,7 +150,7 @@ void drv_free_slice(struct wd_queue *q)
 	}
 }
 
-void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
+static void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rg;
@@ -181,7 +167,7 @@ void drv_add_slice(struct wd_queue *q, struct wd_ss_region *rgn)
 	TAILQ_INSERT_TAIL(&qinfo->ss_list, rgn, next);
 }
 
-void drv_show_ss_slices(struct wd_queue *q)
+static void drv_show_ss_slices(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct wd_ss_region *rgn;

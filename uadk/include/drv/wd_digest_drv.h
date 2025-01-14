@@ -10,7 +10,13 @@
 extern "C" {
 #endif
 
-/* fixme wd_digest_msg */
+enum hash_block_type {
+	HASH_FIRST_BLOCK,
+	HASH_MIDDLE_BLOCK,
+	HASH_END_BLOCK,
+	HASH_SINGLE_BLOCK,
+};
+
 struct wd_digest_msg {
 	struct wd_digest_req req;
 	/* request identifier */
@@ -38,6 +44,8 @@ struct wd_digest_msg {
 	__u32 in_bytes;
 	/* out_bytes */
 	__u32 out_bytes;
+	/* partial bytes for stream mode */
+	__u32 partial_bytes;
 
 	/* input key pointer */
 	__u8 *key;
@@ -47,9 +55,30 @@ struct wd_digest_msg {
 	__u8 *in;
 	/* output data pointer */
 	__u8 *out;
+	/* partial pointer for stream mode */
+	__u8 *partial_block;
 	/* total of data for stream mode */
 	__u64 long_data_len;
 };
+
+static inline enum hash_block_type get_hash_block_type(struct wd_digest_msg *msg)
+{
+	/*
+	 *     [has_next , iv_bytes]
+	 *     [    1    ,     0   ]   =   long hash(first bd)
+	 *     [    1    ,     1   ]   =   long hash(middle bd)
+	 *     [    0    ,     1   ]   =   long hash(end bd)
+	 *     [    0    ,     0   ]   =   block hash(single bd)
+	 */
+	if (msg->has_next && !msg->iv_bytes)
+		return HASH_FIRST_BLOCK;
+	else if (msg->has_next && msg->iv_bytes)
+		return HASH_MIDDLE_BLOCK;
+	else if (!msg->has_next && msg->iv_bytes)
+		return HASH_END_BLOCK;
+	else
+		return HASH_SINGLE_BLOCK;
+}
 
 struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag);
 

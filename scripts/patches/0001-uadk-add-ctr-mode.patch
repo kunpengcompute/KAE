@@ -12,7 +12,7 @@ diff --git a/uadk/v1/drv/hisi_sec_udrv.c b/uadk/v1/drv/hisi_sec_udrv.c
 index d046327..0b3e4f5 100644
 --- a/uadk/v1/drv/hisi_sec_udrv.c
 +++ b/uadk/v1/drv/hisi_sec_udrv.c
-@@ -176,6 +176,9 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
+@@ -186,6 +186,9 @@ static int fill_cipher_bd2_mode(struct wcrypto_cipher_msg *msg,
  	case WCRYPTO_CIPHER_XTS:
  		sqe->type2.c_mode = C_MODE_XTS;
  		break;

@@ -106,13 +106,13 @@ static int create_ctx_para_check(struct wd_queue *q,
 	}
 
 	if (setup->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
-		WD_ERR("invalid: the alg %d does not support!\n", setup->alg);
+		WD_ERR("invalid: the alg %u does not support!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
 	if (setup->mode == WCRYPTO_DIGEST_NORMAL &&
 	    setup->alg >= WCRYPTO_AES_XCBC_MAC_96) {
-		WD_ERR("invalid: the alg %d does not support normal mode!\n", setup->alg);
+		WD_ERR("invalid: the alg %u does not support normal mode!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -292,7 +292,7 @@ static int digest_hmac_key_check(enum wcrypto_digest_alg alg, __u16 key_len)
 		}
 		break;
 	default:
-		WD_ERR("failed to check digest key bytes, invalid alg type = %d\n", alg);
+		WD_ERR("failed to check digest key bytes, invalid alg type = %u\n", alg);
 		return -WD_EINVAL;
 	}
 
@@ -437,14 +437,14 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_src_dst(d_opdata[i]->in, d_opdata[i]->in_bytes,
+		ret = wd_check_src_dst_ptr(d_opdata[i]->in, d_opdata[i]->in_bytes,
 				       d_opdata[i]->out, d_opdata[i]->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 
-		if (d_opdata[i]->has_next)
+		if (d_opdata[i]->has_next == WCRYPTO_DIGEST_DOING)
 			ret = stream_mode_param_check(d_ctx, d_opdata[i], num);
 		else
 			ret = block_mode_param_check(d_ctx, d_opdata[i]);
@@ -461,6 +461,24 @@ static int param_check(struct wcrypto_digest_ctx *d_ctx,
 		WD_ERR("invalid: digest ctx call back is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	return WD_SUCCESS;
+}
+
+static int append_tag_restore_status(struct wcrypto_digest_ctx *ctxt,
+				     struct wcrypto_digest_op_data **opdata,
+				     struct wcrypto_digest_msg **req, __u32 ind)
+{
+	if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_END)
+		opdata[ind]->has_next = WCRYPTO_DIGEST_END;
+	else if (opdata[ind]->has_next == WCRYPTO_DIGEST_STREAM_DOING)
+		opdata[ind]->has_next = WCRYPTO_DIGEST_DOING;
+	else
+		return -WD_EINVAL;
+
+	ctxt->io_bytes = *(__u64 *)opdata[ind]->priv;
+	req[ind]->iv_bytes = opdata[ind]->out_bytes;
+	opdata[ind]->priv = NULL;
 
 	return WD_SUCCESS;
 }
@@ -482,8 +500,15 @@ int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
 		return ret;
 
 	for (i = 0; i < num; i++) {
-		cookies[i]->tag.priv = opdata[i]->priv;
 		req[i] = &cookies[i]->msg;
+
+		if (opdata[i]->has_next > WCRYPTO_DIGEST_DOING) {
+			ret = append_tag_restore_status(ctxt, opdata, req, i);
+			if (unlikely(ret))
+				goto fail_with_cookies;
+		}
+
+		cookies[i]->tag.priv = opdata[i]->priv;
 		if (tag)
 			cookies[i]->tag.wcrypto_tag.tag = tag[i];
 	}

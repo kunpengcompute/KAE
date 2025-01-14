@@ -1,0 +1,14 @@
+diff -Naru a/uadk/Makefile.am b/uadk/Makefile.am
+--- a/uadk/Makefile.am	2025-01-14 10:14:16.000000000 +0800
++++ b/uadk/Makefile.am	2025-01-14 14:54:00.584352660 +0800
+@@ -38,8 +38,8 @@
+ 		  include/wd_ecc.h include/wd_sched.h include/wd_alg.h \
+ 		  include/wd_zlibwrapper.h include/wd_dae.h include/wd_agg.h
+ 
+-nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
+-			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
++nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h v1/wd_ecc.h \
++			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h v1/wd_comp.h
+ 
+ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
+ 

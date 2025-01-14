@@ -344,16 +344,125 @@ static int hpre_uadk_param_parse(thread_data *tddata, struct acc_option *options
 	return 0;
 }
 
-static int init_hpre_ctx_config(struct acc_option *options)
+static int specified_device_request_ctx(struct acc_option *options)
 {
-	int subtype = options->subtype;
+	struct uacce_dev_list *list = NULL;
+	struct uacce_dev_list *tmp = NULL;
 	char *alg = options->algclass;
 	int mode = options->syncmode;
-	struct sched_params param;
-	struct uacce_dev *dev;
-	int max_node;
+	struct uacce_dev *dev = NULL;
+	int avail_ctx = 0;
+	char *dev_name;
 	int ret = 0;
 	int i = 0;
+
+	list = wd_get_accel_list(alg);
+	if (!list) {
+		HPRE_TST_PRT("failed to get %s device\n", alg);
+		return -ENODEV;
+	}
+
+	for (tmp = list; tmp != NULL; tmp = tmp->next) {
+		dev_name = strrchr(tmp->dev->dev_root, '/') + 1;
+		if (!strcmp(dev_name, options->device)) {
+			dev = tmp->dev;
+			break;
+		}
+	}
+
+	if (dev == NULL) {
+		HPRE_TST_PRT("failed to find device %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	avail_ctx = wd_get_avail_ctx(dev);
+	if (avail_ctx < 0) {
+		HPRE_TST_PRT("failed to get the number of available ctx from %s\n", options->device);
+		ret = avail_ctx;
+		goto free_list;
+	} else if (avail_ctx < g_ctxnum) {
+		HPRE_TST_PRT("error: not enough ctx available in %s\n", options->device);
+		ret = -ENODEV;
+		goto free_list;
+	}
+
+	/* If there is no numa, we default config to zero */
+	if (dev->numa_id < 0)
+		dev->numa_id = 0;
+
+	for (i = 0; i < g_ctxnum; i++) {
+		g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+		if (!g_ctx_cfg.ctxs[i].ctx) {
+			HPRE_TST_PRT("failed to alloc %dth ctx\n", i);
+			ret = -ENOMEM;
+			goto free_ctx;
+		}
+		g_ctx_cfg.ctxs[i].op_type = 0;
+		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+	}
+
+	wd_free_list_accels(list);
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+free_list:
+	wd_free_list_accels(list);
+
+	return ret;
+}
+
+static int non_specified_device_request_ctx(struct acc_option *options)
+{
+	char *alg = options->algclass;
+	int mode = options->syncmode;
+	struct uacce_dev *dev = NULL;
+	int ret = 0;
+	int i = 0;
+
+	while (i < g_ctxnum) {
+		dev = wd_get_accel_dev(alg);
+		if (!dev) {
+			HPRE_TST_PRT("failed to get %s device\n", alg);
+			ret = -ENODEV;
+			goto free_ctx;
+		}
+
+		/* If there is no numa, we default config to zero */
+		if (dev->numa_id < 0)
+			dev->numa_id = 0;
+
+		for (; i < g_ctxnum; i++) {
+			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
+			if (!g_ctx_cfg.ctxs[i].ctx)
+				break;
+
+			g_ctx_cfg.ctxs[i].op_type = 0;
+			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
+		}
+
+		free(dev);
+	}
+
+	return 0;
+
+free_ctx:
+	for (; i >= 0; i--)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+
+	return ret;
+}
+
+static int init_hpre_ctx_config(struct acc_option *options)
+{
+	struct sched_params param = {0};
+	int subtype = options->subtype;
+	int mode = options->syncmode;
+	int max_node;
+	int ret = 0;
 
 	max_node = numa_max_node() + 1;
 	if (max_node <= 0)
@@ -365,24 +474,14 @@ static int init_hpre_ctx_config(struct acc_option *options)
 	if (!g_ctx_cfg.ctxs)
 		return -ENOMEM;
 
-	while (i < g_ctxnum) {
-		dev = wd_get_accel_dev(alg);
-		if (!dev) {
-			HPRE_TST_PRT("failed to get %s device\n", alg);
-			ret = -EINVAL;
-			goto out;
-		}
+	if (strlen(options->device) != 0)
+		ret = specified_device_request_ctx(options);
+	else
+		ret = non_specified_device_request_ctx(options);
 
-		for (; i < g_ctxnum; i++) {
-			g_ctx_cfg.ctxs[i].ctx = wd_request_ctx(dev);
-			if (!g_ctx_cfg.ctxs[i].ctx)
-				break;
-
-			g_ctx_cfg.ctxs[i].op_type = 0; // default op_type
-			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
-		}
-
-		free(dev);
+	if (ret) {
+		HPRE_TST_PRT("failed to request hpre ctx!\n");
+		goto free_ctxs;
 	}
 
 	switch(subtype) {
@@ -401,11 +500,11 @@ static int init_hpre_ctx_config(struct acc_option *options)
 		break;
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype!\n");
-		return -EINVAL;
+		goto free_ctx;
 	}
 	if (!g_sched) {
 		HPRE_TST_PRT("failed to alloc sched!\n");
-		goto out;
+		goto free_ctx;
 	}
 
 	g_sched->name = SCHED_SINGLE;
@@ -417,7 +516,7 @@ static int init_hpre_ctx_config(struct acc_option *options)
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		HPRE_TST_PRT("failed to fill hpre sched data!\n");
-		goto out;
+		goto free_sched;
 	}
 
 	/* init */
@@ -437,17 +536,21 @@ static int init_hpre_ctx_config(struct acc_option *options)
 		break;
 	}
 	if (ret) {
-		HPRE_TST_PRT("failed to get hpre ctx!\n");
-		goto out;
+		HPRE_TST_PRT("failed to init hpre ctx!\n");
+		goto free_sched;
 	}
 
 	return 0;
-out:
-	for (i = i - 1; i >= 0; i--)
+
+free_sched:
+	wd_sched_rr_release(g_sched);
+
+free_ctx:
+	for (int i = g_ctxnum; i >= 0; i--)
 		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
 
+free_ctxs:
 	free(g_ctx_cfg.ctxs);
-	wd_sched_rr_release(g_sched);
 
 	return ret;
 }
@@ -507,7 +610,10 @@ static void uninit_hpre_ctx_config2(int subtype)
 
 static int init_hpre_ctx_config2(struct acc_option *options)
 {
+	struct wd_ctx_params cparams = {0};
+	struct wd_ctx_nums *ctx_set_num;
 	int subtype = options->subtype;
+	int mode = options->syncmode;
 	char alg_name[MAX_ALG_NAME];
 	int ret;
 
@@ -517,22 +623,49 @@ static int init_hpre_ctx_config2(struct acc_option *options)
 		return -EINVAL;
 	}
 
+	ctx_set_num = calloc(1, sizeof(*ctx_set_num));
+	if (!ctx_set_num) {
+		WD_ERR("failed to alloc ctx_set_size!\n");
+		return -WD_ENOMEM;
+	}
+
+	cparams.op_type_num = 1;
+	cparams.ctx_set_num = ctx_set_num;
+	cparams.bmp = numa_allocate_nodemask();
+	if (!cparams.bmp) {
+		WD_ERR("failed to create nodemask!\n");
+		ret = -WD_ENOMEM;
+		goto out_freectx;
+	}
+
+	numa_bitmask_setall(cparams.bmp);
+
+	if (mode == CTX_MODE_SYNC)
+		ctx_set_num->sync_ctx_num = g_ctxnum;
+	else
+		ctx_set_num->async_ctx_num = g_ctxnum;
+
 	/* init2 */
 	switch (subtype) {
 	case RSA_TYPE:
-		return wd_rsa_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		return wd_rsa_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
 	case DH_TYPE:
-		return wd_dh_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		return wd_dh_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
 	case ECDH_TYPE:
 	case ECDSA_TYPE:
 	case SM2_TYPE:
 	case X25519_TYPE:
 	case X448_TYPE:
-		return wd_ecc_init2(alg_name, SCHED_POLICY_RR, TASK_HW);
+		return wd_ecc_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
 	default:
 		HPRE_TST_PRT("failed to parse alg subtype on uninit2!\n");
 		return -EINVAL;
 	}
+
+out_freectx:
+	free(ctx_set_num);
+
+	return ret;
 }
 
 /*-------------------------------uadk benchmark main code-------------------------------------*/
@@ -2130,7 +2263,7 @@ static void *ecc_uadk_sync_run(void *arg)
 	memset(&req,     0, sizeof(req));
 
 	memset(&setup,     0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2289,7 +2422,7 @@ static void *ecc_uadk_async_run(void *arg)
 	memset(&req,	 0, sizeof(req));
 
 	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE || subtype != X25519_TYPE) {
+	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
 		ret = get_ecc_curve(&setup, cid);
 		if (ret)
 			return NULL;
@@ -2603,6 +2736,7 @@ int hpre_uadk_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_thread_num = options->threads;
 	g_ctxnum = options->ctxnums;
 

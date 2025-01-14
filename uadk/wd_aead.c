@@ -21,10 +21,10 @@ static int g_aead_mac_len[WD_DIGEST_TYPE_MAX] = {
 };
 
 /* These algs's name need correct match with alg/mode type */
-static char *wd_aead_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
-	{"", "authenc(hmac(sha256),cbc(sm4))", "", "", "", "", "", "", "",
+static const char *wd_aead_alg_name[WD_CIPHER_ALG_TYPE_MAX][WD_CIPHER_MODE_TYPE_MAX] = {
+	{"", "authenc(generic,cbc(sm4))", "", "", "", "", "", "", "",
 	"ccm(sm4)", "gcm(sm4)"},
-	{"", "authenc(hmac(sha256),cbc(aes))", "", "", "", "", "", "", "",
+	{"", "authenc(generic,cbc(aes))", "", "", "", "", "", "", "",
 	"ccm(aes)", "gcm(aes)"}
 };
 
@@ -34,13 +34,12 @@ struct wd_aead_setting {
 	struct wd_sched sched;
 	struct wd_alg_driver *driver;
 	struct wd_async_msg_pool pool;
-	void *priv;
 	void *dlhandle;
 	void *dlh_list;
 } wd_aead_setting;
 
 struct wd_aead_sess {
-	char			*alg_name;
+	const char		*alg_name;
 	enum wd_cipher_alg	calg;
 	enum wd_cipher_mode	cmode;
 	enum wd_digest_type	dalg;
@@ -63,21 +62,47 @@ struct wd_aead_sess {
 struct wd_env_config wd_aead_env_config;
 static struct wd_init_attrs wd_aead_init_attrs;
 
-static void wd_aead_close_driver(void)
+static void wd_aead_close_driver(int init_type)
 {
+#ifndef WD_STATIC_DRV
+	if (init_type == WD_TYPE_V2) {
+		wd_dlclose_drv(wd_aead_setting.dlh_list);
+		return;
+	}
+
 	if (wd_aead_setting.dlhandle) {
 		wd_release_drv(wd_aead_setting.driver);
 		dlclose(wd_aead_setting.dlhandle);
 		wd_aead_setting.dlhandle = NULL;
 	}
+#else
+	wd_release_drv(wd_aead_setting.driver);
+	hisi_sec2_remove();
+#endif
 }
 
-static int wd_aead_open_driver(void)
+static int wd_aead_open_driver(int init_type)
 {
 	struct wd_alg_driver *driver = NULL;
 	const char *alg_name = "gcm(aes)";
+#ifndef WD_STATIC_DRV
 	char lib_path[PATH_MAX];
 	int ret;
+
+	if (init_type == WD_TYPE_V2) {
+		/*
+		 * Driver lib file path could set by env param.
+		 * then open tham by wd_dlopen_drv()
+		 * use NULL means dynamic query path
+		 */
+		wd_aead_setting.dlh_list = wd_dlopen_drv(NULL);
+		if (!wd_aead_setting.dlh_list) {
+			WD_ERR("fail to open driver lib files.\n");
+			return -WD_EINVAL;
+		}
+
+		return WD_SUCCESS;
+	}
 
 	ret = wd_get_lib_file_path("libhisi_sec.so", lib_path, false);
 	if (ret)
@@ -88,17 +113,21 @@ static int wd_aead_open_driver(void)
 		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
 		return -WD_EINVAL;
 	}
-
+#else
+	hisi_sec2_probe();
+	if (init_type == WD_TYPE_V2)
+		return WD_SUCCESS;
+#endif
 	driver = wd_request_drv(alg_name, false);
 	if (!driver) {
-		wd_aead_close_driver();
+		wd_aead_close_driver(WD_TYPE_V1);
 		WD_ERR("failed to get %s driver support\n", alg_name);
 		return -WD_EINVAL;
 	}
 
 	wd_aead_setting.driver = driver;
 
-	return 0;
+	return WD_SUCCESS;
 }
 
 static int aes_key_len_check(__u32 length)
@@ -126,7 +155,7 @@ static int cipher_key_len_check(enum wd_cipher_alg alg, __u16 length)
 		ret = aes_key_len_check(length);
 		break;
 	default:
-		WD_ERR("failed to set the cipher alg, alg = %d\n", alg);
+		WD_ERR("failed to set the cipher alg, alg = %u\n", alg);
 		return -WD_EINVAL;
 	}
 
@@ -214,7 +243,7 @@ int wd_aead_set_authsize(handle_t h_sess, __u16 authsize)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -253,7 +282,7 @@ int wd_aead_get_authsize(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -265,7 +294,7 @@ int wd_aead_get_maxauthsize(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (!sess || sess->dalg >= WD_DIGEST_TYPE_MAX) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL or invalid alg type!\n");
 		return -WD_EINVAL;
 	}
 
@@ -330,7 +359,7 @@ void wd_aead_free_sess(handle_t h_sess)
 	struct wd_aead_sess *sess = (struct wd_aead_sess *)h_sess;
 
 	if (unlikely(!sess)) {
-		WD_ERR("failed to check session parameter!\n");
+		WD_ERR("invalid: aead input sess is NULL!\n");
 		return;
 	}
 
@@ -343,9 +372,9 @@ void wd_aead_free_sess(handle_t h_sess)
 }
 
 static int wd_aead_param_check(struct wd_aead_sess *sess,
-	struct wd_aead_req *req)
+			       struct wd_aead_req *req)
 {
-	__u32 len;
+	__u64 len;
 	int ret;
 
 	if (unlikely(!sess || !req)) {
@@ -381,18 +410,11 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
-	if (unlikely(ret)) {
-		WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
-		return -WD_EINVAL;
-	}
-
 	if (req->data_fmt == WD_SGL_BUF) {
-		len = req->in_bytes + req->assoc_bytes;
+		len = (__u64)req->in_bytes + req->assoc_bytes;
 		ret = wd_check_datalist(req->list_src, len);
 		if (unlikely(ret)) {
-			WD_ERR("failed to check the src datalist, size = %u\n",
-				len);
+			WD_ERR("failed to check the src datalist, size = %llu\n", len);
 			return -WD_EINVAL;
 		}
 
@@ -400,6 +422,12 @@ static int wd_aead_param_check(struct wd_aead_sess *sess,
 		if (unlikely(ret)) {
 			WD_ERR("failed to check the dst datalist, size = %u\n",
 				req->out_bytes);
+			return -WD_EINVAL;
+		}
+	} else {
+		ret = wd_check_src_dst(req->src, req->in_bytes, req->dst, req->out_bytes);
+		if (unlikely(ret)) {
+			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;
 		}
 	}
@@ -437,8 +465,7 @@ static int wd_aead_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 		goto out_clear_sched;
 
 	ret = wd_alg_init_driver(&wd_aead_setting.config,
-					wd_aead_setting.driver,
-					&wd_aead_setting.priv);
+					wd_aead_setting.driver);
 	if (ret)
 		goto out_clear_pool;
 
@@ -468,7 +495,7 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	if (ret)
 		goto out_clear_init;
 
-	ret = wd_aead_open_driver();
+	ret = wd_aead_open_driver(WD_TYPE_V1);
 	if (ret)
 		goto out_clear_init;
 
@@ -481,28 +508,37 @@ int wd_aead_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 
 out_close_driver:
-	wd_aead_close_driver();
+	wd_aead_close_driver(WD_TYPE_V1);
 out_clear_init:
 	wd_alg_clear_init(&wd_aead_setting.status);
 	return ret;
 }
 
-static void wd_aead_uninit_nolock(void)
+static int wd_aead_uninit_nolock(void)
 {
+	enum wd_status status;
+
+	wd_alg_get_init(&wd_aead_setting.status, &status);
+	if (status == WD_UNINIT)
+		return -WD_EINVAL;
+
 	wd_uninit_async_request_pool(&wd_aead_setting.pool);
 	wd_clear_sched(&wd_aead_setting.sched);
 	wd_alg_uninit_driver(&wd_aead_setting.config,
-						 wd_aead_setting.driver,
-						 &wd_aead_setting.priv);
+			     wd_aead_setting.driver);
+
+	return 0;
 }
 
 void wd_aead_uninit(void)
 {
-	if (!wd_aead_setting.priv)
+	int ret;
+
+	ret = wd_aead_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_aead_uninit_nolock();
-	wd_aead_close_driver();
+	wd_aead_close_driver(WD_TYPE_V1);
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
 
@@ -521,7 +557,7 @@ static bool wd_aead_algs_check(const char *alg)
 }
 
 int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
-					 struct wd_ctx_params *ctx_params)
+		   struct wd_ctx_params *ctx_params)
 {
 	struct wd_ctx_nums aead_ctx_num[WD_DIGEST_CIPHER_DECRYPTION + 1] = {0};
 	struct wd_ctx_params aead_ctx_params = {0};
@@ -544,16 +580,9 @@ int wd_aead_init2_(char *alg, __u32 sched_type, int task_type,
 		goto out_uninit;
 	}
 
-	/*
-	 * Driver lib file path could set by env param.
-	 * then open them by wd_dlopen_drv()
-	 * use NULL means dynamic query path
-	 */
-	wd_aead_setting.dlh_list = wd_dlopen_drv(NULL);
-	if (!wd_aead_setting.dlh_list) {
-		WD_ERR("failed to open driver lib files.\n");
+	state = wd_aead_open_driver(WD_TYPE_V2);
+	if (state)
 		goto out_uninit;
-	}
 
 	while (ret != 0) {
 		memset(&wd_aead_setting.config, 0, sizeof(struct wd_ctx_config_internal));
@@ -606,7 +635,7 @@ out_params_uninit:
 out_driver:
 	wd_alg_drv_unbind(wd_aead_setting.driver);
 out_dlopen:
-	wd_dlclose_drv(wd_aead_setting.dlh_list);
+	wd_aead_close_driver(WD_TYPE_V2);
 out_uninit:
 	wd_alg_clear_init(&wd_aead_setting.status);
 	return ret;
@@ -614,13 +643,15 @@ out_uninit:
 
 void wd_aead_uninit2(void)
 {
-	if (!wd_aead_setting.priv)
+	int ret;
+
+	ret = wd_aead_uninit_nolock();
+	if (ret)
 		return;
 
-	wd_aead_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_aead_init_attrs);
 	wd_alg_drv_unbind(wd_aead_setting.driver);
-	wd_dlclose_drv(wd_aead_setting.dlh_list);
+	wd_aead_close_driver(WD_TYPE_V2);
 	wd_aead_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_aead_setting.status);
 }
@@ -665,7 +696,7 @@ static void fill_stream_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
 }
 
 static void fill_request_msg(struct wd_aead_msg *msg, struct wd_aead_req *req,
-			    struct wd_aead_sess *sess)
+			     struct wd_aead_sess *sess)
 {
 	memcpy(&msg->req, req, sizeof(struct wd_aead_req));
 
@@ -704,8 +735,8 @@ static int send_recv_sync(struct wd_ctx_internal *ctx,
 	msg_handle.recv = wd_aead_setting.driver->recv;
 
 	pthread_spin_lock(&ctx->lock);
-	ret = wd_handle_msg_sync(&msg_handle, ctx->ctx, msg, NULL,
-			  wd_aead_setting.config.epoll_en);
+	ret = wd_handle_msg_sync(wd_aead_setting.driver, &msg_handle, ctx->ctx,
+				 msg, NULL, wd_aead_setting.config.epoll_en);
 	pthread_spin_unlock(&ctx->lock);
 
 	return ret;
@@ -774,13 +805,13 @@ int wd_do_aead_async(handle_t h_sess, struct wd_aead_req *req)
 				     idx, (void **)&msg);
 	if (unlikely(msg_id < 0)) {
 		WD_ERR("failed to get msg from pool!\n");
-		return -WD_EBUSY;
+		return msg_id;
 	}
 
 	fill_request_msg(msg, req, sess);
 	msg->tag = msg_id;
 
-	ret = wd_aead_setting.driver->send(ctx->ctx, msg);
+	ret = wd_alg_driver_send(wd_aead_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -829,7 +860,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 	ctx = config->ctxs + idx;
 
 	do {
-		ret = wd_aead_setting.driver->recv(ctx->ctx, &resp_msg);
+		ret = wd_alg_driver_recv(wd_aead_setting.driver, ctx->ctx, &resp_msg);
 		if (ret == -WD_EAGAIN) {
 			return ret;
 		} else if (ret < 0) {
@@ -841,7 +872,7 @@ int wd_aead_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 		msg = wd_find_msg_in_pool(&wd_aead_setting.pool,
 					    idx, resp_msg.tag);
 		if (!msg) {
-			WD_ERR("failed to get msg from pool!\n");
+			WD_ERR("failed to find msg from pool!\n");
 			return -WD_EINVAL;
 		}
 
@@ -912,7 +943,7 @@ int wd_aead_ctx_num_init(__u32 node, __u32 type, __u32 num, __u8 mode)
 		return ret;
 
 	return wd_alg_env_init(&wd_aead_env_config, table,
-			      &wd_aead_ops, ARRAY_SIZE(table), &ctx_attr);
+			       &wd_aead_ops, ARRAY_SIZE(table), &ctx_attr);
 }
 
 void wd_aead_ctx_num_uninit(void)

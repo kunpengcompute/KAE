@@ -29,6 +29,9 @@
 
 #define ZSTD_MAX_SIZE			(1 << 17)
 
+/* Error status 0xe indicates that dest_avail_out insufficient */
+#define ERR_DSTLEN_OUT			0xe
+
 #define swab32(x) \
 	((((x) & 0x000000ff) << 24) | \
 	(((x) & 0x0000ff00) <<  8) | \
@@ -191,7 +194,7 @@ struct hisi_zip_ctx {
 static void dump_zip_msg(struct wd_comp_msg *msg)
 {
 	WD_ERR("dump zip message after a task error occurs.\n");
-	WD_ERR("avali_out:%u in_cons:%u produced:%u data_fmt:%d.\n",
+	WD_ERR("avali_out:%u in_cons:%u produced:%u data_fmt:%u.\n",
 		msg->avail_out, msg->in_cons, msg->produced, msg->data_fmt);
 }
 
@@ -510,6 +513,8 @@ static int fill_buf_lz77_zstd_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	fill_buf_type_sgl(sqe);
 
 	seq_start = get_seq_start_list(req);
+	if (unlikely(!seq_start))
+		return -WD_EINVAL;
 
 	data->literals_start = req->list_dst;
 	data->sequences_start = seq_start;
@@ -648,7 +653,7 @@ static int fill_comp_level_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_leve
 		sqe->dw9 = val;
 		break;
 	default:
-		WD_ERR("invalid: comp_lv(%d) is unsupport!\n", comp_lv);
+		WD_ERR("invalid: comp_lv(%u) is unsupport!\n", comp_lv);
 		return -WD_EINVAL;
 	}
 
@@ -785,11 +790,11 @@ static void hisi_zip_sqe_ops_adapt(handle_t h_qp)
 	}
 }
 
-static int hisi_zip_init(void *conf, void *priv)
+static int hisi_zip_init(struct wd_alg_driver *drv, void *conf)
 {
 	struct wd_ctx_config_internal *config = conf;
-	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
 	struct hisi_qm_priv qm_priv;
+	struct hisi_zip_ctx *priv;
 	handle_t h_qp = 0;
 	handle_t h_ctx;
 	__u32 i, j;
@@ -799,7 +804,11 @@ static int hisi_zip_init(void *conf, void *priv)
 		return -WD_EINVAL;
 	}
 
-	memcpy(&zip_ctx->config, config, sizeof(struct wd_ctx_config_internal));
+	priv = malloc(sizeof(struct hisi_zip_ctx));
+	if (!priv)
+		return -WD_EINVAL;
+
+	memcpy(&priv->config, config, sizeof(struct wd_ctx_config_internal));
 	/* allocate qp for each context */
 	for (i = 0; i < config->ctx_num; i++) {
 		h_ctx = config->ctxs[i].ctx;
@@ -817,6 +826,7 @@ static int hisi_zip_init(void *conf, void *priv)
 	}
 
 	hisi_zip_sqe_ops_adapt(h_qp);
+	drv->priv = priv;
 
 	return 0;
 out:
@@ -824,20 +834,27 @@ out:
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[j].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
+	free(priv);
 	return -WD_EINVAL;
 }
 
-static void hisi_zip_exit(void *priv)
+static void hisi_zip_exit(struct wd_alg_driver *drv)
 {
-	struct hisi_zip_ctx *zip_ctx = (struct hisi_zip_ctx *)priv;
-	struct wd_ctx_config_internal *config = &zip_ctx->config;
+	if(!drv || !drv->priv)
+		return;
+
+	struct hisi_zip_ctx *priv = (struct hisi_zip_ctx *)drv->priv;
+	struct wd_ctx_config_internal *config;
 	handle_t h_qp;
 	__u32 i;
 
+	config = &priv->config;
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
 	}
+	free(priv);
+	drv->priv = NULL;
 }
 
 static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
@@ -853,7 +870,7 @@ static int fill_zip_comp_sqe(struct hisi_qp *qp, struct wd_comp_msg *msg,
 
 	if (unlikely((hw_type <= HISI_QM_API_VER2_BASE && alg_type > WD_GZIP) ||
 		     (hw_type >= HISI_QM_API_VER3_BASE && alg_type >= WD_COMP_ALG_MAX))) {
-		WD_ERR("invalid: algorithm type is %d!\n", alg_type);
+		WD_ERR("invalid: algorithm type is %u!\n", alg_type);
 		return -WD_EINVAL;
 	}
 
@@ -917,7 +934,7 @@ static void free_hw_sgl(handle_t h_qp, struct hisi_zip_sqe *sqe,
 	}
 }
 
-static int hisi_zip_comp_send(handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_send(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *msg = comp_msg;
@@ -1025,8 +1042,12 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 
 	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
 		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
-		WD_ERR("bad request(ctx_st = 0x%x, status = 0x%x, algorithm type = %u)!\n",
-		       ctx_st, status, type);
+		if (status == ERR_DSTLEN_OUT)
+			WD_DEBUG("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
+				ctx_st, status, type);
+		else
+			WD_ERR("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
+				ctx_st, status, type);
 		recv_msg->req.status = WD_IN_EPARA;
 	}
 
@@ -1057,7 +1078,7 @@ static int parse_zip_sqe(struct hisi_qp *qp, struct hisi_zip_sqe *sqe,
 	return 0;
 }
 
-static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
+static int hisi_zip_comp_recv(struct wd_alg_driver *drv, handle_t ctx, void *comp_msg)
 {
 	struct hisi_qp *qp = wd_ctx_get_priv(ctx);
 	struct wd_comp_msg *recv_msg = comp_msg;
@@ -1079,7 +1100,6 @@ static int hisi_zip_comp_recv(handle_t ctx, void *comp_msg)
 	.alg_name = (zip_alg_name),\
 	.calc_type = UADK_ALG_HW,\
 	.priority = 100,\
-	.priv_size = sizeof(struct hisi_zip_ctx),\
 	.queue_num = ZIP_CTX_Q_NUM_DEF,\
 	.op_type_num = 2,\
 	.fallback = 0,\
@@ -1097,7 +1117,11 @@ static struct wd_alg_driver zip_alg_driver[] = {
 	GEN_ZIP_ALG_DRIVER("lz77_zstd"),
 };
 
+#ifdef WD_STATIC_DRV
+void hisi_zip_probe(void)
+#else
 static void __attribute__((constructor)) hisi_zip_probe(void)
+#endif
 {
 	int alg_num = ARRAY_SIZE(zip_alg_driver);
 	int i, ret;
@@ -1112,7 +1136,11 @@ static void __attribute__((constructor)) hisi_zip_probe(void)
 	}
 }
 
+#ifdef WD_STATIC_DRV
+void hisi_zip_remove(void)
+#else
 static void __attribute__((destructor)) hisi_zip_remove(void)
+#endif
 {
 	int alg_num = ARRAY_SIZE(zip_alg_driver);
 	int i;

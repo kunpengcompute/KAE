@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -21,17 +22,56 @@
 #include "v1/wd_util.h"
 
 #define BYTE_TO_BIT		8
+#define LOCK_TRY_CNT		(0x800000000U)
 
 void wd_spinlock(struct wd_lock *lock)
 {
-	while (__atomic_test_and_set(&lock->lock, __ATOMIC_ACQUIRE))
-		while (__atomic_load_n(&lock->lock, __ATOMIC_RELAXED))
-			;
+	int val = 0;
+
+	if (__atomic_compare_exchange_n(&lock->lock, &val, 1, 1,
+					      __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return;
+
+	do {
+		do {
+			val = __atomic_load_n(&lock->lock, __ATOMIC_RELAXED);
+		} while (val != 0);
+	} while (!__atomic_compare_exchange_n(&lock->lock, &val, 1, 1,
+					      __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
 }
 
 void wd_unspinlock(struct wd_lock *lock)
 {
-	__atomic_clear(&lock->lock, __ATOMIC_RELEASE);
+	__atomic_store_n(&lock->lock, 0, __ATOMIC_RELEASE);
+}
+
+void wd_fair_init(struct wd_fair_lock *lock)
+{
+	atomic_exchange_explicit(&lock->ticket, 0, memory_order_acq_rel);
+	atomic_exchange_explicit(&lock->serving, 0, memory_order_acq_rel);
+}
+
+void wd_fair_lock(struct wd_fair_lock *lock)
+{
+	__u32 my_ticket = atomic_fetch_add_explicit(&lock->ticket, 1,
+						  memory_order_acq_rel);
+	__u32 val = atomic_load_explicit(&lock->serving, memory_order_acquire);
+	__u64 cnt = 0;
+
+	if (val == my_ticket)
+		return;
+
+	do {
+		if (++cnt == LOCK_TRY_CNT)
+			WD_ERR("failed to get lock with %lu times\n", LOCK_TRY_CNT);
+
+		val = atomic_load_explicit(&lock->serving, memory_order_acquire);
+	} while (val != my_ticket);
+}
+
+void wd_fair_unlock(struct wd_fair_lock *lock)
+{
+	atomic_fetch_add_explicit(&lock->serving, 1, memory_order_acq_rel);
 }
 
 void *drv_iova_map(struct wd_queue *q, void *va, size_t sz)
@@ -75,7 +115,7 @@ int wd_alloc_id(__u8 *buf, __u32 size, __u32 *id, __u32 last_id, __u32 id_max)
 void wd_free_id(__u8 *buf, __u32 size, __u32 id, __u32 id_max)
 {
 	if (unlikely(id >= id_max)) {
-		WD_ERR("id error, id = %u!\n", id);
+		WD_ERR("id error, id(%u) >= id_max(%u)!\n", id, id_max);
 		return;
 	}
 
@@ -111,7 +151,7 @@ void wd_uninit_cookie_pool(struct wd_cookie_pool *pool)
 
 static void put_cookie(struct wd_cookie_pool *pool, const void *cookie)
 {
-	__u32 idx = ((uintptr_t)cookie - (uintptr_t)pool->cookies) /
+	__u32 idx = (__u32)((uintptr_t)cookie - (uintptr_t)pool->cookies) /
 		pool->cookies_size;
 
 	wd_free_id(pool->cstatus, pool->cookies_num, idx, pool->cookies_num);
@@ -183,7 +223,7 @@ int wd_burst_recv(struct wd_queue *q, void **resp, __u32 num)
 	return drv_recv(q, resp, num);
 }
 
-int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
+int wd_check_src_dst_ptr(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
 {
 	if (unlikely((in_bytes && !src) || (out_bytes && !dst)))
 		return -WD_EINVAL;

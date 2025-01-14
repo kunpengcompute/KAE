@@ -4,29 +4,32 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <linux/random.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <stdbool.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <signal.h>
-#include <linux/random.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
+#include <signal.h>
+#include <unistd.h>
 
-#define ACC_TST_PRT printf
-#define PROCESS_NUM	32
-#define THREADS_NUM	64
-#define MAX_CTX_NUM	64
+#define ACC_TST_PRT		printf
+#define PROCESS_NUM		32
+#define THREADS_NUM		64
+#define MAX_CTX_NUM		64
 #define MAX_TIME_SECONDS	128
-#define BYTES_TO_MB	20
-#define MAX_OPT_TYPE	6
-#define MAX_DATA_SIZE	(15 * 1024 * 1024)
-#define MAX_ALG_NAME 64
-#define ACC_QUEUE_SIZE	1024
+#define BYTES_TO_MB		20
+#define MAX_OPT_TYPE		6
+#define MAX_DATA_SIZE		(15 * 1024 * 1024)
+#define MAX_ALG_NAME		64
+#define ACC_QUEUE_SIZE		1024
+#define MAX_DEVICE_NAME		64
 
 #define MAX_BLOCK_NM		16384 /* BLOCK_NUM must 4 times of POOL_LENTH */
 #define MAX_POOL_LENTH		4096
@@ -35,14 +38,14 @@
 #define SEC_2_USEC		1000000
 #define HASH_ZISE		16
 
+#define SCHED_SINGLE		"sched_single"
+#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
+#define gettid()		syscall(__NR_gettid)
+
 typedef unsigned long long u64;
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
-
-#define SCHED_SINGLE "sched_single"
-#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
-#define gettid() syscall(__NR_gettid)
 
 /**
  * struct acc_option - Define the test acc app option list.
@@ -55,9 +58,10 @@ typedef unsigned char u8;
  * @latency: test packet running time
  */
 struct acc_option {
-	char algname[64];
+	char algname[MAX_ALG_NAME];
 	char algclass[64];
 	char engine[64];
+	char device[MAX_DEVICE_NAME];
 	u32 algtype;
 	u32 modetype;
 	u32 optype;
@@ -75,6 +79,8 @@ struct acc_option {
 	u32 complevel;
 	u32 inittype;
 	bool latency;
+	u32 sched_type;
+	int task_type;
 };
 
 enum acc_type {
@@ -102,6 +108,7 @@ enum alg_type {
 	SM2_TYPE,
 	X25519_TYPE,
 	X448_TYPE,
+	CIPHER_INSTR_TYPE,
 };
 
 enum sync_type {
@@ -169,6 +176,9 @@ enum test_alg {
 	DES3_192_CBC,
 	SM4_128_ECB,
 	SM4_128_CBC,
+	SM4_128_CBC_CS1,
+	SM4_128_CBC_CS2,
+	SM4_128_CBC_CS3,
 	SM4_128_CTR,
 	SM4_128_OFB,
 	SM4_128_CFB,
@@ -198,7 +208,6 @@ enum test_alg {
 	ALG_MAX,
 };
 
-extern void mdelay(u32 ms);
 extern int get_pid_cpu_time(u32 *ptime);
 extern void cal_perfermance_data(struct acc_option *option, u32 sttime);
 extern void time_start(u32 seconds);
@@ -210,6 +219,7 @@ extern void add_send_complete(void);
 extern u32 get_recv_time(void);
 extern void cal_avg_latency(u32 count);
 extern int get_alg_name(int alg, char *alg_name);
+extern void segmentfault_handler(int sig);
 
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);

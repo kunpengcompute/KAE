@@ -362,13 +362,13 @@ static handle_t sched_none_init(handle_t h_sched_ctx, void *sched_param)
 }
 
 static __u32 sched_none_pick_next_ctx(handle_t sched_ctx,
-		void *sched_key, const int sched_mode)
+				      void *sched_key, const int sched_mode)
 {
 	return 0;
 }
 
 static int sched_none_poll_policy(handle_t h_sched_ctx,
-		__u32 expect, __u32 *count)
+				  __u32 expect, __u32 *count)
 {
 	struct wd_sched_ctx *sched_ctx = (struct wd_sched_ctx *)h_sched_ctx;
 	__u32 loop_times = MAX_POLL_TIMES + expect;
@@ -403,7 +403,7 @@ static handle_t sched_single_init(handle_t h_sched_ctx, void *sched_param)
 }
 
 static __u32 sched_single_pick_next_ctx(handle_t sched_ctx,
-		void *sched_key, const int sched_mode)
+					void *sched_key, const int sched_mode)
 {
 #define CTX_ASYNC		1
 #define CTX_SYNC		0
@@ -428,9 +428,9 @@ static int sched_single_poll_policy(handle_t h_sched_ctx,
 	}
 
 	while (loop_times > 0) {
-		/* Default async mode use ctx 0 */
+		/* Default async mode use ctx 1 */
 		loop_times--;
-		ret = sched_ctx->poll_func(0, 1, &poll_num);
+		ret = sched_ctx->poll_func(1, 1, &poll_num);
 		if ((ret < 0) && (ret != -EAGAIN))
 			return ret;
 		else if (ret == -EAGAIN)
@@ -453,7 +453,7 @@ static struct wd_sched sched_table[SCHED_POLICY_BUTT] = {
 		.poll_policy = session_sched_poll_policy,
 	}, {
 		.name = "None scheduler",
-		.sched_policy = SCHED_POLICY_SINGLE,
+		.sched_policy = SCHED_POLICY_NONE,
 		.sched_init = sched_none_init,
 		.pick_next_ctx = sched_none_pick_next_ctx,
 		.poll_policy = sched_none_poll_policy,

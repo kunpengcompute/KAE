@@ -111,6 +111,11 @@ struct wd_lock {
 	__u8 lock;
 };
 
+struct wd_fair_lock {
+	__u32 ticket;
+	__u32 serving;
+};
+
 struct wd_ss_region {
 	void *va;
 	unsigned long long pa;
@@ -383,21 +388,18 @@ struct wcrypto_ecc_out {
 static inline void wd_reg_write(void *reg_addr, uint32_t value)
 {
 	*((uint32_t *)reg_addr) = value;
-	wmb(); /* load fence */
 }
 
 static inline uint32_t wd_reg_read(void *reg_addr)
 {
-	uint32_t temp;
-
-	temp = *((uint32_t *)reg_addr);
-	rmb(); /* load fence */
-
-	return temp;
+	return *((uint32_t *)reg_addr);
 }
 
 void wd_spinlock(struct wd_lock *lock);
 void wd_unspinlock(struct wd_lock *lock);
+void wd_fair_init(struct wd_fair_lock *lock);
+void wd_fair_lock(struct wd_fair_lock *lock);
+void wd_fair_unlock(struct wd_fair_lock *lock);
 void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size);
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
 		       enum uacce_qfrt qfrt, size_t size);
@@ -421,6 +423,6 @@ void drv_set_sgl_pri(struct wd_sgl *sgl, void *priv);
 void *drv_get_sgl_pri(struct wd_sgl *sgl);
 struct wd_mm_br *drv_get_br(void *pool);
 void wd_sgl_memset(struct wd_sgl *sgl, int ch);
-int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
+int wd_check_src_dst_ptr(void *src, __u32 in_bytes, void *dst, __u32 out_bytes);
 
 #endif

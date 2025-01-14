@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.6], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.8], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -18,7 +18,11 @@ AM_PROG_AR
 AC_PROG_LIBTOOL
 AM_PROG_LIBTOOL
 LT_INIT
+AC_SUBST([hardcode_into_libs], [no])
 AM_PROG_CC_C_O
+
+# Support assembler
+AM_PROG_AS
 
 AC_ARG_ENABLE([debug-log],
 	AS_HELP_STRING([--enable-debug-log], [enable debug logging globally]),

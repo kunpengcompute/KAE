@@ -504,7 +504,7 @@ void *wd_ctx_mmap_qfr(handle_t h_ctx, enum uacce_qfrt qfrt)
 
 	addr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, off);
 	if (addr == MAP_FAILED) {
-		WD_ERR("failed to mmap, qfrt = %d, err = %d!\n", qfrt, -errno);
+		WD_ERR("failed to mmap, qfrt = %u, err = %d!\n", qfrt, -errno);
 		return NULL;
 	}
 
@@ -938,9 +938,6 @@ void wd_release_alg_cap(struct wd_capability *head)
 		cap_pnext = cap_pnext->next;
 		free(cap_node);
 	}
-
-	if (head)
-		free(head);
 }
 
 struct wd_capability *wd_get_alg_cap(void)

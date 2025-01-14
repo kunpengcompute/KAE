@@ -297,7 +297,7 @@ static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("cipher input alg err, alg is %d.\n", setup->alg);
+		WD_ERR("cipher input alg err, alg is %u.\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -432,7 +432,7 @@ static int param_check(struct wcrypto_cipher_ctx *c_ctx,
 			return -WD_EINVAL;
 		}
 
-		ret = wd_check_src_dst(c_opdata[i]->in, c_opdata[i]->in_bytes, c_opdata[i]->out, c_opdata[i]->out_bytes);
+		ret = wd_check_src_dst_ptr(c_opdata[i]->in, c_opdata[i]->in_bytes, c_opdata[i]->out, c_opdata[i]->out_bytes);
 		if (unlikely(ret)) {
 			WD_ERR("invalid: src/dst addr is NULL when src/dst size is non-zero!\n");
 			return -WD_EINVAL;

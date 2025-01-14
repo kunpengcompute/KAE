@@ -214,10 +214,10 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 	bool is_union = false;
 	u8 keysize = 0;
 	u8 ivsize = 0;
-	u8 dmode;
-	u8 dalg;
-	u8 mode;
-	u8 alg;
+	u8 dmode = 0;
+	u8 dalg = 0;
+	u8 mode = 0;
+	u8 alg = 0;
 
 	switch(algtype) {
 	case AES_128_ECB:
@@ -412,6 +412,24 @@ static int sec_wd_param_parse(thread_data *tddata, struct acc_option *options)
 		mode = WCRYPTO_CIPHER_CBC;
 		alg = WCRYPTO_CIPHER_SM4;
 		break;
+	case SM4_128_CBC_CS1:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS1;
+		alg = WCRYPTO_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS2:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS2;
+		alg = WCRYPTO_CIPHER_SM4;
+		break;
+	case SM4_128_CBC_CS3:
+		keysize = 16;
+		ivsize = 16;
+		mode = WCRYPTO_CIPHER_CBC_CS3;
+		alg = WCRYPTO_CIPHER_SM4;
+		break;
 	case SM4_128_CTR:
 		keysize = 16;
 		ivsize = 16;
@@ -600,6 +618,14 @@ static int init_wd_queue(struct acc_option *options)
 		/* nodemask need to    be clean */
 		g_thread_queue.bd_res[i].queue->node_mask = 0x0;
 		memset(g_thread_queue.bd_res[i].queue->dev_path, 0x0, PATH_STR_SIZE);
+		if (strlen(options->device) != 0) {
+			ret = snprintf(g_thread_queue.bd_res[i].queue->dev_path,
+					PATH_STR_SIZE, "%s", options->device);
+			if (ret < 0) {
+				WD_ERR("failed to copy dev file path!\n");
+				return -WD_EINVAL;
+			}
+		}
 
 		ret = wd_request_queue(g_thread_queue.bd_res[i].queue);
 		if (ret) {
@@ -1604,6 +1630,7 @@ int sec_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_alg = options->subtype;
 	g_algtype = options->algtype;
 	g_optype = options->optype;

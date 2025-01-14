@@ -163,7 +163,7 @@ static bool is_exit(struct test_sec_pthread_dt *pdata)
 	return false;
 }
 
-void hexdump(char *buf, int num)
+void hexdump(const char *buf, int num)
 {
 	int i;
 
@@ -1053,7 +1053,7 @@ static int sec_cipher_sync_test(int thread_num, __u64 lcore_mask,
 	    setup.block_num = MAX_BLOCK_NM;
 	    setup.align_size = SQE_SIZE;
 
-	    SEC_TST_PRT("create pool memory: %d\n", MAX_BLOCK_NM * setup.block_size);
+	    SEC_TST_PRT("create pool memory: %u\n", MAX_BLOCK_NM * setup.block_size);
 	    pool[j] = wd_blkpool_create(&q[j], &setup);
 	    if (!pool[j]) {
 			SEC_TST_PRT("%s(): create %dth pool fail!\n", __func__, j);
@@ -1462,7 +1462,7 @@ static int sec_cipher_async_test(int thread_num, __u64 lcore_mask,
 		SEC_TST_PRT("%s(): create pool fail!\n", __func__);
 		return -ENOMEM;
 	}
-	/* frist create the async poll thread! */
+	/* first create the async poll thread! */
 	test_thrds_data[0].pool = pool;
 	test_thrds_data[0].q = &q;
 	test_thrds_data[0].thread_num = 1;
@@ -2069,7 +2069,7 @@ static int sec_aead_async_test(int thd_num, __u64 lcore_mask,
 		SEC_TST_PRT("%s(): create pool fail!\n", __func__);
 		return -ENOMEM;
 	}
-	/* frist create the async poll thread! */
+	/* first create the async poll thread! */
 	test_thrds_data[0].pool = pool;
 	test_thrds_data[0].q = &q;
 	test_thrds_data[0].thread_num = 1;
@@ -2082,7 +2082,6 @@ static int sec_aead_async_test(int thd_num, __u64 lcore_mask,
 		return ret;
 	}
 
-	//Ïß³ÌÊý Óë°óºË
 	if (_get_one_bits(lcore_mask) == 0 &&
 		 _get_one_bits(hcore_mask) == 0)
 		cnt = thd_num;

@@ -19,7 +19,7 @@
 #define WD_BALANCE_THRHD		1280
 #define WD_RECV_MAX_CNT_SLEEP		60000000
 #define WD_RECV_MAX_CNT_NOSLEEP		200000000
-#define PRIVILEGE_FLAG			600
+#define PRIVILEGE_FLAG			0600
 #define MIN(a, b)			((a) > (b) ? (b) : (a))
 #define MAX(a, b)			((a) > (b) ? (a) : (b))
 
@@ -27,6 +27,10 @@
 #define WD_INIT_RETRY_TIMES		10000
 #define US2S(us)			((us) >> 20)
 #define WD_INIT_RETRY_TIMEOUT		3
+
+#define WD_SOFT_CTX_NUM		2
+#define WD_SOFT_SYNC_CTX		0
+#define WD_SOFT_ASYNC_CTX		1
 
 #define WD_DRV_LIB_DIR			"uadk"
 
@@ -58,6 +62,7 @@ static const char *wd_env_name[WD_TYPE_MAX] = {
 	"WD_RSA_CTX_NUM",
 	"WD_DH_CTX_NUM",
 	"WD_ECC_CTX_NUM",
+	"WD_AGG_CTX_NUM",
 };
 
 struct async_task {
@@ -87,8 +92,13 @@ struct drv_lib_list {
 };
 
 struct acc_alg_item {
-	char *name;
-	char *algtype;
+	const char *name;
+	const char *algtype;
+};
+
+struct wd_ce_ctx {
+	char *drv_name;
+	void *priv;
 };
 
 static struct acc_alg_item alg_options[] = {
@@ -96,6 +106,7 @@ static struct acc_alg_item alg_options[] = {
 	{"gzip", "gzip"},
 	{"deflate", "deflate"},
 	{"lz77_zstd", "lz77_zstd"},
+	{"hashagg", "hashagg"},
 
 	{"rsa", "rsa"},
 	{"dh", "dh"},
@@ -132,8 +143,8 @@ static struct acc_alg_item alg_options[] = {
 	{"gcm(aes)", "aead"},
 	{"ccm(sm4)", "aead"},
 	{"gcm(sm4)", "aead"},
-	{"authenc(hmac(sha256),cbc(aes))", "aead"},
-	{"authenc(hmac(sha256),cbc(sm4))", "aead"},
+	{"authenc(generic,cbc(aes))", "aead"},
+	{"authenc(generic,cbc(sm4))", "aead"},
 
 	{"sm3", "digest"},
 	{"md5", "digest"},
@@ -229,7 +240,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			ret = -WD_EINVAL;
 			goto err_out;
 		}
-
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
@@ -411,8 +421,15 @@ void wd_uninit_async_request_pool(struct wd_async_msg_pool *pool)
 void *wd_find_msg_in_pool(struct wd_async_msg_pool *pool,
 			  int ctx_idx, __u32 tag)
 {
-	struct msg_pool *p = &pool->pools[ctx_idx];
-	__u32 msg_num = p->msg_num;
+	struct msg_pool *p;
+	__u32 msg_num;
+
+	if ((__u32)ctx_idx > pool->pool_num) {
+		WD_ERR("invalid: message ctx id index is %d!\n", ctx_idx);
+		return NULL;
+	}
+	p = &pool->pools[ctx_idx];
+	msg_num = p->msg_num;
 
 	/* tag value start from 1 */
 	if (tag == 0 || tag > msg_num) {
@@ -431,6 +448,10 @@ int wd_get_msg_from_pool(struct wd_async_msg_pool *pool,
 	__u32 msg_size = p->msg_size;
 	__u32 cnt = 0;
 	__u32 idx = p->tail;
+
+	/* Scheduler set a sync ctx */
+	if (!msg_num)
+		return -WD_EINVAL;
 
 	while (__atomic_test_and_set(&p->used[idx], __ATOMIC_ACQUIRE)) {
 		idx = (idx + 1) % msg_num;
@@ -467,10 +488,10 @@ int wd_check_src_dst(void *src, __u32 in_bytes, void *dst, __u32 out_bytes)
 	return 0;
 }
 
-int wd_check_datalist(struct wd_datalist *head, __u32 size)
+int wd_check_datalist(struct wd_datalist *head, __u64 size)
 {
 	struct wd_datalist *tmp = head;
-	__u32 list_size = 0;
+	__u64 list_size = 0;
 
 	while (tmp) {
 		if (tmp->data)
@@ -805,7 +826,7 @@ static void wd_free_ctx_table(struct wd_env_config *config)
 }
 
 static int get_and_fill_ctx_num(struct wd_env_config_per_numa *config_numa,
-				     const char *p, int ctx_num)
+				const char *p, int ctx_num)
 {
 	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
 	const char *type;
@@ -883,7 +904,7 @@ static int get_start_ctx_index(struct wd_env_config *config,
 }
 
 static void set_ctx_index(struct wd_env_config_per_numa *config_numa,
-			      __u8 mode, int *start)
+			  __u8 mode, int *start)
 {
 	struct wd_ctx_range **ctx_table = config_numa->ctx_table;
 	int size, i, sum = 0;
@@ -1204,6 +1225,7 @@ err_free_ctxs:
 	free(ctx_config->ctxs);
 err_free_ctx_config:
 	free(ctx_config);
+	config->ctx_config = NULL;
 	return ret;
 }
 
@@ -1543,8 +1565,8 @@ static void wd_uninit_one_task_queue(struct async_task_queue *task_queue)
 }
 
 static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
-				struct wd_env_config_per_numa *config_numa,
-				void *alg_poll_ctx)
+						 struct wd_env_config_per_numa *config_numa,
+						 void *alg_poll_ctx)
 {
 	struct async_task_queue *task_queue, *queue_head;
 	int i, j, ret;
@@ -1570,26 +1592,21 @@ static int wd_init_async_polling_thread_per_numa(struct wd_env_config *config,
 	task_queue = queue_head;
 	for (i = 0; i < num; task_queue++, i++) {
 		ret = wd_init_one_task_queue(task_queue, alg_poll_ctx);
-		if (ret)
-			goto uninit_queue;
+		if (ret) {
+			for (j = 0; j < i; task_queue++, j++)
+				wd_uninit_one_task_queue(task_queue);
+			free(queue_head);
+			return ret;
+		}
 	}
 
 	config_numa->async_task_queue_array = (void *)queue_head;
 
 	return 0;
-
-uninit_queue:
-	task_queue = queue_head;
-	for (j = 0; j < i; task_queue++, j++)
-		wd_uninit_one_task_queue(task_queue);
-
-	free(queue_head);
-
-	return ret;
 }
 
 static void wd_uninit_async_polling_thread_per_numa(struct wd_env_config *cfg,
-				struct wd_env_config_per_numa *config_numa)
+						    struct wd_env_config_per_numa *config_numa)
 {
 	struct async_task_queue *task_queue, *head;
 	double num;
@@ -1804,8 +1821,8 @@ int wd_set_epoll_en(const char *var_name, bool *epoll_en)
 	return 0;
 }
 
-int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
-		       void *msg, __u64 *balance, bool epoll_en)
+int wd_handle_msg_sync(struct wd_alg_driver *drv, struct wd_msg_handle *msg_handle,
+		       handle_t ctx, void *msg, __u64 *balance, bool epoll_en)
 {
 	__u64 timeout = WD_RECV_MAX_CNT_NOSLEEP;
 	__u64 rx_cnt = 0;
@@ -1814,7 +1831,7 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 	if (balance)
 		timeout = WD_RECV_MAX_CNT_SLEEP;
 
-	ret = msg_handle->send(ctx, msg);
+	ret = msg_handle->send(drv, ctx, msg);
 	if (unlikely(ret < 0)) {
 		WD_ERR("failed to send msg to hw, ret = %d!\n", ret);
 		return ret;
@@ -1823,24 +1840,28 @@ int wd_handle_msg_sync(struct wd_msg_handle *msg_handle, handle_t ctx,
 	do {
 		if (epoll_en) {
 			ret = wd_ctx_wait(ctx, POLL_TIME);
-			if (ret < 0)
+			if (unlikely(ret < 0))
 				WD_ERR("wd ctx wait timeout(%d)!\n", ret);
 		}
 
-		ret = msg_handle->recv(ctx, msg);
-		if (ret == -WD_EAGAIN) {
-			if (unlikely(rx_cnt++ >= timeout)) {
-				WD_ERR("failed to recv msg: timeout!\n");
-				return -WD_ETIMEDOUT;
+		ret = msg_handle->recv(drv, ctx, msg);
+		if (ret != -WD_EAGAIN) {
+			if (unlikely(ret < 0)) {
+				WD_ERR("failed to recv msg: error = %d!\n", ret);
+				return ret;
 			}
-
-			if (balance && *balance > WD_BALANCE_THRHD)
-				usleep(1);
-		} else if (unlikely(ret < 0)) {
-			WD_ERR("failed to recv msg: error = %d!\n", ret);
-			return ret;
+			break;
 		}
-	} while (ret < 0);
+
+		rx_cnt++;
+		if (unlikely(rx_cnt >= timeout)) {
+			WD_ERR("failed to recv msg: timeout!\n");
+			return -WD_ETIMEDOUT;
+		}
+
+		if (balance && *balance > WD_BALANCE_THRHD)
+			usleep(1);
+	} while (1);
 
 	if (balance)
 		*balance = rx_cnt;
@@ -1932,15 +1953,9 @@ static void wd_alg_uninit_fallback(struct wd_alg_driver *fb_driver)
 }
 
 int wd_alg_init_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
+		       struct wd_alg_driver *driver)
 {
-	void *priv;
 	int ret;
-
-	/* Init ctx related resources in specific driver */
-	priv = calloc(1, driver->priv_size);
-	if (!priv)
-		return -WD_ENOMEM;
 
 	if (!driver->init) {
 		driver->fallback = 0;
@@ -1949,7 +1964,7 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 		goto err_alloc;
 	}
 
-	ret = driver->init(config, priv);
+	ret = driver->init(driver, config);
 	if (ret < 0) {
 		WD_ERR("driver init failed.\n");
 		goto err_alloc;
@@ -1962,32 +1977,23 @@ int wd_alg_init_driver(struct wd_ctx_config_internal *config,
 			WD_ERR("soft alg driver init failed.\n");
 		}
 	}
-	*drv_priv = priv;
 
 	return 0;
 
 err_alloc:
-	free(priv);
 	return ret;
 }
 
 void wd_alg_uninit_driver(struct wd_ctx_config_internal *config,
-	struct wd_alg_driver *driver, void **drv_priv)
+			  struct wd_alg_driver *driver)
 {
-	void *priv = *drv_priv;
 
-	driver->exit(priv);
+	driver->exit(driver);
 	/* Ctx config just need clear once */
-	if (driver->calc_type == UADK_ALG_HW)
-		wd_clear_ctx_config(config);
+	wd_clear_ctx_config(config);
 
 	if (driver->fallback)
 		wd_alg_uninit_fallback((struct wd_alg_driver *)driver->fallback);
-
-	if (priv) {
-		free(priv);
-		*drv_priv = NULL;
-	}
 }
 
 void wd_dlclose_drv(void *dlh_list)
@@ -2009,7 +2015,7 @@ void wd_dlclose_drv(void *dlh_list)
 }
 
 static void add_lib_to_list(struct drv_lib_list *head,
-				  struct drv_lib_list *node)
+			    struct drv_lib_list *node)
 {
 	struct drv_lib_list *tmp = head;
 
@@ -2126,8 +2132,9 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		return -WD_ENOMEM;
 	}
 
+	/* Only hw driver support environment variable */
 	var_s = secure_getenv(env_name);
-	if (var_s && strlen(var_s)) {
+	if (var_s && strlen(var_s) && driver->calc_type == UADK_ALG_HW) {
 		/* environment variable has the highest priority */
 		ret = wd_env_set_ctx_nums(driver->alg_name, env_name, var_s,
 					  ctx_params, max_op_type);
@@ -2174,7 +2181,7 @@ static void dladdr_empty(void)
 {
 }
 
-int wd_get_lib_file_path(char *lib_file, char *lib_path, bool is_dir)
+int wd_get_lib_file_path(const char *lib_file, char *lib_path, bool is_dir)
 {
 	char file_path[PATH_MAX] = {0};
 	char path[PATH_MAX] = {0};
@@ -2293,7 +2300,7 @@ free_list:
 	return NULL;
 }
 
-struct wd_alg_driver *wd_alg_drv_bind(int task_type, char *alg_name)
+struct wd_alg_driver *wd_alg_drv_bind(int task_type, const char *alg_name)
 {
 	struct wd_alg_driver *set_driver = NULL;
 	struct wd_alg_driver *drv;
@@ -2388,7 +2395,7 @@ static __u32 wd_get_ctx_numbers(struct wd_ctx_params ctx_params, int end)
 	return count;
 }
 
-struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bitmask *bmp)
+static struct uacce_dev_list *wd_get_usable_list(struct uacce_dev_list *list, struct bitmask *bmp)
 {
 	struct uacce_dev_list *p, *node, *result = NULL;
 	struct uacce_dev *dev;
@@ -2631,16 +2638,92 @@ out_freelist:
 	return ret;
 }
 
+static int wd_alg_ce_ctx_init(struct wd_init_attrs *attrs)
+{
+	struct wd_ctx_config *ctx_config = attrs->ctx_config;
+
+	ctx_config->ctx_num = 1;
+	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
+	if (!ctx_config->ctxs) {
+		WD_ERR("failed to alloc ctxs!\n");
+		return -WD_ENOMEM;
+	}
+
+	ctx_config->ctxs[0].ctx = (handle_t)calloc(1, sizeof(struct wd_ce_ctx));
+	if (!ctx_config->ctxs[0].ctx) {
+		free(ctx_config->ctxs);
+		return -WD_ENOMEM;
+	}
+
+	return WD_SUCCESS;
+}
+
+static void wd_alg_ce_ctx_uninit(struct wd_ctx_config *ctx_config)
+{
+	__u32 i;
+
+	for (i = 0; i < ctx_config->ctx_num; i++) {
+		if (ctx_config->ctxs[i].ctx) {
+			free((struct wd_ce_ctx *)ctx_config->ctxs[i].ctx);
+			ctx_config->ctxs[i].ctx = 0;
+		}
+	}
+
+	free(ctx_config->ctxs);
+}
+
 static void wd_alg_ctx_uninit(struct wd_ctx_config *ctx_config)
 {
 	__u32 i;
 
-	for (i = 0; i < ctx_config->ctx_num; i++)
+	for (i = 0; i < ctx_config->ctx_num; i++) {
 		if (ctx_config->ctxs[i].ctx) {
 			wd_release_ctx(ctx_config->ctxs[i].ctx);
 			ctx_config->ctxs[i].ctx = 0;
+		}
 	}
 
+	free(ctx_config->ctxs);
+}
+
+static int wd_alg_init_sve_ctx(struct wd_ctx_config *ctx_config)
+{
+	struct wd_soft_ctx *ctx_sync, *ctx_async;
+
+	ctx_config->ctx_num = WD_SOFT_CTX_NUM;
+	ctx_config->ctxs = calloc(ctx_config->ctx_num, sizeof(struct wd_ctx));
+	if (!ctx_config->ctxs)
+		return -WD_ENOMEM;
+
+	ctx_sync = calloc(1, sizeof(struct wd_soft_ctx));
+	if (!ctx_sync)
+		goto free_ctxs;
+
+	ctx_config->ctxs[WD_SOFT_SYNC_CTX].op_type = 0;
+	ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx_mode = CTX_MODE_SYNC;
+	ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx = (handle_t)ctx_sync;
+
+	ctx_async = calloc(1, sizeof(struct wd_soft_ctx));
+	if (!ctx_async)
+		goto free_ctx_sync;
+
+	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].op_type = 0;
+	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx_mode = CTX_MODE_ASYNC;
+	ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx = (handle_t)ctx_async;
+
+	return 0;
+
+free_ctx_sync:
+	free(ctx_sync);
+free_ctxs:
+	free(ctx_config->ctxs);
+	return -WD_ENOMEM;
+}
+
+static void wd_alg_uninit_sve_ctx(struct wd_ctx_config *ctx_config)
+{
+	free((struct wd_soft_ctx *)ctx_config->ctxs[WD_SOFT_ASYNC_CTX].ctx);
+	free((struct wd_soft_ctx *)ctx_config->ctxs[WD_SOFT_SYNC_CTX].ctx);
 	free(ctx_config->ctxs);
 }
 
@@ -2652,9 +2735,9 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	struct wd_ctx_config *ctx_config = NULL;
 	struct wd_sched *alg_sched = NULL;
 	char alg_type[CRYPTO_MAX_ALG_NAME];
-	char *alg = attrs->alg;
 	int driver_type = UADK_ALG_HW;
-	int ret;
+	const char *alg = attrs->alg;
+	int ret = -WD_EINVAL;
 
 	if (!attrs->ctx_params)
 		return -WD_EINVAL;
@@ -2665,28 +2748,35 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	switch (driver_type) {
 	case UADK_ALG_SOFT:
 	case UADK_ALG_CE_INSTR:
-		/* No need to	alloc resource */
-		if (sched_type != SCHED_POLICY_NONE)
-			return -WD_EINVAL;
+		ctx_config = calloc(1, sizeof(*ctx_config));
+		if (!ctx_config) {
+			WD_ERR("fail to alloc ctx config\n");
+			return -WD_ENOMEM;
+		}
+		attrs->ctx_config = ctx_config;
 
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_NONE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
-			return -WD_EINVAL;
+			goto out_ctx_config;
 		}
+
 		attrs->sched = alg_sched;
 
-		ret = wd_sched_rr_instance(alg_sched, NULL);
+		ret = wd_alg_ce_ctx_init(attrs);
 		if (ret) {
-			WD_ERR("fail to instance scheduler\n");
+			WD_ERR("fail to init ce ctx\n");
 			goto out_freesched;
 		}
+
+		ret = alg_init_func(ctx_config, alg_sched);
+		if (ret)
+			goto out_pre_init;
+
 		break;
 	case UADK_ALG_SVE_INSTR:
-		/* Todo lock cpu core */
-		if (sched_type != SCHED_POLICY_SINGLE)
-			return -WD_EINVAL;
-
+		/* Use default sched_type to alloc scheduler */
 		alg_sched = wd_sched_rr_alloc(SCHED_POLICY_SINGLE, 1, 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to alloc scheduler\n");
@@ -2694,9 +2784,23 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 		}
 		attrs->sched = alg_sched;
 
-		ret = wd_sched_rr_instance(alg_sched, NULL);
+		ctx_config = calloc(1, sizeof(*ctx_config));
+		if (!ctx_config) {
+			WD_ERR("fail to alloc ctx config\n");
+			goto out_freesched;
+		}
+		attrs->ctx_config = ctx_config;
+
+		ret = wd_alg_init_sve_ctx(ctx_config);
 		if (ret) {
-			WD_ERR("fail to instance scheduler\n");
+			WD_ERR("fail to init sve ctx!\n");
+			goto out_freesched;
+		}
+
+		ctx_config->cap = attrs->ctx_params->cap;
+		ret = alg_init_func(ctx_config, alg_sched);
+		if (ret) {
+			wd_alg_uninit_sve_ctx(ctx_config);
 			goto out_freesched;
 		}
 		break;
@@ -2715,7 +2819,6 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 						  numa_max_node() + 1, alg_poll_func);
 		if (!alg_sched) {
 			WD_ERR("fail to instance scheduler\n");
-			ret = -WD_EINVAL;
 			goto out_ctx_config;
 		}
 		attrs->sched = alg_sched;
@@ -2739,7 +2842,10 @@ int wd_alg_attrs_init(struct wd_init_attrs *attrs)
 	return 0;
 
 out_pre_init:
-	wd_alg_ctx_uninit(ctx_config);
+	if (driver_type == UADK_ALG_CE_INSTR || driver_type == UADK_ALG_SOFT)
+		wd_alg_ce_ctx_uninit(ctx_config);
+	else
+		wd_alg_ctx_uninit(ctx_config);
 out_freesched:
 	wd_sched_rr_release(alg_sched);
 out_ctx_config:
@@ -2752,10 +2858,28 @@ void wd_alg_attrs_uninit(struct wd_init_attrs *attrs)
 {
 	struct wd_ctx_config *ctx_config = attrs->ctx_config;
 	struct wd_sched *alg_sched = attrs->sched;
+	int driver_type = attrs->driver->calc_type;
 
-	if (ctx_config) {
-		wd_alg_ctx_uninit(ctx_config);
-		free(ctx_config);
+	if (!ctx_config) {
+		wd_sched_rr_release(alg_sched);
+		return;
 	}
+
+	switch (driver_type) {
+	case UADK_ALG_SOFT:
+	case UADK_ALG_CE_INSTR:
+		wd_alg_ce_ctx_uninit(ctx_config);
+		break;
+	case UADK_ALG_SVE_INSTR:
+		wd_alg_uninit_sve_ctx(ctx_config);
+		break;
+	case UADK_ALG_HW:
+		wd_alg_ctx_uninit(ctx_config);
+		break;
+	default:
+		break;
+	}
+
+	free(ctx_config);
 	wd_sched_rr_release(alg_sched);
 }

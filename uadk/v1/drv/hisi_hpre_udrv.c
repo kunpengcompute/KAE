@@ -18,16 +18,11 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <assert.h>
 #include <string.h>
 #include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
-#include "config.h"
 #include "v1/wd_util.h"
 #include "hisi_hpre_udrv.h"
 
@@ -212,13 +207,13 @@ static int qm_fill_rsa_pubkey(struct wcrypto_rsa_pubkey *pubkey, void **data)
 				wd_e->bsize, wd_e->dsize, "rsa pubkey e");
 	if (unlikely(ret))
 		return ret;
-	wd_e->dsize = wd_e->dsize;
+	wd_e->dsize = wd_e->bsize;
 
 	ret = qm_crypto_bin_to_hpre_bin(wd_n->data, (const char *)wd_n->data,
 				wd_n->bsize, wd_n->dsize, "rsa pubkey n");
 	if (unlikely(ret))
 		return ret;
-	wd_n->dsize = wd_n->dsize;
+	wd_n->dsize = wd_n->bsize;
 
 	*data = wd_e->data;
 	return (int)(wd_n->bsize + wd_e->bsize);
@@ -495,12 +490,10 @@ int qm_fill_rsa_sqe(void *message, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	hw_msg->task_len1 = msg->key_bytes / BYTE_BITS - 0x1;
 
-	/* prepare rsa key */
 	ret = qm_rsa_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare in/out put */
 	ret = qm_rsa_prepare_iot(msg, q, hw_msg);
 	if (unlikely(ret)) {
 		rsa_key_unmap(msg, q, hw_msg, va, size);
@@ -540,7 +533,7 @@ int qm_parse_rsa_sqe(void *msg, const struct qm_queue_info *info,
 	kbytes = rsa_msg->key_bytes;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "rsa",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			rsa_msg->result = WD_EINVAL;
 		} else { /* Need to identify which hw err happened */
@@ -581,13 +574,11 @@ static int fill_dh_g_param(struct wd_queue *q, struct wcrypto_dh_msg *msg,
 	int ret;
 
 	ret = qm_crypto_bin_to_hpre_bin((char *)msg->g,
-		(const char *)msg->g, msg->key_bytes,
-		msg->gbytes, "dh g");
+		(const char *)msg->g, msg->key_bytes, msg->gbytes, "dh g");
 	if (unlikely(ret))
 		return ret;
 
-	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g,
-				msg->key_bytes);
+	phy = (uintptr_t)drv_iova_map(q, (void *)msg->g, msg->key_bytes);
 	if (unlikely(!phy)) {
 		WD_ERR("Get dh g parameter dma address fail!\n");
 		return -WD_ENOMEM;
@@ -749,7 +740,7 @@ int qm_parse_dh_sqe(void *msg, const struct qm_queue_info *info,
 		return 0;
 	if (hw_msg->done != HPRE_HW_TASK_DONE || hw_msg->etype) {
 		WD_ERR("HPRE do %s fail!done=0x%x, etype=0x%x\n", "dh",
-			hw_msg->done, hw_msg->etype);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype);
 		if (hw_msg->done == HPRE_HW_TASK_INIT) {
 			dh_msg->result = WD_EINVAL;
 			ret = -WD_EINVAL;
@@ -863,14 +854,8 @@ static int trans_cv_param_to_hpre_bin(struct wd_dtb *p, struct wd_dtb *a,
 
 static int trans_d_to_hpre_bin(struct wd_dtb *d)
 {
-	int ret;
-
-	ret = qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
+	return qm_crypto_bin_to_hpre_bin(d->data, (const char *)d->data,
 					d->bsize, d->dsize, "ecc d");
-	if (unlikely(ret))
-		return ret;
-
-	return 0;
 }
 
 static bool less_than_latter(struct wd_dtb *d, struct wd_dtb *n)
@@ -898,7 +883,7 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	struct wd_dtb *b = NULL;
 	struct wd_dtb *n = NULL;
 	struct wd_dtb *d = NULL;
-	char bsize, dsize;
+	__u32 bsize, dsize;
 	char *dat;
 	int ret;
 
@@ -911,6 +896,10 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	ret = trans_d_to_hpre_bin(d);
 	if (unlikely(ret))
 		return ret;
+
+	/* X448 will do specific offset */
+	if (id != WCRYPTO_X448)
+		d->dsize = d->bsize;
 
 	dat = d->data;
 	bsize = d->bsize;
@@ -935,12 +924,6 @@ static int ecc_prepare_prikey(struct wcrypto_ecc_key *key, void **data, int id)
 	} else if (id == WCRYPTO_X448) {
 		dat[55 + bsize - dsize] &= 252;
 		dat[0 + bsize - dsize] |= 128;
-	}
-
-	if (id != WCRYPTO_X25519 && id != WCRYPTO_X448 &&
-	    !less_than_latter(d, n)) {
-		WD_ERR("failed to prepare ecc prikey: d >= n!\n");
-		return -WD_EINVAL;
 	}
 
 	*data = p->data;
@@ -1343,8 +1326,7 @@ static int qm_ecc_prepare_in(struct wcrypto_ecc_msg *msg,
 		hw_msg->bd_rsv2 = 1; /* fall through */
 	case WCRYPTO_ECXDH_GEN_KEY: /* fall through */
 	case WCRYPTO_SM2_KG:
-		ret = ecc_prepare_dh_gen_in((void *)in,
-					    data);
+		ret = ecc_prepare_dh_gen_in((void *)in, data);
 		break;
 	case WCRYPTO_ECXDH_COMPUTE_KEY:
 		/*
@@ -1649,7 +1631,7 @@ static int qm_ecc_out_transfer(struct wcrypto_ecc_msg *msg,
 	else if (hw_msg->alg == HPRE_ALG_SM2_KEY_GEN)
 		ret = sm2_kg_out_transfer(msg, hw_msg);
 	else
-		WD_ERR("ecc out trans fail alg %u error!\n", hw_msg->alg);
+		WD_ERR("ecc out trans fail alg %u error!\n", (__u32)hw_msg->alg);
 
 	return ret;
 }
@@ -1672,17 +1654,14 @@ static int qm_fill_ecc_sqe_general(void *message, struct qm_queue_info *info,
 	memset(hw_msg, 0, sizeof(struct hisi_hpre_sqe));
 	hw_msg->task_len1 = ((msg->key_bytes) >> BYTE_BITS_SHIFT) - 0x1;
 
-	/* prepare algorithm */
 	ret = qm_ecc_prepare_alg(hw_msg, msg);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare key */
 	ret = qm_ecc_prepare_key(msg, q, hw_msg, &va, &size);
 	if (unlikely(ret))
 		return ret;
 
-	/* prepare in/out put */
 	ret = qm_ecc_prepare_iot(msg, q, hw_msg);
 	if (unlikely(ret))
 		goto map_key_fail;
@@ -1943,10 +1922,10 @@ static int fill_sm2_enc_sqe(void *msg, struct qm_queue_info *info, __u16 idx)
 		goto fail_fill_sqe;
 	}
 
-	/* make sure the request is all in memory before doorbell */
-	mb();
 	info->sq_tail_index = i;
-	qm_tx_update(info, 1);
+	ret = qm_tx_update(info, 1);
+	if (unlikely(ret))
+		goto fail_fill_sqe;
 
 	return ret;
 
@@ -2045,7 +2024,7 @@ static int qm_parse_ecc_sqe_general(void *msg, const struct qm_queue_info *info,
 	if (hw_msg->done != HPRE_HW_TASK_DONE ||
 			hw_msg->etype || hw_msg->etype1) {
 		WD_ERR("HPRE do ecc fail!done=0x%x, etype=0x%x, etype1=0x%x\n",
-			hw_msg->done, hw_msg->etype, hw_msg->etype1);
+			(__u32)hw_msg->done, (__u32)hw_msg->etype, (__u32)hw_msg->etype1);
 
 		if (hw_msg->done == HPRE_HW_TASK_INIT)
 			ecc_msg->result = WD_EINVAL;
@@ -2096,7 +2075,9 @@ static int parse_first_sqe(void *hw_msg, struct qm_queue_info *info, __u16 idx,
 		WD_ERR("first BD error = %u\n", msg->result);
 
 	info->cq_head_index = i;
-	qm_rx_update(info, 1);
+	ret = qm_rx_update(info, 1);
+	if (unlikely(ret))
+		return ret;
 
 	return 1;
 }

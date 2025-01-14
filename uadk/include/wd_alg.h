@@ -19,6 +19,49 @@ extern "C" {
 #define ALG_NAME_SIZE		128
 #define DEV_NAME_LEN		128
 
+/*
+ * Macros related to arm platform:
+ * ARM puts the feature bits for Crypto Extensions in AT_HWCAP2, whereas
+ * AArch64 used AT_HWCAP.
+ */
+#ifndef AT_HWCAP
+# define AT_HWCAP               16
+#endif
+
+#ifndef AT_HWCAP2
+# define AT_HWCAP2              26
+#endif
+
+#if defined(__arm__) || defined(__arm)
+# define HWCAP                  AT_HWCAP
+# define HWCAP_NEON             (1 << 12)
+
+# define HWCAP_CE               AT_HWCAP2
+# define HWCAP_CE_AES           (1 << 0)
+# define HWCAP_CE_PMULL         (1 << 1)
+# define HWCAP_CE_SHA1          (1 << 2)
+# define HWCAP_CE_SHA256        (1 << 3)
+#elif defined(__aarch64__)
+# define HWCAP                  AT_HWCAP
+# define HWCAP_NEON             (1 << 1)
+
+# define HWCAP_CE               HWCAP
+# define HWCAP_CE_AES           (1 << 3)
+# define HWCAP_CE_PMULL         (1 << 4)
+# define HWCAP_CE_SHA1          (1 << 5)
+# define HWCAP_CE_SHA256        (1 << 6)
+# define HWCAP_CPUID            (1 << 11)
+# define HWCAP_SHA3             (1 << 17)
+# define HWCAP_CE_SM3           (1 << 18)
+# define HWCAP_CE_SM4           (1 << 19)
+# define HWCAP_CE_SHA512        (1 << 21)
+# define HWCAP_SVE              (1 << 22)
+/* AT_HWCAP2 */
+# define HWCAP2                 26
+# define HWCAP2_SVE2            (1 << 1)
+# define HWCAP2_RNG             (1 << 16)
+#endif
+
 enum alg_dev_type {
 	UADK_ALG_SOFT = 0x0,
 	UADK_ALG_CE_INSTR = 0x1,
@@ -26,7 +69,7 @@ enum alg_dev_type {
 	UADK_ALG_HW = 0x3
 };
 
-/**
+/*
  * @drv_name: name of the current device driver
  * @alg_name: name of the algorithm supported by the driver
  * @priority: priority of the type of algorithm supported by the driver
@@ -41,8 +84,7 @@ enum alg_dev_type {
  *		 execute the algorithm task
  * @op_type_num: number of modes in which the device executes the
  *		 algorithm business and requires queues to be executed separately
- * @priv_size: parameter memory size passed between the internal
- *		 interfaces of the driver
+ * @priv: pointer of priv ctx
  * @fallback: soft calculation driver handle when performing soft
  *		 calculation supplement
  * @init: callback interface for initializing device drivers
@@ -53,6 +95,7 @@ enum alg_dev_type {
  *	    result of the task   packets from the hardware device.
  * @get_usage: callback interface used to obtain the
  *	    utilization rate of devices.
+ * @get_extend_ops: callback interface to get private operation of drivers.
  */
 struct wd_alg_driver {
 	const char	*drv_name;
@@ -61,17 +104,38 @@ struct wd_alg_driver {
 	int	calc_type;
 	int	queue_num;
 	int	op_type_num;
-	int	priv_size;
+	void	*priv;
 	handle_t fallback;
 
-	int (*init)(void *conf, void *priv);
-	void (*exit)(void *priv);
-	int (*send)(handle_t ctx, void *drv_msg);
-	int (*recv)(handle_t ctx, void *drv_msg);
+	int (*init)(struct wd_alg_driver *drv, void *conf);
+	void (*exit)(struct wd_alg_driver *drv);
+	int (*send)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
+	int (*recv)(struct wd_alg_driver *drv, handle_t ctx, void *drv_msg);
 	int (*get_usage)(void *param);
+	int (*get_extend_ops)(void *ops);
 };
 
-/**
+inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
+{
+	return drv->init(drv, conf);
+}
+
+inline void wd_alg_driver_exit(struct wd_alg_driver *drv)
+{
+	drv->exit(drv);
+}
+
+inline int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->send(drv, ctx, msg);
+}
+
+inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->recv(drv, ctx, msg);
+}
+
+/*
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
  *
@@ -80,7 +144,7 @@ struct wd_alg_driver {
 int wd_alg_driver_register(struct wd_alg_driver *drv);
 void wd_alg_driver_unregister(struct wd_alg_driver *drv);
 
-/**
+/*
  * @alg_name: name of the algorithm supported by the driver
  * @drv_name: name of the current device driver
  * @available: Indicates whether the current driver still has resources available
@@ -103,7 +167,7 @@ struct wd_alg_list {
 	struct wd_alg_list *next;
 };
 
-/**
+/*
  * wd_request_drv() - Apply for an algorithm driver.
  * @alg_name: task algorithm name.
  * @hw_mask: the flag of shield hardware device drivers.
@@ -113,7 +177,7 @@ struct wd_alg_list {
 struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
 void wd_release_drv(struct wd_alg_driver *drv);
 
-/**
+/*
  * wd_drv_alg_support() - Check the algorithms supported by the driver.
  * @alg_name: task algorithm name.
  * @drv: a device driver that supports an algorithm.
@@ -123,7 +187,7 @@ void wd_release_drv(struct wd_alg_driver *drv);
 bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_driver *drv);
 
-/**
+/*
  * wd_enable_drv() - Re-enable use of the current device driver.
  * @drv: a device driver that supports an algorithm.
  */
@@ -131,6 +195,22 @@ void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
 struct wd_alg_list *wd_get_alg_head(void);
+
+#ifdef WD_STATIC_DRV
+/*
+ * duplicate drivers will be skipped when it register to alg_list
+ */
+void hisi_sec2_probe(void);
+void hisi_hpre_probe(void);
+void hisi_zip_probe(void);
+void hisi_dae_probe(void);
+
+void hisi_sec2_remove(void);
+void hisi_hpre_remove(void);
+void hisi_zip_remove(void);
+void hisi_dae_remove(void);
+
+#endif
 
 #ifdef __cplusplus
 }

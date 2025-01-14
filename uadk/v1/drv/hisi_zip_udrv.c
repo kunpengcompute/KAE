@@ -26,8 +26,8 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/wait.h>
 #include <sys/types.h>
-#include "config.h"
 #include "v1/wd_util.h"
 #include "v1/wd_comp.h"
 #include "v1/wd_cipher.h"
@@ -57,6 +57,10 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+
+/* Error status 0xe indicates that dest_avail_out insufficient */
+#define ERR_DSTLEN_OUT			0xe
+#define PRINT_TIME_INTERVAL		21600
 
 #define CTX_PRIV1_OFFSET		4
 #define CTX_PRIV2_OFFSET		8
@@ -95,6 +99,35 @@ struct zip_fill_sqe_ops {
 			     struct wd_queue *q);
 	void (*fill_sqe_hw_info)(void *ssqe, struct wcrypto_comp_msg *msg);
 };
+
+static unsigned int g_err_print_enable = 1;
+
+static void zip_err_print_alarm_end(int sig)
+{
+	if (sig == SIGALRM) {
+		g_err_print_enable = 1;
+		alarm(0);
+	}
+}
+
+static void zip_err_print_time_start(void)
+{
+	g_err_print_enable = 0;
+	signal(SIGALRM, zip_err_print_alarm_end);
+	alarm(PRINT_TIME_INTERVAL);
+}
+
+static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
+{
+	if (status != ERR_DSTLEN_OUT) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
+			ctx_st, status, type);
+	} else if (g_err_print_enable == 1) {
+		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
+			ctx_st, status, type);
+		zip_err_print_time_start();
+	}
+}
 
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 				struct wcrypto_comp_msg *msg)
@@ -178,13 +211,11 @@ int qm_fill_zip_sqe(void *smsg, struct qm_queue_info *info, __u16 i)
 		return -WD_EINVAL;
 	}
 
-	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->in_size > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->in_size > MAX_BUFFER_SIZE)) {
 		WD_ERR("The in_len is out of range in_len(%u)!\n", msg->in_size);
 		return -WD_EINVAL;
 	}
-	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
-		     msg->avail_out > MAX_BUFFER_SIZE)) {
+	if (unlikely(msg->data_fmt != WD_SGL_BUF && msg->avail_out > MAX_BUFFER_SIZE)) {
 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
 		       msg->avail_out);
 		msg->avail_out = MAX_BUFFER_SIZE;
@@ -257,7 +288,6 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		     __u16 i, __u16 usr)
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
-	struct wcrypto_comp_tag *tag = (void *)(uintptr_t)recv_msg->udata;
 	struct hisi_zip_sqe *sqe = hw_msg;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
@@ -265,19 +295,20 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	uintptr_t phy_in, phy_out, phy_ctxbuf;
 	struct wd_queue *q = info->q;
+	struct wcrypto_comp_tag *tag;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
 		return 0;
 	}
 
+	tag = (void *)(uintptr_t)recv_msg->udata;
 	if (usr && sqe->tag != usr)
 		return 0;
 
 	if (status != 0 && status != HW_NEGACOMPRESS &&
 	    status != HW_CRC_ERR && status != HW_DECOMP_END) {
-		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
-		       ctx_st, status, type);
+		zip_err_bd_print(ctx_st, status, type);
 		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;
@@ -501,8 +532,10 @@ static int fill_zip_addr_lz77_zstd(void *ssqe,
 	} else {
 		sqe->cipher_key_addr_l = lower_32_bits((__u64)addr.dest_addr);
 		sqe->cipher_key_addr_h = upper_32_bits((__u64)addr.dest_addr);
-		sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr + msg->in_size);
-		sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr + msg->in_size);
+		sqe->dest_addr_l = lower_32_bits((__u64)addr.dest_addr +
+						 msg->in_size + ZSTD_LIT_RSV_SIZE);
+		sqe->dest_addr_h = upper_32_bits((__u64)addr.dest_addr +
+						 msg->in_size + ZSTD_LIT_RSV_SIZE);
 	}
 
 	sqe->stream_ctx_addr_l = lower_32_bits((__u64)addr.ctxbuf_addr);
@@ -672,7 +705,7 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 		format->sequences_start = zstd_out->sequence;
 	} else {
 		format->literals_start = recv_msg->dst;
-		format->sequences_start = recv_msg->dst + recv_msg->in_size;
+		format->sequences_start = recv_msg->dst + recv_msg->in_size + ZSTD_LIT_RSV_SIZE;
 		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
 	}
 
@@ -707,8 +740,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 		return 0;
 
 	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END) {
-		WD_ERR("bad status(ctx_st=0x%x, s=0x%x, t=%u)\n",
-		       ctx_st, status, type);
+		zip_err_bd_print(ctx_st, status, type);
 		recv_msg->status = WD_IN_EPARA;
 	} else {
 		recv_msg->status = 0;

@@ -19,7 +19,6 @@
 
 #include <asm/byteorder.h>
 #include <linux/types.h>
-#include "config.h"
 #include "v1/wd.h"
 #include "v1/wd_ecc.h"
 #include "v1/wd_rsa.h"
@@ -167,8 +166,8 @@ struct qm_queue_info {
 	qm_sqe_parse sqe_parse[WCRYPTO_MAX_ALG];
 	hisi_qm_sqe_fill_priv sqe_fill_priv;
 	hisi_qm_sqe_parse_priv sqe_parse_priv;
-	struct wd_lock sd_lock;
-	struct wd_lock rc_lock;
+	struct wd_fair_lock sd_lock;
+	struct wd_fair_lock rc_lock;
 	struct wd_queue *q;
 	int (*sgl_info)(struct hw_sgl_info *info);
 	int (*sgl_init)(void *pool, struct wd_sgl *sgl);
@@ -192,8 +191,8 @@ int qm_init_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
 int qm_uninit_hwsgl_mem(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
 int qm_merge_hwsgl(struct wd_queue *q, void *pool,
 		   struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl);
-void qm_tx_update(struct qm_queue_info *info, __u32 num);
-void qm_rx_update(struct qm_queue_info *info, __u32 num);
+int qm_tx_update(struct qm_queue_info *info, __u32 num);
+int qm_rx_update(struct qm_queue_info *info, __u32 num);
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num);
 
 #define HISI_QM_API_VER_BASE "hisi_qm_v1"

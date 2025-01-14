@@ -51,6 +51,14 @@ static int init_trng_wd_queue(struct acc_option *options)
 		/* nodemask need to be clean */
 		g_thread_queue.bd_res[i].queue->node_mask = 0x0;
 		memset(g_thread_queue.bd_res[i].queue->dev_path, 0x0, PATH_STR_SIZE);
+		if (strlen(options->device) != 0) {
+			ret = snprintf(g_thread_queue.bd_res[i].queue->dev_path,
+					PATH_STR_SIZE, "%s", options->device);
+			if (ret < 0) {
+				WD_ERR("failed to copy dev file path!\n");
+				return -WD_EINVAL;
+			}
+		}
 
 		g_thread_queue.bd_res[i].in_bytes = options->pktlen;
 		g_thread_queue.bd_res[i].out = malloc(options->pktlen);
@@ -304,6 +312,7 @@ int trng_wd_benchmark(struct acc_option *options)
 	u32 ptime;
 	int ret;
 
+	signal(SIGSEGV, segmentfault_handler);
 	g_thread_num = options->threads;
 
 	ret = init_trng_wd_queue(options);

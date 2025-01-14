@@ -29,10 +29,19 @@ uadk_tool_LDADD=$(libwd_la_OBJECTS) \
 			../.libs/libhisi_sec.a \
 			../.libs/libhisi_hpre.a \
 			../.libs/libhisi_zip.a \
+			../.libs/libisa_ce.a \
 			-ldl -lnuma
 else
 uadk_tool_LDADD=-L../.libs -l:libwd.so.2 -l:libwd_crypto.so.2 \
 		-l:libwd_comp.so.2 -lnuma
+endif
+
+# For statistics
+uadk_tool_LDADD+=-lm
+
+if HAVE_ZLIB
+uadk_tool_LDADD+=-lz
+uadk_tool_CPPFLAGS=-DUSE_ZLIB
 endif
 
 if WITH_ZLIB_FSE_DIR
@@ -41,6 +50,7 @@ uadk_tool_LDADD+= $(with_zlib_fse_dir)/libfse.a
 endif
 
 if HAVE_CRYPTO
-uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h
+uadk_tool_SOURCES+=benchmark/sec_soft_benchmark.c benchmark/sec_soft_benchmark.h \
+		   test/comp_main.c test/comp_main.h test/comp_lib.c test/comp_lib.h
 uadk_tool_LDADD+=$(libcrypto_LIBS)
 endif

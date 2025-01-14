@@ -18,17 +18,14 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <assert.h>
 #include <string.h>
 #include <stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <pthread.h>
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/types.h>
 
-#include "config.h"
 #include "v1/drv/hisi_zip_udrv.h"
 #include "v1/drv/hisi_hpre_udrv.h"
 #include "v1/drv/hisi_sec_udrv.h"
@@ -44,7 +41,7 @@
  * a sge size: 1B ~ 8M;
  * data in little-endian in sgl;
  */
-int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
+static int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
 {
 	sgl_info->sge_sz = sizeof(struct hisi_sge);
 	sgl_info->sge_align_sz = HISI_SGL_SGE_ALIGN_SZ;
@@ -78,7 +75,7 @@ static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 }
 
 /* 'num' starts from 1 */
-void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+static void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 			  int num, struct wd_mm_br *br, __u32 buf_sz)
 {
 	void *buf;
@@ -91,7 +88,7 @@ void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
 		       buf, buf_sz);
 }
 
-int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
+static int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
 {
 	int buf_num = wd_get_sgl_buf_num(sgl);
 	int sge_num = wd_get_sgl_sge_num(sgl);
@@ -151,7 +148,7 @@ sgl_sge_init_err:
 	return ret;
 }
 
-void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
+static void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
 {
 	struct hisi_sgl *hisi_sgl = drv_get_sgl_pri(sgl);
 	int buf_num = wd_get_sgl_buf_num(sgl);
@@ -184,7 +181,7 @@ void qm_hw_sgl_uninit(void *pool, struct wd_sgl *sgl)
 	br->free(br->usr, hisi_sgl);
 }
 
-int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
+static int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 {
 	struct hisi_sgl *d = drv_get_sgl_pri(dst_sgl);
 	struct hisi_sgl *s = drv_get_sgl_pri(src_sgl);
@@ -204,7 +201,7 @@ int qm_hw_sgl_merge(void *pool, struct wd_sgl *dst_sgl, struct wd_sgl *src_sgl)
 	return WD_SUCCESS;
 }
 
-int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
+static int qm_db_v1(struct qm_queue_info *q, __u8 cmd,
 	       __u16 idx, __u8 priority)
 {
 	void *base = q->doorbell_base;
@@ -462,6 +459,11 @@ static int qm_init_queue_info(struct wd_queue *q)
 	struct hisi_qp_ctx qp_ctx = {0};
 	int ret;
 
+	if (!info->sqe_size) {
+		WD_ERR("invalid: sqe size is 0!\n");
+		return -WD_EINVAL;
+	}
+
 	info->sq_tail_index = 0;
 	info->cq_head_index = 0;
 	info->cqc_phase = 1;
@@ -506,11 +508,6 @@ static int qm_set_queue_info(struct wd_queue *q)
 	ret = qm_set_queue_regions(q);
 	if (ret)
 		return -WD_EINVAL;
-	if (!info->sqe_size) {
-		WD_ERR("sqe size =%d err!\n", info->sqe_size);
-		ret = -WD_EINVAL;
-		goto err_with_regions;
-	}
 	info->cq_base = (void *)((uintptr_t)info->sq_base +
 			info->sqe_size * info->sq_depth);
 
@@ -537,6 +534,9 @@ static int qm_set_queue_info(struct wd_queue *q)
 		ret = -WD_ENOMEM;
 		goto err_with_regions;
 	}
+
+	wd_fair_init(&info->sd_lock);
+	wd_fair_init(&info->rc_lock);
 
 	return 0;
 
@@ -580,16 +580,26 @@ void qm_uninit_queue(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct qm_queue_info *info = qinfo->priv;
 
-	qm_unset_queue_regions(q);
 	free(info->req_cache);
+	qm_unset_queue_regions(q);
 	free(qinfo->priv);
 	qinfo->priv = NULL;
 }
 
-void qm_tx_update(struct qm_queue_info *info, __u32 num)
+int qm_tx_update(struct qm_queue_info *info, __u32 num)
 {
+	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
+		WD_ERR("wd queue hw error happened before qm send!\n");
+		return -WD_HW_EACCESS;
+	}
+
+	/* make sure the request is all in memory before doorbell */
+	mb();
+
 	info->db(info, DOORBELL_CMD_SQ, info->sq_tail_index, 0);
 	__atomic_add_fetch(&info->used, num, __ATOMIC_RELAXED);
+
+	return WD_SUCCESS;
 }
 
 int qm_send(struct wd_queue *q, void **req, __u32 num)
@@ -599,15 +609,10 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 	int ret;
 	__u32 i;
 
-	if (unlikely(wd_reg_read(info->ds_tx_base) == 1)) {
-		WD_ERR("wd queue hw error happened before qm send!\n");
-		return -WD_HW_EACCESS;
-	}
-
-	wd_spinlock(&info->sd_lock);
+	wd_fair_lock(&info->sd_lock);
 	if (unlikely((__u32)__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
 		     info->sq_depth - num - 1)) {
-		wd_unspinlock(&info->sd_lock);
+		wd_fair_unlock(&info->sd_lock);
 		WD_ERR("queue is full!\n");
 		return -WD_EBUSY;
 	}
@@ -616,7 +621,7 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 		ret = info->sqe_fill[qinfo->atype](req[i], qinfo->priv,
 				info->sq_tail_index);
 		if (unlikely(ret != WD_SUCCESS)) {
-			wd_unspinlock(&info->sd_lock);
+			wd_fair_unlock(&info->sd_lock);
 			WD_ERR("sqe fill error, ret %d!\n", ret);
 			return -WD_EINVAL;
 		}
@@ -627,19 +632,10 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
 			info->sq_tail_index++;
 	}
 
-	/* make sure the request is all in memory before doorbell */
-	mb();
-	qm_tx_update(info, num);
-	wd_unspinlock(&info->sd_lock);
+	ret = qm_tx_update(info, num);
+	wd_fair_unlock(&info->sd_lock);
 
-	return WD_SUCCESS;
-}
-
-void qm_rx_update(struct qm_queue_info *info, __u32 num)
-{
-	/* set c_flag to enable interrupt when use poll */
-	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
-	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
+	return ret;
 }
 
 void qm_rx_from_cache(struct qm_queue_info *info, void **resp, __u32 num)
@@ -670,15 +666,33 @@ static int check_ds_rx_base(struct qm_queue_info *info,
 		return 0;
 
 	if (before) {
-		wd_spinlock(&info->rc_lock);
+		wd_fair_lock(&info->rc_lock);
 		qm_rx_from_cache(info, resp, num);
-		wd_unspinlock(&info->rc_lock);
+		wd_fair_unlock(&info->rc_lock);
 		WD_ERR("wd queue hw error happened before qm receive!\n");
 	} else {
 		WD_ERR("wd queue hw error happened after qm receive!\n");
 	}
 
 	return -WD_HW_EACCESS;
+}
+
+int qm_rx_update(struct qm_queue_info *info, __u32 num)
+{
+	int ret;
+
+	ret = check_ds_rx_base(info, NULL, 0, 0);
+	if (unlikely(ret))
+		return ret;
+
+	/* make sure queue status check is complete. */
+	rmb();
+
+	/* set c_flag to enable interrupt when use poll */
+	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
+	__atomic_sub_fetch(&info->used, num, __ATOMIC_RELAXED);
+
+	return WD_SUCCESS;
 }
 
 int qm_recv(struct wd_queue *q, void **resp, __u32 num)
@@ -695,7 +709,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 	if (unlikely(ret))
 		return ret;
 
-	wd_spinlock(&info->rc_lock);
+	wd_fair_lock(&info->rc_lock);
 	for (i = 0; i < num; i++) {
 		cqe = info->cq_base + info->cq_head_index * sizeof(struct cqe);
 		if (info->cqc_phase != CQE_PHASE(cqe))
@@ -704,7 +718,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		mb(); /* make sure the data is all in memory before read */
 		sq_head = CQE_SQ_HEAD_INDEX(cqe);
 		if (unlikely(sq_head >= info->sq_depth)) {
-			wd_unspinlock(&info->rc_lock);
+			wd_fair_unlock(&info->rc_lock);
 			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", sq_head);
 			return -WD_EIO;
 		}
@@ -716,7 +730,7 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		if (!ret) {
 			break;
 		} else if (ret < 0) {
-			wd_unspinlock(&info->rc_lock);
+			wd_fair_unlock(&info->rc_lock);
 			WD_ERR("recv sqe error %u\n", sq_head);
 			return ret;
 		}
@@ -731,15 +745,15 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
 		}
 	}
 
-	if (i)
-		qm_rx_update(info, i);
+	if (i) {
+		ret = qm_rx_update(info, i);
+		if (!ret)
+			ret = i;
+	}
 
-	wd_unspinlock(&info->rc_lock);
-	ret = check_ds_rx_base(info, resp, num, 0);
-	if (unlikely(ret))
-		return ret;
+	wd_fair_unlock(&info->rc_lock);
 
-	return i;
+	return ret;
 }
 
 static int hw_type_check(struct wd_queue *q, const char *hw_type)

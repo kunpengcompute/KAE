@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <sys/auxv.h>
 
 #include "wd.h"
 #include "wd_alg.h"
@@ -90,6 +91,37 @@ static bool wd_check_accel_dev(const char *dev_name)
 	return false;
 }
 
+static bool wd_check_ce_support(const char *dev_name)
+{
+	unsigned long hwcaps = 0;
+
+	#if defined(__arm__) || defined(__arm)
+		hwcaps = getauxval(AT_HWCAP2);
+	#elif defined(__aarch64__)
+		hwcaps = getauxval(AT_HWCAP);
+	#endif
+	if (!strcmp("isa_ce_sm3", dev_name) && (hwcaps & HWCAP_CE_SM3))
+		return true;
+
+	if (!strcmp("isa_ce_sm4", dev_name) && (hwcaps & HWCAP_CE_SM4))
+		return true;
+
+	return false;
+}
+
+static bool wd_check_sve_support(void)
+{
+	unsigned long hwcaps = 0;
+
+	#if defined(__aarch64__)
+		hwcaps = getauxval(AT_HWCAP);
+	#endif
+	if (hwcaps & HWCAP_SVE)
+		return true;
+
+	return false;
+}
+
 static bool wd_alg_check_available(int calc_type, const char *dev_name)
 {
 	bool ret = false;
@@ -99,13 +131,17 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 		break;
 	/* Should find the CPU if not support CE */
 	case UADK_ALG_CE_INSTR:
+		ret = wd_check_ce_support(dev_name);
 		break;
 	/* Should find the CPU if not support SVE */
 	case UADK_ALG_SVE_INSTR:
+		ret = wd_check_sve_support();
 		break;
 	/* Check if the current driver has device support */
 	case UADK_ALG_HW:
 		ret = wd_check_accel_dev(dev_name);
+		break;
+	default:
 		break;
 	}
 
@@ -130,6 +166,26 @@ static bool wd_alg_driver_match(struct wd_alg_driver *drv,
 	return true;
 }
 
+static bool wd_alg_repeat_check(struct wd_alg_driver *drv)
+{
+	struct wd_alg_list *npre = &alg_list_head;
+	struct wd_alg_list *pnext = NULL;
+
+	pthread_mutex_lock(&mutex);
+	pnext = npre->next;
+	while (pnext) {
+		if (wd_alg_driver_match(drv, pnext)) {
+			pthread_mutex_unlock(&mutex);
+			return true;
+		}
+		npre = pnext;
+		pnext = pnext->next;
+	}
+	pthread_mutex_unlock(&mutex);
+
+	return false;
+}
+
 int wd_alg_driver_register(struct wd_alg_driver *drv)
 {
 	struct wd_alg_list *new_alg;
@@ -143,6 +199,9 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 		WD_ERR("invalid: driver's parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
+
+	if (wd_alg_repeat_check(drv))
+		return 0;
 
 	new_alg = calloc(1, sizeof(struct wd_alg_list));
 	if (!new_alg) {
@@ -213,12 +272,12 @@ struct wd_alg_list *wd_get_alg_head(void)
 }
 
 bool wd_drv_alg_support(const char *alg_name,
-	struct wd_alg_driver *drv)
+			struct wd_alg_driver *drv)
 {
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
 
-	if (!alg_name)
+	if (!alg_name || !drv)
 		return false;
 
 	while (pnext) {
@@ -280,8 +339,13 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
 	struct wd_alg_driver *drv = NULL;
 	int tmp_priority = -1;
 
-	if (!pnext || !alg_name) {
-		WD_ERR("invalid: request alg param is error!\n");
+	if (!pnext) {
+		WD_ERR("invalid: requset drv pnext is NULL!\n");
+		return NULL;
+	}
+
+	if (!alg_name) {
+		WD_ERR("invalid: alg_name is NULL!\n");
 		return NULL;
 	}
 
@@ -289,13 +353,14 @@ struct wd_alg_driver *wd_request_drv(const char *alg_name, bool hw_mask)
 	pthread_mutex_lock(&mutex);
 	while (pnext) {
 		/* hw_mask true mean not to used hardware dev */
-		if (hw_mask && pnext->drv->calc_type == UADK_ALG_HW) {
+		if ((hw_mask && pnext->drv->calc_type == UADK_ALG_HW) ||
+		    (!hw_mask && pnext->drv->calc_type != UADK_ALG_HW)) {
 			pnext = pnext->next;
 			continue;
 		}
 
 		if (!strcmp(alg_name, pnext->alg_name) && pnext->available &&
-		      pnext->drv->priority > tmp_priority) {
+		    pnext->drv->priority > tmp_priority) {
 			tmp_priority = pnext->drv->priority;
 			select_node = pnext;
 			drv = pnext->drv;

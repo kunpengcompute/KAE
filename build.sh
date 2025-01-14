@@ -122,12 +122,10 @@ function build_rpm()
     cd ${SRC_PATH}
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
-    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
-    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
-    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch || true
-    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
 
     cd $KAE_UADK_DIR
     sh autogen.sh
@@ -274,12 +272,11 @@ function build_uadk()
     cd ${SRC_PATH}
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
-    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch || true
-    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0002-fix-uadk-zstd-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
-    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch || true
-    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0004-uadk-support-appending-tag-for-digest-stream-mode.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
+
 	cd ${SRC_PATH}/uadk
     sh autogen.sh
     sh conf.sh
@@ -446,15 +443,15 @@ function zstd_clean()
 
 function build_lz4()
 {
-        cd ${SRC_PATH}/KAELz4
-        sh build.sh install
+    cd ${SRC_PATH}/KAELz4
+    sh build.sh install
 }
 
 function lz4_clean()
 {
-        cd ${SRC_PATH}/KAELz4
-        sh build.sh uninstall
-        rm -rf /usr/local/kaelz4/
+    cd ${SRC_PATH}/KAELz4
+    sh build.sh uninstall
+    rm -rf /usr/local/kaelz4/
 }
 
 function help()
@@ -492,12 +489,12 @@ function help()
 
 function check_environment()
 {
-        IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
-        CPUPART=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
-        if [ "${IMPLEMENTER}" != "0x48" ];then
-            echo "Only installed on kunpeng CPUs"
-            exit 1
-        fi
+    IMPLEMENTER=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
+    CPUPART=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+    if [ "${IMPLEMENTER}" != "0x48" ];then
+        echo "Only installed on kunpeng CPUs"
+        exit 1
+    fi
 }
 
 function build_all_components()
