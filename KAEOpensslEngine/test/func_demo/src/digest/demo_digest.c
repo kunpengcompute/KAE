@@ -1,22 +1,17 @@
-/*-
- * Copyright 2021-2024 The OpenSSL Project Authors. All Rights Reserved.
- *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
- * this file except in compliance with the License.  You can obtain a copy
- * in the file LICENSE in the source distribution or at
- * https://www.openssl.org/source/license.html
- */
-
 /*
- * Example of using EVP_MD_fetch and EVP_Digest* methods to calculate
- * a digest of static buffers
+ * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
+ * @Description: 
+ * @Author: nwq
+ * @Date: 2025-01-13
+ * @LastEditTime: 2025-01-13
  */
 
-#include <string.h>
-#include <stdio.h>
-#include <openssl/err.h>
 #include <openssl/evp.h>
-#include"demo_utils.h"
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <string.h>
+#include <openssl/engine.h>
+#include <stdbool.h>
 
 /*-
  * This demonstration will show how to digest data using
@@ -75,4 +70,40 @@ cleanup:
     EVP_MD_CTX_free(digest_context);
 
     return ret;
+}
+
+// 数据完整性校验
+bool check_data_integrity(const char *received_message, const EVP_MD *digest, unsigned char expected_hash[], unsigned int *hash_len, ENGINE* engine)
+{
+    unsigned char recv_hash[EVP_MAX_MD_SIZE];
+
+    // 计算接收到的消息的哈希值
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    if (!mdctx) return false;
+
+    if (EVP_DigestInit_ex(mdctx, digest, engine) <= 0 ||
+        EVP_DigestUpdate(mdctx, received_message, strlen(received_message)) <= 0 ||
+        EVP_DigestFinal_ex(mdctx,recv_hash, hash_len) <= 0) {
+        EVP_MD_CTX_free(mdctx);
+        return false;
+    }
+    EVP_MD_CTX_free(mdctx);
+
+    return memcmp(recv_hash, expected_hash, *hash_len) == 0;
+}
+
+// 密码安全存储模拟
+bool secure_password_storage(const char *password, const EVP_MD *digest, unsigned char expected_hash[], unsigned int *hash_len, ENGINE* engine)
+{
+    unsigned char salt[] = "random_salt"; // 实际应用中应该使用随机盐值
+    unsigned char hashed_password[EVP_MAX_MD_SIZE];
+
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, digest, engine);
+    EVP_DigestUpdate(mdctx, password, strlen(password));
+    EVP_DigestUpdate(mdctx, salt, sizeof(salt) - 1); // 假定salt是C字符串
+    EVP_DigestFinal_ex(mdctx, hashed_password, hash_len);
+    EVP_MD_CTX_free(mdctx);
+
+    return memcmp(hashed_password, expected_hash, *hash_len) == 0;
 }
