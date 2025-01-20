@@ -12,8 +12,8 @@
 #include <openssl/engine.h>
 #include "gtest/gtest.h"
 
-#include"digest.h"
-#include"demo_utils.h"
+#include "demo_utils.h"
+#include "demo_digest.h"
 
 class DigestTestSuit:public testing::Test
 {
