@@ -853,7 +853,7 @@ diff -uprN lzbench-master/lz4/Makefile lzbench-master-KAELz4/lz4/Makefile
  CFLAGS  += $(DEBUGFLAGS)
 +
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.3
++KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.4
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
 +
@@ -868,7 +868,7 @@ diff -uprN lzbench-master/Makefile lzbench-master-KAELz4/Makefile
  LDFLAGS += -lzstd
  
 +KAEZSTD_CFLAGS  = -I/usr/local/kaelz4/include -DCONF_KAELZ4
-+KAEZSTD_LDFLAGS = -lrt -L/usr/local/kaelz4/lib -Wl,-rpath=/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.3
++KAEZSTD_LDFLAGS = -lrt -L/usr/local/kaelz4/lib -Wl,-rpath=/usr/local/kaelz4/lib:/usr/local/lib -l:libkaelz4.so.2.0.4
 +CFLAGS  += $(KAEZSTD_CFLAGS)
 +LDFLAGS += $(KAEZSTD_LDFLAGS)
 +
