@@ -1,0 +1,541 @@
+diff -Naru gzip-1.13-gnu/deflate.c gzip-1.13/deflate.c
+--- gzip-1.13-gnu/deflate.c	2023-01-11 12:38:10.000000000 +0800
++++ gzip-1.13/deflate.c	2025-01-14 15:39:40.000000000 +0800
+@@ -722,7 +722,7 @@
+  * no better match at the next window position.
+  */
+ off_t
+-deflate (int pack_level)
++gzip_deflate (int pack_level)
+ {
+     IPos hash_head;          /* head of hash chain */
+     IPos prev_match;         /* previous match */
+diff -Naru gzip-1.13-gnu/gzip.c gzip-1.13/gzip.c
+--- gzip-1.13-gnu/gzip.c	2023-04-07 22:57:00.000000000 +0800
++++ gzip-1.13/gzip.c	2025-01-24 09:59:06.000000000 +0800
+@@ -260,6 +260,16 @@
+   ENV_OPTION
+ };
+ 
++/* For CPU Check
++*/
++typedef enum ARCH_TYPE {
++    CPU_HISILICOM_V1 = 0, /* Kunpeng 920 */
++    CPU_HISILICOM_V2,     /* Kunpeng 920 Pro */
++    CPU_HISILICOM_V3,     /* for the future */
++    CPU_HISILICOM_V4,     /* for the future */
++    CPU_UNKNOW,
++} ARCH_TYPE;
++
+ static char const shortopts[] = "ab:cdfhH?klLmMnNqrS:tvVZ123456789";
+ 
+ static const struct option longopts[] =
+@@ -318,10 +328,11 @@
+ static void install_signal_handlers (void);
+ static void remove_output_file (bool);
+ static void abort_gzip_signal (int);
++static int checkCpu(void);
+ _Noreturn static void do_exit (int exitcode);
+ static void finish_out (void);
+       int main          (int argc, char **argv);
+-static int (*work) (int infile, int outfile) = zip; /* function to call */
++static int (*work) (int infile, int outfile) = kae_zip; /* function to call */
+ 
+ #if ! NO_DIR
+ static void treat_dir (int fd, char *dir);
+@@ -342,7 +353,40 @@
+ help ()
+ {
+     static char const* const help_msg[] = {
+- "Compress or uncompress FILEs (by default, compress FILES in-place).",
++ "Compress or uncompress FILEs using Kunpeng Accelerator Engine (by default, compress FILES in-place).",
++ "",
++ "Mandatory arguments to long options are mandatory for short options too.",
++ "",
++#if O_BINARY
++ "  -a, --ascii       ascii text; convert end-of-line using local conventions",
++#endif
++ "  -c, --stdout      write on standard output, keep original files unchanged",
++ "  -d, --decompress  decompress",
++ "  -f, --force       force overwrite of output file and compress links",
++ "  -h, --help        give this help",
++ "  -k, --keep        keep (don't delete) input files",
++ "  -l, --list        list compressed file contents",
++#ifdef UNDOCUMENTED
++ "  -m                do not save or restore the original modification time",
++ "  -M, --time        save or restore the original modification time",
++#endif
++ "  -q, --quiet       suppress all warnings",
++#if ! NO_DIR
++ "  -r, --recursive   operate recursively on directories",
++#endif
++ "  -S, --suffix=SUF  use suffix SUF on compressed files",
++ "  -t, --test        test compressed file integrity",
++ "  -v, --verbose     verbose mode",
++ "  -V, --version     display version number",
++ "",
++ "With no FILE, or when FILE is -, read standard input.",
++ "",
++ "Report bugs to <https://gitee.com/kunpengcompute/KAE>",
++  0};
++
++    /* Only In Kunpeng 920Pro, display the --fast and --best */
++    static char const* const help_msg_920Pro[] = {
++ "Compress or uncompress FILEs using Kunpeng Accelerator Engine (by default, compress FILES in-place).",
+  "",
+  "Mandatory arguments to long options are mandatory for short options too.",
+  "",
+@@ -351,26 +395,19 @@
+ #endif
+  "  -c, --stdout      write on standard output, keep original files unchanged",
+  "  -d, --decompress  decompress",
+-/*  -e, --encrypt     encrypt */
+  "  -f, --force       force overwrite of output file and compress links",
+  "  -h, --help        give this help",
+-/*  -k, --pkzip       force output in pkzip format */
+  "  -k, --keep        keep (don't delete) input files",
+  "  -l, --list        list compressed file contents",
+- "  -L, --license     display software license",
+ #ifdef UNDOCUMENTED
+  "  -m                do not save or restore the original modification time",
+  "  -M, --time        save or restore the original modification time",
+ #endif
+- "  -n, --no-name     do not save or restore the original name and timestamp",
+- "  -N, --name        save or restore the original name and timestamp",
+  "  -q, --quiet       suppress all warnings",
+ #if ! NO_DIR
+  "  -r, --recursive   operate recursively on directories",
+ #endif
+- "      --rsyncable   make rsync-friendly archive",
+  "  -S, --suffix=SUF  use suffix SUF on compressed files",
+- "      --synchronous synchronous output (safer if system crashes, but slower)",
+  "  -t, --test        test compressed file integrity",
+  "  -v, --verbose     verbose mode",
+  "  -V, --version     display version number",
+@@ -379,9 +416,9 @@
+  "",
+  "With no FILE, or when FILE is -, read standard input.",
+  "",
+- "Report bugs to <bug-gzip@gnu.org>.",
++ "Report bugs to <https://gitee.com/kunpengcompute/KAE>",
+   0};
+-    char const *const *p = help_msg;
++    char const *const *p = (checkCpu() == CPU_HISILICOM_V2) ? help_msg_920Pro : help_msg;
+ 
+     printf ("Usage: %s [OPTION]... [FILE]...\n", program_name);
+     while (*p) printf ("%s\n", *p++);
+@@ -416,6 +453,11 @@
+ /* ======================================================================== */
+ int main (int argc, char **argv)
+ {
++    /* Check Hardware State, if KAE not available, printf to stdout */
++    if (!uadk_get_accel_platform()) {
++        fprintf (stderr, "KAE Hardware Not Available, fallback to software.\n\n");
++    }
++
+     int file_count;     /* number of files to process */
+     size_t proglen;     /* length of program_name */
+     char **argv_copy;
+@@ -1518,6 +1560,7 @@
+     last_member = 0;
+     /* assume multiple members in gzip file except for record oriented I/O */
+ 
++    /* Gzip format : supported in KAE */
+     if (memcmp(magic, GZIP_MAGIC, 2) == 0
+         || memcmp(magic, OLD_GZIP_MAGIC, 2) == 0) {
+ 
+@@ -1529,7 +1572,7 @@
+             exit_code = ERROR;
+             return -1;
+         }
+-        work = unzip;
++        work = (part_nb == 1 ? kae_unzip : unzip);
+         flags  = (uch)get_byte();
+ 
+         if ((flags & ENCRYPTED) != 0) {
+@@ -1580,6 +1623,8 @@
+             magic[7] = stamp >> 24;
+             updcrc (NULL, 0);
+             updcrc (magic, 10);
++            /* KAE Does Not support HEADER_CRC */
++            work = unzip;
+           }
+ 
+         if ((flags & EXTRA_FIELD) != 0) {
+@@ -1593,6 +1638,8 @@
+             if (flags & HEADER_CRC)
+               updcrc (lenbuf, 2);
+             discard_input_bytes (len, flags);
++            /* KAE Does Not support EXTRA_FIELD */
++            work = unzip;
+         }
+ 
+         /* Get original file name if it was truncated */
+@@ -1626,6 +1673,8 @@
+         /* Discard file comment if any */
+         if ((flags & COMMENT) != 0) {
+             discard_input_bytes (-1, flags);
++            /* KAE Does Not support COMMENT */
++            work = unzip;
+         }
+ 
+         if (flags & HEADER_CRC)
+@@ -1648,7 +1697,9 @@
+             header_bytes = inptr + 2*4; /* include crc and size */
+         }
+ 
+-    } else if (memcmp(magic, PKZIP_MAGIC, 2) == 0 && inptr == 2
++    } 
++    /* PKZIP Format: not supported in KAE*/
++    else if (memcmp(magic, PKZIP_MAGIC, 2) == 0 && inptr == 2
+             && memcmp((char*)inbuf, PKZIP_MAGIC, 4) == 0) {
+         /* To simplify the code, we support a zip file when alone only.
+          * We are thus guaranteed that the entire local header fits in inbuf.
+@@ -2121,3 +2172,27 @@
+    signal (sig, SIG_DFL);
+    raise (sig);
+ }
++
++/* ========================================================================
++ * CPU check.
++ */
++static int
++checkCpu(void)
++{
++    unsigned long long cpuId;
++    ARCH_TYPE g_arch = CPU_UNKNOW;
++    __asm__ volatile("mrs %0, MIDR_EL1":"=r"(cpuId));
++
++    unsigned long long vendor = (cpuId >> 0x18) & 0xFF;
++    unsigned long long partId = (cpuId >> 0x4) & 0xFFF;
++    if ((vendor == 0x48) && (partId == 0xD01)) {
++        g_arch = CPU_HISILICOM_V1;
++    } else if ((vendor == 0x48) && (partId == 0xD02)) {
++        g_arch = CPU_HISILICOM_V2;
++    } else if ((vendor == 0x48) && (partId == 0xD03)) {
++        g_arch = CPU_HISILICOM_V3;
++    } else if (partId == 0xD22) {
++        g_arch = CPU_HISILICOM_V4;
++    }
++    return g_arch;
++}
+diff -Naru gzip-1.13-gnu/gzip.h gzip-1.13/gzip.h
+--- gzip-1.13-gnu/gzip.h	2023-02-05 13:37:53.000000000 +0800
++++ gzip-1.13/gzip.h	2025-01-22 15:49:04.000000000 +0800
+@@ -262,12 +262,15 @@
+   while (false)
+ 
+         /* in zip.c: */
++extern int kae_zip    (int in, int out);
+ extern int zip        (int in, int out);
+ extern int file_read  (char *buf,  unsigned size);
++extern int file_read_for_kae  (char *buf,  unsigned size);
+ 
+         /* in unzip.c */
+ extern ulg unzip_crc;
+ extern int unzip      (int in, int out);
++extern int kae_unzip      (int in, int out);
+ extern int check_zipfile (int in);
+ 
+         /* in unpack.c */
+@@ -281,7 +284,7 @@
+ _Noreturn extern void abort_gzip (void);
+ 
+         /* in deflate.c */
+-extern off_t deflate (int pack_level);
++extern off_t gzip_deflate (int pack_level);
+ 
+         /* in trees.c */
+ extern void ct_init     (ush *attr, int *method);
+@@ -323,9 +326,10 @@
+ _Noreturn extern void write_error (void);
+ extern void display_ratio (off_t num, off_t den, FILE *file);
+ extern void fprint_off    (FILE *, off_t, int);
++extern int uadk_get_accel_platform(void);
+ 
+         /* in inflate.c */
+-extern int inflate (void);
++extern int gzip_inflate (void);
+ 
+         /* in dfltcc.c */
+ #ifdef IBM_Z_DFLTCC
+diff -Naru gzip-1.13-gnu/inflate.c gzip-1.13/inflate.c
+--- gzip-1.13-gnu/inflate.c	2023-01-11 12:38:10.000000000 +0800
++++ gzip-1.13/inflate.c	2025-01-14 15:41:42.000000000 +0800
+@@ -955,7 +955,7 @@
+ 
+ 
+ int
+-inflate ()
++gzip_inflate ()
+ /* decompress an inflated entry */
+ {
+   int e;                /* last block flag */
+diff -Naru gzip-1.13-gnu/unzip.c gzip-1.13/unzip.c
+--- gzip-1.13-gnu/unzip.c	2023-01-11 12:38:10.000000000 +0800
++++ gzip-1.13/unzip.c	2025-02-05 15:56:39.221857050 +0800
+@@ -29,6 +29,8 @@
+  */
+ 
+ #include <config.h>
++
++#include "zlib.h"  //for kae
+ #include "tailor.h"
+ #include "gzip.h"
+ 
+@@ -137,7 +139,7 @@
+ #ifdef IBM_Z_DFLTCC
+         int res = dfltcc_inflate ();
+ #else
+-        int res = inflate();
++        int res = gzip_inflate();
+ #endif
+ 
+         if (res == 3) {
+@@ -221,3 +223,85 @@
+     if (!test) abort_gzip();
+     return err;
+ }
++
++/* ===========================================================================
++ * Unzip in to out using KAE. This routine works on gzip file only.
++ * This function will reset fd at the start, because KAE inflate() needs the 
++ * header bytes which has been processed in get_method().
++ * After Inflate Step, reset "inptr" pointer, because unzip may be called 
++ * later, it's necessary to make sure that unzip can start reading data 
++ * from buffer at a correct position.
++ */
++int
++kae_unzip (int in, int out)
++{
++    ifd = in;
++    ofd = out;
++
++    /* Reset fd using bytes_in */
++    off_t new_pos = lseek(ifd, -bytes_in, SEEK_CUR);
++    if (new_pos == (off_t) -1) {
++        fprintf(stderr, "Input file damaged.\n");
++        close(ifd);
++        return ERROR;
++    }
++
++    clear_bufs();
++
++    int ret;
++    z_stream stream;
++
++    /* allocate inflate state */
++    stream.zalloc = Z_NULL;
++    stream.zfree = Z_NULL;
++    stream.opaque = Z_NULL;
++    ret = inflateInit2_(&stream, 31, "1.2.11", sizeof(z_stream));
++    if (ret != Z_OK) {
++        fprintf (stderr, "\n%s: Dompress Failed, ERROR %d.\n", program_name, ret);
++        abort_gzip();
++    }
++
++    /* decompress until deflate stream ends or end of file */
++    int read_bytes = 0;
++    int have = 0;
++    do {
++        read_bytes = file_read_for_kae(inbuf, INBUFSIZ);
++        if (read_bytes == 0) {
++            break;
++        }
++        stream.avail_in = read_bytes;
++        stream.next_in = inbuf;
++
++        /* run inflate() on input until output buffer not full */
++        do {
++            stream.avail_out = OUTBUFSIZ;
++            stream.next_out = outbuf;
++            ret = inflate(&stream, Z_NO_FLUSH);
++            switch (ret) {
++            case Z_STREAM_ERROR:
++            case Z_NEED_DICT:
++                ret = Z_DATA_ERROR;     /* and fall through */
++            case Z_DATA_ERROR:
++            case Z_MEM_ERROR:
++                (void)inflateEnd(&stream);
++                gzip_error("Invalid Compressed Data.");
++                return ret;
++            }
++            have = OUTBUFSIZ - stream.avail_out;
++            write_buf(ofd, outbuf, have);
++        } while (stream.avail_out == 0);
++    } while (ret != Z_STREAM_END);
++
++    // update inptr & insize
++    insize = read_bytes;
++    inptr = insize - stream.avail_in;
++
++    /* clean up and return */
++    (void)inflateEnd(&stream);
++
++    if (ret != Z_STREAM_END) {
++        gzip_error("Invalid Compressed Data.");
++        return ERROR;
++    }
++    return OK;
++}
+diff -Naru gzip-1.13-gnu/util.c gzip-1.13/util.c
+--- gzip-1.13-gnu/util.c	2023-04-07 21:43:25.000000000 +0800
++++ gzip-1.13/util.c	2025-01-23 11:25:06.000000000 +0800
+@@ -27,6 +27,8 @@
+ #include <stdlib.h>
+ #include <errno.h>
+ 
++#include "wd_comp.h"
++
+ #include "tailor.h"
+ #include "gzip.h"
+ #include <dirname.h>
+@@ -41,6 +43,7 @@
+ #endif
+ 
+ static int write_buffer (int, voidp, unsigned int);
++extern int wd_get_available_dev_num(const char *algorithm);
+ 
+ /* ========================================================================
+  * Table of CRC-32's of all single-byte values (made by makecrc.c)
+@@ -501,3 +504,21 @@
+     for (;  p < buf + sizeof buf;  p++)
+         putc (*p, file);
+ }
++
++int uadk_get_accel_platform(void)
++{
++    struct uacce_dev* dev = wd_get_accel_dev("zlib");
++    if (dev) {
++        int flag = dev->flags;
++        free(dev);
++        if (flag & 0x1) {
++            return 2;  // sva
++        }
++    }
++    //  check no-sva
++    int nosva_dev_num = wd_get_available_dev_num("zlib");
++    if (nosva_dev_num > 0) {
++        return 1; // no-sva
++    }
++    return 0;
++}
+diff -Naru gzip-1.13-gnu/zip.c gzip-1.13/zip.c
+--- gzip-1.13-gnu/zip.c	2023-01-11 12:38:10.000000000 +0800
++++ gzip-1.13/zip.c	2025-01-20 09:34:08.000000000 +0800
+@@ -20,6 +20,7 @@
+ #include <config.h>
+ #include <ctype.h>
+ 
++#include "zlib.h" // for kae
+ #include "tailor.h"
+ #include "gzip.h"
+ 
+@@ -94,7 +95,7 @@
+ #ifdef IBM_Z_DFLTCC
+     dfltcc_deflate (level);
+ #else
+-    deflate (level);
++    gzip_deflate (level);
+ #endif
+ 
+ #ifndef NO_SIZE_CHECK
+@@ -116,6 +117,70 @@
+     return OK;
+ }
+ 
++/* ===========================================================================
++ * Deflate in to out Using KAE (if no KAE, fall back to zlib)
++ * data stream: input file --> inbuf -> compress -> outbuf --> output file
++ */
++int
++kae_zip (int in, int out)
++{
++    ifd = in;
++    ofd = out;
++    outcnt = 0;
++
++    z_stream stream;
++    int ret;
++    /* allocate deflate state */
++    stream.zalloc = Z_NULL;
++    stream.zfree = Z_NULL;
++    stream.opaque = Z_NULL;
++    // using default level parameter
++    ret = deflateInit2_(&stream, level, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, "1.2.11", sizeof(z_stream));
++    if (ret != Z_OK) {
++        fprintf (stderr, "\n%s: Compress Failed, ERROR %d.\n", program_name, ret);
++        abort_gzip();
++    }
++
++    /* compress until end of file */
++    int read_bytes = 0;
++    int have = 0;
++    int flush = Z_NO_FLUSH;
++    do {
++        // read data from file using file_read API
++        read_bytes = file_read_for_kae(inbuf, INBUFSIZ);
++        // if read_buf returns 0, it has reached the end of file
++        flush = (read_bytes == 0) ? Z_FINISH : Z_NO_FLUSH;
++        stream.avail_in = read_bytes;
++        stream.next_in = inbuf;
++        /* passing input data to deflate */
++        do {
++            stream.avail_out = OUTBUFSIZ;
++            stream.next_out = outbuf;
++            ret = deflate(&stream, flush);
++            if (ret == Z_STREAM_ERROR) {
++                fprintf (stderr, "\n%s: Compress Failed.\n", program_name);
++                abort_gzip();
++            }
++            have = OUTBUFSIZ - stream.avail_out;
++            write_buf(ofd, outbuf, have);
++        } while (stream.avail_out == 0);
++    } while (flush != Z_FINISH);
++    (void)deflateEnd(&stream);
++    
++#ifndef NO_SIZE_CHECK
++  /* Check input size
++   * (but not on MSDOS -- diet in TSR mode reports an incorrect file size)
++   */
++    if (ifile_size != -1L && bytes_in != ifile_size) {
++        fprintf(stderr, "%s: %s: file size changed while zipping\n",
++                program_name, ifname);
++    }
++#endif
++    
++    header_bytes = 18;
++
++    return OK;
++}
+ 
+ /* ===========================================================================
+  * Read a new buffer from the current input file, perform end-of-line
+@@ -139,3 +204,27 @@
+     bytes_in += (off_t)len;
+     return (int)len;
+ }
++
++/* ===========================================================================
++ * Read a new buffer from the current input file, perform end-of-line
++ * translation.
++ * Because KAE hardware has integrated CRC checksum functionality,
++ * Do Not update the crc. Only Update the input file size.
++ * IN assertion: size >= 2 (for end-of-line translation)
++ */
++int
++file_read_for_kae (char *buf, unsigned size)
++{
++    unsigned len;
++
++    Assert(insize == 0, "inbuf not empty");
++
++    len = read_buffer (ifd, buf, size);
++    if (len == 0) return (int)len;
++    if (len == (unsigned)-1) {
++        read_error();
++    }
++
++    bytes_in += (off_t)len;
++    return (int)len;
++}
