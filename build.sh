@@ -9,6 +9,7 @@ KAE_OPENSSL_DIR=${SRC_PATH}/KAEOpensslEngine
 KAE_ZLIB_DIR=${SRC_PATH}/KAEZlib
 KAE_ZSTD_DIR=${SRC_PATH}/KAEZstd
 KAE_LZ4_DIR=${SRC_PATH}/KAELz4
+KAE_GZIP_DIR=${SRC_PATH}/KAEGzip
 
 KAE_BUILD=${SRC_PATH}/kae_build/
 KAE_BUILD_LIB=${SRC_PATH}/kae_build/lib
@@ -454,6 +455,18 @@ function lz4_clean()
     rm -rf /usr/local/kaelz4/
 }
 
+function build_gzip()
+{
+    cd ${SRC_PATH}/KAEGzip
+    sh build.sh install
+}
+
+function gzip_clean()
+{
+    cd ${SRC_PATH}/KAEGzip
+    sh build.sh uninstall
+}
+
 function help()
 {
 	echo "build KAE"
@@ -484,6 +497,9 @@ function help()
 	echo "sh build.sh zstd -- install zstd using KAE"
 	echo "sh build.sh zstd clean -- uninstall zstd using KAE"
 
+    echo "sh build.sh gzip -- install gzip using KAE"
+	echo "sh build.sh gzip clean -- uninstall gzip using KAE"
+
 	echo "sh build.sh cleanup -- clean up all component"
 }
 
@@ -503,6 +519,7 @@ function build_all_components()
     build_uadk
     build_engine
     build_zlib
+    build_gzip
     if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
         echo "this cpu not support kaezstd and kaelz4."
     else
@@ -517,6 +534,7 @@ function clear_all_components()
     uadk_clean   || true 
     engine_clean || true  
     zlib_clean   || true  
+    gzip_clean   || true
  
     if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
         echo "this cpu not support kaezstd and kaelz4."
@@ -607,6 +625,13 @@ main() {
                 fi  
             fi  
             ;;  
+        "gzip")
+            if [ "$2" = "clean" ]; then  
+                gzip_clean
+            else  
+                build_gzip
+            fi  
+            ;; 
         "rpm")  
             set +e  
             clear_all_components  
