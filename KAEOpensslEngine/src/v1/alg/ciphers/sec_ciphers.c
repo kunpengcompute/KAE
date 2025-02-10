@@ -319,11 +319,12 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
 	switch (priv_ctx->c_mode) {
 	case ECB:
 		break;
+    case CFB：
 	case CBC:
 		if (priv_ctx->encrypt == OPENSSL_ENCRYPTION)
 			kae_memcpy(priv_ctx->iv, priv_ctx->out - 16, 16);  // hardware need 16-byte alignment
 		else
-			kae_memcpy(priv_ctx->iv, priv_ctx->next_iv, 16);  // hardware need 16-byte alignment
+			kae_memcpy(priv_ctx->iv, priv_ctx->in - 16, 16);  // hardware need 16-byte alignment
 		break;
 	case CTR:
 		increase_counter = (do_cipher_len + priv_ctx->offset) >> 4; // right shift 4
@@ -350,10 +351,6 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
 
 static int sec_ciphers_before_dociphers_cb(cipher_priv_ctx_t *priv_ctx)
 {
-	// store IV for next cbc decryption operation
-	if (priv_ctx->encrypt == OPENSSL_DECRYPTION && priv_ctx->c_mode == CBC)
-		kae_memcpy(priv_ctx->next_iv, priv_ctx->in + priv_ctx->do_cipher_len - priv_ctx->iv_len, priv_ctx->iv_len);
-
 	if (priv_ctx->c_mode == XTS && priv_ctx->c_alg == AES) {
 		sec_ciphers_ecb_encryt(priv_ctx->ecb_encryto,
 				priv_ctx->ecb_encryto->encryto_iv,

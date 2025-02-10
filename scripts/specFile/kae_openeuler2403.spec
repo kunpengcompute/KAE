@@ -412,7 +412,7 @@ echo "openssl engine uninstalled"
 /sbin/ldconfig
 
 %changelog
-* Jan Mon 20 2025 nieweiqiang <nieweiqiang@huawei.com> 2.0.4-1
+* Mon Jan 20 2025 nieweiqiang <nieweiqiang@huawei.com> 2.0.4-1
 - Update Spec Version Include kunpeng accelerator engine Code
 
 * Tue Mar 19 2024 linyixiang <linyixiang2@huawei.com> 2.0.3-1
