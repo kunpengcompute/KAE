@@ -319,7 +319,7 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx_t *priv_ctx)
 	switch (priv_ctx->c_mode) {
 	case ECB:
 		break;
-    case CFB：
+    case CFB:
 	case CBC:
 		if (priv_ctx->encrypt == OPENSSL_ENCRYPTION)
 			kae_memcpy(priv_ctx->iv, priv_ctx->out - 16, 16);  // hardware need 16-byte alignment
