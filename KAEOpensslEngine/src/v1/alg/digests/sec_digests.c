@@ -481,6 +481,10 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 		to_ctx->soft_ctx = NULL;
 		to_ctx->soft_ctx = EVP_MD_CTX_new();
 	}
+	
+    if(from_ctx->total_data_len < sec_digests_sw_get_threshold(from_ctx->e_nid)) {
+		return 1;
+	}
 
 	if (to_ctx->e_digest_ctx) {
 		to_ctx->e_digest_ctx = NULL;
