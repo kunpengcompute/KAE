@@ -1,4 +1,2 @@
-gtest编译流程
-1. mkdir build
-2. cmake ..
-3. make
+sh build.sh
+sh build.sh clean
