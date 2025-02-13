@@ -28,10 +28,5 @@ then
 fi
 
 #这里可以考虑通过wget的方式获取想要的gtest包,如果环境有googletest-release-1.11.0.zip，复制到此目录也行
-cmc_password=encryption:ETMsDgAAAX/ivQNAABRBRVMvQ0JDL1BLQ1M1UGFkZGluZwCAABAAEKr5STl2OcRhT+LTEVcntCgAAAAgj0qJKhxDoLlKf71D8TZ+svEoskxC48Ac2mbIsNPPDn8AFGxAXNHURIA/BEnJIapqrbN6LgqX && sed -i "/<password>/,/<\/password>/s#<password>.*</password>#<password>${cmc_password}</password>#g" ~/.ArtGet/conf/Setting.xml
-sed -i "/<userName>/,/<\/userName>/s#<userName>.*</userName>#<userName>pDriverCI</userName>#g" ~/.ArtGet/conf/Setting.xml
-sed -i "/<agentPath>/,/<\/agentPath>/s#<agentPath>.*</agentPath>#<agentPath>${test}</agentPath>#g" ~/.ArtGet/conf/Setting.xml
-
-artget pull -d download.xml
 
 unzip googletest-release-1.11.0.zip
