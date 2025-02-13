@@ -44,7 +44,7 @@ LDFLAGS   += $(LIBS)
 # The command used to delete file.
 RM        = rm -f
 
-SOURCES = $(SRCDIRS)/original_case.cpp.cpp
+SOURCES = $(SRCDIRS)/original_case.cpp
 SOURCES += $(SRCDIRS)/zlib_compress.cpp
 SOURCES += $(SRCDIRS)/zlib_inflate.cpp
 
