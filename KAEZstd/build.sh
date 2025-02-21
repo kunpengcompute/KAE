@@ -7,7 +7,7 @@ set -e
 SRC_PATH=$(pwd)
 BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
 
-function Target_zlib()
+function Target_zstd()
 {
     cd "${SRC_PATH}"/open_source
     rm -rf zstd
@@ -18,7 +18,7 @@ function Target_zlib()
 
 function Build_kaezstd()
 {
-    Target_zlib
+    Target_zstd
     cd "${SRC_PATH}"
 	make clean && make
     make install
@@ -31,7 +31,7 @@ function Build_kaezstd()
 
 function Dev_Build_kaezstd()
 {
-    Target_zlib
+    Target_zstd
     cd "${SRC_PATH}"
 	make clean && make
     make 
@@ -55,12 +55,12 @@ function Install_kaezstd()
 
 function Uninstall_kaezstd()
 {
-    local zlib_path=
+    local zstd_path=
     if [ -d "${SRC_PATH}"/open_source/zstd/ ]; then
 	set +e
-        zlib_path=$(ls /usr/local/kaezstd/lib | grep libzstd.so)
+        zstd_path=$(ls /usr/local/kaezstd/lib | grep libzstd.so)
         set -e
-	if [ -n "${zlib_path}" ]; then
+	if [ -n "${zstd_path}" ]; then
             cd "${SRC_PATH}"/open_source/zstd/
             make PREFIX=/usr/local/kaezstd/ uninstall && make clean
             rm -rf "${SRC_PATH}"/open_source/zstd
