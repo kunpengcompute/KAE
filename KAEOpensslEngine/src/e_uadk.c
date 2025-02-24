@@ -395,13 +395,15 @@ static void bind_fn_kae_alg(ENGINE *e)
 	if (dev_num > 0) {
 		if (!hpre_module_sm2_init()){
 			fprintf(stderr, "uadk bind sm2 failed\n");
-		}else{
+		} else {
 			uadk_sm2_nosva = 1;
 			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 dh)");
 		}
-	}else{
-		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
+	} else if (dev_num == 0) {
+		US_DEBUG("sm2 queue run out, switch to soft");
+	} else {
+        US_DEBUG("sm2 wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+    }
 #endif
 
 	dev_num = wd_get_nosva_dev_num("cipher");
@@ -409,26 +411,30 @@ static void bind_fn_kae_alg(ENGINE *e)
 		cipher_module_init();
 		if (!ENGINE_set_ciphers(e, sec_engine_ciphers)){
 			fprintf(stderr, "uadk bind cipher failed\n");
-		}else{
+		} else {
 			uadk_cipher_nosva = 1;
 			US_DEBUG("ENGINE_set_ciphers successed (bind v1 cipher)");
 		}
-	}else{
-		US_DEBUG("cipher use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
+	} else if (dev_num == 0) {
+		US_DEBUG("cipher(aes/sm4) queue run out, switch to soft");
+	} else {
+        US_DEBUG("cipher(aes/sm4) wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+    }
 
 	dev_num = wd_get_nosva_dev_num("digest");
 	if (dev_num > 0) {
 		digest_module_init();
 		if (!ENGINE_set_digests(e, sec_engine_digests)){
 			fprintf(stderr, "uadk bind digest failed\n");
-		}else{
+		} else {
 			uadk_digest_nosva = 1;
 			US_DEBUG("ENGINE_set_digests successed (bind v1 digest)");
 		}
-	}else{
-		US_DEBUG("digest use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
+	} else if (dev_num == 0) {
+		US_DEBUG("digest(md5/sm3) queue run out, switch to soft");
+	} else {
+        US_DEBUG("digest(md5/sm3) wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+    }
 
 	dev_num = wd_get_nosva_dev_num("rsa");
 	if (dev_num > 0) {
@@ -436,26 +442,30 @@ static void bind_fn_kae_alg(ENGINE *e)
 		ENGINE_set_pkey_meths(e, hpre_pkey_meths);
 		if (!ENGINE_set_RSA(e, hpre_get_rsa_methods())){
 			fprintf(stderr, "uadk bind rsa failed\n");
-		}else{
+		} else {
 			uadk_rsa_nosva = 1;
 			US_DEBUG("ENGINE_set_RSA successed (bind v1 rsa)");
 		}
-	}else{
-		US_DEBUG("rsa use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
+	} else if (dev_num == 0) {
+		US_DEBUG("rsa queue run out, switch to soft");
+	} else {
+        US_DEBUG("rsa wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+    }
 
 	dev_num = wd_get_nosva_dev_num("dh");
 	if (dev_num > 0) {
 		hpre_module_dh_init();
 		if (!ENGINE_set_DH(e, hpre_get_dh_methods())){
 			fprintf(stderr, "uadk bind dh failed\n");
-		}else{
+		} else {
 			uadk_dh_nosva = 1;
 			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
 		}
-	}else{
-		US_DEBUG("dh use wd_get_nosva_dev_num faild ,no availiable dev_num");
-	}
+	} else if (dev_num == 0) {
+		US_DEBUG("dh queue run out, switch to soft");
+	} else {
+        US_DEBUG("dh wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+    }
 }
 #endif
 
@@ -469,12 +479,12 @@ static void bind_fn_uadk_alg(ENGINE *e)
 	if (dev) {
 		if (!uadk_e_bind_ciphers(e)){
 			fprintf(stderr, "uadk bind cipher failed\n");
-		}else{
+		} else {
 			uadk_cipher = 1;
 			US_DEBUG("uadk_e_bind_cipher successed (bind v2 cipher)");
 		}
 		free(dev);
-	}else{
+	} else {
 		US_DEBUG("cipher use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
@@ -482,12 +492,12 @@ static void bind_fn_uadk_alg(ENGINE *e)
 	if (dev) {
 		if (!uadk_e_bind_digest(e)){
 			fprintf(stderr, "uadk bind digest failed\n");
-		}else{
+		} else {
 			uadk_digest = 1;
 			US_DEBUG("uadk_e_bind_digest successed (bind v2 digest)");
 		}
 		free(dev);
-	}else{
+	} else {
 		US_DEBUG("digest use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
@@ -495,12 +505,12 @@ static void bind_fn_uadk_alg(ENGINE *e)
 	if (dev) {
 		if (!uadk_e_bind_rsa(e)){
 			fprintf(stderr, "uadk bind rsa failed\n");
-		}else{
+		} else {
 			uadk_rsa = 1;
 			US_DEBUG("uadk_e_bind_rsa successed (bind v2 rsa)");
 		}
 		free(dev);
-	}else{
+	} else {
 		US_DEBUG("rsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
@@ -508,12 +518,12 @@ static void bind_fn_uadk_alg(ENGINE *e)
 	if (dev) {
 		if (!uadk_e_bind_dh(e)){
 			fprintf(stderr, "uadk bind dh failed\n");
-		}else{
+		} else {
 			uadk_dh = 1;
 			US_DEBUG("uadk_e_bind_dh successed (bind v2 dh)");
 		}
 		free(dev);
-	}else{
+	} else {
 		US_DEBUG("dh use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 
@@ -522,12 +532,12 @@ static void bind_fn_uadk_alg(ENGINE *e)
 	if (dev) {
 		if (!uadk_e_bind_ecc(e)){
 			fprintf(stderr, "uadk bind ecc failed\n");
-		}else{
+		} else {
 			uadk_ecc = 1;
 			US_DEBUG("uadk_e_bind_ecc successed (bind v2 ecc)");
 		}
 		free(dev);
-	}else{
+	} else {
 		US_DEBUG("ecdsa use wd_get_accel_dev faild ,no availiable dev_num");
 	}
 }
