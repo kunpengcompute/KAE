@@ -396,6 +396,9 @@ static int hpre_rsa_public_encrypt(int flen, const unsigned char *from,
     hpre_engine_ctx_t *eng_ctx = NULL;
     unsigned char *in_buf = NULL;
 
+    if (!to)
+		return RSA_size(rsa);
+
     if (hpre_rsa_check_para(flen, from, to, rsa) != HPRE_CRYPTO_SUCC) {
         return HPRE_CRYPTO_FAIL;
     }
@@ -674,6 +677,9 @@ static int hpre_rsa_private_decrypt(int flen, const unsigned char *from,
     unsigned char *buf = (unsigned char *)NULL;
     BN_CTX *bn_ctx = NULL;
 
+	if (!to)
+		return RSA_size(rsa);
+        
     if (hpre_rsa_check_para(flen, from, to, rsa) != HPRE_CRYPTO_SUCC) {
         return HPRE_CRYPTO_FAIL;
     }
