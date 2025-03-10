@@ -631,7 +631,6 @@ int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int n
 	}
 
 	/* No specific digest => return a list of supported nids ... */
-	/* No specific digest => return a list of supported nids ... */
 	if (digest == NULL) {
 		if (nids != NULL)
 			*nids = g_known_digest_nids;
@@ -653,6 +652,29 @@ int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int n
 	*digest = NULL;
 
 	return OPENSSL_FAIL;
+}
+
+int sec_engine_soft_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int nid)
+{
+	UNUSED(e);
+
+	if ((nids == NULL) && ((digest == NULL) || (nid < 0))) {
+		US_ERR("%s invalid input param.", __func__);
+		if (digest != NULL)
+			*digest = NULL;
+		return OPENSSL_FAIL;
+	}
+
+	/* No specific digest => return a list of supported nids ... */
+	if (digest == NULL) {
+		if (nids != NULL)
+			*nids = g_known_digest_nids;
+		return BLOCKSIZES_OF(g_sec_digests_info);
+	}
+
+	*digest = EVP_get_digestbynid(nid);
+
+	return OPENSSL_SUCCESS;
 }
 
 void sec_digests_free_methods(void)

@@ -337,6 +337,13 @@ static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
 	return -1;
 }
 
+static int sm2_pkey_soft = 0;
+
+void set_sm2_pkey_soft()
+{
+	sm2_pkey_soft = 1;
+}
+
 int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 		const int **pnids, int nid)
 {
@@ -357,7 +364,11 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 		break;
 #ifndef KAE_GMSSL
 	case EVP_PKEY_SM2:
-		*pmeth = get_sm2_pkey_meth();
+		if (!sm2_pkey_soft) {
+			*pmeth = get_sm2_pkey_meth();
+		} else {
+			*pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_SM2);
+		}
 		break;
 #endif
 	default:

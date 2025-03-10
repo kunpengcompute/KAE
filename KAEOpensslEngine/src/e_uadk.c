@@ -145,6 +145,30 @@ static struct uadk_alg_env_enabled uadk_env_enabled[] = {
 	{ "ecc", 0 }
 };
 
+typedef enum kae_alg_type_enum {
+	KAE_SM2_TYPE = 0,
+    KAE_CIPHER_TYPE,
+	KAE_DIGEST_TYPE,
+	KAE_RSA_TYPE,
+	KAE_DH_TYPE,
+	KAE_ALG_TYPE_MAX
+}kae_alg_type_e;
+
+static const char* kae_alg_type_names[] = {
+    [KAE_SM2_TYPE] = "sm2",
+    [KAE_CIPHER_TYPE] = "cipher(aes/sm4)",
+    [KAE_DIGEST_TYPE] = "digest(md5/sm3)",
+    [KAE_RSA_TYPE] = "rsa",
+    [KAE_DH_TYPE] = "dh"
+};
+
+const char* get_alg_string(kae_alg_type_e type) {
+    if (type >= KAE_ALG_TYPE_MAX) {
+        return "unknown kae alg type";
+    }
+    return kae_alg_type_names[type];
+}
+
 int uadk_e_is_env_enabled(const char *alg_name)
 {
 	int len = ARRAY_SIZE(uadk_env_enabled);
@@ -384,6 +408,36 @@ static void engine_init_child_at_fork_handler(void)
 		fprintf(stderr, "failed to init child async module!\n");
 }
 
+
+static void bind_kae_soft_alg(ENGINE *e, kae_alg_type_e kae_alg_type, int dev_num)
+{
+	if (dev_num == 0) {
+		US_DEBUG("%s queue run out, switch to soft", get_alg_string(kae_alg_type));
+	} else {
+		US_DEBUG("%s wd_get_nosva_dev_num faild, no availiable dev, switch to soft", get_alg_string(kae_alg_type));
+	}
+
+    switch(kae_alg_type) {
+        case KAE_SM2_TYPE:
+			set_sm2_pkey_soft();
+            break;
+        case KAE_CIPHER_TYPE:
+			ENGINE_set_ciphers(e, sec_engine_soft_ciphers);
+            break;
+        case KAE_DIGEST_TYPE:
+			ENGINE_set_digests(e, sec_engine_soft_digests);
+            break;
+		case KAE_RSA_TYPE:
+			ENGINE_set_RSA(e, RSA_get_default_method());
+            break;
+		case KAE_DH_TYPE:
+			ENGINE_set_DH(e, DH_get_default_method());
+            break;
+        default:
+            break;
+    }
+}
+
 #ifdef KAE
 static void bind_fn_kae_alg(ENGINE *e)
 {
@@ -397,12 +451,10 @@ static void bind_fn_kae_alg(ENGINE *e)
 			fprintf(stderr, "uadk bind sm2 failed\n");
 		} else {
 			uadk_sm2_nosva = 1;
-			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 dh)");
+			US_DEBUG("ENGINE_set_pkey_meths sm2 successed (bind v1 sm2)");
 		}
-	} else if (dev_num == 0) {
-		US_DEBUG("sm2 queue run out, switch to soft");
 	} else {
-        US_DEBUG("sm2 wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+        bind_kae_soft_alg(e, KAE_SM2_TYPE, dev_num);
     }
 #endif
 
@@ -415,10 +467,8 @@ static void bind_fn_kae_alg(ENGINE *e)
 			uadk_cipher_nosva = 1;
 			US_DEBUG("ENGINE_set_ciphers successed (bind v1 cipher)");
 		}
-	} else if (dev_num == 0) {
-		US_DEBUG("cipher(aes/sm4) queue run out, switch to soft");
 	} else {
-        US_DEBUG("cipher(aes/sm4) wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+        bind_kae_soft_alg(e, KAE_CIPHER_TYPE, dev_num);
     }
 
 	dev_num = wd_get_nosva_dev_num("digest");
@@ -430,10 +480,8 @@ static void bind_fn_kae_alg(ENGINE *e)
 			uadk_digest_nosva = 1;
 			US_DEBUG("ENGINE_set_digests successed (bind v1 digest)");
 		}
-	} else if (dev_num == 0) {
-		US_DEBUG("digest(md5/sm3) queue run out, switch to soft");
 	} else {
-        US_DEBUG("digest(md5/sm3) wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+        bind_kae_soft_alg(e, KAE_DIGEST_TYPE, dev_num);
     }
 
 	dev_num = wd_get_nosva_dev_num("rsa");
@@ -446,10 +494,8 @@ static void bind_fn_kae_alg(ENGINE *e)
 			uadk_rsa_nosva = 1;
 			US_DEBUG("ENGINE_set_RSA successed (bind v1 rsa)");
 		}
-	} else if (dev_num == 0) {
-		US_DEBUG("rsa queue run out, switch to soft");
 	} else {
-        US_DEBUG("rsa wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+        bind_kae_soft_alg(e, KAE_RSA_TYPE, dev_num);
     }
 
 	dev_num = wd_get_nosva_dev_num("dh");
@@ -461,10 +507,8 @@ static void bind_fn_kae_alg(ENGINE *e)
 			uadk_dh_nosva = 1;
 			US_DEBUG("ENGINE_set_DH successed (bind v1 dh)");
 		}
-	} else if (dev_num == 0) {
-		US_DEBUG("dh queue run out, switch to soft");
 	} else {
-        US_DEBUG("dh wd_get_nosva_dev_num faild, no availiable dev, switch to soft");
+        bind_kae_soft_alg(e, KAE_DH_TYPE, dev_num);
     }
 }
 #endif

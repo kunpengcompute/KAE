@@ -838,6 +838,30 @@ int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, i
 	return OPENSSL_FAIL;
 }
 
+int sec_engine_soft_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, int nid)
+{
+	
+	UNUSED(e);
+
+	if (unlikely((nids == NULL) && ((cipher == NULL) || (nid < 0)))) {
+		US_WARN("Invalid input param.");
+		if (cipher != NULL)
+			*cipher = NULL;
+		return OPENSSL_FAIL;
+	}
+
+	/* No specific cipher => return a list of supported nids ... */
+	if (cipher == NULL) {
+		if (nids != NULL)
+			*nids = g_known_cipher_nids;
+		return BLOCKSIZES_OF(g_sec_ciphers_info);
+	}
+
+	*cipher = EVP_get_cipherbynid(nid);
+
+	return OPENSSL_SUCCESS;
+}
+
 void sec_ciphers_free_ciphers(void)
 {
 	unsigned int i = 0;
