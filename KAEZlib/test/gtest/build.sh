@@ -15,7 +15,6 @@ function build_googletest()
         make -j16
         cp ${GOOGLE_TEST_DIR}/build/lib/*.a ${BUILD_PATH}/test_tool_bins/gtest/
     fi
-    cd -
 }
 
 function download_googletest()
@@ -44,6 +43,7 @@ function main()
     build_googletest
    
     # 编译测试代码
+    cd ${BUILD_PATH}
     make
 }
 
