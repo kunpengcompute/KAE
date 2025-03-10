@@ -24,7 +24,7 @@ SRCEXTS   := .c .cpp # C program
 
 # header and lib
 INCDIR := -I /usr/local/kaezip/include/
-LIBDIR := -L /usr/local/kaezip/lib/
+LIBDIR := -L/usr/local/kaezip/lib/
 LIBDIR += -L/usr/lib/
 
 # Include
@@ -40,13 +40,14 @@ LIBS +=  -lgtest_main -lgtest -lz
 CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11 #-Wl,-rpath,/usr/local/kaezip/lib
 LDFLAGS   += $(LIBDIR)
 LDFLAGS   += $(LIBS)
+LDFLAGS   += -Wl,-rpath,/usr/local/kaezip/lib
 
 # The command used to delete file.
 RM        = rm -f
 
 SOURCES = $(SRCDIRS)/original_case.cpp
-SOURCES += $(SRCDIRS)/zlib_compress.cpp
-SOURCES += $(SRCDIRS)/zlib_inflate.cpp
+# SOURCES += $(SRCDIRS)/zlib_compress.cpp
+# SOURCES += $(SRCDIRS)/zlib_inflate.cpp
 
 OBJS    = $(foreach x,$(SRCEXTS), \
       $(patsubst %$(x), %.o, $(filter %$(x),$(SOURCES))))

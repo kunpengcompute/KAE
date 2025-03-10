@@ -104,8 +104,9 @@ static void common_test(int windowBits, int level, bool is_pref = false, ofstrea
         if (ostrm) {
             (*ostrm) << fileName << "," << windowBits << "," << level << ",";
         }
+        std::string fullPath = "../../../scripts/compressTestDataset/" + fileName;
         input = compress_data = uncompress_data = nullptr;
-        uLong input_size = read_inputFile(input, fileName.c_str());
+        uLong input_size = read_inputFile(input, fullPath.c_str());
         ASSERT_NE(input_size, 0);
 
         uLong compress_size = compressBound(input_size);
@@ -159,10 +160,10 @@ TEST(ZlibTest, CompressAndDecompress_SmallCase)
     ASSERT_NE(input, nullptr);
     generate_random_data(input, input_size);
 
-    Bytef* compress_data = new Bytef[compressBound(input_size)]();
+    Bytef* compress_data = new Bytef[compressBound(input_size) + 20](); //For gzip-format, there are additional bytes
     ASSERT_NE(compress_data, nullptr);
 
-    Bytef* uncompress_data = new Bytef[compressBound(input_size)]();
+    Bytef* uncompress_data = new Bytef[compressBound(input_size) + 20]();
     ASSERT_NE(uncompress_data, nullptr);
     
     for (int windowBits : g_windowBitsArr) {
@@ -174,8 +175,8 @@ TEST(ZlibTest, CompressAndDecompress_SmallCase)
 #ifdef Z_DEBUG
         fprintf(stdout, "windowBits : %d\n", windowBits);
 #endif
-        uLong compress_size = compressBound(input_size);
-        uLong uncompress_size = compressBound(input_size);
+        uLong compress_size = compressBound(input_size) + 20;
+        uLong uncompress_size = compressBound(input_size) + 20;
         memset(compress_data, 0, compress_size);
         memset(uncompress_data, 0, uncompress_size);   
         common_compress(windowBits, 9, input, input_size, compress_data, compress_size);
@@ -196,10 +197,10 @@ TEST(ZlibTest, CompressAndDecompress_LargeCase)
     ASSERT_NE(input, nullptr);
     generate_random_data(input, input_size);
 
-    Bytef* compress_data = new Bytef[compressBound(input_size)]();     // init all 0
+    Bytef* compress_data = new Bytef[compressBound(input_size) + 20]();     // init all 0
     ASSERT_NE(compress_data, nullptr);
 
-    Bytef* uncompress_data = new Bytef[compressBound(input_size)]();   // init all 0
+    Bytef* uncompress_data = new Bytef[compressBound(input_size) + 20]();   // init all 0
     ASSERT_NE(uncompress_data, nullptr);
     
     for (int windowBits : g_windowBitsArr) {
@@ -211,8 +212,8 @@ TEST(ZlibTest, CompressAndDecompress_LargeCase)
 #ifdef Z_DEBUG
         fprintf(stdout, "windowBits : %d\n", windowBits);
 #endif
-        uLong compress_size = compressBound(input_size);
-        uLong uncompress_size = compressBound(input_size);
+        uLong compress_size = compressBound(input_size) + 20;
+        uLong uncompress_size = compressBound(input_size) + 20;
         memset(compress_data, 0, compress_size);
         memset(uncompress_data, 0, uncompress_size);    
         common_compress(windowBits, 9, input, input_size, compress_data, compress_size);
