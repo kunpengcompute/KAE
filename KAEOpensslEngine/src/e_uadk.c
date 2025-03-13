@@ -321,6 +321,7 @@ static int uadk_engine_ctrl(ENGINE *e, int cmd, long i,
 
 static int uadk_destroy(ENGINE *e)
 {
+    kae_checking_q_sync_destroy();
 #ifdef KAE
 	if (uadk_cipher_nosva)
 		sec_ciphers_free_ciphers();

@@ -95,6 +95,18 @@ static void *kae_checking_q_loop_fn(void *args)
 	return NULL;  // lint !e527
 }
 
+void kae_checking_q_sync_destroy(void)
+{
+	(void)wd_digests_uninit_qnode_pool();
+	(void)wd_ciphers_uninit_qnode_pool();
+	(void)wd_hpre_dh_uninit_qnode_pool();
+	(void)wd_hpre_uninit_qnode_pool();
+#ifndef KAE_GMSSL
+	(void)wd_sm2_uninit_qnode_pool();
+#endif
+	(void)wd_aead_uninit_qnode_pool();
+}
+
 static void kae_checking_q_thread_destroy(void)
 {
 	kae_set_exit_flag();
