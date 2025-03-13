@@ -181,6 +181,7 @@ static int kae_engine_destroy(ENGINE *e)
 
         __sync_and_and_fetch(&g_bind_ref_count, 0);
     }
+    kae_checking_q_sync_destroy();
 
     return 1;
 }

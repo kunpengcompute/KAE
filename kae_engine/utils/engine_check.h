@@ -37,6 +37,7 @@ void kae_disable_async(void);
 int  kae_is_async_enabled(void);
 int  kae_checking_q_thread_init(void);
 void kae_check_thread_reset();
+void kae_checking_q_sync_destroy(void);
 
 #endif // end of ENGINE_CHECK_H
 
