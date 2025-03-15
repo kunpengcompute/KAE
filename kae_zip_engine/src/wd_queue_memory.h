@@ -31,7 +31,7 @@
 #define CHECK_QUEUE_TIME_SECONDS    (60)  // seconds
 
 #define COMP_BLOCK_NUM              (4)
-#define COMP_BLOCK_SIZE             (1024 * 1024)
+#define COMP_BLOCK_SIZE             (2 * 1024 * 1024)
 
 typedef void (*kae_release_priv_ctx_cb)(void* priv_ctx);
 

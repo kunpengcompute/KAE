@@ -18,28 +18,26 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <errno.h>
 #include <sys/mman.h>
 #include <string.h>
-#include <assert.h>
 #include <dirent.h>
 #include <sys/poll.h>
+#include <limits.h>
 
-#include "wd.h"
 #include "wd_util.h"
 #include "wd_adapter.h"
+#include "wd.h"
 
-#define SYS_CLASS_DIR	"/sys/class"
 #define LINUX_DEV_DIR	"/dev"
-#define UACCE_CLASS_DIR SYS_CLASS_DIR"/"UACCE_CLASS_NAME
+#define WD_UACCE_CLASS_DIR		"/sys/class/"WD_UACCE_CLASS_NAME
 #define _TRY_REQUEST_TIMES		64
 #define INT_MAX_SIZE			10
 #define LINUX_CRTDIR_SIZE		1
 #define LINUX_PRTDIR_SIZE		2
-#define INSTANCE_RATIO_FOR_DEV_SCHED		4
+#define INSTANCE_RATIO_FOR_DEV_SCHED	4
 
 #define GET_WEIGHT(distance, instances) (\
 		((instances) & 0xffff) | (((distance) & 0xffff) << 16))
@@ -47,12 +45,11 @@
 #define GET_AVAILABLE_INSTANCES(weight) ((weight) & 0xffff)
 
 #ifdef WITH_LOG_FILE
-FILE *flog_fd = NULL;
+FILE * flog_fd = NULL;
 #endif
 
 wd_log log_out = NULL;
 
-#define offsetof(t, m) ((size_t) &((t *)0)->m)
 #define container_of(ptr, type, member) ({ \
 		typeof(((type *)0)->member)(*__mptr) = (ptr); \
 		(type *)((char *)__mptr - offsetof(type, member)); })
@@ -63,39 +60,45 @@ struct dev_info {
 	int flags;
 	int ref;
 	int available_instances;
+	int iommu_type;
 	unsigned int weight;
 	char dev_root[PATH_STR_SIZE];
 	char name[WD_NAME_SIZE];
 	char api[WD_NAME_SIZE];
 	char algs[MAX_ATTR_STR_SIZE];
-	unsigned long qfrs_offset[UACCE_QFRT_MAX];
+	unsigned long qfrs_offset[WD_UACCE_QFRT_MAX];
 };
 
 static int get_raw_attr(const char *dev_root, const char *attr,
 							char *buf, size_t sz)
 {
 	char attr_file[PATH_STR_SIZE];
-	int fd;
-	int size;
+	char attr_path[PATH_MAX];
+	char *ptrRet = NULL;
+	int fd, size;
 
-	size = snprintf(attr_file, PATH_STR_SIZE, "%s/"UACCE_DEV_ATTRS"/%s",
+	size = snprintf(attr_file, PATH_STR_SIZE, "%s/%s",
 			dev_root, attr);
 	if (size <= 0) {
 		WD_ERR("get %s/%s path fail!\n", dev_root, attr);
-		return size;
+		return -WD_EINVAL;
 	}
 
-	/* The attr_file = "/sys/class/uacce/attrs/xxx"
+	ptrRet = realpath(attr_file, attr_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
+	/* The attr_file = "/sys/class/uacce/xxx"
 	 * It's the Internal Definition File Node
 	 */
-	fd = open(attr_file, O_RDONLY, 0);
+	fd = open(attr_path, O_RDONLY, 0);
 	if (fd < 0) {
-		WD_ERR("open %s fail!\n", attr_file);
-		return fd;
+		WD_ERR("open %s fail, errno = %d!\n", attr_path, errno);
+		return -ENODEV;
 	}
 	size = read(fd, buf, sz);
 	if (size <= 0) {
-		WD_ERR("read nothing at %s!\n", attr_file);
+		WD_ERR("read nothing at %s!\n", attr_path);
 		size = -ENODEV;
 	}
 
@@ -105,19 +108,20 @@ static int get_raw_attr(const char *dev_root, const char *attr,
 
 static int get_int_attr(struct dev_info *dinfo, const char *attr)
 {
-	int size;
-	char buf[MAX_ATTR_STR_SIZE];
+	char buf[MAX_ATTR_STR_SIZE] = {'\0'};
+	int ret;
 
-	/*
-	 * The signed int max number is INT_MAX 10bit char "4294967295"
-	 * When the value is begger than INT_MAX, it returns INT_MAX
-	 */
-	size = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE);
-	if (size < 0 || size >= INT_MAX_SIZE)
-		return size;
-	/* Handing the read string's end tails '\n' to '\0' */
-	buf[size] = '\0';
-	return atoi((char *)buf);
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, MAX_ATTR_STR_SIZE - 1);
+	if (ret < 0)
+		return ret;
+
+	ret = strtol(buf, NULL, 10);
+	if (errno == ERANGE) {
+		WD_ERR("failed to strtol %s, out of range!\n", buf);
+		return -errno;
+	}
+
+	return ret;
 }
 
 /*
@@ -128,23 +132,23 @@ static int get_int_attr(struct dev_info *dinfo, const char *attr)
 static int get_str_attr(struct dev_info *dinfo, const char *attr, char *buf,
 			size_t buf_sz)
 {
-	int size;
+	int ret;
 
-	size = get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
-	if (size < 0) {
+	ret = get_raw_attr(dinfo->dev_root, attr, buf, buf_sz);
+	if (ret < 0) {
 		buf[0] = '\0';
-		return size;
+		return ret;
 	}
 
-	if (size == buf_sz)
-		size = size - 1;
+	if ((__u32)ret == buf_sz)
+		ret = ret - 1;
 
-	buf[size] = '\0';
-	while ((size > 1) && (buf[size - 1] == '\n')) {
-		buf[size - 1] = '\0';
-		size = size - 1;
+	buf[ret] = '\0';
+	while ((ret > 1) && (buf[ret - 1] == '\n')) {
+		buf[ret - 1] = '\0';
+		ret = ret - 1;
 	}
-	return size;
+	return ret;
 }
 
 static int get_ul_vec_attr(struct dev_info *dinfo, const char *attr,
@@ -181,19 +185,23 @@ static int get_ul_vec_attr(struct dev_info *dinfo, const char *attr,
 	return 0;
 }
 
-static int is_alg_support(struct dev_info *dinfo, const char *alg)
+static bool is_alg_support(struct dev_info *dinfo, const char *alg)
 {
-	int alg_support_flag = 0;
 	char *alg_save = NULL;
 	char *alg_tmp;
 
+	if (!alg)
+		return false;
+
 	alg_tmp = strtok_r(dinfo->algs, "\n", &alg_save);
 	while (alg_tmp != NULL) {
-		if (alg && !strcmp(alg_tmp, alg))
-			alg_support_flag++;
+		if (!strcmp(alg_tmp, alg))
+			return true;
+
 		alg_tmp = strtok_r(NULL, "\n", &alg_save);
 	}
-	return  alg_support_flag;
+
+	return false;
 }
 
 static bool is_weight_more(unsigned int new, unsigned int old)
@@ -217,6 +225,90 @@ static bool is_weight_more(unsigned int new, unsigned int old)
 		return ins_new * INSTANCE_RATIO_FOR_DEV_SCHED >= ins_old;
 }
 
+static void get_iommu_type(struct dev_info *dinfo)
+{
+	if ((unsigned int)dinfo->flags & WD_UACCE_DEV_IOMMU)
+		dinfo->iommu_type = 1;
+	else
+		dinfo->iommu_type = 0;
+}
+
+static int get_int_attr_all(struct dev_info *dinfo)
+{
+	int ret;
+
+	/* ret == 1 means device has been isolated */
+	ret = get_int_attr(dinfo, "isolate");
+	if (ret < 0)
+		return -ENODEV;
+	else if (ret == 1)
+		return -EBUSY;
+
+	/* ret == 0 means device has no available queues */
+	ret = get_int_attr(dinfo, "available_instances");
+	if (ret < 0)
+		return -ENODEV;
+	else if (ret == 0)
+		return -EBUSY;
+
+	dinfo->available_instances = ret;
+
+	ret = get_int_attr(dinfo, "numa_distance");
+	if (ret < 0)
+		return ret;
+	dinfo->numa_dis = ret;
+
+	dinfo->node_id = get_int_attr(dinfo, "node_id");
+
+	ret = get_int_attr(dinfo, "flags");
+	if (ret < 0)
+		return ret;
+	// else if ((unsigned int)ret & WD_UACCE_DEV_SVA)
+	// 	return -ENODEV;
+
+	dinfo->flags = ret;
+
+	return 0;
+}
+
+static int get_str_attr_all(struct dev_info *dinfo, const char *alg)
+{
+	int ret;
+
+	ret = get_str_attr(dinfo, "algorithms",
+			    dinfo->algs, MAX_ATTR_STR_SIZE);
+	if (ret < 0)
+		return ret;
+
+	/* Add algorithm check to cut later pointless logic */
+	ret = is_alg_support(dinfo, alg);
+	if (!ret)
+		return -EPFNOSUPPORT;
+
+	ret = get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int get_ul_vec_attr_all(struct dev_info *dinfo)
+{
+	int ret;
+
+	ret = get_ul_vec_attr(dinfo, "region_mmio_size",
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_MMIO], 1);
+	if (ret < 0)
+		return ret;
+
+	ret = get_ul_vec_attr(dinfo, "region_dus_size",
+		&dinfo->qfrs_offset[WD_UACCE_QFRT_DUS], 1);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
 static int get_dev_info(struct dev_info *dinfo, const char *alg)
 {
 	char buf[PATH_STR_SIZE] = {0};
@@ -230,48 +322,24 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 	}
 
 	ret = access(buf, F_OK);
-	if (ret < 0)
+	if (ret < 0) {
+		WD_ERR("failed to check file path %s, ret: %d\n", buf, ret);
 		return -ENODEV;
+	}
 
-	ret = get_int_attr(dinfo, "isolate");
-	if (ret < 0 || ret == 1)
-		return -ENODEV;
-
-	ret = get_str_attr(dinfo, "algorithms",
-			    dinfo->algs, MAX_ATTR_STR_SIZE);
-	if (ret < 0)
+	ret = get_str_attr_all(dinfo, alg);
+	if (ret)
 		return ret;
 
-	/* Add ALG check to cut later pointless logic */
-	ret = is_alg_support(dinfo, alg);
-	if (ret == 0)
-		return -ENODEV;
-	ret = get_int_attr(dinfo, "available_instances");
-	if (ret <= 0)
-		return -ENODEV;
-	dinfo->available_instances = ret;
-
-	ret = get_int_attr(dinfo, "numa_distance");
-	if (ret < 0)
-		return ret;
-	dinfo->numa_dis = ret;
-
-	dinfo->node_id = get_int_attr(dinfo, "node_id");
-
-	ret = get_int_attr(dinfo, "flags");
-	if (ret < 0)
-		return ret;
-	dinfo->flags = ret;
-
-	ret = get_str_attr(dinfo, "api", dinfo->api, WD_NAME_SIZE);
-	if (ret < 0)
+	ret = get_int_attr_all(dinfo);
+	if (ret)
 		return ret;
 
-	ret = get_ul_vec_attr(dinfo, "qfrs_offset", dinfo->qfrs_offset,
-			      UACCE_QFRT_MAX);
-	if (ret < 0)
+	ret = get_ul_vec_attr_all(dinfo);
+	if (ret)
 		return ret;
 
+	get_iommu_type(dinfo);
 	/*
 	 * Use available_instances and numa_distance combine weight.
 	 * |	2 bytes	|	2bytes	|.
@@ -284,7 +352,7 @@ static int get_dev_info(struct dev_info *dinfo, const char *alg)
 }
 
 static bool copy_if_better(struct dev_info *old, struct dev_info *new,
-			    struct wd_capa *capa, unsigned int node_mask)
+			   unsigned int node_mask)
 {
 	bool find_node = false;
 
@@ -295,7 +363,6 @@ static bool copy_if_better(struct dev_info *old, struct dev_info *new,
 		((1 << (unsigned int)new->node_id) & node_mask))
 		find_node = true;
 
-	/* Is the new dev better? */
 	if (old && (!old->name[0] || find_node ||
 		is_weight_more(new->weight, old->weight))) {
 		memcpy(old, new, sizeof(*old));
@@ -315,10 +382,20 @@ static void pre_init_dev(struct dev_info *dinfo, const char *name)
 		return;
 	}
 
+	/* check the "attrs" file directory exists */
 	ret = snprintf(dinfo->dev_root, PATH_STR_SIZE,
-		       "%s/%s", UACCE_CLASS_DIR, name);
+		       "%s/%s/attrs", WD_UACCE_CLASS_DIR, name);
 	if (ret < 0) {
-		WD_ERR("get uacce file path fail!\n");
+		WD_ERR("failed to copy dev attrs file path!\n");
+		return;
+	}
+
+	ret = access(dinfo->dev_root, F_OK);
+	if (ret < 0) {
+		ret = snprintf(dinfo->dev_root, PATH_STR_SIZE,
+			       "%s/%s", WD_UACCE_CLASS_DIR, name);
+		if (ret < 0)
+			WD_ERR("failed to copy dev file path!\n");
 		return;
 	}
 }
@@ -343,10 +420,11 @@ static int find_available_dev(struct dev_info *dinfop,
 	struct dev_info dinfo;
 	char *name;
 	int cnt = 0;
+	int ret;
 
-	wd_class = opendir(UACCE_CLASS_DIR);
+	wd_class = opendir(WD_UACCE_CLASS_DIR);
 	if (!wd_class) {
-		WD_ERR("WD framework is not enabled on the system!\n");
+		WD_ERR("WD framework is not enabled on the system, errno = %d!\n", errno);
 		return -ENODEV;
 	}
 
@@ -359,12 +437,18 @@ static int find_available_dev(struct dev_info *dinfop,
 			!strncmp(name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 		pre_init_dev(&dinfo, name);
-		if (!get_dev_info(&dinfo, capa->alg)) {
+		ret = get_dev_info(&dinfo, capa->alg);
+		if (!ret) {
 			cnt++;
-			if (copy_if_better(dinfop, &dinfo, capa, node_mask)) {
+			if (copy_if_better(dinfop, &dinfo, node_mask)) {
 				find_node = true;
 				break;
 			}
+		} else if (ret == -EPFNOSUPPORT || ret == -EBUSY || ret == -ENODEV) {
+			continue;
+		} else {
+			closedir(wd_class);
+			return ret;
 		}
 	}
 
@@ -383,7 +467,7 @@ static int find_available_res(struct wd_queue *q, struct dev_info *dinfop,
 	int ret;
 
 	/* As user denotes a device */
-	if (dev && dev[0] && dev[0] != '/' && !strstr(dev, "../")) {
+	if (dev[0] && dev[0] != '/' && !strstr(dev, "../")) {
 		if (!dinfop) {
 			WD_ERR("dinfop NULL!\n");
 			return -EINVAL;
@@ -426,17 +510,24 @@ dev_path:
 
 static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 {
+	char q_path[PATH_MAX];
+	char *ptrRet = NULL;
 	struct q_info *qinfo;
 
 	qinfo = q->qinfo;
-	qinfo->fd = open(q->dev_path, O_RDWR | O_CLOEXEC);
+	ptrRet = realpath(q->dev_path, q_path);
+	if (ptrRet == NULL)
+		return -WD_ENODEV;
+
+	qinfo->fd = open(q_path, O_RDWR | O_CLOEXEC);
 	if (qinfo->fd == -1) {
-		qinfo->fd = 0;
-		return -ENODEV;
+		WD_ERR("open %s failed, errno = %d!\n", q_path, errno);
+		return -WD_ENODEV;
 	}
 
 	qinfo->hw_type = dev->api;
 	qinfo->dev_flags = dev->flags;
+	qinfo->iommu_type = dev->iommu_type;
 	qinfo->dev_info = dev;
 	qinfo->head = &qinfo->ss_list;
 	__atomic_clear(&qinfo->ref, __ATOMIC_RELEASE);
@@ -446,16 +537,18 @@ static int get_queue_from_dev(struct wd_queue *q, const struct dev_info *dev)
 
 	return 0;
 }
+
 static int wd_start_queue(struct wd_queue *q)
 {
 	int ret;
 	struct q_info *qinfo = q->qinfo;
 
-	ret = ioctl(qinfo->fd, UACCE_CMD_START);
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_START_Q);
 	if (ret)
-		WD_ERR("fail to start queue of %s\n", q->dev_path);
+		WD_ERR("failed to start queue of %s\n", q->dev_path);
 	return ret;
 }
+
 static void wd_close_queue(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
@@ -466,60 +559,69 @@ static void wd_close_queue(struct wd_queue *q)
 int wd_request_queue(struct wd_queue *q)
 {
 	struct dev_info *dinfop;
-	int ret, try_cnt = 0;
+	int try_cnt = 0;
+	int ret;
 
 	if (!q) {
-		WD_ERR("input param q is NULL!\n");
+		WD_ERR("input parameter q is NULL!\n");
 		return -WD_EINVAL;
 	}
-	dinfop = calloc(1, sizeof(struct q_info) + sizeof(*dinfop));
+
+	dinfop = calloc(1, sizeof(struct q_info) + sizeof(struct dev_info));
 	if (!dinfop) {
 		WD_ERR("calloc for queue info fail!\n");
 		return -WD_ENOMEM;
 	};
 	q->qinfo = dinfop + 1;
-try_again:
-	ret = find_available_res(q, dinfop, NULL);
-	if (ret) {
-		WD_ERR("cannot find available dev\n");
-		goto err_with_dev;
-	}
-	ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
-	if (ret == -WD_ENODEV) {
-		try_cnt++;
-		if (try_cnt < _TRY_REQUEST_TIMES) {
-			memset(dinfop, 0, sizeof(*dinfop));
-			goto try_again;
+
+	do {
+		ret = find_available_res(q, dinfop, NULL);
+		if (ret) {
+			WD_ERR("cannot find available device\n");
+			goto err_with_dev;
 		}
-		WD_ERR("fail to get queue!\n");
-		goto err_with_dev;
-	}
+
+		ret = get_queue_from_dev(q, (const struct dev_info *)dinfop);
+		if (!ret) {
+			break;
+		} else {
+			if (try_cnt++ > _TRY_REQUEST_TIMES) {
+				WD_ERR("fail to get queue!\n");
+				goto err_with_dev;
+			}
+
+			memset(dinfop, 0, sizeof(*dinfop));
+		}
+	} while (true);
+
 	ret = drv_open(q);
 	if (ret) {
-		WD_ERR("fail to init the queue by driver!\n");
+		WD_ERR("failed to initialize queue by driver!\n");
 		goto err_with_fd;
 	}
+
 	ret = wd_start_queue(q);
 	if (ret)
 		goto err_with_drv_openned;
 	return ret;
+
 err_with_drv_openned:
 	drv_close(q);
 err_with_fd:
 	wd_close_queue(q);
 err_with_dev:
 	free(dinfop);
+	q->qinfo = NULL;
 	return ret;
 }
 
 void wd_release_queue(struct wd_queue *q)
 {
-	struct wd_ss_region *rg;
 	struct wd_ss_region_list *head;
 	struct q_info *qinfo, *sqinfo;
 
 	if (!q || !q->qinfo) {
-		WD_ERR("release queue param error!\n");
+		WD_ERR("release queue parameter error!\n");
 		return;
 	}
 	qinfo = q->qinfo;
@@ -532,71 +634,81 @@ void wd_release_queue(struct wd_queue *q)
 	if (sqinfo != qinfo) /* q_share */
 		__atomic_sub_fetch(&sqinfo->ref, 1, __ATOMIC_RELAXED);
 
+	if (ioctl(qinfo->fd, WD_UACCE_CMD_PUT_Q))
+		WD_ERR("failed to put queue!\n");
+
+	drv_close(q);
+
 	/* q_reserve */
 	if (qinfo->ss_size)
 		drv_unmap_reserve_mem(q, qinfo->ss_va, qinfo->ss_size);
 
-	while (true) {
-		rg = TAILQ_FIRST(&qinfo->ss_list);
-		if (!rg)
-			break;
-		TAILQ_REMOVE(&qinfo->ss_list, rg, next);
-		free(rg);
-	}
+	drv_free_slice(q);
 
-	drv_close(q);
-	if (ioctl(qinfo->fd, UACCE_CMD_PUT_Q)) {
-		WD_ERR("fail to put queue!\n");
-		return;
-	}
 	wd_close_queue(q);
 	free((void *)qinfo->dev_info);
+	q->qinfo = NULL;
 }
 
 int wd_send(struct wd_queue *q, void *req)
 {
-	return drv_send(q, req);
+	if (unlikely(!q || !req)) {
+		WD_ERR("wd send input parameter null!\n");
+		return -EINVAL;
+	}
+	return wd_burst_send(q, &req, 1);
 }
 
 int wd_recv(struct wd_queue *q, void **resp)
 {
-	return drv_recv(q, resp);
+	if (unlikely(!q || !resp)) {
+		WD_ERR("wd recv input parameter null!\n");
+		return -EINVAL;
+	}
+	return wd_burst_recv(q, resp, 1);
 }
 
-static int wd_wait(struct wd_queue *q, __u16 ms)
+int wd_wait(struct wd_queue *q, __u16 ms)
 {
-	struct q_info *qinfo = q->qinfo;
+	struct q_info *qinfo;
+	struct wcrypto_paras *priv;
 	struct pollfd fds[1];
 	int ret;
 
+	if (unlikely(!q))
+		return -EINVAL;
+
+	priv = &q->capa.priv;
+	if (unlikely(!priv->is_poll))
+		return -EINVAL;
+
+	qinfo = q->qinfo;
 	fds[0].fd = qinfo->fd;
 	fds[0].events = POLLIN;
+
 	ret = poll(fds, 1, ms);
-	if (ret == -1)
+	if (unlikely(ret < 0))
 		return -ENODEV;
 
-	return 0;
+	/* return 0 for no data, 1 for new message */
+	return ret;
 }
 
 int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms)
 {
 	int ret;
 
-	while (1) {
-		ret = wd_recv(q, resp);
-		if (ret == 0) {
-			ret = wd_wait(q, ms);
-			if (ret)
-				return ret;
-		} else
-			return ret;
-	}
+	ret = wd_wait(q, ms);
+	if (likely(ret > 0))
+		return wd_recv(q, resp);
+
+	return ret;
 }
 
 void *wd_reserve_memory(struct wd_queue *q, size_t size)
 {
 	if (!q || !size) {
-		WD_ERR("wd reserve mem: param err!\n");
+		WD_ERR("wd reserve memory: parameter err!\n");
 		return NULL;
 	}
 
@@ -611,7 +723,7 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	int ret;
 
 	if (!q || !target_q || !q->qinfo || !target_q->qinfo) {
-		WD_ERR("wd share reserved mem: param err!\n");
+		WD_ERR("wd share reserved memory: parameter err!\n");
 		return -WD_EINVAL;
 	}
 
@@ -620,26 +732,26 @@ int wd_share_reserved_memory(struct wd_queue *q,
 	tgt_info = tqinfo->dev_info;
 	info = qinfo->dev_info;
 
-	if (((qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
-		!(tqinfo->dev_flags & UACCE_DEV_NOIOMMU)) ||
-		(!(qinfo->dev_flags & UACCE_DEV_NOIOMMU) &&
-		(tqinfo->dev_flags & UACCE_DEV_NOIOMMU))) {
+	/* Just share DMA memory from 'q' in NO-IOMMU mode */
+	if (qinfo->iommu_type) {
+		WD_ERR("IOMMU opened, not support share mem!\n");
+		return -EINVAL;
+	}
+
+	if (qinfo->iommu_type != tqinfo->iommu_type) {
 		WD_ERR("IOMMU type mismatching as share mem!\n");
 		return -WD_EINVAL;
 	}
 	if (info->node_id != tgt_info->node_id)
 		WD_ERR("Warn: the 2 queues is not at the same node!\n");
 
-	ret = ioctl(qinfo->fd, UACCE_CMD_SHARE_SVAS, tqinfo->fd);
+	ret = ioctl(qinfo->fd, WD_UACCE_CMD_SHARE_SVAS, tqinfo->fd);
 	if (ret) {
 		WD_ERR("ioctl share dma memory fail!\n");
 		return ret;
 	}
 
-	/* Just share DMA mem from 'q' in NO-IOMMU mode */
-	if (qinfo->dev_flags & UACCE_DEV_NOIOMMU)
-		tqinfo->head = qinfo->head;
-
+	tqinfo->head = qinfo->head;
 	__atomic_add_fetch(&qinfo->ref, 1, __ATOMIC_RELAXED);
 
 	return 0;
@@ -652,7 +764,7 @@ int wd_get_available_dev_num(const char *algorithm)
 	int ret;
 
 	if (!algorithm) {
-		WD_ERR("get dev num, param err!\n");
+		WD_ERR("algorithm is null!\n");
 		return -WD_EINVAL;
 	}
 
@@ -661,7 +773,7 @@ int wd_get_available_dev_num(const char *algorithm)
 	q.dev_path[0] = 0;
 	ret = find_available_res(&q, NULL, &num);
 	if (ret < 0)
-		WD_ERR("find_available_res err, ret %d!\n", ret);
+		WD_ERR("find_available_res err, ret = %d!\n", ret);
 	return num;
 }
 
@@ -687,7 +799,7 @@ void *wd_iova_map(struct wd_queue *q, void *va, size_t sz)
 	struct q_info *qinfo;
 
 	if (!q || !va) {
-		WD_ERR("wd iova map: param err!\n");
+		WD_ERR("wd iova map: parameter err!\n");
 		return NULL;
 	}
 
@@ -714,7 +826,7 @@ void *wd_dma_to_va(struct wd_queue *q, void *dma)
 	uintptr_t va;
 
 	if (!q || !q->qinfo || !dma) {
-		WD_ERR("wd dma to va, param err!\n");
+		WD_ERR("wd dma to va, parameter err!\n");
 		return NULL;
 	}
 
@@ -731,39 +843,38 @@ void *wd_dma_to_va(struct wd_queue *q, void *dma)
 	return NULL;
 }
 
-void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt,
-				    enum uacce_qfrt qfrt_next, size_t size)
+void *wd_drv_mmap_qfr(struct wd_queue *q, enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
+	size_t tmp = size;
 	off_t off;
-	void *ptr;
 
-	off = qinfo->qfrs_offset[qfrt];
+	off = qfrt * getpagesize();
 
-	if (qfrt_next != UACCE_QFRT_INVALID)
-		size = qinfo->qfrs_offset[qfrt_next] - qinfo->qfrs_offset[qfrt];
+	if (qfrt != WD_UACCE_QFRT_SS)
+		tmp = qinfo->qfrs_offset[qfrt];
 
-	ptr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, qinfo->fd, off);
-	return ptr;
+	return mmap(0, tmp, PROT_READ | PROT_WRITE,
+		    MAP_SHARED, qinfo->fd, off);
 }
 
 void wd_drv_unmmap_qfr(struct wd_queue *q, void *addr,
-				     enum uacce_qfrt qfrt,
-				     enum uacce_qfrt qfrt_next, size_t size)
+		       enum uacce_qfrt qfrt, size_t size)
 {
 	struct q_info *qinfo = q->qinfo;
 
 	if (!addr)
 		return;
-	if (qfrt_next != UACCE_QFRT_INVALID)
-		size = qinfo->qfrs_offset[qfrt_next] - qinfo->qfrs_offset[qfrt];
-	munmap(addr, size);
-}
 
+	if (qfrt != WD_UACCE_QFRT_SS)
+		munmap(addr, qinfo->qfrs_offset[qfrt]);
+	else
+		munmap(addr, size);
+}
 int wd_register_log(wd_log log)
 {
 	if (!log) {
-		WD_ERR("param null!\n");
+		WD_ERR("input log is null!\n");
 		return -WD_EINVAL;
 	}
 
@@ -778,3 +889,16 @@ int wd_register_log(wd_log log)
 	return WD_SUCCESS;
 }
 
+const char *wd_get_drv(struct wd_queue *q)
+{
+	struct q_info *qinfo;
+	const struct dev_info *dev;
+
+	if (!q || !q->qinfo)
+		return NULL;
+
+	qinfo = q->qinfo;
+	dev = qinfo->dev_info;
+
+	return (const char *)dev->api;
+}

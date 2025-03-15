@@ -8,10 +8,16 @@
 
 #define UACCE_CLASS_NAME	"uacce"
 #define UACCE_DEV_ATTRS		"attrs"
-#define UACCE_CMD_SHARE_SVAS	_IO('W', 0)
-#define UACCE_CMD_START		_IO('W', 1)
-#define UACCE_CMD_GET_SS_DMA	_IOR('W', 2, unsigned long)
-#define UACCE_CMD_PUT_Q		_IO('W', 3)
+// #define UACCE_CMD_SHARE_SVAS	_IO('W', 0)
+// #define UACCE_CMD_START		_IO('W', 1)
+// #define UACCE_CMD_GET_SS_DMA	_IOR('W', 2, unsigned long)
+// #define UACCE_CMD_PUT_Q		_IO('W', 3)
+
+#define UACCE_CMD_START	_IO('W', 0)
+#define UACCE_CMD_PUT_Q		_IO('W', 1)
+#define UACCE_CMD_SHARE_SVAS	_IO('W', 2)
+#define UACCE_CMD_GET_SS_DMA	_IOR('W', 3, unsigned long)
+
 
 /**
  * UACCE Device Attributes:

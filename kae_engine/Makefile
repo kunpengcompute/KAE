@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := $(OPENSSL_WORK_PATH)/lib/engines-1.1
 CC=gcc
 
 LIBNAME := libkae.so
-VERSION = 1.3.13
+VERSION = 1.3.11
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = kae.so
 
@@ -36,7 +36,7 @@ SRCDIRS   += ${WORK_PATH}/async
 SRCDIRS   += ${WORK_PATH}/wdmngr
 SRCDIRS   += ${WORK_PATH}/utils
 
-SRCEXTS   := .c .s # C program
+SRCEXTS   := .c # C program
 
 # Include
 INCDIR += -I $(WORK_PATH)/
@@ -48,8 +48,7 @@ INCDIR += -I $(WORK_PATH)/async
 INCDIR += -I $(WORK_PATH)/wdmngr
 INCDIR += -I $(WORK_PATH)/utils
 INCDIR += -I $(OPENSSL_WORK_PATH)/include
-INCDIR += -I /usr/include/warpdrive
-INCDIR += -I /usr/include/warpdrive/include
+
 # Include Libs.
 LIBDIR := -L$(OPENSSL_WORK_PATH)/lib
 LIBDIR += -L/usr/lib64
@@ -57,16 +56,10 @@ LIBS := -lcrypto -lwd -pthread
 LIBS += -lc_nonshared
 
 # The flags
-CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline
+CFLAGS    := -g -O2 -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -fgnu89-inline
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option
-ifdef KAE_GMSSL
-	SRCDIRS   += ${WORK_PATH}/alg/ciphers/sw
-    INCDIR    += -I $(WORK_PATH)/alg/ciphers/sw
-	LDFLAGS   += -Wl,-rpath,/usr/local/gmssl/lib:/usr/local/lib
-	CFLAGS    += -DKAE_GMSSL
-endif
 
 # The command used to delete file.
 RM        = rm -f
@@ -84,16 +77,10 @@ all : $(TARGET)
 # Rules for creating the dependency files (.d).
 %.d : %.c
 	$(CC) -MM -MD $(CFLAGS)  $<
-%.d : %.s
-	$(CC) -MM -MD $(CFLAGS)  $<
 
 # Rules for producing the objects.
 objs : $(OBJS)
 %.o : %.c
-	@echo compiling $(notdir $<)
-	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
-
-%.o : %.s
 	@echo compiling $(notdir $<)
 	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 

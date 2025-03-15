@@ -17,22 +17,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_rsa.h"
 #include "wd_util.h"
+#include "wd_rsa.h"
 
-#define WD_RSA_CTX_MSG_NUM		64
-#define WD_RSA_MAX_CTX			256
 #define RSA_BALANCE_THRHD	1280
 #define RSA_RESEND_CNT	8
+#define RSA_MAX_KEY_SIZE	512
+#define RSA_RECV_MAX_CNT	60000000 // 1 min
+#define RSA_KEYSIZE_1024	1024
+#define RSA_KEYSIZE_2048	2048
+#define RSA_KEYSIZE_3072	3072
+#define RSA_KEYSIZE_4096	4096
 
 static __thread int balance;
 
@@ -42,11 +43,9 @@ struct wcrypto_rsa_cookie {
 };
 
 struct wcrypto_rsa_ctx {
-	struct wcrypto_rsa_cookie cookies[WD_RSA_CTX_MSG_NUM];
-	__u8 cstatus[WD_RSA_CTX_MSG_NUM];
-	int cidx;
+	struct wd_cookie_pool pool;
 	__u32 key_size;
-	int ctx_id;
+	unsigned long ctx_id;
 	struct wd_queue *q;
 	struct wcrypto_rsa_pubkey *pubkey;
 	struct wcrypto_rsa_prikey *prikey;
@@ -76,6 +75,7 @@ struct wcrypto_rsa_kg_out {
 	__u32 dpbytes;
 	__u32 dqbytes;
 	__u32 qinvbytes;
+	__u32 size;
 	void *data[];
 };
 
@@ -109,7 +109,7 @@ struct wcrypto_rsa_prikey {
 	struct wcrypto_rsa_prikey2 pkey2;
 };
 
-/* RSA CRT prikey param types */
+/* RSA CRT private key parameter types */
 enum wcrypto_rsa_crt_prikey_para {
 	WD_CRT_PRIKEY_DQ,
 	WD_CRT_PRIKEY_DP,
@@ -121,7 +121,7 @@ enum wcrypto_rsa_crt_prikey_para {
 int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 {
 	if (!ki || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
 
@@ -132,14 +132,60 @@ int wcrypto_rsa_kg_in_data(struct wcrypto_rsa_kg_in *ki, char **data)
 int wcrypto_rsa_kg_out_data(struct wcrypto_rsa_kg_out *ko, char **data)
 {
 	if (!ko || !data) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return -WD_EINVAL;
 	}
 
 	*data = (char *)ko->data;
 
-	/* CRT need this size, but no CRT size is smaller */
-	return (int)CRT_GEN_PARAMS_SZ(ko->key_size);
+	return (int)ko->size;
+}
+
+static int kg_in_param_check(void *ctx, struct wd_dtb *e,
+			     struct wd_dtb *p, struct wd_dtb *q)
+{
+	struct wcrypto_rsa_kg_in *kg_in;
+	struct wcrypto_rsa_ctx *c = ctx;
+	struct wd_mm_br *br;
+	int kg_in_size;
+
+	if (unlikely(!c || !e || !p || !q)) {
+		WD_ERR("ctx br->alloc kg_in memory fail!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(!c->key_size || c->key_size > RSA_MAX_KEY_SIZE)) {
+		WD_ERR("key size err at create kg in!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(e->dsize > c->key_size)) {
+		WD_ERR("e para err at create kg in!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(p->dsize > CRT_PARAM_SZ(c->key_size))) {
+		WD_ERR("p para err at create kg in!\n");
+		return -WD_EINVAL;
+	}
+	if (unlikely(q->dsize > CRT_PARAM_SZ(c->key_size))) {
+		WD_ERR("q para err at create kg in!\n");
+		return -WD_EINVAL;
+	}
+
+	br = &c->setup.br;
+	if (unlikely(!br->alloc)) {
+		WD_ERR("new kg in user mm br err!\n");
+		return -WD_EINVAL;
+	}
+
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
+	if (unlikely(br->get_bufsize &&
+	    br->get_bufsize(br->usr) < (kg_in_size + sizeof(*kg_in)))) {
+		WD_ERR("Blk_size < need_size<0x%lx>.\n", (kg_in_size + sizeof(*kg_in)));
+		return -WD_EINVAL;
+	}
+
+	return 0;
 }
 
 /* Create a RSA key generate operation input with parameter e, p and q */
@@ -149,34 +195,16 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 	struct wcrypto_rsa_kg_in *kg_in;
 	struct wcrypto_rsa_ctx *c = ctx;
 	struct wd_mm_br *br;
-	int kg_in_size;
+	int kg_in_size, ret;
 
-	if (!c || !e || !p || !q) {
-		WD_ERR("ctx br->alloc kg_in memory fail!\n");
+	ret = kg_in_param_check(ctx, e, p, q);
+	if (unlikely(ret))
 		return NULL;
-	}
-	if (e->dsize > c->key_size) {
-		WD_ERR("e para err at create kg in!\n");
-		return NULL;
-	}
-	if (p->dsize > CRT_PARAM_SZ(c->key_size)) {
-		WD_ERR("p para err at create kg in!\n");
-		return NULL;
-	}
-	if (q->dsize > CRT_PARAM_SZ(c->key_size)) {
-		WD_ERR("q para err at create kg in!\n");
-		return NULL;
-	}
 
 	br = &c->setup.br;
-	if (!br->alloc) {
-		WD_ERR("new kg in user mm br err!\n");
-		return NULL;
-	}
-
-	kg_in_size = GEN_PARAMS_SZ(c->key_size);
+	kg_in_size = (int)GEN_PARAMS_SZ(c->key_size);
 	kg_in = br->alloc(br->usr, kg_in_size + sizeof(*kg_in));
-	if (!kg_in) {
+	if (unlikely(!kg_in)) {
 		WD_ERR("ctx br->alloc kg_in memory fail!\n");
 		return NULL;
 	}
@@ -187,7 +215,7 @@ struct wcrypto_rsa_kg_in *wcrypto_new_kg_in(void *ctx, struct wd_dtb *e,
 	kg_in->qbytes = q->dsize;
 	kg_in->e = (void *)kg_in->data;
 	kg_in->p = (void *)kg_in->e + c->key_size;
-	kg_in->q = (void *)kg_in->p + CRT_PARAM_SZ(c->key_size);
+	kg_in->q = (void *)((uintptr_t)kg_in->p + CRT_PARAM_SZ(c->key_size));
 
 	memcpy(kg_in->e, e->data, e->dsize);
 	memcpy(kg_in->p, p->data, p->dsize);
@@ -221,7 +249,7 @@ static void del_kg(void *ctx, void *k)
 	struct wd_mm_br  *br;
 
 	if (!c || !k) {
-		WD_ERR("del key generate params err!\n");
+		WD_ERR("delete key generate parameters err!\n");
 		return;
 	}
 
@@ -241,27 +269,36 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	struct wcrypto_rsa_ctx *c = ctx;
 	struct wd_mm_br *br;
 	int kg_out_size;
-	int kz;
+	__u32 kz;
 
-	if (!c) {
+	if (unlikely(!c)) {
 		WD_ERR("ctx null at new rsa key gen out!\n");
 		return NULL;
 	}
 
 	kz = c->key_size;
-	if (c->setup.is_crt)
-		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
-	else
-		kg_out_size = GEN_PARAMS_SZ(c->key_size);
-
-	br = &c->setup.br;
-	if (!br->alloc) {
-		WD_ERR("new kg out user mm br err!\n");
+	if (unlikely(!kz || kz > RSA_MAX_KEY_SIZE)) {
+		WD_ERR("new kg out key size error!\n");
 		return NULL;
 	}
 
+	if (c->setup.is_crt)
+		kg_out_size = CRT_GEN_PARAMS_SZ(c->key_size);
+	else
+		kg_out_size = (int)GEN_PARAMS_SZ(c->key_size);
+
+	br = &c->setup.br;
+	if (unlikely(!br->alloc)) {
+		WD_ERR("new kg out user mm br err!\n");
+		return NULL;
+	}
+	if (unlikely(br->get_bufsize &&
+	    br->get_bufsize(br->usr) < kg_out_size + sizeof(*kg_out))) {
+		WD_ERR("blk_size < need_size<0x%lx>.\n", kg_out_size + sizeof(*kg_out));
+		return NULL;
+	}
 	kg_out = br->alloc(br->usr, kg_out_size + sizeof(*kg_out));
-	if (!kg_out) {
+	if (unlikely(!kg_out)) {
 		WD_ERR("ctx br->alloc kg_in memory fail!\n");
 		return NULL;
 	}
@@ -270,10 +307,11 @@ struct wcrypto_rsa_kg_out *wcrypto_new_kg_out(void *ctx)
 	kg_out->key_size = kz;
 	kg_out->d = (void *)kg_out->data;
 	kg_out->n = kg_out->d + kz;
+	kg_out->size = (__u32)kg_out_size;
 	if (c->setup.is_crt) {
 		kg_out->qinv = (void *)kg_out->n + kz;
-		kg_out->dq = kg_out->qinv + CRT_PARAM_SZ(kz);
-		kg_out->dp = kg_out->dq + CRT_PARAM_SZ(kz);
+		kg_out->dq = (void *)((uintptr_t)kg_out->qinv + CRT_PARAM_SZ(kz));
+		kg_out->dp = (void *)((uintptr_t)kg_out->dq + CRT_PARAM_SZ(kz));
 	}
 
 	return kg_out;
@@ -288,7 +326,7 @@ void wcrypto_get_rsa_kg_out_params(struct wcrypto_rsa_kg_out *kout, struct wd_dt
 					struct wd_dtb *n)
 {
 	if (!kout) {
-		WD_ERR("input null at get key gen params!\n");
+		WD_ERR("input null at get key gen parameters!\n");
 		return;
 	}
 
@@ -351,37 +389,7 @@ void wcrypto_set_rsa_kg_out_psz(struct wcrypto_rsa_kg_out *kout,
 	kout->nbytes = n_sz;
 }
 
-static struct wcrypto_rsa_cookie *get_rsa_cookie(struct wcrypto_rsa_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_RSA_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_RSA_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_rsa_cookie(struct wcrypto_rsa_ctx *ctx, struct wcrypto_rsa_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_rsa_cookie);
-
-	if (idx < 0 || idx >= WD_RSA_CTX_MSG_NUM) {
-		WD_ERR("rsa cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
-
-static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, int ksz)
+static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, __u32 ksz)
 {
 	int hlf_ksz = CRT_PARAM_SZ(ksz);
 
@@ -398,7 +406,7 @@ static void init_pkey2(struct wcrypto_rsa_prikey2 *pkey2, int ksz)
 	pkey2->key_size = ksz;
 }
 
-static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, int ksz)
+static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, __u32 ksz)
 {
 	pkey1->d.data = (char *)pkey1->data;
 	pkey1->n.data = pkey1->d.data + ksz;
@@ -407,7 +415,7 @@ static void init_pkey1(struct wcrypto_rsa_prikey1 *pkey1, int ksz)
 	pkey1->key_size = ksz;
 }
 
-static void init_pubkey(struct wcrypto_rsa_pubkey *pubkey, int ksz)
+static void init_pubkey(struct wcrypto_rsa_pubkey *pubkey, __u32 ksz)
 {
 	pubkey->e.data = (char *)pubkey->data;
 	pubkey->n.data = pubkey->e.data + ksz;
@@ -417,16 +425,20 @@ static void init_pubkey(struct wcrypto_rsa_pubkey *pubkey, int ksz)
 }
 
 static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
-			struct wcrypto_rsa_ctx *ctx)
+			  struct wcrypto_rsa_ctx *ctx)
 {
 	struct wd_mm_br *br = &setup->br;
 	struct wcrypto_rsa_prikey2 *pkey2;
 	struct wcrypto_rsa_prikey1 *pkey1;
-	int len;
+	__u32 len;
 
 	if (setup->is_crt) {
 		len = sizeof(struct wcrypto_rsa_prikey) +
-			CRT_PARAMS_SZ(ctx->key_size);
+			(__u32)CRT_PARAMS_SZ(ctx->key_size);
+		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
+			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
+			return -WD_ENOMEM;
+		}
 		ctx->prikey = br->alloc(br->usr, len);
 		if (!ctx->prikey) {
 			WD_ERR("alloc prikey2 fail!\n");
@@ -437,7 +449,11 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 		init_pkey2(pkey2, ctx->key_size);
 	} else {
 		len = sizeof(struct wcrypto_rsa_prikey) +
-			GEN_PARAMS_SZ(ctx->key_size);
+			(__u32)GEN_PARAMS_SZ(ctx->key_size);
+		if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
+			WD_ERR("Blk_size < need_size<0x%x>.\n", len);
+			return -WD_ENOMEM;
+		}
 		ctx->prikey = br->alloc(br->usr, len);
 		if (!ctx->prikey) {
 			WD_ERR("alloc prikey1 fail!\n");
@@ -448,8 +464,12 @@ static int create_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 		init_pkey1(pkey1, ctx->key_size);
 	}
 
-	len = sizeof(struct wcrypto_rsa_pubkey) +
-		GEN_PARAMS_SZ(ctx->key_size);
+	len = sizeof(struct wcrypto_rsa_pubkey) + (__u32)GEN_PARAMS_SZ(ctx->key_size);
+	if (br->get_bufsize && br->get_bufsize(br->usr) < len) {
+		br->free(br->usr, ctx->prikey);
+		WD_ERR("Blk_size < need_size<0x%x>.\n", len);
+		return -WD_ENOMEM;
+	}
 	ctx->pubkey = br->alloc(br->usr, len);
 	if (!ctx->pubkey) {
 		br->free(br->usr, ctx->prikey);
@@ -476,29 +496,43 @@ static void del_ctx_key(struct wcrypto_rsa_ctx_setup *setup,
 	}
 }
 
-struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_id)
+static struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup,
+					  int ctx_id, __u32 flags)
 {
+	struct wcrypto_rsa_cookie *cookie;
 	struct wcrypto_rsa_ctx *ctx;
-	int i;
+	__u32 cookies_num, i;
+	int ret;
 
 	ctx = calloc(1, sizeof(struct wcrypto_rsa_ctx));
 	if (!ctx)
 		return ctx;
 
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_rsa_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("fail to init cookie pool!\n");
+		free(ctx);
+		return NULL;
+	}
+
 	memcpy(&ctx->setup, setup, sizeof(*setup));
 	ctx->ctx_id = ctx_id;
 	ctx->key_size = setup->key_bits >> BYTE_BITS_SHIFT;
-	for (i = 0; i < WD_RSA_CTX_MSG_NUM; i++) {
+	for (i = 0; i < cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
 		if (setup->is_crt)
-			ctx->cookies[i].msg.key_type = WCRYPTO_RSA_PRIKEY2;
+			cookie->msg.key_type = WCRYPTO_RSA_PRIKEY2;
 		else
-			ctx->cookies[i].msg.key_type = WCRYPTO_RSA_PRIKEY1;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.key_bytes = ctx->key_size;
-		ctx->cookies[i].msg.alg_type = WCRYPTO_RSA;
-		ctx->cookies[i].tag.ctx = ctx;
-		ctx->cookies[i].tag.ctx_id = ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+			cookie->msg.key_type = WCRYPTO_RSA_PRIKEY1;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.key_bytes = ctx->key_size;
+		cookie->msg.alg_type = WCRYPTO_RSA;
+		cookie->tag.ctx = ctx;
+		cookie->tag.ctx_id = ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
 	}
 
 	return ctx;
@@ -506,8 +540,41 @@ struct wcrypto_rsa_ctx *create_ctx(struct wcrypto_rsa_ctx_setup *setup, int ctx_
 
 static void del_ctx(struct wcrypto_rsa_ctx *c)
 {
-	if (c)
-		free(c);
+	if (!c)
+		return;
+
+	wd_uninit_cookie_pool(&c->pool);
+	free(c);
+}
+
+static int check_q_setup(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup)
+{
+	if (!q || !setup) {
+		WD_ERR("create rsa ctx input parameter err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!setup->br.alloc || !setup->br.free) {
+		WD_ERR("create rsa ctx user mm br err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (strcmp(q->capa.alg, "rsa")) {
+		WD_ERR("create rsa ctx algorithm mismatching!\n");
+		return -WD_EINVAL;
+	}
+
+	/* Key width check */
+	switch (setup->key_bits) {
+	case RSA_KEYSIZE_1024:
+	case RSA_KEYSIZE_2048:
+	case RSA_KEYSIZE_3072:
+	case RSA_KEYSIZE_4096:
+		return WD_SUCCESS;
+	default:
+		WD_ERR("invalid: rsa key_bits %u is error!\n", setup->key_bits);
+		return -WD_EINVAL;
+	}
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -515,65 +582,64 @@ void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *s
 {
 	struct wcrypto_rsa_ctx *ctx;
 	struct q_info *qinfo;
-	int ret, cid;
+	__u32 cid = 0;
+	int ret;
 
-	if (!q || !setup) {
-		WD_ERR("create rsa ctx input param err!\n");
+	ret = check_q_setup(q, setup);
+	if (ret)
 		return NULL;
-	}
-	if (!setup->br.alloc || !setup->br.free) {
-		WD_ERR("create rsa ctx user mm br err!\n");
-		return NULL;
-	}
-	if (strcmp(q->capa.alg, "rsa")) {
-		WD_ERR("create rsa ctx algorithm mismatching!\n");
-		return NULL;
-	}
 
 	qinfo = q->qinfo;
-	/*lock at ctx  creating/deleting */
+	/* lock at ctx  creating/deleting */
 	wd_spinlock(&qinfo->qlock);
 	if (!qinfo->br.alloc && !qinfo->br.iova_map)
 		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
 	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
 		WD_ERR("Err mm br in creating rsa ctx!\n");
-		return NULL;
+		goto unlock;
 	}
 
-	if (qinfo->ctx_num >= WD_RSA_MAX_CTX) {
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
 		WD_ERR("err:create too many rsa ctx!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto unlock;
 	}
 
-	qinfo->ctx_num++;
-	cid = wd_alloc_ctx_id(q, WD_RSA_MAX_CTX);
-	if (cid < 0) {
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, &cid, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
 		WD_ERR("err: alloc ctx id fail!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
+		goto unlock;
 	}
-
+	qinfo->ctx_num++;
 	wd_unspinlock(&qinfo->qlock);
 
-	ctx = create_ctx(setup, cid);
+	ctx = create_ctx(setup, cid + 1, q->capa.flags);
 	if (!ctx) {
 		WD_ERR("create rsa ctx fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	ctx->q = q;
 	ret = create_ctx_key(setup, ctx);
 	if (ret) {
 		WD_ERR("fail creating rsa ctx keys!\n");
-		del_ctx(ctx);
-		return NULL;
+		goto delete_ctx;
 	}
 
 	return ctx;
+
+delete_ctx:
+	del_ctx(ctx);
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cid, WD_MAX_CTX_NUM);
+	qinfo->ctx_num--;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+
+	return NULL;
 }
 
-bool wcrypto_rsa_is_crt(void *ctx)
+bool wcrypto_rsa_is_crt(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("rsa is crt judge, ctx NULL, return false!\n");
@@ -583,7 +649,7 @@ bool wcrypto_rsa_is_crt(void *ctx)
 	return ((struct wcrypto_rsa_ctx *)ctx)->setup.is_crt;
 }
 
-int wcrypto_rsa_key_bits(void *ctx)
+int wcrypto_rsa_key_bits(const void *ctx)
 {
 	if (!ctx) {
 		WD_ERR("get rsa key bits, ctx NULL!\n");
@@ -732,11 +798,6 @@ static int rsa_prikey2_param_set(struct wcrypto_rsa_prikey2 *pkey2,
 	case WD_CRT_PRIKEY_Q:
 		ret = rsa_set_param(&pkey2->q, param);
 		break;
-
-	default:
-		WD_ERR("%s: err type %d!\n", __func__, type);
-		ret = -WD_EINVAL;
-		break;
 	}
 
 	return ret;
@@ -823,7 +884,7 @@ void wcrypto_get_rsa_crt_prikey_params(struct wcrypto_rsa_prikey *pvk,
 void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey)
 {
 	if (!ctx || !pubkey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return;
 	}
 
@@ -833,7 +894,7 @@ void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey)
 void wcrypto_get_rsa_prikey(void *ctx, struct wcrypto_rsa_prikey **prikey)
 {
 	if (!ctx || !prikey) {
-		WD_ERR("param is NULL!\n");
+		WD_ERR("parameter is NULL!\n");
 		return;
 	}
 
@@ -848,6 +909,7 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 	req->in = op->in;
 	req->in_bytes = (__u16)op->in_bytes;
 	req->out = op->out;
+	req->out_bytes = (__u16)op->out_bytes;
 	req->op_type = op->op_type;
 	req->result = WD_EINVAL;
 
@@ -866,9 +928,17 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 		return -WD_EINVAL;
 	}
 
-	if (!key) {
+	if (unlikely(!key)) {
 		WD_ERR("rsa request key null!\n");
 		return -WD_EINVAL;
+	}
+
+	if (req->op_type == WCRYPTO_RSA_SIGN ||
+		req->op_type == WCRYPTO_RSA_VERIFY) {
+		if (unlikely(req->in_bytes != c->key_size)) {
+			WD_ERR("sign or verf in_bytes != key_size!\n");
+			return -WD_EINVAL;
+		}
 	}
 
 	req->key = key;
@@ -876,69 +946,110 @@ static int rsa_request_init(struct wcrypto_rsa_msg *req, struct wcrypto_rsa_op_d
 	return WD_SUCCESS;
 }
 
+static int do_rsa_prepare(struct wcrypto_rsa_ctx *ctxt,
+			  struct wcrypto_rsa_op_data *opdata,
+			  struct wcrypto_rsa_cookie **cookie_addr,
+			  struct wcrypto_rsa_msg **req_addr,
+			  void *tag)
+{
+	struct wcrypto_rsa_cookie *cookie;
+	struct wcrypto_rsa_msg *req;
+	int ret;
+
+	if (unlikely(!ctxt || !opdata)) {
+		WD_ERR("input parameter err!\n");
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(tag && !ctxt->setup.cb)) {
+		WD_ERR("ctx call back is null!\n");
+		return -WD_EINVAL;
+	}
+
+	ret = wd_get_cookies(&ctxt->pool, (void **)&cookie, 1);
+	if (ret)
+		return ret;
+
+	if (tag)
+		cookie->tag.tag = tag;
+
+	req = &cookie->msg;
+	ret = rsa_request_init(req, opdata, ctxt);
+	if (unlikely(ret)) {
+		wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
+		return ret;
+	}
+
+	*cookie_addr = cookie;
+	*req_addr = req;
+
+	return 0;
+}
+
+static int rsa_send(struct wcrypto_rsa_ctx *ctx, struct wcrypto_rsa_msg *req)
+{
+	uint32_t tx_cnt = 0;
+	int ret;
+
+	do {
+		ret = wd_send(ctx->q, req);
+		if (!ret) {
+			break;
+		} else if (ret == -WD_EBUSY) {
+			if (tx_cnt++ > RSA_RESEND_CNT) {
+				WD_ERR("do rsa send cnt %u, exit!\n", tx_cnt);
+				break;
+			}
+
+			usleep(1);
+		} else {
+			WD_ERR("do rsa wd_send err!\n");
+			break;
+		}
+	} while (true);
+
+	return ret;
+}
+
 int wcrypto_do_rsa(void *ctx, struct wcrypto_rsa_op_data *opdata, void *tag)
 {
 	struct wcrypto_rsa_msg *resp = NULL;
 	struct wcrypto_rsa_ctx *ctxt = ctx;
 	struct wcrypto_rsa_cookie *cookie;
-	int ret = -WD_EINVAL;
 	struct wcrypto_rsa_msg *req;
 	uint32_t rx_cnt = 0;
-	uint32_t tx_cnt = 0;
+	int ret;
 
-	if (!opdata) {
-		WD_ERR("do rsa opdata null!\n");
-		return -WD_EINVAL;
-	}
+	ret = do_rsa_prepare(ctxt, opdata, &cookie, &req, tag);
+	if (unlikely(ret))
+		return ret;
 
-	cookie = get_rsa_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
-
-	if (tag) {
-		if (!ctxt->setup.cb) {
-			WD_ERR("ctx call back is null!\n");
-			goto fail_with_cookie;
-		}
-		cookie->tag.tag = tag;
-	}
-
-	req = &cookie->msg;
-	ret = rsa_request_init(req, opdata, ctxt);
-	if (ret)
+	ret = rsa_send(ctxt, req);
+	if (unlikely(ret))
 		goto fail_with_cookie;
-
-send_again:
-	ret = wd_send(ctxt->q, req);
-	if (ret == -WD_EBUSY) {
-		tx_cnt++;
-		usleep(1);
-		if (tx_cnt < RSA_RESEND_CNT)
-			goto send_again;
-		else {
-			WD_ERR("do rsa send cnt %u, exit!\n", tx_cnt);
-			goto fail_with_cookie;
-		}
-	} else if (ret) {
-		WD_ERR("do rsa wd_send err!\n");
-		goto fail_with_cookie;
-	}
 
 	if (tag)
 		return ret;
 
 	resp = (void *)(uintptr_t)ctxt->ctx_id;
-recv_again:
-	ret = wd_recv(ctxt->q, (void **)&resp);
-	if (!ret) {
-		rx_cnt++;
-		if (balance > RSA_BALANCE_THRHD)
-			usleep(1);
-		goto recv_again;
-	} else if (ret < 0) {
-		WD_ERR("do rsa wd_recv err!\n");
-		goto fail_with_cookie;
-	}
+	do {
+		ret = wd_recv(ctxt->q, (void **)&resp);
+		if (ret > 0) {
+			break;
+		} else if (!ret) {
+			if (unlikely(rx_cnt++ >= RSA_RECV_MAX_CNT)) {
+				WD_ERR("failed to recv: timeout!\n");
+				ret = -WD_ETIMEDOUT;
+				goto fail_with_cookie;
+			}
+
+			if (balance > RSA_BALANCE_THRHD)
+				usleep(1);
+		} else {
+			WD_ERR("do rsa wd_recv err!\n");
+			goto fail_with_cookie;
+		}
+	} while (true);
 
 	balance = rx_cnt;
 	opdata->out = (void *)resp->out;
@@ -947,7 +1058,7 @@ recv_again:
 	ret = GET_NEGATIVE(opdata->status);
 
 fail_with_cookie:
-	put_rsa_cookie(ctxt, cookie);
+	wd_put_cookies(&ctxt->pool, (void **)&cookie, 1);
 	return ret;
 }
 
@@ -956,10 +1067,11 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 	struct wcrypto_rsa_msg *resp = NULL;
 	struct wcrypto_rsa_ctx *ctx;
 	struct wcrypto_cb_tag *tag;
+	unsigned int tmp = num;
 	int count = 0;
 	int ret;
 
-	if (!q) {
+	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
 		return -WD_EINVAL;
 	}
@@ -968,7 +1080,7 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 		ret = wd_recv(q, (void **)&resp);
 		if (ret == 0)
 			break;
-		else if (ret < 0) {
+		else if (unlikely(ret < 0)) {
 			WD_ERR("recv err at rsa poll!\n");
 			return ret;
 		}
@@ -976,9 +1088,9 @@ int wcrypto_rsa_poll(struct wd_queue *q, unsigned int num)
 		tag = (void *)(uintptr_t)resp->usr_data;
 		ctx = tag->ctx;
 		ctx->setup.cb(resp, tag->tag);
-		put_rsa_cookie(ctx, (struct wcrypto_rsa_cookie *)tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
 		resp = NULL;
-	} while (--num);
+	} while (--tmp);
 
 	return count;
 }
@@ -990,22 +1102,26 @@ void wcrypto_del_rsa_ctx(void *ctx)
 	struct q_info *qinfo;
 
 	if (!ctx) {
-		WD_ERR("Delete rsa param err!\n");
+		WD_ERR("delete rsa parameter err!\n");
 		return;
 	}
+
 	cx = ctx;
 	st = &cx->setup;
 	qinfo = cx->q->qinfo;
+
+	wd_uninit_cookie_pool(&cx->pool);
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num) {
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	} else if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("error:repeat del rsa ctx!\n");
+		WD_ERR("error: repeat del rsa ctx!\n");
 		return;
 	}
+
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, cx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 
 	wd_unspinlock(&qinfo->qlock);
 	del_ctx_key(st, cx);

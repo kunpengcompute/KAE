@@ -17,30 +17,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_cipher.h"
 #include "wd_util.h"
+#include "wd_cipher.h"
 
-#define WCRYPTO_CIPHER_CTX_MSG_NUM	64
-#define WCRYPTO_CIPHER_MAX_CTX		256
 #define MAX_CIPHER_KEY_SIZE		64
-#define MAX_CIPHER_RETRY_CNT	20000000
+#define MAX_CIPHER_RETRY_CNT		20000000
 
+#define XTS_MODE_KEY_LEN_MASK 0x1
 #define DES_KEY_SIZE 8
 #define SM4_KEY_SIZE 16
 #define SEC_3DES_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_3DES_3KEY_SIZE (3 * DES_KEY_SIZE)
 
+#define CBC_3DES_BLOCK_SIZE 8
+#define CBC_AES_BLOCK_SIZE 16
 #define DES_WEAK_KEY_NUM 4
-__u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
+static __u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
 
 struct wcrypto_cipher_cookie {
@@ -49,56 +47,61 @@ struct wcrypto_cipher_cookie {
 };
 
 struct wcrypto_cipher_ctx {
-	struct wcrypto_cipher_cookie cookies[WCRYPTO_CIPHER_CTX_MSG_NUM];
-	__u8 cstatus[WCRYPTO_CIPHER_CTX_MSG_NUM];
-	int cidx;
-	int ctx_id;
+	struct wd_cookie_pool pool;
+	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
+	__u32 iv_blk_size;
 	struct wd_queue *q;
 	struct wcrypto_cipher_ctx_setup setup;
 };
 
-static struct wcrypto_cipher_cookie *get_cipher_cookie(struct wcrypto_cipher_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
-
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WCRYPTO_CIPHER_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WCRYPTO_CIPHER_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
-	struct wcrypto_cipher_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_cipher_cookie);
-
-	if (idx < 0 || idx >= WCRYPTO_CIPHER_CTX_MSG_NUM) {
-		WD_ERR("cipher cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
-
 static void del_ctx_key(struct wcrypto_cipher_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
+	__u8 tmp[MAX_CIPHER_KEY_SIZE] = { 0 };
 
-	if (ctx->key)
-		memset(ctx->key, 0, MAX_CIPHER_KEY_SIZE);
+	/**
+	 * When data_fmt is 'WD_SGL_BUF',  'akey' and 'ckey' is a sgl, and if u
+	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
+	 * whose 'pbuf' is all zero.
+	 */
+	if (ctx->key) {
+		if (ctx->setup.data_fmt == WD_FLAT_BUF)
+			memset(ctx->key, 0, MAX_CIPHER_KEY_SIZE);
+		else if (ctx->setup.data_fmt == WD_SGL_BUF && ctx->key_bytes)
+			wd_sgl_cp_from_pbuf(ctx->key, 0, tmp, MAX_CIPHER_KEY_SIZE);
+	}
 
 	if (br && br->free && ctx->key)
 		br->free(br->usr, ctx->key);
+}
+
+static __u32 get_iv_block_size(int alg, int mode)
+{
+	__u32 iv_block_size = CBC_AES_BLOCK_SIZE;
+
+	switch (mode) {
+	case WCRYPTO_CIPHER_CBC:
+	case WCRYPTO_CIPHER_CBC_CS1:
+	case WCRYPTO_CIPHER_CBC_CS2:
+	case WCRYPTO_CIPHER_CBC_CS3:
+	case WCRYPTO_CIPHER_OFB:
+		if (alg == WCRYPTO_CIPHER_3DES ||
+		    alg == WCRYPTO_CIPHER_DES)
+			iv_block_size = CBC_3DES_BLOCK_SIZE;
+		break;
+	case WCRYPTO_CIPHER_XTS:
+	case WCRYPTO_CIPHER_XTS_GB:
+	case WCRYPTO_CIPHER_CFB:
+	case WCRYPTO_CIPHER_CTR:
+		break;
+	default:
+		iv_block_size = 0;
+		break;
+	}
+
+	return iv_block_size;
 }
 
 static int create_ctx_para_check(struct wd_queue *q,
@@ -114,9 +117,9 @@ static int create_ctx_para_check(struct wd_queue *q,
 		WD_ERR("create cipher ctx user mm br err!\n");
 		return -WD_EINVAL;
 	}
-	if (strncmp(q->capa.alg, "cipher", strlen("cipher")) &&
-		strncmp(q->capa.alg, "xts(aes)", strlen("xts(aes)")) &&
-		strncmp(q->capa.alg, "xts(sm4)", strlen("xts(sm4)"))) {
+	if (strcmp(q->capa.alg, "cipher") &&
+		strcmp(q->capa.alg, "xts(aes)") &&
+		strcmp(q->capa.alg, "xts(sm4)")) {
 		WD_ERR("%s: algorithm mismatching!\n", __func__);
 		return -WD_EINVAL;
 	}
@@ -124,20 +127,70 @@ static int create_ctx_para_check(struct wd_queue *q,
 	return WD_SUCCESS;
 }
 
-static void init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
+static int init_cipher_cookie(struct wcrypto_cipher_ctx *ctx,
 	struct wcrypto_cipher_ctx_setup *setup)
 {
-	int i;
+	struct wcrypto_cipher_cookie *cookie;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
+	int ret;
 
-	for (i = 0; i < WCRYPTO_CIPHER_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_CIPHER;
-		ctx->cookies[i].msg.alg = setup->alg;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].msg.mode = setup->mode;
-		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_cipher_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("failed to init cookie pool!\n");
+		return ret;
 	}
+
+	for (i = 0; i < cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.alg_type = WCRYPTO_CIPHER;
+		cookie->msg.alg = setup->alg;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->msg.mode = setup->mode;
+		cookie->tag.wcrypto_tag.ctx = ctx;
+		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
+	}
+
+	return 0;
+}
+
+static int setup_qinfo(struct wcrypto_cipher_ctx_setup *setup,
+		       struct q_info *qinfo, __u32 *ctx_id)
+{
+	int ret;
+
+	/* lock at ctx creating/deleting */
+	wd_spinlock(&qinfo->qlock);
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
+
+	if (qinfo->br.usr != setup->br.usr) {
+		WD_ERR("Err mm br in creating cipher ctx!\n");
+		goto unlock;
+	}
+
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
+		WD_ERR("err:create too many cipher ctx!\n");
+		goto unlock;
+	}
+
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		goto unlock;
+	}
+	qinfo->ctx_num++;
+	wd_unspinlock(&qinfo->qlock);
+
+	return 0;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+	return -WD_EINVAL;
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -146,58 +199,50 @@ void *wcrypto_create_cipher_ctx(struct wd_queue *q,
 {
 	struct q_info *qinfo;
 	struct wcrypto_cipher_ctx *ctx;
-	int ctx_id;
+	__u32 ctx_id = 0;
+	int ret;
 
 	if (create_ctx_para_check(q, setup))
 		return NULL;
 
 	qinfo = q->qinfo;
-	/* lock at ctx creating/deleting */
-	wd_spinlock(&qinfo->qlock);
-	if (!qinfo->br.alloc && !qinfo->br.iova_map)
-		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
-
-	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("Err mm br in creating cipher ctx!\n");
+	ret = setup_qinfo(setup, qinfo, &ctx_id);
+	if (ret)
 		return NULL;
-	}
-
-	if (qinfo->ctx_num >= WCRYPTO_CIPHER_MAX_CTX) {
-		WD_ERR("err:create too many cipher ctx!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
-	}
-
-	qinfo->ctx_num++;
-	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_CIPHER_MAX_CTX);
-	if (ctx_id < 0) {
-		WD_ERR("err: alloc ctx id fail!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
-	}
-
-	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_cipher_ctx));
 	if (!ctx) {
 		WD_ERR("Alloc ctx memory fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_cipher_ctx));
-	memcpy(&ctx->setup, setup, sizeof(*setup));
+	memcpy(&ctx->setup, setup, sizeof(ctx->setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
+	ctx->ctx_id = ctx_id + 1;
 	ctx->key = setup->br.alloc(setup->br.usr, MAX_CIPHER_KEY_SIZE);
 	if (!ctx->key) {
 		WD_ERR("alloc cipher ctx key fail!\n");
-		free(ctx);
-		return NULL;
+		goto free_ctx;
 	}
 
-	init_cipher_cookie(ctx, setup);
+	ctx->iv_blk_size = get_iv_block_size(setup->alg, setup->mode);
+	ret = init_cipher_cookie(ctx, setup);
+	if (ret)
+		goto free_ctx_key;
 
 	return ctx;
+
+free_ctx_key:
+	setup->br.free(setup->br.usr, ctx->key);
+free_ctx:
+	free(ctx);
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
+	wd_unspinlock(&qinfo->qlock);
+
+	return NULL;
 }
 
 static int is_des_weak_key(const __u64 *key, __u16 keylen)
@@ -210,6 +255,7 @@ static int is_des_weak_key(const __u64 *key, __u16 keylen)
 
 	return 0;
 }
+
 static int aes_key_len_check(__u16 length)
 {
 	switch (length) {
@@ -222,28 +268,43 @@ static int aes_key_len_check(__u16 length)
 	}
 }
 
-static int cipher_key_len_check(int alg, __u16 length)
+static int cipher_key_len_check(struct wcrypto_cipher_ctx_setup *setup,
+					__u16 length)
 {
+	__u16 key_len = length;
 	int ret = WD_SUCCESS;
 
-	switch (alg) {
+	if (setup->mode == WCRYPTO_CIPHER_XTS || setup->mode == WCRYPTO_CIPHER_XTS_GB) {
+		if (length & XTS_MODE_KEY_LEN_MASK) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
+		key_len = length >> XTS_MODE_KEY_SHIFT;
+
+		if (key_len != AES_KEYSIZE_128 && key_len != AES_KEYSIZE_256) {
+			WD_ERR("invalid: unsupported XTS key length, length = %u!\n", length);
+			return -WD_EINVAL;
+		}
+	}
+
+	switch (setup->alg) {
 	case WCRYPTO_CIPHER_SM4:
-		if (length != SM4_KEY_SIZE)
+		if (key_len != SM4_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_AES:
-		ret = aes_key_len_check(length);
+		ret = aes_key_len_check(key_len);
 		break;
 	case WCRYPTO_CIPHER_DES:
-		if (length != DES_KEY_SIZE)
+		if (key_len != DES_KEY_SIZE)
 			ret = -WD_EINVAL;
 		break;
 	case WCRYPTO_CIPHER_3DES:
-		if ((length != SEC_3DES_2KEY_SIZE) && (length != SEC_3DES_3KEY_SIZE))
+		if ((key_len != SEC_3DES_2KEY_SIZE) && (key_len != SEC_3DES_3KEY_SIZE))
 			ret = -WD_EINVAL;
 		break;
 	default:
-		WD_ERR("%s: input alg err!\n", __func__);
+		WD_ERR("cipher input alg err, alg is %d.\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
@@ -253,7 +314,6 @@ static int cipher_key_len_check(int alg, __u16 length)
 int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_cipher_ctx *ctxt = ctx;
-	__u16 length = key_len;
 	int ret;
 
 	if (!ctx || !key) {
@@ -261,135 +321,208 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len)
 		return -WD_EINVAL;
 	}
 
-	if (ctxt->setup.mode == WCRYPTO_CIPHER_XTS)
-		length = key_len / XTS_MODE_KEY_DIVISOR;
-
-	ret = cipher_key_len_check(ctxt->setup.alg, length);
+	ret = cipher_key_len_check(&ctxt->setup, key_len);
 	if (ret != WD_SUCCESS) {
 		WD_ERR("%s: input key length err!\n", __func__);
 		return ret;
 	}
 
 	if (ctxt->setup.alg == WCRYPTO_CIPHER_DES &&
-		is_des_weak_key((__u64 *)key, length)) {
+		is_des_weak_key((__u64 *)key, key_len)) {
 		WD_ERR("%s: des weak key!\n", __func__);
 		return -WD_EINVAL;
 	}
 
 	ctxt->key_bytes = key_len;
-	memcpy(ctxt->key, key, key_len);
+
+	if (ctxt->setup.data_fmt == WD_SGL_BUF)
+		wd_sgl_cp_from_pbuf(ctxt->key, 0, key, key_len);
+	else
+		memcpy(ctxt->key, key, key_len);
 
 	return ret;
 }
 
-static int cipher_request_init(struct wcrypto_cipher_msg *req,
-	struct wcrypto_cipher_op_data *op, struct wcrypto_cipher_ctx *c)
+static int cipher_requests_init(struct wcrypto_cipher_msg **req,
+				struct wcrypto_cipher_op_data **op,
+				struct wcrypto_cipher_ctx *c, __u32 num)
 {
-	struct wd_sec_udata *udata = op->priv;
+	struct wd_sec_udata *udata;
+	__u32 i;
 
-	req->alg = c->setup.alg;
-	req->mode = c->setup.mode;
-	req->key = c->key;
-	req->key_bytes = c->key_bytes;
-	req->op_type = op->op_type;
-	req->iv = op->iv;
-	req->iv_bytes = op->iv_bytes;
-	req->in = op->in;
-	req->in_bytes = op->in_bytes;
-	req->out = op->out;
-	req->out_bytes = op->out_bytes;
-	if (udata && udata->key) {
-		req->key = udata->key;
-		req->key_bytes = udata->key_bytes;
+	for (i = 0; i < num; i++) {
+		req[i]->alg = c->setup.alg;
+		req[i]->mode = c->setup.mode;
+		req[i]->key = c->key;
+		req[i]->key_bytes = c->key_bytes;
+		req[i]->op_type = op[i]->op_type;
+		req[i]->iv = op[i]->iv;
+		req[i]->iv_bytes = op[i]->iv_bytes;
+		req[i]->in = op[i]->in;
+		req[i]->in_bytes = op[i]->in_bytes;
+		req[i]->out = op[i]->out;
+		req[i]->out_bytes = op[i]->out_bytes;
+
+		/* In user self-define data case, need update key from udata */
+		udata = op[i]->priv;
+		if (udata && udata->key) {
+			req[i]->key = udata->key;
+			req[i]->key_bytes = udata->key_bytes;
+		}
+
+		if (unlikely(op[i]->iv_bytes != c->iv_blk_size)) {
+			WD_ERR("fail to check IV length %u!\n", i);
+			return -WD_EINVAL;
+		}
 	}
 
 	return WD_SUCCESS;
 }
 
-static int cipher_recv_sync(struct wcrypto_cipher_ctx *ctx,
-		struct wcrypto_cipher_op_data *opdata)
+static int cipher_recv_sync(struct wcrypto_cipher_ctx *c_ctx,
+		struct wcrypto_cipher_op_data **c_opdata, __u32 num)
 {
-	struct wcrypto_cipher_msg *resp;
-	__u64 recv_count = 0;
+	struct wcrypto_cipher_msg *resp[WCRYPTO_MAX_BURST_NUM];
+	__u32 recv_count = 0;
+	__u64 rx_cnt = 0;
+	__u32 i;
 	int ret;
 
-	resp = (void *)(uintptr_t)ctx->ctx_id;
+	for (i = 0; i < num; i++)
+		resp[i] = (void *)(uintptr_t)c_ctx->ctx_id;
+
 	while (true) {
-		ret = wd_recv(ctx->q, (void **)&resp);
-		if (ret == 0) {
-			if (++recv_count > MAX_CIPHER_RETRY_CNT) {
-				WD_ERR("%s:wcrypto_recv timeout fail!\n", __func__);
-				ret = -WD_ETIMEDOUT;
+		ret = wd_burst_recv(c_ctx->q, (void **)(resp + recv_count),
+				    num - recv_count);
+		if (ret > 0) {
+			recv_count += ret;
+			if (recv_count == num)
+				break;
+
+			rx_cnt = 0;
+		} else if (ret == 0) {
+			if (++rx_cnt > MAX_CIPHER_RETRY_CNT) {
+				WD_ERR("%s:wcrypto_recv timeout, num = %u, recv_count = %u!\n",
+					__func__, num, recv_count);
 				break;
 			}
-		} else if (ret < 0) {
-			WD_ERR("do cipher wcrypto_recv err!\n");
-			break;
 		} else {
-			opdata->out = (void *)resp->out;
-			opdata->out_bytes = resp->out_bytes;
-			opdata->status = resp->result;
-			ret = GET_NEGATIVE(opdata->status);
-			break;
+			WD_ERR("do cipher wcrypto_recv error!\n");
+			return ret;
 		}
 	}
 
+	for (i = 0; i < recv_count; i++) {
+		c_opdata[i]->out = (void *)resp[i]->out;
+		c_opdata[i]->out_bytes = resp[i]->out_bytes;
+		c_opdata[i]->status = resp[i]->result;
+	}
+
+	return recv_count;
+}
+
+static int param_check(struct wcrypto_cipher_ctx *c_ctx,
+		       struct wcrypto_cipher_op_data **c_opdata,
+		       void **tag, __u32 num)
+{
+	__u32 i;
+
+	if (unlikely(!c_ctx || !c_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
+		WD_ERR("input param err!\n");
+		return -WD_EINVAL;
+	}
+
+	for (i = 0; i < num; i++) {
+		if (unlikely(!c_opdata[i])) {
+			WD_ERR("cipher opdata[%u] is NULL!\n", i);
+			return -WD_EINVAL;
+		}
+
+		if (unlikely(tag && !tag[i])) {
+			WD_ERR("tag[%u] is NULL!\n", i);
+			return -WD_EINVAL;
+		}
+	}
+
+	if (unlikely(tag && !c_ctx->setup.cb)) {
+		WD_ERR("cipher ctx call back is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **c_opdata,
+			 void **tag, __u32 num)
+{
+	struct wcrypto_cipher_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
+	struct wcrypto_cipher_msg *req[WCRYPTO_MAX_BURST_NUM];
+	struct wcrypto_cipher_ctx *ctxt = ctx;
+	__u32 i;
+	int ret;
+
+	if (param_check(ctxt, c_opdata, tag, num))
+		return -WD_EINVAL;
+
+	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
+	if (unlikely(ret)) {
+		WD_ERR("failed to get cookies %d!\n", ret);
+		return ret;
+	}
+
+	for (i = 0; i < num; i++) {
+		cookies[i]->tag.priv = c_opdata[i]->priv;
+		req[i] = &cookies[i]->msg;
+		if (tag)
+			cookies[i]->tag.wcrypto_tag.tag = tag[i];
+	}
+
+	ret = cipher_requests_init(req, c_opdata, ctxt, num);
+	if (unlikely(ret))
+		goto fail_with_cookies;
+
+	ret = wd_burst_send(ctxt->q, (void **)req, num);
+	if (unlikely(ret)) {
+		WD_ERR("failed to send req %d!\n", ret);
+		goto fail_with_cookies;
+	}
+
+	if (tag)
+		return ret;
+
+	ret = cipher_recv_sync(ctxt, c_opdata, num);
+
+fail_with_cookies:
+	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
 	return ret;
 }
 
 int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 		void *tag)
 {
-	struct wcrypto_cipher_msg *req;
-	struct wcrypto_cipher_ctx *ctxt = ctx;
-	struct wcrypto_cipher_cookie *cookie;
-	int ret = -WD_EINVAL;
+	int ret;
 
-	if (!ctx || !opdata) {
-		WD_ERR("%s: input param err!\n", __func__);
-		return -WD_EINVAL;
+	if (!tag) {
+		ret = wcrypto_burst_cipher(ctx, &opdata, NULL, 1);
+		if (likely(ret == 1))
+			return GET_NEGATIVE(opdata->status);
+		if (unlikely(ret == 0))
+			return -WD_ETIMEDOUT;
+	} else {
+		ret = wcrypto_burst_cipher(ctx, &opdata, &tag, 1);
 	}
 
-	cookie = get_cipher_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
-	if (tag) {
-		if (!ctxt->setup.cb) {
-			WD_ERR("ctx call back is null!\n");
-			goto fail_with_cookie;
-		}
-		cookie->tag.wcrypto_tag.tag = tag;
-	}
-	cookie->tag.priv = opdata->priv;
-
-	req = &cookie->msg;
-	ret = cipher_request_init(req, opdata, ctxt);
-	if (ret)
-		goto fail_with_cookie;
-
-	ret = wd_send(ctxt->q, req);
-	if (ret) {
-		WD_ERR("do cipher wcrypto_send err!\n");
-		goto fail_with_cookie;
-	}
-
-	if (tag)
-		return ret;
-
-	ret = cipher_recv_sync(ctxt, opdata);
-
-fail_with_cookie:
-	put_cipher_cookie(ctxt, cookie);
 	return ret;
 }
 
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 {
+	struct wcrypto_cipher_msg *cipher_resp = NULL;
 	struct wcrypto_cipher_ctx *ctx;
-	struct wcrypto_cipher_msg *resp = NULL;
 	struct wcrypto_cipher_tag *tag;
-	int ret;
+	unsigned int tmp = num;
 	int count = 0;
+	int ret;
 
 	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
@@ -397,26 +530,26 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 	}
 
 	do {
-		resp = NULL;
-		ret = wd_recv(q, (void **)&resp);
+		cipher_resp = NULL;
+		ret = wd_recv(q, (void **)&cipher_resp);
 		if (ret == 0)
 			break;
 		else if (ret == -WD_HW_EACCESS) {
-			if (!resp) {
-				WD_ERR("recv err from req_cache!\n");
+			if (!cipher_resp) {
+				WD_ERR("the cipher recv err from req_cache!\n");
 				return ret;
 			}
-			resp->result = WD_HW_EACCESS;
+			cipher_resp->result = WD_HW_EACCESS;
 		} else if (ret < 0) {
 			WD_ERR("recv err at cipher poll!\n");
 			return ret;
 		}
 		count++;
-		tag = (void *)(uintptr_t)resp->usr_data;
+		tag = (void *)(uintptr_t)cipher_resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
-		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
-		put_cipher_cookie(ctx, (struct wcrypto_cipher_cookie *)tag);
-	} while (--num);
+		ctx->setup.cb(cipher_resp, tag->wcrypto_tag.tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
+	} while (--tmp);
 
 	return count;
 }
@@ -424,25 +557,27 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num)
 void wcrypto_del_cipher_ctx(void *ctx)
 {
 	struct q_info *qinfo;
-	struct wcrypto_cipher_ctx *cx;
+	struct wcrypto_cipher_ctx *c_ctx;
 
 	if (!ctx) {
 		WD_ERR("Delete cipher ctx is NULL!\n");
 		return;
 	}
-	cx = ctx;
-	qinfo = cx->q->qinfo;
+	c_ctx = ctx;
+	qinfo = c_ctx->q->qinfo;
+	wd_uninit_cookie_pool(&c_ctx->pool);
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num)
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("errer:repeat del cipher ctx!\n");
+		WD_ERR("error:repeat del cipher ctx!\n");
 		return;
 	}
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, c_ctx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
+
 	wd_unspinlock(&qinfo->qlock);
-	del_ctx_key(cx);
+	del_ctx_key(c_ctx);
 	free(ctx);
 }

@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <errno.h>
+#include "wd.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +64,7 @@ struct wcrypto_dh_msg {
 	__u8 result; /* Data format, denoted by WD error code */
 	__u16 key_bytes; /* Key size */
 	__u8 *x_p; /* This is Xa and p data in order. Should be DMA buffer */
-	__u8 *g; /* This is PV also at phase 2. Should be DMA buffer*/
+	__u8 *g; /* This is PV also at phase 2. Should be DMA buffer */
 	__u8 *out; /* Result address, should be DMA buffer */
 	__u16 xbytes; /* parameter Xa size */
 	__u16 pbytes; /* parameter p size */
@@ -73,8 +74,8 @@ struct wcrypto_dh_msg {
 };
 
 void *wcrypto_create_dh_ctx(struct wd_queue *q, struct wcrypto_dh_ctx_setup *setup);
-bool wcrypto_dh_is_g2(void *ctx);
-int wcrypto_dh_key_bits(void *ctx);
+bool wcrypto_dh_is_g2(const void *ctx);
+int wcrypto_dh_key_bits(const void *ctx);
 
 /* Asynchronous/sync mode APIs of DH */
 int wcrypto_do_dh(void *ctx, struct wcrypto_dh_op_data *opdata, void *tag);

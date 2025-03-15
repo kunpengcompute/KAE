@@ -206,7 +206,6 @@ struct hisi_qp **sec_create_qps(void)
 	return NULL;
 }
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -220,7 +219,6 @@ static const struct kernel_param_ops sec_uacce_mode_ops = {
 static u32 uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &sec_uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -257,33 +255,19 @@ static const struct pci_device_id sec_dev_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, sec_dev_ids);
 
-static u8 sec_get_endian(struct hisi_qm *qm)
+static void sec_set_endian(struct hisi_qm *qm)
 {
 	u32 reg;
 
-	/*
-	 * As for VF, it is a wrong way to get endian setting by
-	 * reading a register of the engine
-	 */
-	if (qm->pdev->is_virtfn) {
-		dev_err_ratelimited(&qm->pdev->dev,
-				    "cannot access a register in VF!\n");
-		return SEC_LE;
-	}
-	reg = readl_relaxed(qm->io_base + SEC_ENGINE_PF_CFG_OFF +
-			    SEC_ACC_COMMON_REG_OFF + SEC_CONTROL_REG);
+	reg = readl_relaxed(SEC_ADDR(qm, SEC_CONTROL_REG));
+	reg &= ~(BIT(1) | BIT(0));
+	if (IS_ENABLED(CONFIG_64BIT))
+		reg |= BIT(1);
 
-	/* BD little endian mode */
-	if (!(reg & BIT(0)))
-		return SEC_LE;
+	if (IS_ENABLED(CONFIG_CPU_BIG_ENDIAN))
+		reg |= BIT(0);
 
-	/* BD 32-bits big endian mode */
-	else if (!(reg & BIT(1)))
-		return SEC_32BE;
-
-	/* BD 64-bits big endian mode */
-	else
-		return SEC_64BE;
+	writel_relaxed(reg, SEC_ADDR(qm, SEC_CONTROL_REG));
 }
 
 static int sec_engine_init(struct hisi_qm *qm)
@@ -333,9 +317,7 @@ static int sec_engine_init(struct hisi_qm *qm)
 		       SEC_ADDR(qm, SEC_BD_ERR_CHK_EN_REG3));
 
 	/* config endian */
-	reg = readl_relaxed(SEC_ADDR(qm, SEC_CONTROL_REG));
-	reg |= sec_get_endian(qm);
-	writel_relaxed(reg, SEC_ADDR(qm, SEC_CONTROL_REG));
+	sec_set_endian(qm);
 
 	return 0;
 }
@@ -730,21 +712,17 @@ static void sec_open_axi_master_ooo(struct hisi_qm *qm)
 	writel(val | SEC_AXI_SHUTDOWN_ENABLE, SEC_ADDR(qm, SEC_CONTROL_REG));
 }
 
-static int sec_pf_probe_init(struct hisi_qm *qm)
+static void sec_err_ini_set(struct hisi_qm *qm)
 {
-	int ret;
-
-	if (qm->ver == QM_HW_V1)
-		qm->ctrl_q_num = SEC_QUEUE_NUM_V1;
-	else
-		qm->ctrl_q_num = SEC_QUEUE_NUM_V2;
+	if (qm->fun_type == QM_HW_VF)
+		return;
 
 	qm->err_ini.get_dev_hw_err_status = sec_get_hw_err_status;
 	qm->err_ini.clear_dev_hw_err_status = sec_clear_hw_err_status;
 	qm->err_ini.err_info.ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
 	qm->err_ini.err_info.ce = QM_BASE_CE;
 	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT |
-			QM_ACC_WB_NOT_READY_TIMEOUT;
+				   QM_ACC_WB_NOT_READY_TIMEOUT;
 	qm->err_ini.err_info.fe = 0;
 	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
 	qm->err_ini.err_info.acpi_rst = "SRST";
@@ -754,6 +732,16 @@ static int sec_pf_probe_init(struct hisi_qm *qm)
 	qm->err_ini.log_dev_hw_err = sec_log_hw_error;
 	qm->err_ini.open_axi_master_ooo = sec_open_axi_master_ooo;
 	qm->err_ini.err_info.msi_wr_port = SEC_WR_MSI_PORT;
+}
+
+static int sec_pf_probe_init(struct hisi_qm *qm)
+{
+	int ret;
+
+	if (qm->ver == QM_HW_V1)
+		qm->ctrl_q_num = SEC_QUEUE_NUM_V1;
+	else
+		qm->ctrl_q_num = SEC_QUEUE_NUM_V2;
 
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
@@ -807,10 +795,8 @@ static int sec_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	qm->algs = "sec\ncipher\ndigest\n";
+	qm->algs = "cipher\ndigest\naead\n";
 	qm->uacce_mode = uacce_mode;
-#endif
 	qm->pdev = pdev;
 	ret = hisi_qm_pre_init(qm, pf_q_num, SEC_PF_DEF_Q_BASE);
 	if (ret)
@@ -819,6 +805,7 @@ static int sec_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->qm_list = &sec_devices;
 	qm->sqe_size = SEC_SQE_SIZE;
 	qm->dev_name = sec_name;
+	sec_err_ini_set(qm);
 
 	return 0;
 }
@@ -851,7 +838,8 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &sec->qm;
-	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == SEC_PF_PCI_DEVICE_ID) ?
+			QM_HW_PF : QM_HW_VF;
 
 	ret = sec_qm_pre_init(qm, pdev);
 	if (ret)
@@ -1016,4 +1004,3 @@ MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_AUTHOR("Longfang Liu <liulongfang@huawei.com>");
 MODULE_AUTHOR("Zhang Wei <zhangwei375@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator");
-MODULE_VERSION("1.3.13");

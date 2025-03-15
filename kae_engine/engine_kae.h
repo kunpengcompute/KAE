@@ -31,5 +31,27 @@ extern const char *g_engine_kae_id ;
 
 int kae_get_device(const char *dev);
 
+extern void sec_ciphers_set_enabled(int nid, int enabled);
+extern void sec_digests_set_enabled(int nid, int enabled);
+extern void sec_ciphers_free_ciphers(void);
+extern int cipher_module_init(void);
+extern int sec_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher, const int **nids, int nid);
+
+extern void sec_digests_free_methods(void);
+extern int digest_module_init(void);
+extern int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int nid);
+
+extern RSA_METHOD *hpre_get_rsa_methods(void);
+extern int hpre_module_init(void);
+extern void hpre_destroy(void);
+
+extern const DH_METHOD *hpre_get_dh_methods(void);
+extern int hpre_module_dh_init(void);
+extern void hpre_dh_destroy(void);
+
+extern int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
+			   const int **pnids, int nid);
+extern int wd_get_nosva_dev_num(const char *algorithm);
+
 #endif  // !ENGINE_KAE_H
 

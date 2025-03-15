@@ -47,13 +47,8 @@
 const char *g_engine_kae_id = "kae";
 /* Engine name */
 const char *g_engine_kae_name = "Kunpeng Accelerator Engine";
-/* Support pkey method types */
-const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX};
 
 static int g_bind_ref_count = 0;
-
-static int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
-    const int **pnids, int nid);
 
 static const ENGINE_CMD_DEFN g_kae_cmd_defns[] = {
     {
@@ -125,31 +120,17 @@ static int kae_engine_ctrl(ENGINE *e, int cmd, long i, void *p, void (*f) (void)
         case KAE_CMD_ENABLE_SM4:
             US_DEBUG("%s SM4\n", i == 0 ? "Disable" : "Enable");
             if (i == 0) {
-#ifdef KAE_GMSSL
-                sec_ciphers_set_enabled(NID_sms4_ctr, 0);
-				sec_ciphers_set_enabled(NID_sms4_cbc, 0);
-				sec_ciphers_set_enabled(NID_sms4_ofb128, 0);
-				sec_ciphers_set_enabled(NID_sms4_ecb, 0);
-                sec_ciphers_set_enabled(NID_sms4_gcm, 0);
-#else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 0);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 0);
                 sec_ciphers_set_enabled(NID_sm4_ofb128, 0);
+                sec_ciphers_set_enabled(NID_sm4_cfb128, 0);
                 sec_ciphers_set_enabled(NID_sm4_ecb, 0);
-#endif
             } else {
-#ifdef KAE_GMSSL
-				sec_ciphers_set_enabled(NID_sms4_ctr, 1);
-				sec_ciphers_set_enabled(NID_sms4_cbc, 1);
-				sec_ciphers_set_enabled(NID_sms4_ofb128, 1);
-				sec_ciphers_set_enabled(NID_sms4_ecb, 1);
-                sec_ciphers_set_enabled(NID_sms4_gcm, 1);
-#else
                 sec_ciphers_set_enabled(NID_sm4_ctr, 1);
                 sec_ciphers_set_enabled(NID_sm4_cbc, 1);
                 sec_ciphers_set_enabled(NID_sm4_ofb128, 1);
+                sec_ciphers_set_enabled(NID_sm4_cfb128, 1);
                 sec_ciphers_set_enabled(NID_sm4_ecb, 1);
-#endif
             }
             break;
         default:
@@ -182,7 +163,7 @@ static int kae_engine_destroy(ENGINE *e)
         __sync_and_and_fetch(&g_bind_ref_count, 0);
     }
     kae_checking_q_sync_destroy();
-
+    
     return 1;
 }
 
@@ -224,9 +205,9 @@ static int kae_engine_setup(void)
             return 0;
         }
 
-        async_module_init();
+        async_module_init_v1();
         pthread_atfork(engine_do_before_fork_handler, engine_init_parent_at_fork_handler,
-                       engine_init_child_at_fork_handler);
+                       engine_init_child_at_fork_handler_v1);
     }
 
     return 1;
@@ -261,54 +242,6 @@ int kae_get_device(const char* dev)
     return found == 1 ? 1 : 0;
 }
 
-static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
-    const int **pnids, int nid)
-{
-    if ((pnids == NULL) && ((pmeth == NULL) || (nid < 0))) {
-        KAEerr(KAE_F_HPRE_PKEY_METHS, KAE_R_INPUT_PARAM_ERR);
-        US_ERR("wd_engine_digests invalid input param.");
-        if (pmeth != NULL) {
-            *pmeth = NULL;
-        }
-        return OPENSSL_FAIL;
-    }
-    if (pmeth == NULL && pnids != NULL) {
-        *pnids = g_pkey_method_types;
-        return PKEY_METHOD_TYPE_NUM;
-    }
-    if (pmeth == NULL) {
-        return OPENSSL_FAIL;
-    }
-
-    return HPRE_CONT;
-}
-
-static int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
-    const int **pnids, int nid)
-{
-    UNUSED(e);
-    int ret = hpre_check_meth_args(pmeth, pnids, nid);
-    if (ret != HPRE_CONT) {
-        return ret;
-    }
-
-    switch (nid) {
-        case EVP_PKEY_RSA:
-            *pmeth = get_rsa_pkey_meth();
-            break;
-        case EVP_PKEY_DH:
-            *pmeth = get_dh_pkey_meth();
-            break;
-        case EVP_PKEY_DHX:
-            *pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_DHX);
-            break;
-        default:
-            *pmeth = NULL;
-            break;
-    }
-    
-    return (*pmeth != NULL);
-}
 
 /******************************************************************************
 * function:

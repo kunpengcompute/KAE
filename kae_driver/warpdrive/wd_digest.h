@@ -36,7 +36,39 @@ enum wcrypto_digest_alg {
 	WCRYPTO_SHA512,
 	WCRYPTO_SHA512_224,
 	WCRYPTO_SHA512_256,
+	WCRYPTO_AES_XCBC_MAC_96,
+	WCRYPTO_AES_XCBC_PRF_128,
+	WCRYPTO_AES_CMAC,
+	WCRYPTO_AES_GMAC,
 	WCRYPTO_MAX_DIGEST_TYPE,
+};
+
+enum wd_digest_mac_len {
+	WCRYPTO_DIGEST_SM3_LEN	= 32,
+	WCRYPTO_DIGEST_MD5_LEN	= 16,
+	WCRYPTO_DIGEST_SHA1_LEN	= 20,
+	WCRYPTO_DIGEST_SHA256_LEN = 32,
+	WCRYPTO_DIGEST_SHA224_LEN = 28,
+	WCRYPTO_DIGEST_SHA384_LEN = 48,
+	WCRYPTO_DIGEST_SHA512_LEN = 64,
+	WCRYPTO_DIGEST_SHA512_224_LEN = 28,
+	WCRYPTO_DIGEST_SHA512_256_LEN = 32,
+	WCRYPTO_AES_XCBC_MAC_96_LEN = 12,
+	WCRYPTO_AES_XCBC_PRF_128_LEN = 16,
+	WCRYPTO_AES_CMAC_LEN = 16,
+	WCRYPTO_AES_GMAC_LEN = 16,
+};
+
+enum wcrypto_digest_mac_full_len {
+	WCRYPTO_DIGEST_SM3_FULL_LEN = 32,
+	WCRYPTO_DIGEST_MD5_FULL_LEN = 16,
+	WCRYPTO_DIGEST_SHA1_FULL_LEN = 20,
+	WCRYPTO_DIGEST_SHA256_FULL_LEN = 32,
+	WCRYPTO_DIGEST_SHA224_FULL_LEN = 32,
+	WCRYPTO_DIGEST_SHA384_FULL_LEN = 64,
+	WCRYPTO_DIGEST_SHA512_FULL_LEN = 64,
+	WCRYPTO_DIGEST_SHA512_224_FULL_LEN = 64,
+	WCRYPTO_DIGEST_SHA512_256_FULL_LEN = 64,
 };
 
 enum wcrypto_digest_mode {
@@ -66,9 +98,11 @@ struct wcrypto_digest_ctx_setup {
  * @out:output data address
  * @in_bytes: input data size
  * @out_bytes:output data size
- * @priv:private information for data extension
+ * @priv:reserved data field segment
  * @status:I/O operation return status
  * @has_next: is there next data block
+ * @iv: initialization verctor data address
+ * @iv_bytes:initialization verctor data size
  */
 struct wcrypto_digest_op_data {
 	void *in;
@@ -78,6 +112,8 @@ struct wcrypto_digest_op_data {
 	void *priv;
 	int status;
 	bool has_next;
+	void *iv;
+	__u32 iv_bytes;
 };
 
 /* Digest message format of Warpdrive */
@@ -120,7 +156,7 @@ int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len);
  * wcrypto_do_digest() - syn/asynchronous digest operation
  * @ctx: context of user, created by wcrypto_create_digest_ctx.
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 		void *tag);
@@ -128,7 +164,7 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 /**
  * wcrypto_digest_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_digest_poll(struct wd_queue *q, unsigned int num);
 
@@ -137,6 +173,16 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_digest_ctx(void *ctx);
+
+/**
+ * wcrypto_burst_digest() - (a)synchronous multiple digest operations
+ * @d_ctx: context of user, created by wcrypto_create_digest_ctx.
+ * @opdata: operational data
+ * @tag: asynchronous:user_tag; synchronous:NULL.
+ * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
+ */
+int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
+			 void **tag, __u32 num);
 
 #ifdef __cplusplus
 }

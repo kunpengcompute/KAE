@@ -28,6 +28,7 @@
 #include "kaezip_ctx.h"
 #include "kaezip_common.h"
 #include "kaezip_utils.h"
+#include "kaezip_cpucheck.h"
 #include "kaezip_log.h"
 
 #define KAEZIP_UPDATE_ZSTREAM_IN(zstrm, in_len) \
@@ -53,6 +54,9 @@ int kz_deflateInit2_(z_streamp strm, int level,
                       const char *version,
                       int stream_size)
 {
+    if (windowBits == -8) { //  raw-deflate and -8 will get Z_STREAM_ERROR in lz_deflateInit2_(see deflate.c Line 301)
+        windowBits = -9;
+    }
     int ret = lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy, version, stream_size);
     if (ret != Z_OK) {
         US_ERR("zlib deflate init failed windowbits %d! ret is %d!", windowBits, ret);
@@ -60,7 +64,8 @@ int kz_deflateInit2_(z_streamp strm, int level,
     }
 
     int alg_comp_type = kaezip_winbits2algtype(windowBits);
-    if (alg_comp_type != WCRYPTO_ZLIB && alg_comp_type != WCRYPTO_GZIP) {
+    if ((alg_comp_type == WCRYPTO_NONE) || (alg_comp_type == WCRYPTO_RAW_DEFLATE && !kaezip_checkCpu_isV2())) {
+        //  raw-deflate only support in V2
         US_WARN("unsupport windowbits %d!", windowBits);
         setDeflateKaezipCtx(strm, 0);
         return Z_OK;
@@ -77,8 +82,9 @@ int kz_deflateInit2_(z_streamp strm, int level,
     kaezip_ctx->header = kaezip_get_fmt_header(alg_comp_type, level, windowBits);
     setDeflateKaezipCtx(strm, (uLong)kaezip_ctx);
 
-    US_DEBUG("kae zip deflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
-        kaezip_ctx, kaezip_ctx->comp_alg_type == WCRYPTO_ZLIB ? "zlib" : "gzip");
+    US_DEBUG("kae zip deflate init success, windowBits %d, level %d, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
+        windowBits, level, kaezip_ctx, kaezip_ctx->comp_alg_type == WCRYPTO_ZLIB ? "zlib" :
+        (kaezip_ctx->comp_alg_type == WCRYPTO_GZIP ? "gzip" : "deflate-raw"));
     return Z_OK;
 }
 
@@ -116,7 +122,7 @@ int kz_deflate(z_streamp strm, int flush)
 
     //wcrypto deflate need to add output format header
     const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type, kaezip_ctx->comp_type, NULL);
-    if (kaezip_ctx->header_pos != fmt_header_sz) {
+    if ((kaezip_ctx->comp_alg_type != WCRYPTO_RAW_DEFLATE) && (kaezip_ctx->header_pos != fmt_header_sz)) {
         kaezip_deflate_set_fmt_header(strm, kaezip_ctx->comp_alg_type);
         if (kaezip_ctx->header_pos != fmt_header_sz) {
             return Z_OK;
@@ -140,7 +146,8 @@ int kz_deflate(z_streamp strm, int flush)
     if (kaezip_ctx->status == KAEZIP_COMP_END 
             && flush == Z_FINISH 
             && strm->avail_in == 0 
-            && kaezip_ctx->remain == 0) {
+            && kaezip_ctx->remain == 0
+            && kaezip_ctx->buffer_len == 0) {
         return Z_STREAM_END;
     } else {
         return Z_OK;
@@ -149,14 +156,18 @@ int kz_deflate(z_streamp strm, int flush)
 
 int kz_deflateEnd(z_streamp strm)
 {
+    int ret;
+    int comp_alg_type = -1;
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {
         US_DEBUG("kaezip deflate end");
+        comp_alg_type = kaezip_ctx->comp_alg_type;  //  WCRYPTO_RAW_DEFLATE
         kaezip_put_ctx(kaezip_ctx);
     }
 
     setDeflateKaezipCtx(strm, 0);
-    return lz_deflateEnd(strm);
+    ret = lz_deflateEnd(strm);
+    return comp_alg_type == WCRYPTO_RAW_DEFLATE ? Z_OK : ret;
 }
 
 int ZEXPORT kz_deflateReset(z_streamp strm)
@@ -192,8 +203,8 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     KAEZIP_RETURN_FAIL_IF(kaezip_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
-    KAEZIP_RETURN_FAIL_IF(kaezip_ctx->comp_alg_type != WCRYPTO_ZLIB && kaezip_ctx->comp_alg_type != WCRYPTO_GZIP, 
-        "not support alg comp type!", KAEZIP_FAILED);
+    KAEZIP_RETURN_FAIL_IF(kaezip_ctx->comp_alg_type != WCRYPTO_ZLIB && kaezip_ctx->comp_alg_type != WCRYPTO_GZIP &&
+        kaezip_ctx->comp_alg_type != WCRYPTO_RAW_DEFLATE, "not support alg comp type!", KAEZIP_FAILED);
 
     kaezip_ctx->in           = strm->next_in;
     kaezip_ctx->in_len       = (strm->avail_in < KAEZIP_STREAM_CHUNK_IN) ? strm->avail_in : KAEZIP_STREAM_CHUNK_IN;
@@ -201,6 +212,7 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
     kaezip_ctx->consumed     = 0;
     kaezip_ctx->produced     = 0;
     kaezip_ctx->avail_out    = strm->avail_out;
+    kaezip_ctx->zflush       = flush;
     if (flush == Z_FINISH) {
         kaezip_ctx->flush = (strm->avail_in <= KAEZIP_STREAM_CHUNK_IN) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
     } else {
@@ -211,7 +223,8 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
     if (kaezip_ctx->status != KAEZIP_COMP_END
             && flush == Z_FINISH 
             && strm->avail_in == 0 
-            && kaezip_ctx->remain == 0)  {
+            && kaezip_ctx->remain == 0
+            && kaezip_ctx->buffer_len == 0)  {
         kaezip_set_fmt_tail(kaezip_ctx);
         return KAEZIP_SUCCESS;
     }
@@ -222,7 +235,7 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
         return KAEZIP_FAILED;
     }
 
-    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, flush %d", 
+    US_DEBUG("kaezip do deflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, zflush %d", 
         strm->avail_in, strm->avail_out, kaezip_ctx->consumed, kaezip_ctx->produced, 
         kaezip_ctx->remain, kaezip_ctx->status, flush);
 

@@ -31,6 +31,8 @@ typedef unsigned long long __u64;
 
 #define ZIP_LOG(format, args...) fprintf(stderr, format, ##args)
 
+#define MAX_CTX_RSV_SIZE		65536
+
 /* now hw not support config */
 enum wcrypto_comp_level {
 	WCRYPTO_COMP_L1 = 1, /* Compression level 1 */
@@ -49,6 +51,7 @@ enum wcrypto_comp_win_type {
 	WCRYPTO_COMP_WS_4K,  /* 4k bytes window size */
 	WCRYPTO_COMP_WS_8K,  /* 8k bytes window size */
 	WCRYPTO_COMP_WS_16K, /* 16k bytes window size */
+	WCRYPTO_COMP_WS_24K, /* 24k bytes window size */
 	WCRYPTO_COMP_WS_32K, /* 32k bytes window size */
 };
 
@@ -69,6 +72,9 @@ enum wcrypto_comp_flush_type {
 enum wcrypto_comp_alg_type {
 	WCRYPTO_ZLIB,
 	WCRYPTO_GZIP,
+	WCRYPTO_RAW_DEFLATE,
+	WCRYPTO_LZ77_ZSTD,
+	WCRYPTO_COMP_MAX_ALG,
 };
 
 /* Operational types for COMP */
@@ -122,6 +128,21 @@ struct wcrypto_comp_ctx_setup {
 };
 
 /**
+ * operational out data when use zstd_lz77 in sgl format
+ * @literal:literals address when use zstd in sgl format
+ * @lit_len:avail literals size for hw when use zstd in sgl format,
+ *	    and avail literals is always <= (src_len + ZSTD_LIT_RSV_SIZE);
+ * @sequence:sequence address when use zstd in sgl format
+ * @seq_len:avail literals size for hw when use zstd in sgl format
+ */
+struct wcrypto_zstd_out {
+	void *literal;
+	__u32 lit_sz;
+	void *sequence;
+	__u32 seq_sz;
+};
+
+/**
  * operational data per I/O operation
  * @alg_type:compressing algorithm type zlib/gzip
  * @flush:input and output, denotes flush type or data status
@@ -161,7 +182,7 @@ struct wcrypto_comp_msg {
 	__u8 stream_pos; /* Denoted by enum wcrypto_stream_status */
 	__u8 comp_lv;    /* Denoted by enum wcrypto_comp_level */
 	__u8 data_fmt;   /* Data format, denoted by enum wd_buff_type */
-	__u8 win_sz;     /* Denoted by enum wcrypto_comp_win_type */
+	__u8 win_size;     /* Denoted by enum wcrypto_comp_win_type */
 	__u32 in_size;   /* Input data bytes */
 	__u32 avail_out; /* Output buffer size */
 	__u32 in_cons;   /* consumed bytes of input data */
@@ -169,15 +190,34 @@ struct wcrypto_comp_msg {
 	__u8 *src;       /* Input data VA, buf should be DMA-able. */
 	__u8 *dst;       /* Output data VA pointer */
 	__u32 tag;       /* User-defined request identifier */
-	__u32 win_size;  /* Denoted by enum wcrypto_comp_win_type */
 	__u32 status;    /* Denoted by error code and enum wcrypto_op_result */
 	__u32 isize;	 /* Denoted by gzip isize */
 	__u32 checksum;  /* Denoted by zlib/gzip CRC */
-	__u32 ctx_priv0; /* Denoted HW priv */
-	__u32 ctx_priv1; /* Denoted HW priv */
-	__u32 ctx_priv2; /* Denoted HW priv */
 	void *ctx_buf;   /* Denoted HW ctx cache, for stream mode */
-	__u64 udata;     /* Input user tag, indentify data of stream/user */
+	__u64 udata;     /* Input user tag, identify data of stream/user */
+};
+
+/**
+ * The output format defined by uadk and drivers should fill the format
+ * @literals_start:address of the literals data output by the hardware
+ * @sequences_start:address of the sequences data output by the hardware
+ * @lit_num:the size of literals
+ * @seq_num:the size of sequences
+ * @lit_length_overflow_cnt:the count of the literal length overflow
+ * @lit_length_overflow_pos:the position of the literal length overflow
+ * @freq:address of the frequency about sequences members
+ * @blk_type:the previous block status, 0 means an uncompressed block,
+ * 1 means a RLE block and 2 means a compressed block.
+ */
+struct wcrypto_lz77_zstd_format {
+	void *literals_start;
+	void *sequences_start;
+	__u32 lit_num;
+	__u32 seq_num;
+	__u32 lit_length_overflow_cnt;
+	__u32 lit_length_overflow_pos;
+	void *freq;
+	__u32 blk_type;
 };
 
 /**
@@ -192,14 +232,14 @@ void *wcrypto_create_comp_ctx(struct wd_queue *q,
  * wcrypto_do_comp() - syn/asynchronous compressing/decompressing operation
  * @ctx: context of user
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag);
 
 /**
  * wcrypto_comp_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_comp_poll(struct wd_queue *q, unsigned int num);
 

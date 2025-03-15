@@ -28,6 +28,7 @@ endif
 # Src
 SRCDIRS   := ${WORK_PATH}/
 SRCDIRS   += ${WORK_PATH}/src
+SRCDIRS   += ${WORK_PATH}/src/utils
 
 SRCEXTS   := .c # C program
 
@@ -38,6 +39,7 @@ INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.7
 INCDIR += -I /usr/local/include/warpdrive/
 INCDIR += -I /usr/include/warpdrive/
+INCDIR += -I $(WORK_PATH)/src/utils
 # Include Libs.
 LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64

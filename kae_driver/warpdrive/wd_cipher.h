@@ -38,12 +38,24 @@ enum wcrypto_cipher_alg {
 	WCRYPTO_CIPHER_3DES,
 };
 
+/**
+ * WCRYPTO_CIPHER_XTS for xts specified by IEEE Std 1619-2007.
+ * WCRYPTO_CIPHER_XTS_GB for xts specified by GB/T 17964-2021.
+ */
 enum wcrypto_cipher_mode {
 	WCRYPTO_CIPHER_ECB,
 	WCRYPTO_CIPHER_CBC,
 	WCRYPTO_CIPHER_CTR,
 	WCRYPTO_CIPHER_XTS,
 	WCRYPTO_CIPHER_OFB,
+	WCRYPTO_CIPHER_CFB,
+	WCRYPTO_CIPHER_CCM,
+	WCRYPTO_CIPHER_GCM,
+	WCRYPTO_CIPHER_CBC_CS1,
+	WCRYPTO_CIPHER_CBC_CS2,
+	WCRYPTO_CIPHER_CBC_CS3,
+	WCRYPTO_CIPHER_XTS_GB,
+	WCRYPTO_CIPHER_MODE_MAX,
 };
 
 /**
@@ -68,11 +80,11 @@ struct wcrypto_cipher_ctx_setup {
  * @status:I/O operation return status
  * @in: input data address
  * @out:output data address
- * @iv:initializtion verctor data address
+ * @iv:initialization verctor data address
  * @in_bytes: input data size
  * @out_bytes:output data size
- * @iv_bytes:initializtion verctor data size
- * @priv:private information for data extension
+ * @iv_bytes:initialization verctor data size
+ * @priv:reserved data field segment
  */
 struct wcrypto_cipher_op_data {
 	enum wcrypto_cipher_op_type op_type;
@@ -89,7 +101,7 @@ struct wcrypto_cipher_op_data {
 /* Cipher message format of Warpdrive */
 struct wcrypto_cipher_msg {
 	__u8 alg_type:4;	/* Denoted by enum wcrypto_type */
-	__u8 alg:4;		/* Denoted by enum wcrypto_cipher_alg*/
+	__u8 alg:4;		/* Denoted by enum wcrypto_cipher_alg */
 	__u8 op_type:4;		/* Denoted by enum wcrypto_cipher_op_type */
 	__u8 mode:4;		/* Denoted by enum wcrypto_cipher_mode */
 	__u8 data_fmt;		/* Data format, denoted by enum wcrypto_buff_type */
@@ -127,7 +139,7 @@ int wcrypto_set_cipher_key(void *ctx, __u8 *key, __u16 key_len);
  * wcrypto_do_cipher() - syn/asynchronous cipher operation
  * @ctx: context of user, created by wcrypto_create_cipher_ctx.
  * @opdata: operational data
- * @tag: asynchronous:uesr_tag; synchronous:NULL.
+ * @tag: asynchronous:user_tag; synchronous:NULL.
  */
 int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 		void *tag);
@@ -135,7 +147,7 @@ int wcrypto_do_cipher(void *ctx, struct wcrypto_cipher_op_data *opdata,
 /**
  * wcrypto_cipher_poll() - poll operation for asynchronous operation
  * @q:wrapdrive queue
- * @num:how many respondings this poll has to get, 0 means get all finishings
+ * @num:how many respondences this poll has to get, 0 means get all finishings
  */
 int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
 
@@ -144,6 +156,16 @@ int wcrypto_cipher_poll(struct wd_queue *q, unsigned int num);
  * @ctx: the context to be free
  */
 void wcrypto_del_cipher_ctx(void *ctx);
+
+/**
+ * wcrypto_burst_cipher() - (a)synchronous multiple cipher operations
+ * @ctx: context of user, created by wcrypto_create_cipher_ctx.
+ * @c_opdata: operational data
+ * @tag: asynchronous:user_tag; synchronous:NULL.
+ * @num: operations number per calling, maximum number is WCRYPTO_MAX_BURST_NUM.
+ */
+int wcrypto_burst_cipher(void *ctx, struct wcrypto_cipher_op_data **c_opdata,
+			 void **tag, __u32 num);
 
 #ifdef __cplusplus
 }

@@ -204,7 +204,7 @@ static struct debugfs_reg32 hzip_dfx_regs[] = {
 	{"HZIP_AVG_DELAY                 ",  0x28ull},
 	{"HZIP_MEM_VISIBLE_DATA          ",  0x30ull},
 	{"HZIP_MEM_VISIBLE_ADDR          ",  0x34ull},
-	{"HZIP_COMSUMED_BYTE             ",  0x38ull},
+	{"HZIP_CONSUMED_BYTE             ",  0x38ull},
 	{"HZIP_PRODUCED_BYTE             ",  0x40ull},
 	{"HZIP_COMP_INF                  ",  0x70ull},
 	{"HZIP_PRE_OUT                   ",  0x78ull},
@@ -217,7 +217,6 @@ static struct debugfs_reg32 hzip_dfx_regs[] = {
 	{"HZIP_DECOMP_LZ77_CURR_ST       ",  0x9cull},
 };
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -231,7 +230,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -757,6 +755,28 @@ static void hisi_zip_close_axi_master_ooo(struct hisi_qm *qm)
 	       qm->io_base + HZIP_CORE_INT_SET);
 }
 
+static void hisi_zip_err_ini_set(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "ZRST";
+	qm->err_ini.hw_err_disable = hisi_zip_hw_error_disable;
+	qm->err_ini.hw_err_enable = hisi_zip_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hisi_zip_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hisi_zip_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = hisi_zip_open_axi_master_ooo;
+	qm->err_ini.close_axi_master_ooo = hisi_zip_close_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HZIP_WR_PORT;
+}
+
 static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
 {
 	struct hisi_zip *zip = container_of(qm, struct hisi_zip, qm);
@@ -775,23 +795,6 @@ static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
 	else
 		qm->ctrl_q_num = HZIP_QUEUE_NUM_V2;
 
-	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
-	qm->err_ini.err_info.acpi_rst = "ZRST";
-	qm->err_ini.hw_err_disable = hisi_zip_hw_error_disable;
-	qm->err_ini.hw_err_enable = hisi_zip_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = hisi_zip_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = hisi_zip_log_hw_error;
-	qm->err_ini.open_axi_master_ooo = hisi_zip_open_axi_master_ooo;
-	qm->err_ini.close_axi_master_ooo = hisi_zip_close_axi_master_ooo;
-
-	qm->err_ini.err_info.msi_wr_port = HZIP_WR_PORT;
-
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
@@ -807,13 +810,11 @@ static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (pdev->revision >= QM_HW_V3)
-		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\ndeflate\n";
+		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\ndeflate\nlz77_zstd\n";
 	else
 		qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n";
 	qm->uacce_mode = uacce_mode;
-#endif
 	qm->pdev = pdev;
 	ret = hisi_qm_pre_init(qm, pf_q_num, HZIP_PF_DEF_Q_BASE);
 	if (ret)
@@ -821,6 +822,7 @@ static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->sqe_size = HZIP_SQE_SIZE;
 	qm->dev_name = hisi_zip_name;
 	qm->qm_list = &zip_devices;
+	hisi_zip_err_ini_set(qm);
 
 	return 0;
 }
@@ -836,7 +838,8 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &zip->qm;
-	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == PCI_DEVICE_ID_ZIP_PF) ?
+			QM_HW_PF : QM_HW_VF;
 
 	ret = hisi_zip_qm_pre_init(qm, pdev);
 	if (ret)
@@ -910,10 +913,7 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 {
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (uacce_mode != UACCE_MODE_NOUACCE)
-		hisi_qm_remove_wait_delay(qm, &zip_devices);
-#endif
+	hisi_qm_remove_wait_delay(qm, &zip_devices);
 
 	if (qm->fun_type == QM_HW_PF && qm->vfs_num)
 		hisi_qm_sriov_disable(pdev, NULL);
@@ -993,4 +993,3 @@ module_exit(hisi_zip_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon ZIP accelerator");
-MODULE_VERSION("1.3.13");

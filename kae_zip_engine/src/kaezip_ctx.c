@@ -34,8 +34,10 @@ static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
 static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
 static int kaezip_create_wd_ctx(kaezip_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
 static int kaezip_driver_do_comp_impl(kaezip_ctx_t *kz_ctx);
-static void kaezip_set_input_data(kaezip_ctx_t *kz_ctx);
-static void kaezip_get_output_data(kaezip_ctx_t *kz_ctx);
+static int kaezip_set_comp_input_data(kaezip_ctx_t *kz_ctx);
+static void kaezip_get_buffer_remain_data(kaezip_ctx_t *kz_ctx);
+static void kaezip_get_comp_output_data(kaezip_ctx_t *kz_ctx);
+static void kaezip_get_decomp_output_data(kaezip_ctx_t *kz_ctx);
 
 void kaezip_free_ctx(void* kz_ctx)
 {
@@ -91,6 +93,7 @@ static kaezip_ctx_t* kaezip_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
         US_ERR("alloc opdata out buf failed");
         goto err;
     }
+    kz_ctx->op_data.avail_out = KAEZIP_STREAM_CHUNK_OUT;
     
     kz_ctx->q_node = q_node;          
     q_node->priv_ctx = kz_ctx; 
@@ -182,6 +185,8 @@ void  kaezip_init_ctx(kaezip_ctx_t* kz_ctx)
     kz_ctx->consumed     = 0;
     kz_ctx->produced     = 0;
     kz_ctx->remain       = 0;
+    kz_ctx->buffer_len   = 0;
+    kz_ctx->buffer_remain = 0;
 
     kz_ctx->header_pos   = 0;
     kz_ctx->flush        = 0;
@@ -236,43 +241,97 @@ int kaezip_driver_do_comp(kaezip_ctx_t *kaezip_ctx)
         return kaezip_get_remain_data(kaezip_ctx);
     }
 
-    if (kaezip_ctx->in_len == 0) {
-        US_DEBUG("kaezip do comp impl success, for input len zero, comp type : %s", 
-            kaezip_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
+    if (kaezip_ctx->in_len == 0 && kaezip_ctx->buffer_len == 0) {
+        US_DEBUG("kaezip do comp impl success, for input len zero and no remained, comp type : deflate");
         return KAEZIP_SUCCESS;
     }
 
-    if (kaezip_ctx->in_len >= KAEZIP_STREAM_CHUNK_IN) {
-        kaezip_ctx->do_comp_len = KAEZIP_STREAM_CHUNK_IN;
-    } else {
-        kaezip_ctx->do_comp_len = kaezip_ctx->in_len;
+    int ret = kaezip_set_comp_input_data(kaezip_ctx);
+    if (ret == KAEZIP_SAVE_DATA_TO_BUFFER) {
+        kaezip_ctx->consumed = kaezip_ctx->in_len;
+        kaezip_ctx->produced = 0;
+        return KAEZIP_SUCCESS;
     }
-    
-    kaezip_set_input_data(kaezip_ctx);
-    int ret = kaezip_driver_do_comp_impl(kaezip_ctx);
+    US_DEBUG("kaezip driver do comp task, input length is %uB, buffer remain %uB",
+        kaezip_ctx->op_data.in_len, kaezip_ctx->buffer_remain);
+    ret = kaezip_driver_do_comp_impl(kaezip_ctx);
     if (ret != KAEZIP_SUCCESS) {
         US_DEBUG("kaezip do comp impl success, comp type : %s", 
             kaezip_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
         return ret;
     }
-    kaezip_get_output_data(kaezip_ctx);
+    kaezip_get_buffer_remain_data(kaezip_ctx);
+    kaezip_get_comp_output_data(kaezip_ctx);
 
     return KAEZIP_SUCCESS;
 }
 
-static void kaezip_set_input_data(kaezip_ctx_t *kz_ctx)
+static int kaezip_set_comp_input_data(kaezip_ctx_t *kz_ctx)
 {
-    kz_ctx->op_data.in_len = 0;
+    memcpy(kz_ctx->op_data.in + kz_ctx->buffer_len, kz_ctx->in, kz_ctx->in_len);
+    kz_ctx->buffer_len += kz_ctx->in_len;
+    US_DEBUG("kaezip save %uB input data to buffer, buffer len is %uB now",
+            kz_ctx->in_len, kz_ctx->buffer_len);
 
-    memcpy((uint8_t *)kz_ctx->op_data.in, kz_ctx->in, kz_ctx->do_comp_len);
-    kz_ctx->op_data.in_len += kz_ctx->do_comp_len;
-    kz_ctx->op_data.avail_out = KAEZIP_STREAM_CHUNK_OUT;
+    if ((kz_ctx->buffer_len >= KAEZIP_STREAM_CHUNK_IN) || (kz_ctx->zflush != 0 /* Z_NO_FLUSH */)) {
+        if (unlikely((kz_ctx->buffer_len < 4) && (kz_ctx->flush == WCRYPTO_SYNC_FLUSH))) {
+            //  非尾包小于4Byte, 即使flush要求刷新, 也不下发
+            return KAEZIP_SAVE_DATA_TO_BUFFER;
+        } else if (kz_ctx->flush == WCRYPTO_FINISH) {
+            //  尾包没有4Byte对齐约束, 直接下发即可
+            kz_ctx->buffer_remain = 0;
+        } else {
+            //  非尾包, 按4Byte的倍数进行切分, 剩余的长度记录在buffer_remain
+            kz_ctx->buffer_remain = kz_ctx->buffer_len & 0x3;
+            kz_ctx->buffer_len   -= kz_ctx->buffer_remain;
+        }
+
+        kz_ctx->op_data.in_len    = kz_ctx->buffer_len;
+        kz_ctx->op_data.flush     = kz_ctx->flush;
+        kz_ctx->op_data.alg_type  = kz_ctx->comp_alg_type;
+
+        if (kz_ctx->status == KAEZIP_COMP_INIT) {
+            kz_ctx->op_data.stream_pos = WCRYPTO_COMP_STREAM_NEW;
+        }
+        return KAEZIP_DRIVER_DO_TASK_NOW;
+    }
+    return KAEZIP_SAVE_DATA_TO_BUFFER;
+}
+
+static void kaezip_set_decomp_input_data(kaezip_ctx_t *kz_ctx)
+{
+    memcpy((uint8_t *)kz_ctx->op_data.in, kz_ctx->in, kz_ctx->in_len);
+    kz_ctx->op_data.in_len = kz_ctx->in_len;
     kz_ctx->op_data.flush   = kz_ctx->flush;
     kz_ctx->op_data.alg_type = kz_ctx->comp_alg_type;
 
-    if (kz_ctx->status == KAEZIP_COMP_INIT || kz_ctx->status == KAEZIP_DECOMP_INIT) {
+    if (kz_ctx->status == KAEZIP_DECOMP_INIT) {
         kz_ctx->op_data.stream_pos = WCRYPTO_COMP_STREAM_NEW;
     }
+}
+
+int kaezip_driver_do_decomp(kaezip_ctx_t *kaezip_ctx)
+{
+    KAEZIP_RETURN_FAIL_IF(kaezip_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
+
+    if (kaezip_ctx->remain != 0) {
+        return kaezip_get_remain_data(kaezip_ctx);
+    }
+
+    if (kaezip_ctx->in_len == 0) {
+        US_DEBUG("kaezip do comp impl success, for input len zero, comp type : inflate");
+        return KAEZIP_SUCCESS;
+    }
+
+    kaezip_set_decomp_input_data(kaezip_ctx);
+    int ret = kaezip_driver_do_comp_impl(kaezip_ctx);
+    if (ret != KAEZIP_SUCCESS) {
+        US_DEBUG("kaezip do comp impl success, comp type : inflate");
+        return ret;
+    }
+    kaezip_get_decomp_output_data(kaezip_ctx);
+
+    return KAEZIP_SUCCESS;
 }
 
 static void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
@@ -321,7 +380,36 @@ static void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
     }
 }
 
-static void kaezip_get_output_data(kaezip_ctx_t *kz_ctx)
+//  buffer切分为4Byte倍数下发后, 将尾部余下的字节搬运到头部
+static void kaezip_get_buffer_remain_data(kaezip_ctx_t *kz_ctx)
+{
+    // if (kz_ctx->op_data.consumed != kz_ctx->buffer_len) {
+    //     printf("Error.\n");
+    //     printf("kz_ctx->op_data.consumed: %u\n", kz_ctx->op_data.consumed);
+    //     printf("kz_ctx->buffer_len: %u\n", kz_ctx->buffer_len);
+    //     printf("flush: %d\n", kz_ctx->flush);
+    // }
+    memcpy(kz_ctx->op_data.in, kz_ctx->op_data.in + kz_ctx->buffer_len, kz_ctx->buffer_remain);
+    kz_ctx->buffer_len = kz_ctx->buffer_remain;
+    kz_ctx->buffer_remain = 0;
+}
+
+static void kaezip_get_comp_output_data(kaezip_ctx_t *kz_ctx)
+{
+    kz_ctx->consumed = kz_ctx->in_len;
+
+    if (kz_ctx->avail_out < kz_ctx->op_data.produced) {
+        kz_ctx->produced = kz_ctx->avail_out;
+        kz_ctx->remain = kz_ctx->op_data.produced - kz_ctx->produced;
+    } else {
+        kz_ctx->produced = kz_ctx->op_data.produced;
+    }
+    memcpy(kz_ctx->out, kz_ctx->op_data.out, kz_ctx->produced);
+
+    kaezip_set_comp_status(kz_ctx);
+}
+
+static void kaezip_get_decomp_output_data(kaezip_ctx_t *kz_ctx)
 {
     kz_ctx->consumed = kz_ctx->op_data.consumed;
 

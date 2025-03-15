@@ -21,21 +21,15 @@
 #include <linux/seq_file.h>
 #include <linux/topology.h>
 #include "../../include_linux/uacce.h"
+
 #include "rde.h"
 
 #define HRDE_QUEUE_NUM_V1	4096
 #define HRDE_QUEUE_NUM_V2	1024
 #define HRDE_PCI_DEVICE_ID	0xa25a
 #define HRDE_SQE_SIZE		64
-#define HRDE_SQ_SIZE		(HRDE_SQE_SIZE * QM_Q_DEPTH)
 #define HRDE_PF_DEF_Q_NUM	64
 #define HRDE_PF_DEF_Q_BASE	0
-#define HRDE_RD_INTVRL_US	10
-#define HRDE_RD_TMOUT_US	1000
-#define HRDE_RST_TMOUT_MS	400
-#define HRDE_ENABLE		1
-#define HRDE_DISABLE		0
-#define HRDE_PCI_COMMAND_INVALID	0xFFFFFFFF
 
 #define HRDE_RAS_INT_MSK	0x310290
 #define HRDE_RAS_CE_MSK		BIT(2)
@@ -100,7 +94,7 @@ static struct hisi_qm_list rde_devices;
 static void hisi_rde_ras_proc(struct work_struct *work);
 
 static const struct hisi_rde_hw_error rde_hw_error[] = {
-	{.int_msk = BIT(0), .msg = "Rde_ecc_1bitt_err"},
+	{.int_msk = BIT(0), .msg = "Rde_ecc_1bit_err"},
 	{.int_msk = BIT(1), .msg = "Rde_ecc_2bit_err"},
 	{.int_msk = BIT(2), .msg = "Rde_stat_mgmt_state_timeout_err"},
 	{.int_msk = BIT(3), .msg = "Rde_data_wr_state_timeout_err"},
@@ -187,7 +181,6 @@ static struct debugfs_reg32 hrde_ooo_dfx_regs[] = {
 	{"HRDE_AM_CURR_WR_TXID_STS_2", 0x300178ull},
 };
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -201,7 +194,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -270,7 +262,7 @@ static int hisi_rde_set_user_domain_and_cache(struct hisi_qm *qm)
 	writel(AXI_M_CFG, qm->io_base + QM_AXI_M_CFG);
 	writel(AXI_M_CFG_ENABLE, qm->io_base + QM_AXI_M_CFG_ENABLE);
 
-	/* disable BME/PM/SRIOV FLR*/
+	/* disable BME/PM/SRIOV FLR */
 	writel(PEH_AXUSER_CFG, qm->io_base + QM_PEH_AXUSER_CFG);
 	writel(PEH_AXUSER_CFG_ENABLE, qm->io_base + QM_PEH_AXUSER_CFG_ENABLE);
 
@@ -352,7 +344,7 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 	u32 tmp;
 
 	if (val > 0) {
-		pr_err("Function id should be smaller than 0.\n");
+		pr_err("Function id should be equal to 0.\n");
 		return -EINVAL;
 	}
 
@@ -424,7 +416,7 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 				size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[HRDE_DBGFS_VAL_MAX_LEN];
 	unsigned long val;
 	int len, ret;
 
@@ -624,6 +616,24 @@ static void hisi_rde_open_master_ooo(struct hisi_qm *qm)
 	writel(val | HRDE_AXI_SHUTDOWN_EN, qm->io_base + HRDE_CFG);
 }
 
+static void hisi_rde_err_ini_set(struct hisi_qm *qm)
+{
+	qm->err_ini.get_dev_hw_err_status = hisi_rde_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hisi_rde_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HRDE_ECC_2BIT_ERR;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = 0;
+	qm->err_ini.err_info.acpi_rst = "RRST";
+	qm->err_ini.hw_err_disable = hisi_rde_hw_error_disable;
+	qm->err_ini.hw_err_enable = hisi_rde_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hisi_rde_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hisi_rde_hw_error_log;
+	qm->err_ini.open_axi_master_ooo = hisi_rde_open_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HRDE_WR_MSI_PORT;
+}
+
 static int hisi_rde_pf_probe_init(struct hisi_qm *qm)
 {
 	struct hisi_rde *hisi_rde = container_of(qm, struct hisi_rde, qm);
@@ -642,21 +652,6 @@ static int hisi_rde_pf_probe_init(struct hisi_qm *qm)
 	else
 		qm->ctrl_q_num = HRDE_QUEUE_NUM_V2;
 
-	qm->err_ini.get_dev_hw_err_status = hisi_rde_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = hisi_rde_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = HRDE_ECC_2BIT_ERR;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = 0;
-	qm->err_ini.err_info.acpi_rst = "RRST";
-	qm->err_ini.hw_err_disable = hisi_rde_hw_error_disable;
-	qm->err_ini.hw_err_enable = hisi_rde_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = hisi_rde_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = hisi_rde_hw_error_log;
-	qm->err_ini.open_axi_master_ooo = hisi_rde_open_master_ooo;
-	qm->err_ini.err_info.msi_wr_port = HRDE_WR_MSI_PORT;
-
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
@@ -672,11 +667,8 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	qm->algs = "ec\n";
 	qm->uacce_mode = uacce_mode;
-#endif
-
 	qm->pdev = pdev;
 	ret = hisi_qm_pre_init(qm, pf_q_num, HRDE_PF_DEF_Q_BASE);
 	if (ret)
@@ -686,6 +678,7 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->sqe_size = HRDE_SQE_SIZE;
 	qm->dev_name = hisi_rde_name;
 	qm->abnormal_fix = hisi_rde_abnormal_fix;
+	hisi_rde_err_ini_set(qm);
 
 	return 0;
 }
@@ -723,31 +716,31 @@ static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	ret = hisi_rde_qm_pre_init(qm, pdev);
 	if (ret) {
-		pci_err(pdev, "Pre init qm failed!\n");
+		pci_err(pdev, "Failed to pre init qm!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_init(qm);
 	if (ret) {
-		pci_err(pdev, "Init qm failed!\n");
+		pci_err(pdev, "Failed to init qm!\n");
 		return ret;
 	}
 
 	ret = hisi_rde_pf_probe_init(qm);
 	if (ret) {
-		pci_err(pdev, "Init pf failed!\n");
+		pci_err(pdev, "Failed to init pf!\n");
 		goto err_qm_uninit;
 	}
 
 	ret = hisi_qm_start(qm);
 	if (ret) {
-		pci_err(pdev, "Start qm failed!\n");
+		pci_err(pdev, "Failed to start qm!\n");
 		goto err_qm_uninit;
 	}
 
 	ret = hisi_rde_debugfs_init(qm);
 	if (ret)
-		pci_warn(pdev, "Init debugfs failed!\n");
+		pci_warn(pdev, "Failed to init debugfs!\n");
 
 	hisi_qm_add_to_list(qm, &rde_devices);
 
@@ -789,8 +782,7 @@ static void hisi_rde_ras_proc(struct work_struct *work)
 	ret = hisi_qm_process_dev_error(pdev);
 	if (ret == PCI_ERS_RESULT_NEED_RESET)
 		if (hisi_qm_controller_reset(&hisi_rde->qm))
-			dev_err(&pdev->dev, "Hisi_rde reset fail.\n");
-
+			dev_err(&pdev->dev, "Failed to reset device!\n");
 }
 
 int hisi_rde_abnormal_fix(struct hisi_qm *qm)
@@ -846,7 +838,7 @@ static int __init hisi_rde_init(void)
 	ret = pci_register_driver(&hisi_rde_pci_driver);
 	if (ret < 0) {
 		hisi_rde_unregister_debugfs();
-		pr_err("Register pci driver failed.\n");
+		pr_err("Failed to register pci driver!\n");
 	}
 
 	return ret;
@@ -864,4 +856,3 @@ module_exit(hisi_rde_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Yu'an Wang<wangyuan46@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon RDE accelerator");
-MODULE_VERSION("1.3.13");

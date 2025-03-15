@@ -19,7 +19,7 @@
 
 #include "include/wd_dummy_usr_if.h"
 #include "include/dummy_hw_usr_if.h"
-#include "../wd.h"
+#include "wd.h"
 
 #ifndef  DUMMY_ERR
 #define DUMMY_ERR(format, args...) printf(format, ##args)
@@ -27,8 +27,8 @@
 
 int dummy_set_queue_dio(struct wd_queue *q);
 void dummy_unset_queue_dio(struct wd_queue *q);
-int dummy_add_to_dio_q(struct wd_queue *q, void *req);
-int dummy_get_from_dio_q(struct wd_queue *q, void **req);
+int dummy_add_to_dio_q(struct wd_queue *q, void **req, __u32 num);
+int dummy_get_from_dio_q(struct wd_queue *q, void **resp, __u32 num);
 void dummy_flush(struct wd_queue *q);
 void *dummy_reserve_mem(struct wd_queue *q, size_t size);
 

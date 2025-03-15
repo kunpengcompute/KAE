@@ -42,7 +42,7 @@ enum wcrypto_rsa_op_type  {
 /* RSA key types */
 enum wcrypto_rsa_key_type {
 	WCRYPTO_RSA_INVALID_KEY, /* invalid rsa key type */
-	WCRYPTO_RSA_PUBKEY, /* rsa publick key type */
+	WCRYPTO_RSA_PUBKEY, /* rsa public key type */
 	WCRYPTO_RSA_PRIKEY1, /* invalid rsa private common key type */
 	WCRYPTO_RSA_PRIKEY2, /* invalid rsa private CRT key type */
 };
@@ -80,14 +80,14 @@ struct wcrypto_rsa_msg {
 	__u8 *key; /* Input key VA pointer, should be DMA buffer */
 
 	/*
-	 * Input user tag, used for indentify data stream/user:
+	 * Input user tag, used for identify data stream/user:
 	 * struct wcrypto_cb_tag
 	 */
 	__u64 usr_data;
 };
 
-bool wcrypto_rsa_is_crt(void *ctx);
-int wcrypto_rsa_key_bits(void *ctx);
+bool wcrypto_rsa_is_crt(const void *ctx);
+int wcrypto_rsa_key_bits(const void *ctx);
 void *wcrypto_create_rsa_ctx(struct wd_queue *q, struct wcrypto_rsa_ctx_setup *setup);
 void wcrypto_get_rsa_pubkey(void *ctx, struct wcrypto_rsa_pubkey **pubkey);
 void wcrypto_get_rsa_prikey(void *ctx, struct wcrypto_rsa_prikey **prikey);

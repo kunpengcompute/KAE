@@ -904,7 +904,7 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 	struct uacce_qfile_region *qfr;
 	struct uacce_queue *q;
 	struct uacce *uacce;
-	enum uacce_qfrt type;
+	enum uacce_qfrt type = UACCE_QFRT_MAX;
 	unsigned int flags = 0;
 	int ret;
 
@@ -918,16 +918,20 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 	}
 	q = filep->private_data;
 	uacce = q->uacce;
-	type = uacce_get_region_type(uacce, vma);
+	if (vma->vm_pgoff < UACCE_QFRT_MAX)
+		type = vma->vm_pgoff;
+	else
+		return -EINVAL;
+	// type = uacce_get_region_type(uacce, vma);
 
 	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%pK, end=%pK)\n",
 		 qfrt_str[type], vma->vm_pgoff,
 		(void *)vma->vm_start, (void *)vma->vm_end);
 
-	if (type == UACCE_QFRT_INVALID) {
-		ret = -EINVAL;
-		goto out_with_lock;
-	}
+	// if (type == UACCE_QFRT_INVALID) {
+	// 	ret = -EINVAL;
+	// 	goto out_with_lock;
+	// }
 
 	/* this type of qfr has mapped already */
 	if (q->qfrs[type]) {
@@ -1079,27 +1083,6 @@ static ssize_t algorithms_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(algorithms);
 
-static ssize_t qfrs_offset_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
-	int i, ret;
-	unsigned long offset;
-
-	for (i = 0, ret = 0; i < UACCE_QFRT_MAX; i++) {
-		offset = uacce->qf_pg_start[i];
-		if (offset != UACCE_QFR_NA)
-			offset = offset << PAGE_SHIFT;
-		if (i == UACCE_QFRT_SS)
-			break;
-		ret += sprintf(buf + ret, "%lu\t", offset);
-	}
-	ret += sprintf(buf + ret, "%lu\n", offset);
-
-	return ret;
-}
-
-static DEVICE_ATTR_RO(qfrs_offset);
 
 static ssize_t isolate_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
@@ -1155,6 +1138,27 @@ static ssize_t dev_state_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(dev_state);
 
+static ssize_t region_mmio_size_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	// struct uacce_device *uacce = to_uacce_device(dev);
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+
+	return sprintf(buf, "%lu\n", uacce->qf_pg_start[UACCE_QFRT_MMIO] << PAGE_SHIFT);
+}
+
+static DEVICE_ATTR_RO(region_mmio_size);
+
+static ssize_t region_dus_size_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	// struct uacce_device *uacce = to_uacce_device(dev);
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+
+	return sprintf(buf, "%lu\n", uacce->qf_pg_start[UACCE_QFRT_DUS] << PAGE_SHIFT);
+}
+static DEVICE_ATTR_RO(region_dus_size);
+
 static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_id.attr,
 	&dev_attr_api.attr,
@@ -1163,7 +1167,9 @@ static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_flags.attr,
 	&dev_attr_available_instances.attr,
 	&dev_attr_algorithms.attr,
-	&dev_attr_qfrs_offset.attr,
+	// &dev_attr_qfrs_offset.attr,
+	&dev_attr_region_mmio_size.attr,
+	&dev_attr_region_dus_size.attr,
 	&dev_attr_isolate.attr,
 	&dev_attr_isolate_strategy.attr,
 	&dev_attr_dev_state.attr,
@@ -1352,4 +1358,4 @@ module_exit(uacce_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Accelerator interface for Userland applications");
-MODULE_VERSION("1.3.13");
+MODULE_VERSION("1.3.11");

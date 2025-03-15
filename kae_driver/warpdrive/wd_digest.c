@@ -17,22 +17,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "wd.h"
-#include "wd_digest.h"
 #include "wd_util.h"
+#include "wd_digest.h"
 
-#define WD_DIGEST_CTX_MSG_NUM	64
-#define WD_DIGEST_MAX_CTX		256
-#define MAX_HMAC_KEY_SIZE		128
+#define MAX_HMAC_KEY_SIZE	128
 #define MAX_DIGEST_RETRY_CNT	20000000
+#define SEC_SHA1_ALIGN_SZ	64
+#define SEC_SHA512_ALIGN_SZ	128
+#define SEC_GMAC_IV_LEN	16
 
 struct wcrypto_digest_cookie {
 	struct wcrypto_digest_tag tag;
@@ -40,54 +38,49 @@ struct wcrypto_digest_cookie {
 };
 
 struct wcrypto_digest_ctx {
-	struct wcrypto_digest_cookie cookies[WD_DIGEST_CTX_MSG_NUM];
-	__u8 cstatus[WD_DIGEST_CTX_MSG_NUM];
-	int cidx;
-	int ctx_id;
+	struct wd_cookie_pool pool;
+	unsigned long ctx_id;
 	void *key;
 	__u32 key_bytes;
 	__u64 io_bytes;
+	__u8 align_sz;
 	struct wd_queue *q;
 	struct wcrypto_digest_ctx_setup setup;
 };
 
-static struct wcrypto_digest_cookie *get_digest_cookie(struct wcrypto_digest_ctx *ctx)
-{
-	int idx = ctx->cidx;
-	int cnt = 0;
+static __u32 g_digest_mac_len[WCRYPTO_MAX_DIGEST_TYPE] = {
+	WCRYPTO_DIGEST_SM3_LEN, WCRYPTO_DIGEST_MD5_LEN, WCRYPTO_DIGEST_SHA1_LEN,
+	WCRYPTO_DIGEST_SHA256_LEN, WCRYPTO_DIGEST_SHA224_LEN,
+	WCRYPTO_DIGEST_SHA384_LEN, WCRYPTO_DIGEST_SHA512_LEN,
+	WCRYPTO_DIGEST_SHA512_224_LEN, WCRYPTO_DIGEST_SHA512_256_LEN,
+	WCRYPTO_AES_XCBC_MAC_96_LEN, WCRYPTO_AES_XCBC_PRF_128_LEN,
+	WCRYPTO_AES_CMAC_LEN, WCRYPTO_AES_GMAC_LEN
+};
 
-	while (__atomic_test_and_set(&ctx->cstatus[idx], __ATOMIC_ACQUIRE)) {
-		idx++;
-		cnt++;
-		if (idx == WD_DIGEST_CTX_MSG_NUM)
-			idx = 0;
-		if (cnt == WD_DIGEST_CTX_MSG_NUM)
-			return NULL;
-	}
-
-	ctx->cidx = idx;
-	return &ctx->cookies[idx];
-}
-
-static void put_digest_cookie(struct wcrypto_digest_ctx *ctx,
-		struct wcrypto_digest_cookie *cookie)
-{
-	int idx = ((uintptr_t)cookie - (uintptr_t)ctx->cookies) /
-		sizeof(struct wcrypto_digest_cookie);
-
-	if (idx < 0 || idx >= WD_DIGEST_CTX_MSG_NUM) {
-		WD_ERR("digest cookie not exist!\n");
-		return;
-	}
-	__atomic_clear(&ctx->cstatus[idx], __ATOMIC_RELEASE);
-}
+static __u32 g_digest_mac_full_len[WCRYPTO_MAX_DIGEST_TYPE] = {
+	WCRYPTO_DIGEST_SM3_FULL_LEN, WCRYPTO_DIGEST_MD5_FULL_LEN,
+	WCRYPTO_DIGEST_SHA1_FULL_LEN, WCRYPTO_DIGEST_SHA256_FULL_LEN,
+	WCRYPTO_DIGEST_SHA224_FULL_LEN, WCRYPTO_DIGEST_SHA384_FULL_LEN,
+	WCRYPTO_DIGEST_SHA512_FULL_LEN, WCRYPTO_DIGEST_SHA512_224_FULL_LEN,
+	WCRYPTO_DIGEST_SHA512_256_FULL_LEN
+};
 
 static void del_ctx_key(struct wcrypto_digest_ctx *ctx)
 {
 	struct wd_mm_br *br = &(ctx->setup.br);
+	__u8 tmp[MAX_HMAC_KEY_SIZE] = { 0 };
 
-	if (ctx->key)
-		memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
+	/**
+	 * When data_fmt is 'WD_SGL_BUF',  'akey' and 'ckey' is a sgl, and if u
+	 * want to clear the SGL buffer, we can only use 'wd_sgl_cp_from_pbuf'
+	 * whose 'pbuf' is all zero.
+	 */
+	if (ctx->key && ctx->key_bytes) {
+		if (ctx->setup.data_fmt == WD_FLAT_BUF)
+			memset(ctx->key, 0, MAX_HMAC_KEY_SIZE);
+		else if (ctx->setup.data_fmt == WD_SGL_BUF)
+			wd_sgl_cp_from_pbuf(ctx->key, 0, tmp, MAX_HMAC_KEY_SIZE);
+	}
 
 	if (br && br->free && ctx->key)
 		br->free(br->usr, ctx->key);
@@ -108,28 +101,90 @@ static int create_ctx_para_check(struct wd_queue *q,
 		}
 	}
 
-	if (strncmp(q->capa.alg, "digest", strlen("digest"))) {
+	if (strcmp(q->capa.alg, "digest")) {
 		WD_ERR("%s: algorithm mismatching!\n", __func__);
+		return -WD_EINVAL;
+	}
+
+	if (setup->alg >= WCRYPTO_MAX_DIGEST_TYPE) {
+		WD_ERR("invalid: the alg %d does not support!\n", setup->alg);
+		return -WD_EINVAL;
+	}
+
+	if (setup->mode == WCRYPTO_DIGEST_NORMAL &&
+	    setup->alg >= WCRYPTO_AES_XCBC_MAC_96) {
+		WD_ERR("invalid: the alg %d does not support normal mode!\n", setup->alg);
 		return -WD_EINVAL;
 	}
 
 	return WD_SUCCESS;
 }
 
-static void init_digest_cookie(struct wcrypto_digest_ctx *ctx,
-	struct wcrypto_digest_ctx_setup *setup)
+static int init_digest_cookie(struct wcrypto_digest_ctx *ctx,
+			      struct wcrypto_digest_ctx_setup *setup)
 {
-	int i;
+	struct wcrypto_digest_cookie *cookie;
+	__u32 flags = ctx->q->capa.flags;
+	__u32 cookies_num, i;
+	int ret;
 
-	for (i = 0; i < WD_DIGEST_CTX_MSG_NUM; i++) {
-		ctx->cookies[i].msg.alg_type = WCRYPTO_DIGEST;
-		ctx->cookies[i].msg.alg = setup->alg;
-		ctx->cookies[i].msg.mode = setup->mode;
-		ctx->cookies[i].msg.data_fmt = setup->data_fmt;
-		ctx->cookies[i].tag.wcrypto_tag.ctx = ctx;
-		ctx->cookies[i].tag.wcrypto_tag.ctx_id = ctx->ctx_id;
-		ctx->cookies[i].msg.usr_data = (uintptr_t)&ctx->cookies[i].tag;
+	cookies_num = wd_get_ctx_cookies_num(flags, WD_CTX_COOKIES_NUM);
+	ret = wd_init_cookie_pool(&ctx->pool,
+		sizeof(struct wcrypto_digest_cookie), cookies_num);
+	if (ret) {
+		WD_ERR("failed to init cookie pool!\n");
+		return ret;
 	}
+
+	for (i = 0; i < cookies_num; i++) {
+		cookie = (void *)((uintptr_t)ctx->pool.cookies +
+			i * ctx->pool.cookies_size);
+		cookie->msg.alg_type = WCRYPTO_DIGEST;
+		cookie->msg.alg = setup->alg;
+		cookie->msg.mode = setup->mode;
+		cookie->msg.data_fmt = setup->data_fmt;
+		cookie->tag.long_data_len = 0;
+		cookie->tag.priv = NULL;
+		cookie->tag.wcrypto_tag.ctx = ctx;
+		cookie->tag.wcrypto_tag.ctx_id = ctx->ctx_id;
+		cookie->msg.usr_data = (uintptr_t)&cookie->tag;
+	}
+
+	return 0;
+}
+
+static int setup_qinfo(struct wcrypto_digest_ctx_setup *setup,
+		       struct q_info *qinfo, __u32 *ctx_id)
+{
+	int ret;
+
+	/* lock at ctx creating/deleting */
+	wd_spinlock(&qinfo->qlock);
+	if (!qinfo->br.alloc && !qinfo->br.iova_map)
+		memcpy(&qinfo->br, &setup->br, sizeof(qinfo->br));
+	if (qinfo->br.usr != setup->br.usr) {
+		WD_ERR("Err mm br in creating digest ctx!\n");
+		goto unlock;
+	}
+
+	if (qinfo->ctx_num >= WD_MAX_CTX_NUM) {
+		WD_ERR("err:create too many digest ctx!\n");
+		goto unlock;
+	}
+
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0,
+		WD_MAX_CTX_NUM);
+	if (ret) {
+		WD_ERR("err: alloc ctx id fail!\n");
+		goto unlock;
+	}
+	qinfo->ctx_num++;
+	wd_unspinlock(&qinfo->qlock);
+
+	return 0;
+unlock:
+	wd_unspinlock(&qinfo->qlock);
+	return -WD_EINVAL;
 }
 
 /* Before initiate this context, we should get a queue from WD */
@@ -138,72 +193,109 @@ void *wcrypto_create_digest_ctx(struct wd_queue *q,
 {
 	struct q_info *qinfo;
 	struct wcrypto_digest_ctx *ctx;
-	int ctx_id;
+	__u32 ctx_id = 0;
+	int ret;
 
 	if (create_ctx_para_check(q, setup))
 		return NULL;
 
 	qinfo = q->qinfo;
-	/* lock at ctx creating/deleting */
-	wd_spinlock(&qinfo->qlock);
-	if (!qinfo->br.alloc && !qinfo->br.iova_map)
-		memcpy(&qinfo->br, &setup->br, sizeof(setup->br));
-	if (qinfo->br.usr != setup->br.usr) {
-		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("Err mm br in creating digest ctx!\n");
+	ret = setup_qinfo(setup, qinfo, &ctx_id);
+	if (ret)
 		return NULL;
-	}
-
-	if (qinfo->ctx_num >= WD_DIGEST_MAX_CTX) {
-		WD_ERR("err:create too many digest ctx!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
-	}
-
-	qinfo->ctx_num++;
-	ctx_id = wd_alloc_ctx_id(q, WD_DIGEST_MAX_CTX);
-	if (ctx_id < 0) {
-		WD_ERR("err: alloc ctx id fail!\n");
-		wd_unspinlock(&qinfo->qlock);
-		return NULL;
-	}
-
-	wd_unspinlock(&qinfo->qlock);
 
 	ctx = malloc(sizeof(struct wcrypto_digest_ctx));
 	if (!ctx) {
 		WD_ERR("Alloc ctx memory fail!\n");
-		return ctx;
+		goto free_ctx_id;
 	}
 	memset(ctx, 0, sizeof(struct wcrypto_digest_ctx));
-	memcpy(&ctx->setup, setup, sizeof(*setup));
+	memcpy(&ctx->setup, setup, sizeof(ctx->setup));
 	ctx->q = q;
-	ctx->ctx_id = ctx_id;
+	ctx->ctx_id = ctx_id + 1;
 	if (setup->mode == WCRYPTO_DIGEST_HMAC) {
 		ctx->key = setup->br.alloc(setup->br.usr, MAX_HMAC_KEY_SIZE);
 		if (!ctx->key) {
 			WD_ERR("alloc digest ctx key fail!\n");
-			free(ctx);
-			return NULL;
+			goto free_ctx;
 		}
 	}
 
-	init_digest_cookie(ctx, setup);
+	if (setup->alg >= WCRYPTO_SHA384)
+		ctx->align_sz = SEC_SHA512_ALIGN_SZ;
+	else
+		ctx->align_sz = SEC_SHA1_ALIGN_SZ;
+
+	ret = init_digest_cookie(ctx, setup);
+	if (ret)
+		goto free_ctx_key;
 
 	return ctx;
+
+free_ctx_key:
+	if (setup->mode == WCRYPTO_DIGEST_HMAC)
+		setup->br.free(setup->br.usr, ctx->key);
+free_ctx:
+	free(ctx);
+free_ctx_id:
+	wd_spinlock(&qinfo->qlock);
+	qinfo->ctx_num--;
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
+	wd_unspinlock(&qinfo->qlock);
+
+	return NULL;
 }
 
-static int digest_request_init(struct wcrypto_digest_msg *req,
-		struct wcrypto_digest_op_data *op, struct wcrypto_digest_ctx *c)
+static void digest_requests_init(struct wcrypto_digest_msg **req,
+				struct wcrypto_digest_op_data **op,
+				struct wcrypto_digest_ctx *c, __u32 num)
 {
-	req->has_next = op->has_next;
-	req->key = c->key;
-	req->key_bytes = c->key_bytes;
-	req->in = op->in;
-	req->in_bytes = op->in_bytes;
-	req->out = op->out;
-	req->out_bytes = op->out_bytes;
-	c->io_bytes += op->in_bytes;
+	__u32 i;
+
+	for (i = 0; i < num; i++) {
+		req[i]->has_next = op[i]->has_next;
+		req[i]->key = c->key;
+		req[i]->key_bytes = c->key_bytes;
+		req[i]->in = op[i]->in;
+		req[i]->in_bytes = op[i]->in_bytes;
+		req[i]->out = op[i]->out;
+		req[i]->out_bytes = op[i]->out_bytes;
+		req[i]->iv = op[i]->iv;
+		c->io_bytes += op[i]->in_bytes;
+	}
+}
+
+static int digest_hmac_key_check(enum wcrypto_digest_alg alg, __u16 key_len)
+{
+	switch (alg) {
+	case WCRYPTO_SM3 ... WCRYPTO_SHA224:
+		if (key_len > (MAX_HMAC_KEY_SIZE >> 1)) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_SHA384 ... WCRYPTO_SHA512_256:
+		break;
+	case WCRYPTO_AES_XCBC_MAC_96:
+	case WCRYPTO_AES_XCBC_PRF_128:
+	case WCRYPTO_AES_CMAC:
+		if (key_len != AES_KEYSIZE_128) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	case WCRYPTO_AES_GMAC:
+		if (key_len != AES_KEYSIZE_128 &&
+		    key_len != AES_KEYSIZE_192 &&
+		    key_len != AES_KEYSIZE_256) {
+			WD_ERR("failed to check alg %u key bytes, key_len = %u\n", alg, key_len);
+			return -WD_EINVAL;
+		}
+		break;
+	default:
+		WD_ERR("failed to check digest key bytes, invalid alg type = %d\n", alg);
+		return -WD_EINVAL;
+	}
 
 	return WD_SUCCESS;
 }
@@ -211,106 +303,213 @@ static int digest_request_init(struct wcrypto_digest_msg *req,
 int wcrypto_set_digest_key(void *ctx, __u8 *key, __u16 key_len)
 {
 	struct wcrypto_digest_ctx *ctxt = ctx;
+	int ret;
 
 	if (!ctx || !key) {
 		WD_ERR("%s(): input param err!\n", __func__);
 		return -WD_EINVAL;
 	}
 
+	if (key_len == 0 || key_len > MAX_HMAC_KEY_SIZE) {
+		WD_ERR("%s: input key length err, key_len = %u!\n", __func__, key_len);
+		return -WD_EINVAL;
+	}
+
+	ret = digest_hmac_key_check(ctxt->setup.alg, key_len);
+	if (ret)
+		return ret;
+
 	ctxt->key_bytes = key_len;
-	memcpy(ctxt->key, key, key_len);
+
+	if (ctxt->setup.data_fmt == WD_SGL_BUF)
+		wd_sgl_cp_from_pbuf(ctxt->key, 0, key, key_len);
+	else
+		memcpy(ctxt->key, key, key_len);
 
 	return WD_SUCCESS;
 }
 
-static int digest_recv_sync(struct wcrypto_digest_ctx *ctx,
-		struct wcrypto_digest_op_data *opdata)
+static int digest_recv_sync(struct wcrypto_digest_ctx *d_ctx,
+			    struct wcrypto_digest_op_data **d_opdata, __u32 num)
 {
-	struct wcrypto_digest_msg *resp;
-	__u64 recv_count = 0;
+	struct wcrypto_digest_msg *resp[WCRYPTO_MAX_BURST_NUM];
+	__u32 recv_count = 0;
+	__u64 rx_cnt = 0;
+	__u32 i;
 	int ret;
 
-	resp = (void *)(uintptr_t)ctx->ctx_id;
+	for (i = 0; i < num; i++)
+		resp[i] = (void *)(uintptr_t)d_ctx->ctx_id;
+
 	while (true) {
-		ret = wd_recv(ctx->q, (void **)&resp);
-		if (ret == 0) {
-			if (++recv_count > MAX_DIGEST_RETRY_CNT) {
-				WD_ERR("%s:wcrypto_recv timeout fail!\n", __func__);
-				ret = -WD_ETIMEDOUT;
+		ret = wd_burst_recv(d_ctx->q, (void **)(resp + recv_count),
+				    num - recv_count);
+		if (ret > 0) {
+			recv_count += ret;
+			if (recv_count == num)
+				break;
+
+			rx_cnt = 0;
+		} else if (ret == 0) {
+			if (++rx_cnt > MAX_DIGEST_RETRY_CNT) {
+				WD_ERR("%s:wcrypto_recv timeout, num = %u, recv_count = %u!\n",
+					__func__, num, recv_count);
 				break;
 			}
-		} else if (ret < 0) {
-			WD_ERR("do cipher wcrypto_recv err!\n");
-			break;
 		} else {
-			opdata->out = (void *)resp->out;
-			opdata->out_bytes = resp->out_bytes;
-			opdata->status = resp->result;
-			ret = GET_NEGATIVE(opdata->status);
-			break;
+			WD_ERR("do digest wcrypto_recv error!\n");
+			return ret;
 		}
 	}
 
-	return ret;
+	for (i = 0; i < recv_count; i++) {
+		d_opdata[i]->out = (void *)resp[i]->out;
+		d_opdata[i]->out_bytes = resp[i]->out_bytes;
+		d_opdata[i]->status = resp[i]->result;
+	}
+
+	return recv_count;
 }
 
-int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
-		void *tag)
+static int param_check(struct wcrypto_digest_ctx *d_ctx,
+		       struct wcrypto_digest_op_data **d_opdata,
+		       void **tag, __u32 num)
 {
-	struct wcrypto_digest_msg *req;
-	struct wcrypto_digest_ctx *ctxt = ctx;
-	struct wcrypto_digest_cookie *cookie;
-	int ret = -WD_EINVAL;
+	enum wcrypto_digest_alg alg;
+	__u32 i;
 
-	if (!ctx || !opdata) {
-		WD_ERR("%s: input param err!\n", __func__);
+	if (unlikely(!d_ctx || !d_opdata || !num || num > WCRYPTO_MAX_BURST_NUM)) {
+		WD_ERR("input param err!\n");
 		return -WD_EINVAL;
 	}
 
-	cookie = get_digest_cookie(ctxt);
-	if (!cookie)
-		return -WD_EBUSY;
-	if (tag) {
-		if (!ctxt->setup.cb) {
-			WD_ERR("ctx call back is null!\n");
-			goto fail_with_cookie;
+	alg = d_ctx->setup.alg;
+
+	for (i = 0; i < num; i++) {
+		if (unlikely(!d_opdata[i])) {
+			WD_ERR("digest opdata[%u] is NULL!\n", i);
+			return -WD_EINVAL;
 		}
-		cookie->tag.wcrypto_tag.tag = tag;
+
+		if (unlikely(!d_opdata[i]->out_bytes)) {
+			WD_ERR("invalid: digest mac length is 0.\n");
+			return -WD_EINVAL;
+		}
+
+		if (d_opdata[i]->has_next) {
+			if (unlikely(num != 1)) {
+				WD_ERR("num > 1, wcrypto_burst_digest does not support stream mode!\n");
+				return -WD_EINVAL;
+			}
+			if (unlikely(d_opdata[i]->in_bytes % d_ctx->align_sz)) {
+				WD_ERR("digest stream mode must be %u-byte aligned!\n", d_ctx->align_sz);
+				return -WD_EINVAL;
+			}
+			if (unlikely(d_opdata[i]->out_bytes < g_digest_mac_full_len[alg])) {
+				WD_ERR("digest stream mode out buffer space is not enough!\n");
+				return -WD_EINVAL;
+			}
+		} else {
+			if (unlikely(d_opdata[i]->out_bytes > g_digest_mac_len[alg])) {
+				WD_ERR("failed to check digest mac length!\n");
+				return -WD_EINVAL;
+			}
+			if (d_ctx->setup.alg == WCRYPTO_AES_GMAC &&
+			    d_opdata[i]->iv_bytes != SEC_GMAC_IV_LEN) {
+				WD_ERR("failed to check digest aes_gmac iv length, iv_bytes = %u\n",
+					d_opdata[i]->iv_bytes);
+				return -WD_EINVAL;
+			}
+		}
+
+		if (unlikely(tag && !tag[i])) {
+			WD_ERR("tag[%u] is NULL!\n", i);
+			return -WD_EINVAL;
+		}
 	}
-	cookie->tag.priv = opdata->priv;
 
-	req = &cookie->msg;
-	ret = digest_request_init(req, opdata, ctxt);
-	if (ret)
-		goto fail_with_cookie;
+	if (unlikely(tag && !d_ctx->setup.cb)) {
+		WD_ERR("digest ctx call back is NULL!\n");
+		return -WD_EINVAL;
+	}
 
-	if (!opdata->has_next) {
-		cookie->tag.long_data_len = ctxt->io_bytes;
+	return WD_SUCCESS;
+}
+
+int wcrypto_burst_digest(void *d_ctx, struct wcrypto_digest_op_data **opdata,
+			 void **tag, __u32 num)
+{
+	struct wcrypto_digest_cookie *cookies[WCRYPTO_MAX_BURST_NUM] = {NULL};
+	struct wcrypto_digest_msg *req[WCRYPTO_MAX_BURST_NUM] = {NULL};
+	struct wcrypto_digest_ctx *ctxt = d_ctx;
+	__u32 i;
+	int ret;
+
+	if (param_check(ctxt, opdata, tag, num))
+		return -WD_EINVAL;
+
+	ret = wd_get_cookies(&ctxt->pool, (void **)cookies, num);
+	if (unlikely(ret)) {
+		WD_ERR("failed to get cookies %d!\n", ret);
+		return ret;
+	}
+
+	for (i = 0; i < num; i++) {
+		cookies[i]->tag.priv = opdata[i]->priv;
+		req[i] = &cookies[i]->msg;
+		if (tag)
+			cookies[i]->tag.wcrypto_tag.tag = tag[i];
+	}
+
+	digest_requests_init(req, opdata, d_ctx, num);
+	/* when num is 1, wcrypto_burst_digest supports stream mode */
+	if (num == 1 && !opdata[0]->has_next) {
+		cookies[0]->tag.long_data_len = ctxt->io_bytes;
 		ctxt->io_bytes = 0;
 	}
-	ret = wd_send(ctxt->q, req);
-	if (ret) {
-		WD_ERR("do digest wcrypto_send err!\n");
-		goto fail_with_cookie;
+
+	ret = wd_burst_send(ctxt->q, (void **)req, num);
+	if (unlikely(ret)) {
+		WD_ERR("failed to send req %d!\n", ret);
+		goto fail_with_cookies;
 	}
 
 	if (tag)
 		return ret;
 
-	ret = digest_recv_sync(ctxt, opdata);
+	ret = digest_recv_sync(ctxt, opdata, num);
 
-fail_with_cookie:
-	put_digest_cookie(ctxt, cookie);
+fail_with_cookies:
+	wd_put_cookies(&ctxt->pool, (void **)cookies, num);
+	return ret;
+}
+
+int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
+		      void *tag)
+{
+	int ret;
+
+	if (!tag) {
+		ret = wcrypto_burst_digest(ctx, &opdata, NULL, 1);
+		if (likely(ret == 1))
+			return GET_NEGATIVE(opdata->status);
+		if (unlikely(ret == 0))
+			return -WD_ETIMEDOUT;
+	} else {
+		ret = wcrypto_burst_digest(ctx, &opdata, &tag, 1);
+	}
+
 	return ret;
 }
 
 int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 {
+	struct wcrypto_digest_msg *digest_resp = NULL;
 	struct wcrypto_digest_ctx *ctx;
-	struct wcrypto_digest_msg *resp = NULL;
 	struct wcrypto_digest_tag *tag;
-	int ret;
+	unsigned int tmp = num;
 	int count = 0;
+	int ret;
 
 	if (unlikely(!q)) {
 		WD_ERR("q is NULL!\n");
@@ -318,26 +517,27 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 	}
 
 	do {
-		resp = NULL;
-		ret = wd_recv(q, (void **)&resp);
+		digest_resp = NULL;
+		ret = wd_recv(q, (void **)&digest_resp);
 		if (ret == 0)
 			break;
 		else if (ret == -WD_HW_EACCESS) {
-			if (!resp) {
-				WD_ERR("recv err from req_cache!\n");
+			if (!digest_resp) {
+				WD_ERR("the digest recv err from req_cache!\n");
 				return ret;
 			}
-			resp->result = WD_HW_EACCESS;
+			digest_resp->result = WD_HW_EACCESS;
 		} else if (ret < 0) {
 			WD_ERR("recv err at digest poll!\n");
 			return ret;
 		}
+
 		count++;
-		tag = (void *)(uintptr_t)resp->usr_data;
+		tag = (void *)(uintptr_t)digest_resp->usr_data;
 		ctx = tag->wcrypto_tag.ctx;
-		ctx->setup.cb(resp, tag->wcrypto_tag.tag);
-		put_digest_cookie(ctx, (struct wcrypto_digest_cookie *)tag);
-	} while (--num);
+		ctx->setup.cb(digest_resp, tag->wcrypto_tag.tag);
+		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
+	} while (--tmp);
 
 	return count;
 }
@@ -345,25 +545,26 @@ int wcrypto_digest_poll(struct wd_queue *q, unsigned int num)
 void wcrypto_del_digest_ctx(void *ctx)
 {
 	struct q_info *qinfo;
-	struct wcrypto_digest_ctx *cx;
+	struct wcrypto_digest_ctx *d_ctx;
 
 	if (!ctx) {
 		WD_ERR("Delete digest ctx is NULL!\n");
 		return;
 	}
-	cx = ctx;
-	qinfo = cx->q->qinfo;
+	d_ctx = ctx;
+	qinfo = d_ctx->q->qinfo;
+	wd_uninit_cookie_pool(&d_ctx->pool);
 	wd_spinlock(&qinfo->qlock);
-	qinfo->ctx_num--;
-	wd_free_ctx_id(cx->q, cx->ctx_id);
-	if (!qinfo->ctx_num)
-		memset(&qinfo->br, 0, sizeof(qinfo->br));
-	if (qinfo->ctx_num < 0) {
+	if (qinfo->ctx_num <= 0) {
 		wd_unspinlock(&qinfo->qlock);
-		WD_ERR("errer:repeat del digest ctx!\n");
+		WD_ERR("error: repeat del digest ctx!\n");
 		return;
 	}
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, d_ctx->ctx_id - 1,
+		WD_MAX_CTX_NUM);
+	if (!(--qinfo->ctx_num))
+		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	wd_unspinlock(&qinfo->qlock);
-	del_ctx_key(cx);
+	del_ctx_key(d_ctx);
 	free(ctx);
 }

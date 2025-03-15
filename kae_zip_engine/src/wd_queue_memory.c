@@ -46,6 +46,9 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype)
         case WCRYPTO_GZIP:
             queue->capa.alg = "gzip";
             break;
+        case WCRYPTO_RAW_DEFLATE:
+            queue->capa.alg = "deflate";
+            break;
         default:
             kae_free(queue);
             return NULL;
@@ -427,7 +430,7 @@ void kaezip_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_r
 
                     kaezip_free_wd_queue_memory(queue_data_node, release_fn);
 
-                    US_DEBUG("hpre queue list release success. queue node id =%d", i);
+                    US_DEBUG("kaezip queue list release success. queue node id =%d", i);
                 }
             }
         }

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include "config.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -30,6 +29,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "hisi_rng_udrv.h"
 
 #define HISI_RNG_BYTES		4
@@ -48,8 +48,7 @@ int rng_init_queue(struct wd_queue *q)
 	}
 
 	qinfo->priv = info;
-	info->mmio_base = wd_drv_mmap_qfr(q, UACCE_QFRT_MMIO,
-					UACCE_QFRT_DUS, 0);
+	info->mmio_base = wd_drv_mmap_qfr(q, WD_UACCE_QFRT_MMIO, 0);
 	if (info->mmio_base == MAP_FAILED) {
 		info->mmio_base = NULL;
 		free(qinfo->priv);
@@ -66,21 +65,20 @@ void rng_uninit_queue(struct wd_queue *q)
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;
 
-	wd_drv_unmmap_qfr(q, info->mmio_base, UACCE_QFRT_MMIO,
-					UACCE_QFRT_DUS, 0);
+	wd_drv_unmmap_qfr(q, info->mmio_base, WD_UACCE_QFRT_MMIO, 0);
 
 	free(qinfo->priv);
 	qinfo->priv = NULL;
 }
 
-int rng_send(struct wd_queue *q, void *req)
+int rng_send(struct wd_queue *q, void **req, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;
 
 	wd_spinlock(&info->lock);
 	if (!info->req_cache[info->send_idx]) {
-		info->req_cache[info->send_idx] = req;
+		info->req_cache[info->send_idx] = req[0];
 		info->send_idx++;
 		wd_unspinlock(&info->lock);
 		return 0;
@@ -96,10 +94,9 @@ static int rng_read(struct rng_queue_info *info, struct wcrypto_rng_msg *msg)
 	__u32 max = msg->in_bytes;
 	__u32 currsize = 0;
 	int recv_count = 0;
-	int val;
+	__u32 val;
 
 	do {
-recv_again:
 		val = wd_reg_read((void *)((uintptr_t)info->mmio_base +
 						RNG_NUM_OFFSET));
 		if (!val) {
@@ -107,8 +104,9 @@ recv_again:
 				WD_ERR("read random data timeout\n");
 				break;
 			}
+
 			usleep(1);
-			goto recv_again;
+			continue;
 		}
 
 		recv_count = 0;
@@ -127,7 +125,7 @@ recv_again:
 	return currsize;
 }
 
-int rng_recv(struct wd_queue *q, void **resp)
+int rng_recv(struct wd_queue *q, void **resp, __u32 num)
 {
 	struct q_info *qinfo = q->qinfo;
 	struct rng_queue_info *info = qinfo->priv;

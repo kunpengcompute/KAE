@@ -4,7 +4,7 @@ INCDIR += -I /usr/local/kaezip/include/
 LIBDIR := -L/usr/local/kaezip/lib
 
 # The flags
-CFLAGS    := -g -lz -Wall
+CFLAGS    := -g -lz -Wall -pthread
 LDFLAGS   := $(LIBDIR)
 
 all: kaezip_perf

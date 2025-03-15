@@ -119,6 +119,8 @@ const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const vo
         }
         US_DEBUG("gzip header append_info_sz is %u\n", append_info_sz);
         return 10U + append_info_sz;
+    } else if (comp_alg_type == WCRYPTO_RAW_DEFLATE) {
+        return 0U;
     }
     US_WARN("not support alg comp type!");
     return 0U;
@@ -133,7 +135,7 @@ char* kaezip_get_fmt_header_zlib(int level, int windowBits)
         if (windowBits == 8) {
             windowBits = 9; // 参考zlib初始化逻辑, 避免出现窗长为256的情况
         }
-        uint32_t header = (Z_DEFLATED + ((windowBits - 8) << 4)) << 8;
+        uint32_t header = (Z_DEFLATED + ((windowBits-8)<<4)) << 8;
         uint32_t level_flags;
 
         if (level < 2)
@@ -161,6 +163,8 @@ const char* kaezip_get_fmt_header(int alg_comp_type, int level, int windowBits)
         return kaezip_get_fmt_header_zlib(level, windowBits);
     } else if (alg_comp_type == WCRYPTO_GZIP) {
         return gzip_head;
+    } else if (alg_comp_type == WCRYPTO_RAW_DEFLATE) {
+        return NULL;
     }
     US_WARN("not support alg comp type!");
     return NULL;
@@ -185,7 +189,7 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
     const char wd_deflate_end_block[] = {0x1, 0x0, 0x0, 0xff, 0xff};
     const char wd_deflate_zeroInput_end_block[] = {0x3, 0x0};
     // 当第一次输入亦是最后一次, 且avail_in为0, flush为Z_FINISH时
-    // 此时append的尾部需要特殊处理
+    // 此时append的尾部需要特殊处理(极特殊情况, spark场景下发现)
     if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
         KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_zeroInput_end_block, sizeof(wd_deflate_zeroInput_end_block));
     } else if (alg_type != WCRYPTO_RAW_DEFLATE) {
@@ -242,8 +246,8 @@ void kaezip_set_fmt_tail(kaezip_ctx_t *kaezip_ctx)
 
 void kaezip_deflate_addcrc(kaezip_ctx_t *kz_ctx)
 {
-    if (kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) {
-        US_DEBUG("kaezip status wrong, not crc uncheck");
+    if ((kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) || (kz_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE)) {
+        US_DEBUG("kaezip status wrong or its RAW_DEFLATE, not crc uncheck");
         return;
     }
 

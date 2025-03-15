@@ -136,6 +136,7 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	struct wcrypto_ec_ctx *ctx;
 	int ctx_id, i;
 	__u8 *pa;
+	int ret = -WD_EINVAL;
 
 	if (wcrypto_check_ctx_para(q, setup))
 		return NULL;
@@ -158,7 +159,8 @@ void *wcrypto_create_ec_ctx(struct wd_queue *q,
 	}
 
 	qinfo->ctx_num++;
-	ctx_id = wd_alloc_ctx_id(q, WCRYPTO_EC_MAX_CTX);
+	ctx_id = qinfo->ctx_id;
+	ret = wd_alloc_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, 0, WD_MAX_CTX_NUM);
 	if (ctx_id < 0) {
 		WD_ERR("err: alloc ctx id fail!\n");
 		wd_unspinlock(&qinfo->qlock);
@@ -346,7 +348,8 @@ void wcrypto_del_ec_ctx(void *ctx)
 	qinfo = cctx->q->qinfo;
 	wd_spinlock(&qinfo->qlock);
 	qinfo->ctx_num--;
-	wd_free_ctx_id(cctx->q, cctx->ctx_id);
+	// wd_free_ctx_id(cctx->q, cctx->ctx_id);
+	wd_free_id(qinfo->ctx_id, WD_MAX_CTX_NUM, ctx_id, WD_MAX_CTX_NUM);
 	if (!qinfo->ctx_num)
 		memset(&qinfo->br, 0, sizeof(qinfo->br));
 	if (qinfo->ctx_num < 0) {

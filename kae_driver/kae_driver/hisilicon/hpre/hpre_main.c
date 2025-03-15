@@ -32,6 +32,8 @@
 #define HPRE_BD_ARUSR_CFG		0x301030
 #define HPRE_BD_AWUSR_CFG		0x301034
 #define HPRE_TYPES_ENB			0x301038
+#define HPRE_RSA_ENB			BIT(0)
+#define HPRE_ECC_ENB			BIT(1)
 #define HPRE_DATA_RUSER_CFG		0x30103c
 #define HPRE_DATA_WUSER_CFG		0x301040
 #define HPRE_INT_MASK			0x301400
@@ -183,7 +185,6 @@ static const char *hpre_dfx_files[HPRE_DFX_FILE_NUM] = {
 	"invalid_req_cnt"
 };
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -197,7 +198,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -321,7 +321,12 @@ static int hpre_set_user_domain_and_cache(struct hisi_qm *qm)
 	val |= BIT(HPRE_TIMEOUT_ABNML_BIT);
 	writel_relaxed(val, HPRE_ADDR(qm, HPRE_QM_ABNML_INT_MASK));
 
-	writel(0x1, HPRE_ADDR(qm, HPRE_TYPES_ENB));
+	if (qm->ver >= QM_HW_V3)
+		writel(HPRE_RSA_ENB | HPRE_ECC_ENB,
+			qm->io_base + HPRE_TYPES_ENB);
+	else
+		writel(HPRE_RSA_ENB, qm->io_base + HPRE_TYPES_ENB);
+
 	writel(HPRE_QM_VFG_AX_MASK, HPRE_ADDR(qm, HPRE_VFG_AXCACHE));
 	writel(0x0, HPRE_ADDR(qm, HPRE_BD_ENDIAN));
 	writel(0x0, HPRE_ADDR(qm, HPRE_INT_MASK));
@@ -783,30 +788,6 @@ static void hpre_debugfs_exit(struct hisi_qm *qm)
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
 
-static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
-{
-	int ret;
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	qm->algs = "rsa\ndh\n";
-	qm->uacce_mode = uacce_mode;
-#endif
-	qm->pdev = pdev;
-	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
-	if (ret)
-		return ret;
-	if (qm->ver == QM_HW_V1) {
-		pci_warn(pdev, "HPRE version 1 is not supported!\n");
-		return -EINVAL;
-	}
-
-	qm->qm_list = &hpre_devices;
-	qm->sqe_size = HPRE_SQE_SIZE;
-	qm->dev_name = hpre_name;
-
-	return 0;
-}
-
 static void hpre_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 {
 	const struct hpre_hw_error *err = hpre_hw_errors;
@@ -841,6 +822,28 @@ static void hpre_open_axi_master_ooo(struct hisi_qm *qm)
 	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
 }
 
+static void hpre_err_ini_set(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HPRE_CORE_ECC_2BIT_ERR |
+					      HPRE_OOO_ECC_2BIT_ERR;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "HRST";
+	qm->err_ini.hw_err_disable = hpre_hw_error_disable;
+	qm->err_ini.hw_err_enable = hpre_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hpre_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = hpre_open_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HPRE_WR_MSI_PORT;
+}
+
 static int hpre_pf_probe_init(struct hisi_qm *qm)
 {
 	int ret;
@@ -849,28 +852,39 @@ static int hpre_pf_probe_init(struct hisi_qm *qm)
 		return -EINVAL;
 
 	qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
-	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = HPRE_CORE_ECC_2BIT_ERR |
-				HPRE_OOO_ECC_2BIT_ERR;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
-	qm->err_ini.err_info.acpi_rst = "HRST";
-
-	qm->err_ini.hw_err_disable = hpre_hw_error_disable;
-	qm->err_ini.hw_err_enable = hpre_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = hpre_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
-	qm->err_ini.open_axi_master_ooo = hpre_open_axi_master_ooo;
-	qm->err_ini.err_info.msi_wr_port = HPRE_WR_MSI_PORT;
 
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
 
 	hisi_qm_dev_err_init(qm);
+
+	return 0;
+}
+
+static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
+{
+	int ret;
+
+	if (pdev->revision >= QM_HW_V3)
+		qm->algs = "rsa\ndh\nsm2\n";
+	else
+		qm->algs = "rsa\ndh\n";
+	qm->uacce_mode = uacce_mode;
+	qm->pdev = pdev;
+	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
+	if (ret)
+		return ret;
+
+	if (qm->ver == QM_HW_V1) {
+		pci_warn(pdev, "HPRE version 1 is not supported!\n");
+		return -EINVAL;
+	}
+
+	qm->qm_list = &hpre_devices;
+	qm->sqe_size = HPRE_SQE_SIZE;
+	qm->dev_name = hpre_name;
+	hpre_err_ini_set(qm);
 
 	return 0;
 }
@@ -885,7 +899,8 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!hpre)
 		return -ENOMEM;
 	qm = &hpre->qm;
-	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == HPRE_PCI_DEVICE_ID) ?
+			QM_HW_PF : QM_HW_VF;
 
 	ret = hpre_qm_pre_init(qm, pdev);
 	if (ret)
@@ -960,10 +975,8 @@ static void hpre_remove(struct pci_dev *pdev)
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (uacce_mode != UACCE_MODE_NOUACCE)
-		hisi_qm_remove_wait_delay(qm, &hpre_devices);
-#endif
+	hisi_qm_remove_wait_delay(qm, &hpre_devices);
+
 	hpre_algs_unregister();
 	hisi_qm_del_from_list(qm, &hpre_devices);
 	if (qm->fun_type == QM_HW_PF && qm->vfs_num) {
@@ -990,10 +1003,8 @@ static void hpre_remove(struct pci_dev *pdev)
 static const struct pci_error_handlers hpre_err_handler = {
 	.error_detected		= hisi_qm_dev_err_detected,
 	.slot_reset		= hisi_qm_dev_slot_reset,
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	.reset_prepare		= hisi_qm_reset_prepare,
 	.reset_done		= hisi_qm_reset_done,
-#endif
 };
 
 static struct pci_driver hpre_pci_driver = {
@@ -1051,4 +1062,3 @@ module_exit(hpre_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zaibo Xu <xuzaibo@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon HPRE accelerator");
-MODULE_VERSION("1.3.13");
