@@ -97,7 +97,7 @@ static void *kae_checking_q_loop_fn(void *args)
 
 void kae_checking_q_sync_destroy(void)
 {
-	(void)wd_digests_uninit_qnode_pool();
+	// (void)wd_digests_uninit_qnode_pool();
 	(void)wd_ciphers_uninit_qnode_pool();
 	(void)wd_hpre_dh_uninit_qnode_pool();
 	(void)wd_hpre_uninit_qnode_pool();
