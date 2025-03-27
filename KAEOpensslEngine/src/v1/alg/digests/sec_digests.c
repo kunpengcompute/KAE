@@ -125,6 +125,11 @@ int sec_digests_init(EVP_MD_CTX *ctx)
     if (unlikely(md_ctx == NULL)) {
         return OPENSSL_FAIL;
     }
+    if (md_ctx->e_digest_ctx) {
+        (void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
+		md_ctx->e_digest_ctx = NULL;
+    }
+
     memset((void *)md_ctx, 0, sizeof(sec_digest_priv_t));
     int nid = EVP_MD_nid(EVP_MD_CTX_md(ctx));
     md_ctx->e_nid = nid;
@@ -460,6 +465,10 @@ static int sec_digests_cleanup(EVP_MD_CTX *ctx)
         (void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
         md_ctx->e_digest_ctx = NULL;
     }
+    if (md_ctx->is_copy) {
+		kae_free(md_ctx->last_update_buff);
+	}
+
     return OPENSSL_SUCCESS;
 }
 
@@ -480,10 +489,6 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 	if (to_ctx->soft_ctx) {
 		to_ctx->soft_ctx = NULL;
 		to_ctx->soft_ctx = EVP_MD_CTX_new();
-	}
-	
-	if (from_ctx->d_alg == WCRYPTO_SM3) {
-		return 1;
 	}
 
 	if (to_ctx->e_digest_ctx) {
@@ -507,6 +512,7 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 		tp->iv_bytes = fp->iv_bytes;
 
 		to_ctx->last_update_buff = malloc(DIGEST_BLOCK_SIZE);
+        to_ctx->is_copy = true;
 
 		if (to_ctx->state != SEC_DIGEST_INIT) {
 			to_ctx->is_stream_copy = true;

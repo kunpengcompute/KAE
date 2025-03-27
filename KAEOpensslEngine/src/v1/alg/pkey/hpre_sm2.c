@@ -780,9 +780,9 @@ static void hpre_sm2_cleanup(EVP_PKEY_CTX *ctx)
 	EC_GROUP_free(smctx->ctx.gen_group);
 	OPENSSL_free(smctx->ctx.id);
 
-	if (smctx->e_hpre_sm2_ctx && smctx->e_hpre_sm2_ctx->wd_ctx) {
-		wcrypto_del_ecc_ctx(smctx->e_hpre_sm2_ctx->wd_ctx);
-		smctx->e_hpre_sm2_ctx->wd_ctx = NULL;
+	if (smctx->e_hpre_sm2_ctx) {
+		wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
+		OPENSSL_free(smctx->e_hpre_sm2_ctx);
 	}
 
 	BN_free(smctx->order);
@@ -1630,6 +1630,7 @@ static int hpre_sm2_sign_bin_to_ber(EC_KEY *ec, struct wd_dtb *r, struct wd_dtb 
 		goto free_s;
 	}
 	*siglen = (size_t)sltmp;
+    ECDSA_SIG_free(e_sig);
 	return OPENSSL_SUCCESS;
 
 free_s:
