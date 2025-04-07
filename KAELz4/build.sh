@@ -25,7 +25,7 @@ function Build_kaelz4()
     echo "install kaelz4"
 
     cd -
-    make -j
+    make -j KAELZ4PATH=${SRC_PATH}
     echo "build lz4 success"
 }
 

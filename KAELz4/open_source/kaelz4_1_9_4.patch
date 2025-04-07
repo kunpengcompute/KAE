@@ -865,7 +865,7 @@ diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-KAELz4/lib/Makefile
               -Wundef -Wpointer-arith -Wstrict-aliasing=1
  CFLAGS  += $(DEBUGFLAGS)
 +
-+KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
++KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -I$(KAELZ4PATH)/open_source/lz4-1.9.4/lib/ -DCONF_KAELZ4
 +KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.0.4
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
@@ -880,7 +880,7 @@ diff -uprN lz4-1.9.4/programs/Makefile lz4-1.9.4-KAELz4/programs/Makefile
  LDFLAGS  += -lrt
  endif
  
-+KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
++KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -I$(KAELZ4PATH)/open_source/lz4-1.9.4/lib/ -DCONF_KAELZ4
 +KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.0.4
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
@@ -929,7 +929,7 @@ diff -uprN lz4-1.9.4/tests/Makefile lz4-1.9.4-KAELz4/tests/Makefile
  CFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS)
  CPPFLAGS+= -I$(LZ4DIR) -I$(PRGDIR) -DXXH_NAMESPACE=LZ4_
 +
-+KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
++KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -I$(KAELZ4PATH)/open_source/lz4-1.9.4/lib/ -DCONF_KAELZ4
 +KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.0.4
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
