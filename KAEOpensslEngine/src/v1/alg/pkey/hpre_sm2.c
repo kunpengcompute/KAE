@@ -782,7 +782,6 @@ static void hpre_sm2_cleanup(EVP_PKEY_CTX *ctx)
 
 	if (smctx->e_hpre_sm2_ctx) {
 		wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
-		OPENSSL_free(smctx->e_hpre_sm2_ctx);
 	}
 
 	BN_free(smctx->order);
@@ -1155,6 +1154,8 @@ static int sm2_cipher_bin_to_ber(const EVP_MD *md, struct wcrypto_ecc_point *c1,
 	*ber_len = (size_t)ciphertext_leni;
 	ret = OPENSSL_SUCCESS;
 free_y1:
+    ASN1_OCTET_STRING_free(ctext_struct.C3);
+    ASN1_OCTET_STRING_free(ctext_struct.C2);
 	BN_free(y1);
 free_x1:
 	BN_free(x1);
@@ -1269,7 +1270,9 @@ static int sm2_cipher_ber_to_bin(unsigned char *ber, size_t ber_len,
 	c1->x.dsize = BN_bn2bin(ctext_struct->C1x, (void *)c1->x.data);
 	c1->y.dsize = BN_bn2bin(ctext_struct->C1y, (void *)c1->y.data);
 
+    HPRE_SM2_Ciphertext_free(ctext_struct);
 	return OPENSSL_SUCCESS;
+
 free_ctext:
 	HPRE_SM2_Ciphertext_free(ctext_struct);
 	return OPENSSL_FAIL;
@@ -2035,7 +2038,7 @@ KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void)
 
 void wd_sm2_uninit_qnode_pool(void)
 {
-	kae_queue_pool_destroy(g_hpre_sm2_qnode_pool, NULL);
+	kae_queue_pool_destroy(g_hpre_sm2_qnode_pool, free);
 	g_hpre_sm2_qnode_pool = NULL;
 }
 
