@@ -743,6 +743,8 @@ static int hpre_dh_init_tfm(struct crypto_kpp *tfm)
 {
 	struct hpre_ctx *ctx = kpp_tfm_ctx(tfm);
 
+	kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);
+
 	return hpre_ctx_init(ctx, HPRE_V2_ALG_TYPE);
 }
 
@@ -1168,6 +1170,8 @@ static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 		return PTR_ERR(ctx->rsa.soft_tfm);
 	}
 
+	akcipher_set_reqsize(tfm, sizeof(struct hpre_asym_request) +
+				  HPRE_ALIGN_SZ);
 
 	ret = hpre_ctx_init(ctx, HPRE_V2_ALG_TYPE);
 	if (ret)
@@ -1627,6 +1631,8 @@ static int hpre_ecdh_nist_p192_init_tfm(struct crypto_kpp *tfm)
 
 	ctx->curve_id = ECC_CURVE_NIST_P192;
 
+	kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);
+
 	return hpre_ctx_init(ctx, HPRE_V3_ECC_ALG_TYPE);
 }
 
@@ -1636,6 +1642,8 @@ static int hpre_ecdh_nist_p256_init_tfm(struct crypto_kpp *tfm)
 
 	ctx->curve_id = ECC_CURVE_NIST_P256;
 
+	kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);
+
 	return hpre_ctx_init(ctx, HPRE_V3_ECC_ALG_TYPE);
 }
 
@@ -1644,6 +1652,8 @@ static int hpre_ecdh_nist_p384_init_tfm(struct crypto_kpp *tfm)
 	struct hpre_ctx *ctx = kpp_tfm_ctx(tfm);
 
 	ctx->curve_id = ECC_CURVE_NIST_P384;
+
+	kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);
 
 	return hpre_ctx_init(ctx, HPRE_V3_ECC_ALG_TYPE);
 }
@@ -1971,6 +1981,8 @@ static int hpre_curve25519_init_tfm(struct crypto_kpp *tfm)
 {
 	struct hpre_ctx *ctx = kpp_tfm_ctx(tfm);
 
+	kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);
+
 	return hpre_ctx_init(ctx, HPRE_V3_ECC_ALG_TYPE);
 }
 
@@ -1991,7 +2003,6 @@ static struct akcipher_alg rsa = {
 	.max_size = hpre_rsa_max_size,
 	.init = hpre_rsa_init_tfm,
 	.exit = hpre_rsa_exit_tfm,
-	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 	.base = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 		.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -2008,7 +2019,6 @@ static struct kpp_alg dh = {
 	.max_size = hpre_dh_max_size,
 	.init = hpre_dh_init_tfm,
 	.exit = hpre_dh_exit_tfm,
-	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 	.base = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 		.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -2026,7 +2036,6 @@ static struct kpp_alg ecdh_curves[] = {
 		.max_size = hpre_ecdh_max_size,
 		.init = hpre_ecdh_nist_p192_init_tfm,
 		.exit = hpre_ecdh_exit_tfm,
-		.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 		.base = {
 			.cra_ctxsize = sizeof(struct hpre_ctx),
 			.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -2041,7 +2050,6 @@ static struct kpp_alg ecdh_curves[] = {
 		.max_size = hpre_ecdh_max_size,
 		.init = hpre_ecdh_nist_p256_init_tfm,
 		.exit = hpre_ecdh_exit_tfm,
-		.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 		.base = {
 			.cra_ctxsize = sizeof(struct hpre_ctx),
 			.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -2056,7 +2064,6 @@ static struct kpp_alg ecdh_curves[] = {
 		.max_size = hpre_ecdh_max_size,
 		.init = hpre_ecdh_nist_p384_init_tfm,
 		.exit = hpre_ecdh_exit_tfm,
-		.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 		.base = {
 			.cra_ctxsize = sizeof(struct hpre_ctx),
 			.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -2074,7 +2081,6 @@ static struct kpp_alg curve25519_alg = {
 	.max_size = hpre_curve25519_max_size,
 	.init = hpre_curve25519_init_tfm,
 	.exit = hpre_curve25519_exit_tfm,
-	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
 	.base = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 		.cra_priority = HPRE_CRYPTO_ALG_PRI,
