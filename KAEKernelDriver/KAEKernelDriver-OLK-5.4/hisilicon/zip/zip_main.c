@@ -16,6 +16,9 @@
 #include "zip.h"
 
 #define PCI_DEVICE_ID_HUAWEI_ZIP_PF	0xa250
+#ifndef PCI_DEVICE_ID_HUAWEI_ZIP_VF
+#define PCI_DEVICE_ID_HUAWEI_ZIP_VF 0xa251
+#endif
 
 #define HZIP_QUEUE_NUM_V1		4096
 
@@ -445,6 +448,8 @@ static u32 vfs_num;
 module_param_cb(vfs_num, &vfs_num_ops, &vfs_num, 0444);
 MODULE_PARM_DESC(vfs_num, "Number of VFs to enable(1-63), 0(default)");
 
+// ifndef
+#define PCI_DEVICE_ID_HUAWEI_ZIP_VF	0xa251
 static const struct pci_device_id hisi_zip_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_ZIP_PF) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_ZIP_VF) },
@@ -452,10 +457,9 @@ static const struct pci_device_id hisi_zip_dev_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, hisi_zip_dev_ids);
 
-int zip_create_qps(struct hisi_qp **qps, int qp_num, int node)
+int zip_create_qps(struct hisi_qp **qps, int qp_num)
 {
-	if (node == NUMA_NO_NODE)
-		node = cpu_to_node(smp_processor_id());
+	int node = cpu_to_node(smp_processor_id());
 
 	return hisi_qm_alloc_qps_node(&zip_devices, qp_num, 0, node, qps);
 }
@@ -812,7 +816,7 @@ static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 {
 	u32 zip_core_num, zip_comp_core_num;
 	struct device *dev = &qm->pdev->dev;
-	struct debugfs_regset32 *regset;
+	struct qm_regset32 *qmreg;
 	struct dentry *tmp_d;
 	char buf[HZIP_BUF_SIZE];
 	int i;
@@ -827,17 +831,17 @@ static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 			scnprintf(buf, sizeof(buf), "decomp_core%d",
 				  i - zip_comp_core_num);
 
-		regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
-		if (!regset)
+		qmreg = devm_kzalloc(dev, sizeof(*qmreg), GFP_KERNEL);
+		if (!qmreg)
 			return -ENOENT;
 
-		regset->regs = hzip_dfx_regs;
-		regset->nregs = ARRAY_SIZE(hzip_dfx_regs);
-		regset->base = qm->io_base + core_offsets[i];
-		regset->dev = dev;
+		qmreg->regset.regs = hzip_dfx_regs;
+		qmreg->regset.nregs = ARRAY_SIZE(hzip_dfx_regs);
+		qmreg->regset.base = qm->io_base + core_offsets[i];
+		qmreg->dev = dev;
 
 		tmp_d = debugfs_create_dir(buf, qm->debug.debug_root);
-		debugfs_create_file("regs", 0444, tmp_d, regset,
+		debugfs_create_file("regs", 0444, tmp_d, qmreg,
 				    &hisi_zip_regs_fops);
 	}
 

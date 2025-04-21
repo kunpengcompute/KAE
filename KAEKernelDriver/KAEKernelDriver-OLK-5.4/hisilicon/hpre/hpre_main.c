@@ -114,6 +114,10 @@
 #define HPRE_DFX_COMMON2_LEN		0xE
 #define HPRE_DFX_CORE_LEN		0x43
 
+#ifndef PCI_DEVICE_ID_HUAWEI_HPRE_VF
+#define PCI_DEVICE_ID_HUAWEI_HPRE_VF 0xa259
+#endif
+
 static const char hpre_name[] = "hisi_hpre";
 static struct dentry *hpre_debugfs_root;
 static const struct pci_device_id hpre_dev_ids[] = {
@@ -972,19 +976,19 @@ static int hpre_create_debugfs_file(struct hisi_qm *qm, struct dentry *dir,
 static int hpre_pf_comm_regs_debugfs_init(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
-	struct debugfs_regset32 *regset;
+	struct qm_regset32 *qmreg;
 
-	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
-	if (!regset)
+	qmreg = devm_kzalloc(dev, sizeof(*qmreg), GFP_KERNEL);
+	if (!qmreg)
 		return -ENOMEM;
 
-	regset->regs = hpre_com_dfx_regs;
-	regset->nregs = ARRAY_SIZE(hpre_com_dfx_regs);
-	regset->base = qm->io_base;
-	regset->dev = dev;
+	qmreg->regset.regs = hpre_com_dfx_regs;
+	qmreg->regset.nregs = ARRAY_SIZE(hpre_com_dfx_regs);
+	qmreg->regset.base = qm->io_base;
+	qmreg->dev = dev;
 
 	debugfs_create_file("regs", 0444, qm->debug.debug_root,
-			    regset, &hpre_com_regs_fops);
+			    qmreg, &hpre_com_regs_fops);
 
 	return 0;
 }
@@ -993,7 +997,7 @@ static int hpre_cluster_debugfs_init(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
 	char buf[HPRE_DBGFS_VAL_MAX_LEN];
-	struct debugfs_regset32 *regset;
+	struct qm_regset32 *qmreg;
 	struct dentry *tmp_d;
 	u8 clusters_num;
 	int i, ret;
@@ -1005,16 +1009,16 @@ static int hpre_cluster_debugfs_init(struct hisi_qm *qm)
 			return -EINVAL;
 		tmp_d = debugfs_create_dir(buf, qm->debug.debug_root);
 
-		regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
-		if (!regset)
+		qmreg = devm_kzalloc(dev, sizeof(*qmreg), GFP_KERNEL);
+		if (!qmreg)
 			return -ENOMEM;
 
-		regset->regs = hpre_cluster_dfx_regs;
-		regset->nregs = ARRAY_SIZE(hpre_cluster_dfx_regs);
-		regset->base = qm->io_base + hpre_cluster_offsets[i];
-		regset->dev = dev;
+		qmreg->regset.regs = hpre_cluster_dfx_regs;
+		qmreg->regset.nregs = ARRAY_SIZE(hpre_cluster_dfx_regs);
+		qmreg->regset.base = qm->io_base + hpre_cluster_offsets[i];
+		qmreg->dev = dev;
 
-		debugfs_create_file("regs", 0444, tmp_d, regset,
+		debugfs_create_file("regs", 0444, tmp_d, qmreg,
 				    &hpre_cluster_regs_fops);
 		ret = hpre_create_debugfs_file(qm, tmp_d, HPRE_CLUSTER_CTRL,
 					       i + HPRE_CLUSTER_CTRL);

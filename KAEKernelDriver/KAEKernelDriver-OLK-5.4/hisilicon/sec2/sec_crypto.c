@@ -9,8 +9,7 @@
 #include <crypto/hash.h>
 #include <crypto/internal/aead.h>
 #include <crypto/internal/des.h>
-#include <crypto/sha1.h>
-#include <crypto/sha2.h>
+#include <crypto/sha.h>
 #include <crypto/skcipher.h>
 #include <crypto/xts.h>
 #include <linux/crypto.h>
@@ -1066,6 +1065,7 @@ static int sec_aead_auth_set_key(struct sec_auth_ctx *ctx,
 				 struct crypto_authenc_keys *keys)
 {
 	struct crypto_shash *hash_tfm = ctx->hash_tfm;
+	SHASH_DESC_ON_STACK(shash, hash_tfm); // 低版本hash计算方式
 	int blocksize, digestsize, ret;
 
 	if (!keys->authkeylen) {
@@ -1076,8 +1076,8 @@ static int sec_aead_auth_set_key(struct sec_auth_ctx *ctx,
 	blocksize = crypto_shash_blocksize(hash_tfm);
 	digestsize = crypto_shash_digestsize(hash_tfm);
 	if (keys->authkeylen > blocksize) {
-		ret = crypto_shash_tfm_digest(hash_tfm, keys->authkey,
-					      keys->authkeylen, ctx->a_key);
+		//低版本hash计算方式
+		ret = crypto_shash_digest(shash, keys->authkey, keys->authkeylen, ctx->a_key); 
 		if (ret) {
 			pr_err("hisi_sec2: aead auth digest error!\n");
 			return -EINVAL;

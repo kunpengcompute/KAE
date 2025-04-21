@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 HiSilicon Limited. */
-#include <linux/align.h>
 #include <linux/dma-mapping.h>
 #include "hisi_acc_qm.h"
 #include <linux/module.h>
@@ -125,7 +124,7 @@ err_free_mem:
 		dma_free_coherent(dev, block_size, block[j].sgl,
 				  block[j].sgl_dma);
 
-	kfree_sensitive(pool);
+	kfree(pool);
 	return ERR_PTR(-ENOMEM);
 }
 EXPORT_SYMBOL_GPL(hisi_acc_create_sgl_pool);

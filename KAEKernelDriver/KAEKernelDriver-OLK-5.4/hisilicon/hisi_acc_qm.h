@@ -102,6 +102,11 @@
 #define UACCE_MODE_SVA			1 /* use uacce sva mode */
 #define UACCE_MODE_DESC	"0(default) means only register to crypto, 1 means both register to crypto and uacce"
 
+struct qm_regset32 {
+	struct debugfs_regset32 regset;
+	struct device *dev;
+};
+
 enum qm_stop_reason {
 	QM_NORMAL,
 	QM_SOFT_RESET,
@@ -590,7 +595,7 @@ void hisi_qm_pm_uninit(struct hisi_qm *qm);
 void hisi_qm_pm_init(struct hisi_qm *qm);
 int hisi_qm_get_dfx_access(struct hisi_qm *qm);
 void hisi_qm_put_dfx_access(struct hisi_qm *qm);
-void hisi_qm_regs_dump(struct seq_file *s, struct debugfs_regset32 *regset);
+void hisi_qm_regs_dump(struct seq_file *s, struct qm_regset32 *regset32);
 u32 hisi_qm_get_hw_info(struct hisi_qm *qm,
 			const struct hisi_qm_cap_info *info_table,
 			u32 index, bool is_read);

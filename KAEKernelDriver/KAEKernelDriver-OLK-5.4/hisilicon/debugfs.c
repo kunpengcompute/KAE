@@ -568,12 +568,12 @@ static const struct file_operations qm_cmd_fops = {
  *
  * Dump accelerator registers.
  */
-void hisi_qm_regs_dump(struct seq_file *s, struct debugfs_regset32 *regset)
+void hisi_qm_regs_dump(struct seq_file *s, struct qm_regset32 *regset32)
 {
-	struct pci_dev *pdev = to_pci_dev(regset->dev);
+	struct pci_dev *pdev = to_pci_dev(regset32->dev);
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
-	const struct debugfs_reg32 *regs = regset->regs;
-	int regs_len = regset->nregs;
+	const struct debugfs_reg32 *regs = regset32->regset.regs;
+	int regs_len = regset32->regset.nregs;
 	int i, ret;
 	u32 val;
 
@@ -582,7 +582,7 @@ void hisi_qm_regs_dump(struct seq_file *s, struct debugfs_regset32 *regset)
 		return;
 
 	for (i = 0; i < regs_len; i++) {
-		val = readl(regset->base + regs[i].offset);
+		val = readl(regset32->regset.base + regs[i].offset);
 		seq_printf(s, "%s= 0x%08x\n", regs[i].name, val);
 	}
 
@@ -593,20 +593,20 @@ EXPORT_SYMBOL_GPL(hisi_qm_regs_dump);
 static int qm_regs_show(struct seq_file *s, void *unused)
 {
 	struct hisi_qm *qm = s->private;
-	struct debugfs_regset32 regset;
+	struct qm_regset32 qmregset;
 
 	if (qm->fun_type == QM_HW_PF) {
-		regset.regs = qm_dfx_regs;
-		regset.nregs = ARRAY_SIZE(qm_dfx_regs);
+		qmregset.regset.regs = qm_dfx_regs;
+		qmregset.regset.nregs = ARRAY_SIZE(qm_dfx_regs);
 	} else {
-		regset.regs = qm_vf_dfx_regs;
-		regset.nregs = ARRAY_SIZE(qm_vf_dfx_regs);
+		qmregset.regset.regs = qm_vf_dfx_regs;
+		qmregset.regset.nregs = ARRAY_SIZE(qm_vf_dfx_regs);
 	}
 
-	regset.base = qm->io_base;
-	regset.dev = &qm->pdev->dev;
+	qmregset.regset.base = qm->io_base;
+	qmregset.dev = &qm->pdev->dev;
 
-	hisi_qm_regs_dump(s, &regset);
+	hisi_qm_regs_dump(s, &qmregset);
 
 	return 0;
 }
