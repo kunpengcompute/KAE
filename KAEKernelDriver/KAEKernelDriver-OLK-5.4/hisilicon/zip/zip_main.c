@@ -455,7 +455,7 @@ MODULE_DEVICE_TABLE(pci, hisi_zip_dev_ids);
 int zip_create_qps(struct hisi_qp **qps, int qp_num, int node)
 {
 	if (node == NUMA_NO_NODE)
-		node = cpu_to_node(raw_smp_processor_id());
+		node = cpu_to_node(smp_processor_id());
 
 	return hisi_qm_alloc_qps_node(&zip_devices, qp_num, 0, node, qps);
 }
@@ -888,34 +888,36 @@ static int hisi_zip_ctrl_debug_init(struct hisi_qm *qm)
 static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
+	struct dentry *dev_d;
 	int ret;
 
-	ret = hisi_qm_regs_debugfs_init(qm, hzip_diff_regs, ARRAY_SIZE(hzip_diff_regs));
-	if (ret) {
-		dev_warn(dev, "Failed to init ZIP diff regs!\n");
-		return ret;
-	}
+	dev_d = debugfs_create_dir(dev_name(dev), hzip_debugfs_root);
 
 	qm->debug.sqe_mask_offset = HZIP_SQE_MASK_OFFSET;
 	qm->debug.sqe_mask_len = HZIP_SQE_MASK_LEN;
-	qm->debug.debug_root = debugfs_create_dir(dev_name(dev),
-							hzip_debugfs_root);
+	qm->debug.debug_root = dev_d;
+	ret = hisi_qm_regs_debugfs_init(qm, hzip_diff_regs, ARRAY_SIZE(hzip_diff_regs));
+	if (ret) {
+		dev_warn(dev, "Failed to init ZIP diff regs!\n");
+		goto debugfs_remove;
+	}
 
 	hisi_qm_debug_init(qm);
 
 	if (qm->fun_type == QM_HW_PF) {
 		ret = hisi_zip_ctrl_debug_init(qm);
 		if (ret)
-			goto debugfs_remove;
+			goto failed_to_create;
 	}
 
 	hisi_zip_dfx_debug_init(qm);
 
 	return 0;
 
-debugfs_remove:
-	debugfs_remove_recursive(qm->debug.debug_root);
+failed_to_create:
 	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
+debugfs_remove:
+	debugfs_remove_recursive(hzip_debugfs_root);
 	return ret;
 }
 
@@ -939,9 +941,9 @@ static void hisi_zip_debug_regs_clear(struct hisi_qm *qm)
 
 static void hisi_zip_debugfs_exit(struct hisi_qm *qm)
 {
-	debugfs_remove_recursive(qm->debug.debug_root);
-
 	hisi_qm_regs_debugfs_uninit(qm, ARRAY_SIZE(hzip_diff_regs));
+
+	debugfs_remove_recursive(qm->debug.debug_root);
 
 	if (qm->fun_type == QM_HW_PF) {
 		hisi_zip_debug_regs_clear(qm);

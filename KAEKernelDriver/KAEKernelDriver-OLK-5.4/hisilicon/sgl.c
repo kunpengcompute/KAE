@@ -161,6 +161,9 @@ static struct hisi_acc_hw_sgl *acc_get_sgl(struct hisi_acc_sgl_pool *pool,
 	struct mem_block *block;
 	u32 block_index, offset;
 
+	if (!pool || !hw_sgl_dma || index >= pool->count)
+		return ERR_PTR(-EINVAL);
+
 	block = pool->mem_block;
 	block_index = index / pool->sgl_num_per_block;
 	offset = index % pool->sgl_num_per_block;
@@ -227,7 +230,7 @@ hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
 	struct scatterlist *sg;
 	int sg_n;
 
-	if (!dev || !sgl || !pool || !hw_sgl_dma || index >= pool->count)
+	if (!dev || !sgl || !pool || !hw_sgl_dma)
 		return ERR_PTR(-EINVAL);
 
 	sg_n = sg_nents(sgl);
