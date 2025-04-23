@@ -21,6 +21,9 @@
 #define SEC_VF_NUM			63
 #define SEC_QUEUE_NUM_V1		4096
 #define PCI_DEVICE_ID_HUAWEI_SEC_PF	0xa255
+#ifndef PCI_DEVICE_ID_HUAWEI_SEC_VF
+#define PCI_DEVICE_ID_HUAWEI_SEC_VF 0xa256
+#endif
 
 #define SEC_BD_ERR_CHK_EN0		0xEFFFFFFF
 #define SEC_BD_ERR_CHK_EN1		0x7ffff7fd
@@ -420,6 +423,8 @@ static u32 uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &sec_uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, UACCE_MODE_DESC);
 
+// ifndef
+#define PCI_DEVICE_ID_HUAWEI_SEC_VF	0xa256
 static const struct pci_device_id sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_SEC_PF) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HUAWEI_SEC_VF) },
@@ -433,11 +438,11 @@ static void sec_set_endian(struct hisi_qm *qm)
 
 	reg = readl_relaxed(qm->io_base + SEC_CONTROL_REG);
 	reg &= ~(BIT(1) | BIT(0));
-	if (!IS_ENABLED(CONFIG_64BIT))
-		reg |= BIT(1);
+	// if (!IS_ENABLED(CONFIG_64BIT))
+	// 	reg |= BIT(1);
 
-	if (!IS_ENABLED(CONFIG_CPU_LITTLE_ENDIAN))
-		reg |= BIT(0);
+	// if (!IS_ENABLED(CONFIG_CPU_LITTLE_ENDIAN))
+		// reg |= BIT(0);
 
 	writel_relaxed(reg, qm->io_base + SEC_CONTROL_REG);
 }
@@ -845,23 +850,23 @@ static int sec_core_debug_init(struct hisi_qm *qm)
 	struct sec_dev *sec = container_of(qm, struct sec_dev, qm);
 	struct device *dev = &qm->pdev->dev;
 	struct sec_dfx *dfx = &sec->debug.dfx;
-	struct debugfs_regset32 *regset;
+	struct qm_regset32 *qmreg;
 	struct dentry *tmp_d;
 	int i;
 
 	tmp_d = debugfs_create_dir("sec_dfx", qm->debug.debug_root);
 
-	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
-	if (!regset)
+	qmreg = devm_kzalloc(dev, sizeof(*qmreg), GFP_KERNEL);
+	if (!qmreg)
 		return -ENOMEM;
 
-	regset->regs = sec_dfx_regs;
-	regset->nregs = ARRAY_SIZE(sec_dfx_regs);
-	regset->base = qm->io_base;
-	regset->dev = dev;
+	qmreg->regset.regs = sec_dfx_regs;
+	qmreg->regset.nregs = ARRAY_SIZE(sec_dfx_regs);
+	qmreg->regset.base = qm->io_base;
+	qmreg->dev = dev;
 
 	if (qm->pdev->device == PCI_DEVICE_ID_HUAWEI_SEC_PF)
-		debugfs_create_file("regs", 0444, tmp_d, regset, &sec_regs_fops);
+		debugfs_create_file("regs", 0444, tmp_d, qmreg, &sec_regs_fops);
 	if (qm->fun_type == QM_HW_PF && sec_regs)
 		debugfs_create_file("diff_regs", 0444, tmp_d,
 				      qm, &sec_diff_regs_fops);

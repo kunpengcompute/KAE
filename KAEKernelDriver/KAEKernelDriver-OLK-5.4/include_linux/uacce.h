@@ -156,29 +156,12 @@ struct uacce_device {
 	struct list_head queues;
 };
 
-#if IS_ENABLED(CONFIG_UACCE)
-
+// 内核主线的IS_ENABLED(CONFIG_UACCE)判断是为了在内核编译时候不带CONFIG_UACCE也能加载成功，KAE不涉及因此删除及其分支
 struct uacce_device *uacce_alloc(struct device *parent,
 				 struct uacce_interface *interface);
 int uacce_register(struct uacce_device *uacce);
 void uacce_remove(struct uacce_device *uacce);
 void uacce_wake_up(struct uacce_queue *q);
-#else /* CONFIG_UACCE */
 
-static inline
-struct uacce_device *uacce_alloc(struct device *parent,
-				 struct uacce_interface *interface)
-{
-	return ERR_PTR(-ENODEV);
-}
-
-static inline int uacce_register(struct uacce_device *uacce)
-{
-	return -EINVAL;
-}
-
-static inline void uacce_remove(struct uacce_device *uacce) {}
-static inline void uacce_wake_up(struct uacce_queue *q) {}
-#endif /* CONFIG_UACCE */
 
 #endif /* _LINUX_UACCE_H */

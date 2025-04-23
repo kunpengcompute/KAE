@@ -21,16 +21,20 @@ CPUPART=""
 function build_check_OS_version()
 {
     local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
-    if [ "$KERNEL_VERSION" == "6.6.0" ]; then
+    if [[ "$KERNEL_VERSION" == 6.6.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=/usr/"
-    elif [ "$KERNEL_VERSION" == "5.10.0" ]; then
+    elif [[ "$KERNEL_VERSION" == 5.10.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS=\"-Wl,-z,relro,-z,now -fstack-protector-strong\""
+    elif [[ "$KERNEL_VERSION" == 5.4.* ]]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.4
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS=\"-Wl,-z,relro,-z,now -fstack-protector-strong\""
     else 
-		echo "[KAE error]:unsupport kernel version"
+		echo "[KAE error]:unsupport kernel version $KERNEL_VERSION"
     fi
 }
 
@@ -268,6 +272,18 @@ function driver_clean()
     cd ${KAE_KERNEL_DIR}
     make uninstall
     make clean
+}
+
+function driver_delete()
+{
+    cd ${KAE_KERNEL_DIR}
+    make delete-modules
+}
+
+function driver_check()
+{
+    cd ${KAE_KERNEL_DIR}
+    make check
 }
 
 function build_uadk()
@@ -581,6 +597,10 @@ main() {
                 driver_clean
             elif [ "$2" = "sva" ]; then  
                 build_driver_sva
+            elif [ "$2" = "check" ]; then  
+                driver_check
+            elif [ "$2" = "delete" ]; then  
+                driver_delete
             else  
                 build_driver
             fi  

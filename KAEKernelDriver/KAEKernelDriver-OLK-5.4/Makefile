@@ -1,4 +1,4 @@
-KERNEL_VERSION_BY_BUILDENV :=`rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel | head -n 1`
+KERNEL_VERSION_BY_BUILDENV := `uname -r`
 KERNEL_PATH := /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/build
 KSP :=	$(shell if test -d /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; then  \
                     echo /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; \
@@ -44,6 +44,22 @@ install:
 	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 	dracut -f
+
+TARGET_MODULES := uacce.ko* hisi_qm.ko* hisi_sec2.ko* hisi_hpre.ko* hisi_zip.ko*
+
+delete-modules:
+	@echo "[WARN] This will delete the following files:"
+	$(foreach mod, $(TARGET_MODULES), find /lib/modules/ -type f -name "$(mod)" -print ;)
+	@echo -n "[WARN] Are you sure? (y/N) " && read ans && [ $${ans:-N} = y ]
+	$(foreach mod, $(TARGET_MODULES), find /lib/modules/ -type f -name "$(mod)" -delete ;)
+	@echo "[INFO] Modules deleted. Run 'sudo depmod -a' to update dependencies."
+
+check:
+	@echo "[WARN] The following files are accelerator driver:"
+	@for mod in $(TARGET_MODULES); do \
+		find /lib/modules/ -type f -name "$$mod" -print; \
+	done
+
 uninstall:
 	modprobe -r hisi_zip
 	modprobe -r hisi_hpre
@@ -72,6 +88,7 @@ nosva:
 	-modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
 	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
 	-modprobe hisi_zip  uacce_mode=2 pf_q_num=256
+
 	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
 	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf

@@ -563,14 +563,14 @@ static const struct hisi_zip_sqe_ops hisi_zip_ops_v2 = {
 	.get_dstlen		= hisi_zip_get_dstlen,
 };
 
-static int hisi_zip_ctx_init(struct hisi_zip_ctx *hisi_zip_ctx, u8 req_type, int node)
+static int hisi_zip_ctx_init(struct hisi_zip_ctx *hisi_zip_ctx, u8 req_type)
 {
 	struct hisi_qp *qps[HZIP_CTX_Q_NUM] = { NULL };
 	struct hisi_zip_qp_ctx *qp_ctx;
 	struct hisi_zip *hisi_zip;
 	int ret, i, j;
 
-	ret = zip_create_qps(qps, HZIP_CTX_Q_NUM, node);
+	ret = zip_create_qps(qps, HZIP_CTX_Q_NUM);
 	if (ret) {
 		pr_err("failed to create zip qps (%d)!\n", ret);
 		return -ENODEV;
@@ -714,7 +714,7 @@ static int hisi_zip_acomp_init(struct crypto_acomp *tfm)
 	struct device *dev;
 	int ret;
 
-	ret = hisi_zip_ctx_init(ctx, COMP_NAME_TO_TYPE(alg_name), tfm->base.node);
+	ret = hisi_zip_ctx_init(ctx, COMP_NAME_TO_TYPE(alg_name));
 	if (ret) {
 		pr_err("failed to init ctx (%d)!\n", ret);
 		return ret;
