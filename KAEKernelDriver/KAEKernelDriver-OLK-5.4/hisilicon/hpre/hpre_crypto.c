@@ -739,6 +739,8 @@ static unsigned int hpre_dh_max_size(struct crypto_kpp *tfm)
 static int hpre_dh_init_tfm(struct crypto_kpp *tfm)
 {
 	struct hpre_ctx *ctx = kpp_tfm_ctx(tfm);
+	
+	// kpp_set_reqsize(tfm, sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ);// 5.4内核无此接口，使用其他方式
 
 	return hpre_ctx_init(ctx, HPRE_V2_ALG_TYPE);
 }
@@ -1165,6 +1167,8 @@ static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 		return PTR_ERR(ctx->rsa.soft_tfm);
 	}
 
+	akcipher_set_reqsize(tfm, sizeof(struct hpre_asym_request) +
+				  HPRE_ALIGN_SZ);
 
 	ret = hpre_ctx_init(ctx, HPRE_V2_ALG_TYPE);
 	if (ret)
@@ -1191,7 +1195,7 @@ static struct akcipher_alg rsa = {
 	.max_size = hpre_rsa_max_size,
 	.init = hpre_rsa_init_tfm,
 	.exit = hpre_rsa_exit_tfm,
-	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
+	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,//5.4使用这个方式获取reqsize
 	.base = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 		.cra_priority = HPRE_CRYPTO_ALG_PRI,
@@ -1208,7 +1212,7 @@ static struct kpp_alg dh = {
 	.max_size = hpre_dh_max_size,
 	.init = hpre_dh_init_tfm,
 	.exit = hpre_dh_exit_tfm,
-	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,
+	.reqsize = sizeof(struct hpre_asym_request) + HPRE_ALIGN_SZ,//5.4使用这个方式获取reqsize
 	.base = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 		.cra_priority = HPRE_CRYPTO_ALG_PRI,
