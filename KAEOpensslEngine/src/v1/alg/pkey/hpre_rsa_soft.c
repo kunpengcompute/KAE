@@ -20,6 +20,10 @@
 #include "hpre_rsa.h"
 #include "../../../utils/engine_log.h"
 
+#ifdef KAE_BORINGSSL
+#include "../../../bssl/bssl_custom.h"
+#endif
+
 /**
  *   succ: > 0
  *   fail: 0

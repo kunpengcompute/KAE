@@ -424,12 +424,15 @@ void kae_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx
 			queue_data_node = cur_pool->kae_queue_pool[i].node_data;
 			if (queue_data_node != NULL) {
 				kae_free_wd_queue_memory(queue_data_node, release_fn);
+#ifndef KAE_BORINGSSL
 				US_DEBUG("kae queue node destroy success. queue_node id =%d", i);
+#endif
 				cur_pool->kae_queue_pool[i].node_data = NULL;
 			}
 		}
+#ifndef KAE_BORINGSSL
 		US_DEBUG("pool use num :%d.", cur_pool->pool_use_num);
-
+#endif
 		kae_free(cur_pool->kae_queue_pool);
 
 		(void)pthread_mutex_unlock(&cur_pool->kae_queue_mutex);
@@ -438,14 +441,15 @@ void kae_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx
 		pthread_mutex_destroy(&cur_pool->kae_queue_mutex);
 		pthread_mutex_destroy(&cur_pool->destroy_mutex);
 
-       temp_pool = cur_pool->next;
+        temp_pool = cur_pool->next;
 
         kae_free(cur_pool);
 
         cur_pool = temp_pool;
 	}
-
+#ifndef KAE_BORINGSSL
 	US_DEBUG("kae queue pool destroy success.");
+#endif
 }
 
 void kae_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx_cb release_fn)

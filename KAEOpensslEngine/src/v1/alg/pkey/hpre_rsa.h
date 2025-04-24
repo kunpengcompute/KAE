@@ -28,6 +28,10 @@
 #include <openssl/bn.h>
 #include <openssl/engine.h>
 
+#ifdef KAE_BORINGSSL
+#include "../../../bssl/alg/bssl_rsa.h"
+#endif
+
 #include "../../../utils/engine_utils.h"
 #include "../../utils/engine_opensslerr.h"
 
@@ -53,6 +57,7 @@ enum {
 	MAX_CODE,
 };
 
+#ifndef KAE_BORINGSSL
 struct bignum_st {
 	BN_ULONG *d;
 	int top;
@@ -60,6 +65,7 @@ struct bignum_st {
 	int neg;
 	int flags;
 };
+#endif
 
 RSA_METHOD *hpre_get_rsa_methods(void);
 
@@ -68,6 +74,10 @@ int hpre_module_init(void);
 void hpre_destroy(void);
 
 EVP_PKEY_METHOD *get_rsa_pkey_meth(void);
+
+void hpre_bssl_set_wd_init_flag();
+
+void hpre_bssl_unset_wd_init_flag();
 
 #endif
 

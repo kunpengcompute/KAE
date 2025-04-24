@@ -16,12 +16,14 @@ AM_PROG_LIBTOOL
 AC_ARG_ENABLE([kae], [AS_HELP_STRING([--enable-kae], [Enable kae support])], [enable_kae="yes"], [enable_kae="no"])
 AC_ARG_ENABLE([kae-gmssl], [AS_HELP_STRING([--enable-kae-gmssl], [Enable kae gmssl support])], [enable_kae_gmssl="yes"], [enable_kae_gmssl="no"])
 AC_ARG_ENABLE([kae-tongsuo], [AS_HELP_STRING([--enable-kae-tongsuo], [Enable kae tongsuo support])], [enable_kae_tongsuo="yes"], [enable_kae_tongsuo="no"])
+AC_ARG_ENABLE([kae-boringssl], [AS_HELP_STRING([--enable-kae-boringssl], [Enable kae boringssl support])], [enable_kae_boringssl="yes"], [enable_kae_boringssl="no"])
 AC_ARG_ENABLE(engine, AS_HELP_STRING([--enable-engine],[Enable engine in OpenSSL 3.0]))
 
 # 设置条件变量
 AM_CONDITIONAL([WD_KAE], [test "$enable_kae" = "yes"])
 AM_CONDITIONAL([WD_KAE_GMSSL], [test "$enable_kae_gmssl" = "yes"])
 AM_CONDITIONAL([WD_KAE_TONGSUO], [test "$enable_kae_tongsuo" = "yes"])
+AM_CONDITIONAL([WD_KAE_BORINGSSL], [test "$enable_kae_boringssl" = "yes"])
 AM_CONDITIONAL([WD_ENGINE], [test "$enable_engine" = "yes"])
 
 # 通过命令传入openssl的安装路径，不然就用默认的
@@ -48,6 +50,7 @@ then
 		fi
 	fi
 	AC_SUBST([includes_openssl], ["-I\$(with_openssl_install_dir)/include"])
+	AC_MSG_NOTICE([includes_openssl value: $includes_openssl])
 else
 	# Default OPENSSL from the system
 	AC_PATH_TOOL(PKGCONFIG, pkg-config)
@@ -69,6 +72,12 @@ else
 	AC_SUBST([includes_openssl], ["-I`pkg-config --variable=includedir libcrypto`"])
 fi
 
+if test "x$enable_kae_boringssl" = "xyes"
+then
+	AC_SUBST([lib_boringssl], ["-L$with_openssl_install_dir/lib64"])
+else
+	AC_SUBST([lib_boringssl], [""])
+fi
 
 AC_CHECK_HEADERS([openssl/engine.h])
 
@@ -82,6 +91,11 @@ AM_CONDITIONAL(HAVE_CRYPTO, test "$with_crypto" != "no")
 PKG_CHECK_MODULES(libcrypto, libcrypto >= 3.0,
 		  [with_crypto3=yes], [with_crypto3=no])
 AM_CONDITIONAL(HAVE_CRYPTO3, test "$with_crypto3" != "no")
+
+if test "x$enable_kae_boringssl" = "xyes"
+then
+    AM_CONDITIONAL(HAVE_CRYPTO, test "$enable_kae_boringssl" = "yes")
+fi
 
 AC_CONFIG_FILES([
 	Makefile

@@ -27,6 +27,10 @@
 #include "hpre_wd.h"
 #include <uadk/v1/wd_rsa.h>
 
+#ifdef KAE_BORINGSSL
+#include "../../../bssl/bssl_custom.h"
+#endif
+
 BN_ULONG *bn_get_words(const BIGNUM *a)
 {
 	return a->d;

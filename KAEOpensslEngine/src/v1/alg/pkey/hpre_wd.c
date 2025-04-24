@@ -31,18 +31,25 @@
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 #include <openssl/err.h>
-#include <openssl/async.h>
 
 #include "hpre_wd.h"
 #include <uadk/v1/wd_rsa.h>
-#include "../../async/async_callback.h"
-#include "../../async/async_task_queue.h"
-#include "../../async/async_event.h"
 #include "../../wdmngr/wd_queue_memory.h"
 #include "../../utils/engine_types.h"
 #include "hpre_rsa_utils.h"
 #include "../../utils/engine_check.h"
 #include "../../../utils/engine_log.h"
+
+#ifndef KAE_BORINGSSL
+#include <openssl/async.h>
+#include "../../async/async_callback.h"
+#include "../../async/async_task_queue.h"
+#include "../../async/async_event.h"
+#endif
+
+#ifdef KAE_BORINGSSL
+#include "../../../bssl/bssl_custom.h"
+#endif
 
 static void hpre_rsa_cb(const void *message, void *tag);
 
@@ -372,6 +379,7 @@ int hpre_rsa_sync(void *ctx, struct wcrypto_rsa_op_data *opdata)
 	return HPRE_CRYPTO_SUCC;
 }
 
+#ifndef KAE_BORINGSSL
 int hpre_rsa_async(hpre_engine_ctx_t *eng_ctx,
 		   struct wcrypto_rsa_op_data *opdata, op_done_t *op_done)
 {
@@ -403,9 +411,15 @@ int hpre_rsa_async(hpre_engine_ctx_t *eng_ctx,
 
 	return HPRE_CRYPTO_SUCC;
 }
+#endif
 
 int hpre_rsa_crypto(hpre_engine_ctx_t *eng_ctx, struct wcrypto_rsa_op_data *opdata)
 {
+
+#ifdef KAE_BORINGSSL
+	return hpre_rsa_sync(eng_ctx->ctx, opdata);
+#else
+
 	int job_ret;
 	op_done_t op_done;
 
@@ -452,4 +466,5 @@ err:
 	(void)async_clear_async_event_notification_v1();
 	async_cleanup_op_done_v1(&op_done);
 	return HPRE_CRYPTO_FAIL;
+#endif
 }

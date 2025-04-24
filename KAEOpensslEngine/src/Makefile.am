@@ -7,6 +7,35 @@ WD_CFLAGS += $(includes_openssl)
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk
 WD_CFLAGS += -I$(DEPSHEADDIR)/uadk/v1
 AM_LDFLAGS = -L$(DEPSHEADDIR)/../lib
+
+if WD_KAE_BORINGSSL
+kae_bssl_la_LIBADD=-ldl $(WD_LIBS) -lpthread
+kae_bssl_la_LDFLAGS=-module -version-number $(VERSION)
+kae_bssl_la_CFLAGS=$(WD_CFLAGS)
+lib_LTLIBRARIES=kae_bssl.la
+kae_bssl_la_CFLAGS += -DKAE_BORINGSSL
+kae_bssl_la_CFLAGS += $(lib_boringssl)
+
+if WD_KAE
+kae_bssl_la_SOURCES = utils/engine_config.c \ 
+		 utils/engine_utils.c \
+         utils/engine_log.c \
+		 v1/alg/pkey/hpre_rsa.c \
+		 v1/alg/pkey/hpre_rsa_soft.c \
+		 v1/alg/pkey/hpre_rsa_utils.c \
+		 v1/alg/pkey/hpre_wd.c \
+		 v1/wdmngr/wd_alg_queue.c \
+		 v1/wdmngr/wd_queue_memory.c \
+		 v1/utils/engine_opensslerr.c \
+		 bssl/e_bssl.c \
+		 bssl/alg/bssl_rsa.c
+endif
+
+kae_bssl_includedir = /usr/local/boringssl/include
+kae_bssl_include_HEADERS = bssl/kae_bssl.h
+
+else  #WD_KAE_BORINGSSL
+
 kae_la_LIBADD=-ldl $(WD_LIBS) -lpthread
 kae_la_LDFLAGS=-module -version-number $(VERSION)
 kae_la_CFLAGS=$(WD_CFLAGS)
@@ -64,3 +93,5 @@ kae_la_SOURCES+=v1/alg/pkey/hpre_sm2.c
 endif
 
 endif #WD_KAE
+
+endif #WD_KAE_BORINGSSL

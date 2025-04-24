@@ -321,7 +321,6 @@ function build_engine_log()
 
 function engine_log_clean
 {
-    rm -rf /var/log/kae.cnf
     rm -rf /var/log/kae.log
 }
 
@@ -456,6 +455,34 @@ function engine3_clean_tongsuo()
     engine_log_clean
 }
 
+function build_engine_boringssl()
+{
+    boringssl_install_path=$1
+    if [ "$1" = "" ];then
+        boringssl_install_path=$(which bssl | awk -F'/bin' '{print $1}')
+    fi
+    boringssl_install_path=${boringssl_install_path%/}
+    
+    echo $boringssl_install_path
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+
+    ./configure --libdir=/usr/local/boringssl/lib/engines-1.1 --enable-kae --enable-engine --enable-kae-boringssl --with-openssl_install_dir=$boringssl_install_path
+    make -j
+    make install
+    build_engine_log
+}
+
+function engine_clean_boringssl()
+{
+    cd ${SRC_PATH}/KAEOpensslEngine
+    make uninstall
+    make clean
+    rm -rf /usr/local/boringssl/lib/engines-1.1
+    engine_log_clean
+}
+
 function build_zlib()
 {
     cd ${SRC_PATH}/KAEZlib
@@ -530,6 +557,9 @@ function help()
 
     echo "sh build.sh engine3_tongsuo -- install KAE tongsuo engine"
 	echo "sh build.sh engine3_tongsuo clean -- uninstall KAE tongsuo engine"
+
+    echo "sh build.sh engine_boringssl -- install KAE boringssl engine"
+	echo "sh build.sh engine_boringssl clean -- uninstall KAE boringssl engine"
 
 	echo "sh build.sh zlib -- install zlib using KAE"
 	echo "sh build.sh zlib clean -- uninstall zlib using KAE"
@@ -640,6 +670,13 @@ main() {
                 build_engine3_tongsuo $2
             fi
             ;;    
+        "engine_boringssl")
+            if [ "$2" = "clean" ]; then
+                engine_clean_boringssl
+            else
+                build_engine_boringssl $2
+            fi
+            ;;
         "zlib")  
             if [ "$2" = "clean" ]; then  
                 zlib_clean

@@ -19,8 +19,17 @@
 #include <openssl/err.h>
 #include "engine_opensslerr.h"
 
+#ifdef KAE_BORINGSSL
+#include "../../bssl/bssl_custom.h"
+#endif
+
+#ifndef KAE_BORINGSSL
 #define ERR_FUNC(func)     ERR_PACK(0, func, 0)
 #define ERR_REASON(reason) ERR_PACK(0, 0, reason)
+#else
+#define ERR_FUNC(func)     ERR_PACK(func, 0)
+#define ERR_REASON(reason) ERR_PACK(0, reason)
+#endif
 
 static int g_kae_lib_error_code;
 static int g_kae_error_init = 1;

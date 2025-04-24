@@ -19,6 +19,13 @@
 #ifndef HISI_ACC_ENGINE_OPENSSLERR_H
 #define HISI_ACC_ENGINE_OPENSSLERR_H
 
+#ifdef KAE_BORINGSSL
+typedef struct ERR_string_data_st {
+    unsigned long error;
+    const char *string;
+} ERR_STRING_DATA;
+#endif
+
 int err_load_kae_strings(void);
 void err_unload_kae_strings(void);
 void err_kae_error(int function, int reason, char *engine_file, int line);

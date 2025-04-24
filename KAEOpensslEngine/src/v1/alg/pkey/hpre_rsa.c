@@ -24,11 +24,20 @@
 #include "hpre_rsa_utils.h"
 #include "hpre_wd.h"
 #include "hpre_rsa_soft.h"
-#include "../../async/async_poll.h"
+
+
 #include "../../utils/engine_types.h"
 #include "../../../utils/engine_log.h"
+
+#ifndef KAE_BORINGSSL
 #include "../dh/hpre_dh.h"
 #include "hpre_sm2.h"
+#include "../../async/async_poll.h"
+#endif
+
+#ifdef KAE_BORINGSSL
+#include "../../../bssl/bssl_custom.h"
+#endif
 
 #ifndef OPENSSL_NO_RSA
 const int RSAPKEYMETH_IDX;
@@ -74,6 +83,15 @@ static int hpre_evp_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig, size_t s
                            const unsigned char *tbs, size_t tbslen);
 #endif
 
+#ifdef KAE_BORINGSSL
+static int hpre_rsa_bssl_private_encrypt(RSA *rsa, size_t *out_len, uint8_t *out,
+                         size_t max_out, const uint8_t *in, size_t in_len, int padding);
+
+static int hpre_rsa_bssl_private_decrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
+                         const uint8_t *in, size_t in_len, int padding);
+
+#endif
+
 RSA_METHOD *hpre_get_rsa_methods(void)
 {
 	int ret = 1;
@@ -108,6 +126,10 @@ RSA_METHOD *hpre_get_rsa_methods(void)
 		return NULL;
 	}
 
+#ifdef KAE_BORINGSSL
+	ret &= RSA_meth_set_priv_bssl(g_hpre_rsa_method, 
+							hpre_rsa_bssl_private_encrypt, hpre_rsa_bssl_private_decrypt);
+#else
 	ret &= RSA_meth_set_pub_enc(g_hpre_rsa_method, hpre_rsa_public_encrypt);
 	ret &= RSA_meth_set_pub_dec(g_hpre_rsa_method, hpre_rsa_public_decrypt);
 	ret &= RSA_meth_set_priv_enc(g_hpre_rsa_method, hpre_rsa_private_encrypt);
@@ -115,6 +137,8 @@ RSA_METHOD *hpre_get_rsa_methods(void)
 	ret &= RSA_meth_set_keygen(g_hpre_rsa_method, hpre_rsa_keygen);
 	ret &= RSA_meth_set_mod_exp(g_hpre_rsa_method, hpre_rsa_mod_exp);
 	ret &= RSA_meth_set_bn_mod_exp(g_hpre_rsa_method, hpre_bn_mod_exp);
+#endif
+
 	if (ret == 0) {
 		KAEerr(KAE_F_HPRE_GET_RSA_METHODS, KAE_R_RSA_SET_METHODS_FAILURE);
 		US_ERR("Failed to set HPRE RSA methods");
@@ -165,14 +189,20 @@ int hpre_module_init(void)
 	(void)hpre_get_rsa_methods();
 #endif
 
+#ifndef KAE_BORINGSSL
 	/* register async poll func */
 	async_register_poll_fn_v1(ASYNC_TASK_WD_RSA, hpre_engine_ctx_poll);
+#endif
 
 	return 1;
 }
 
 EVP_PKEY_METHOD *get_rsa_pkey_meth(void)
 {
+#ifdef KAE_BORINGSSL
+	return NULL;
+#endif
+
 #ifdef KAE_GMSSL
     const EVP_PKEY_METHOD *def_rsa = EVP_PKEY_meth_find(EVP_PKEY_RSA);
 #else
@@ -312,11 +342,16 @@ static int hpre_evp_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig, size_t s
 
 #define PKEY_METHOD_TYPE_NUM   4
 
+#ifndef KAE_BORINGSSL
 #ifndef KAE_GMSSL
 const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX, EVP_PKEY_SM2};
 #else
 const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA, EVP_PKEY_DH, EVP_PKEY_DHX};
 #endif 
+
+#else
+const int g_pkey_method_types[PKEY_METHOD_TYPE_NUM] = {EVP_PKEY_RSA};
+#endif
 
 static int hpre_check_meth_args(EVP_PKEY_METHOD **pmeth,
 		const int **pnids, int nid)
@@ -356,6 +391,7 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 	case EVP_PKEY_RSA:
 		*pmeth = get_rsa_pkey_meth();
 		break;
+#ifndef KAE_BORINGSSL
 	case EVP_PKEY_DH:
 		*pmeth = get_dh_pkey_meth();
 		break;
@@ -370,6 +406,7 @@ int hpre_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 			*pmeth = (EVP_PKEY_METHOD *)EVP_PKEY_meth_find(EVP_PKEY_SM2);
 		}
 		break;
+#endif
 #endif
 	default:
 		*pmeth = NULL;
@@ -939,4 +976,77 @@ static int hpre_bn_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
 	US_DEBUG("- Started\n");
 	return RSA_meth_get_bn_mod_exp(RSA_PKCS1_OpenSSL())
 		(r, a, p, m, ctx, m_ctx);
+}
+
+bool hpre_bssl_init_flag = false;
+
+void hpre_bssl_set_wd_init_flag()
+{
+	hpre_bssl_init_flag = true;
+}
+
+void hpre_bssl_unset_wd_init_flag()
+{
+	hpre_bssl_init_flag = false;
+}
+
+/* Referred to boringssl/crypto/fipsmodule/rsa/rsa_impl.c*/
+int hpre_rsa_bssl_private_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
+                      const uint8_t *in, size_t in_len, int padding)
+{
+    int len = 0;
+    const unsigned rsa_size = RSA_size(rsa);
+
+	if (!hpre_bssl_init_flag) {
+		wd_hpre_init_qnode_pool();
+		hpre_bssl_set_wd_init_flag();
+	}
+
+    if (max_out < rsa_size) {
+		US_DEBUG("hpre bssl sign: max_out < rsa_size. return");
+        return 0;
+    }
+
+    len = hpre_rsa_private_encrypt(in_len, in, out, rsa, padding);
+    if(0 >= len) {
+        US_DEBUG("hpre bssl sign fail.");
+        return 0;
+    }
+
+    *out_len = len;
+	US_DEBUG("hpre bssl sign success.\n");
+    return 1;
+}
+
+int hpre_rsa_bssl_private_decrypt(RSA *rsa, size_t *out_len, uint8_t *out,
+                         size_t max_out, const uint8_t *in, size_t in_len,
+                         int padding)
+{
+    int len = 0;
+    const unsigned rsa_size = RSA_size(rsa);
+
+	if (!hpre_bssl_init_flag) {
+		wd_hpre_init_qnode_pool();
+		hpre_bssl_set_wd_init_flag();
+	}
+    
+    if (max_out < rsa_size) {
+		US_DEBUG("hpre bssl priv dec: max_out < rsa_size. return");
+        return 0;
+    }
+
+    if (in_len != rsa_size) {
+		US_DEBUG("hpre bssl priv dec: in_len is not equal rsa_size");
+        return 0;
+    }
+
+    len = hpre_rsa_private_decrypt(in_len, in, out, rsa, padding);
+    if(0 >= len) {
+        US_DEBUG("hpre bssl priv dec fail.");
+        return 0;
+    }
+
+    *out_len = len;
+	US_DEBUG("hpre bssl priv dec success.\n");
+    return 1;
 }

@@ -1,0 +1,58 @@
+diff -Naru a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2025-03-12 02:07:50.000000000 +0800
++++ b/CMakeLists.txt	2025-04-01 16:08:03.636352660 +0800
+@@ -636,6 +636,16 @@
+   target_link_libraries(crypto ws2_32)
+ endif()
+ 
++if(ENABLE_KAE)
++  find_library(KAE_LIB NAMES kae_bssl.so PATHS /usr/local/boringssl/lib/engines-1.1 REQUIRED)
++  target_link_libraries(crypto ${KAE_LIB})
++
++  add_definitions(-DKAE_BSSL=1)
++  include_directories(
++    /usr/local/boringssl/include
++  )
++endif()
++
+ # CMAKE_SYSTEM_NAME is "Generic" for embedded OSes:
+ # https://cmake.org/cmake/help/book/mastering-cmake/chapter/Cross%20Compiling%20With%20CMake.html#toolchain-files
+ #
+diff -Naru a/crypto/fipsmodule/rsa/rsa.cc.inc b/crypto/fipsmodule/rsa/rsa.cc.inc
+--- a/crypto/fipsmodule/rsa/rsa.cc.inc	2025-03-12 02:07:50.000000000 +0800
++++ b/crypto/fipsmodule/rsa/rsa.cc.inc	2025-03-31 19:34:56.000000000 +0800
+@@ -34,6 +34,9 @@
+ #include "../delocate.h"
+ #include "internal.h"
+ 
++#ifdef KAE_BSSL
++#include "kae_bssl.h"
++#endif
+ 
+ // RSA_R_BLOCK_TYPE_IS_NOT_02 is part of the legacy SSLv23 padding scheme.
+ // Cryptography.io depends on this error code.
+@@ -161,7 +164,13 @@
+   return rsa;
+ }
+ 
+-RSA *RSA_new(void) { return RSA_new_method(NULL); }
++RSA *RSA_new(void) {
++#ifdef KAE_BSSL
++  ENGINE* kae = ENGINE_init_kae();
++  return RSA_new_method(kae); 
++#endif
++	return RSA_new_method(NULL); 
++}
+ 
+ RSA *RSA_new_method(const ENGINE *engine) {
+   RSA *rsa = reinterpret_cast<RSA *>(OPENSSL_zalloc(sizeof(RSA)));
+@@ -231,6 +240,9 @@
+   rsa_invalidate_key(rsa);
+   CRYPTO_MUTEX_cleanup(&rsa->lock);
+   OPENSSL_free(rsa);
++#ifdef KAE_BSSL
++  ENGINE_free_kae();
++#endif
+ }
+ 
+ int RSA_up_ref(RSA *rsa) {
