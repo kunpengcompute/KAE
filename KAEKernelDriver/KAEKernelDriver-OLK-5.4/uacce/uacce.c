@@ -44,20 +44,26 @@ static int uacce_start_queue(struct uacce_queue *q)
 	return 0;
 }
 
-static int uacce_put_queue(struct uacce_queue *q)
+static int uacce_stop_queue(struct uacce_queue *q)
 {
 	struct uacce_device *uacce = q->uacce;
 
 	if ((q->state == UACCE_Q_STARTED) && uacce->ops->stop_queue)
 		uacce->ops->stop_queue(q);
 
-	if ((q->state == UACCE_Q_INIT || q->state == UACCE_Q_STARTED) &&
-	     uacce->ops->put_queue)
-		uacce->ops->put_queue(q);
-
 	q->state = UACCE_Q_ZOMBIE;
 
 	return 0;
+}
+
+static void uacce_put_queue(struct uacce_queue *q)
+{
+	struct uacce_device *uacce = q->uacce;
+
+	uacce_stop_queue(q);
+
+	if (uacce->ops->put_queue)
+		uacce->ops->put_queue(q);
 }
 
 static long uacce_cmd_share_qfr(struct uacce_queue *src, int fd)
@@ -219,7 +225,7 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 		ret = uacce_start_queue(q);
 		break;
 	case UACCE_CMD_PUT_Q:
-		ret = uacce_put_queue(q);
+		ret = uacce_stop_queue(q);
 		break;
 	case UACCE_CMD_SHARE_SVAS:
 		ret = uacce_cmd_share_qfr(q, (int)arg);
@@ -357,16 +363,13 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 	struct uacce_queue *q = vma->vm_private_data;
 	struct uacce_qfile_region *qfr = NULL;
 	struct uacce_device *uacce = q->uacce;
-	struct device *dev = &q->uacce->dev;
 
 	if (vma->vm_pgoff >= UACCE_MAX_REGION)
 		return;
 
 	qfr = q->qfrs[vma->vm_pgoff];
-	if (!qfr) {
-		dev_err(dev, "qfr NULL, type %lu!\n", vma->vm_pgoff);
+	if (!qfr)
 		return;
-	}
 
 	if (qfr->type == UACCE_QFRT_SS &&
 	    atomic_read(&current->active_mm->mm_users) > 0) {
@@ -380,7 +383,8 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 		uacce_free_dma_buffers(q);
 		q->qfrs[vma->vm_pgoff] = NULL;
 		mutex_unlock(&uacce->mutex);
-		kfree(qfr);
+		if (qfr != &noiommu_ss_default_qfr)
+			kfree(qfr);
 	} else if (qfr->type != UACCE_QFRT_SS) {
 		mutex_lock(&q->mutex);
 		q->qfrs[vma->vm_pgoff] = NULL;
@@ -389,8 +393,14 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 	}
 }
 
+static int uacce_vma_mremap(struct vm_area_struct *area)
+{
+	return -EPERM;
+}
+
 static const struct vm_operations_struct uacce_vm_ops = {
 	.close = uacce_vma_close,
+	.mremap = uacce_vma_mremap,
 };
 
 static int get_sort_base(struct uacce_dma_slice *list, int low, int high,
@@ -811,13 +821,14 @@ static ssize_t node_id_show(struct device *dev,
 static ssize_t numa_distance_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
-	int distance = 0;
+	int distance = LOCAL_DISTANCE;
 
 #ifdef CONFIG_NUMA
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	distance = node_distance(uacce->parent->numa_node,
-		cpu_to_node(smp_processor_id()));
+	if (uacce->parent->numa_node != NUMA_NO_NODE)
+		distance = node_distance(uacce->parent->numa_node,
+					 cpu_to_node(smp_processor_id()));
 #endif
 	return sysfs_emit(buf, "%d\n", distance);
 }
@@ -946,6 +957,8 @@ EXPORT_SYMBOL_GPL(uacce_alloc);
  */
 int uacce_register(struct uacce_device *uacce)
 {
+	int ret;
+
 	if (!uacce)
 		return -ENODEV;
 
@@ -956,7 +969,14 @@ int uacce_register(struct uacce_device *uacce)
 	uacce->cdev->ops = &uacce_fops;
 	uacce->cdev->owner = THIS_MODULE;
 
-	return cdev_device_add(uacce->cdev, &uacce->dev);
+	ret = cdev_device_add(uacce->cdev, &uacce->dev);
+	if (ret) {
+		cdev_del(uacce->cdev);
+		uacce->cdev = NULL;
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(uacce_register);
 

@@ -703,6 +703,9 @@ int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op
 		tmp_xqc = qm->xqc_buf.aeqc;
 		xqc_dma = qm->xqc_buf.aeqc_dma;
 		break;
+	default:
+		dev_err(&qm->pdev->dev, "unknown mailbox cmd %u\n", cmd);
+		return -EINVAL;
 	}
 
 	/* No need to judge if master OOO is blocked. */
@@ -2200,7 +2203,7 @@ set_dev_state:
 	return ret;
 }
 
-static int qm_stop_qp_nolock(struct hisi_qp *qp)
+static void qm_stop_qp_nolock(struct hisi_qp *qp)
 {
 	struct hisi_qm *qm = qp->qm;
 	struct device *dev = &qm->pdev->dev;
@@ -2214,7 +2217,7 @@ static int qm_stop_qp_nolock(struct hisi_qp *qp)
 	 */
 	if (atomic_read(&qp->qp_status.flags) != QP_START) {
 		qp->is_resetting = false;
-		return 0;
+		return;
 	}
 
 	atomic_set(&qp->qp_status.flags, QP_STOP);
@@ -2232,25 +2235,19 @@ static int qm_stop_qp_nolock(struct hisi_qp *qp)
 		qp_stop_fail_cb(qp);
 
 	dev_dbg(dev, "stop queue %u!", qp->qp_id);
-
-	return 0;
 }
 
 /**
  * hisi_qm_stop_qp() - Stop a qp in qm.
  * @qp: The qp we want to stop.
  *
- * This function is reverse of hisi_qm_start_qp. Return 0 if successful.
+ * This function is reverse of hisi_qm_start_qp.
  */
-int hisi_qm_stop_qp(struct hisi_qp *qp)
+void hisi_qm_stop_qp(struct hisi_qp *qp)
 {
-	int ret;
-
 	down_write(&qp->qm->qps_lock);
-	ret = qm_stop_qp_nolock(qp);
+	qm_stop_qp_nolock(qp);
 	up_write(&qp->qm->qps_lock);
-
-	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
 
@@ -3275,25 +3272,18 @@ static int qm_restart(struct hisi_qm *qm)
 }
 
 /* Stop started qps in reset flow */
-static int qm_stop_started_qp(struct hisi_qm *qm)
+static void qm_stop_started_qp(struct hisi_qm *qm)
 {
-	struct device *dev = &qm->pdev->dev;
 	struct hisi_qp *qp;
-	int i, ret;
+	int i;
 
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = &qm->qp_array[i];
-		if (qp && atomic_read(&qp->qp_status.flags) == QP_START) {
+		if (atomic_read(&qp->qp_status.flags) == QP_START) {
 			qp->is_resetting = true;
-			ret = qm_stop_qp_nolock(qp);
-			if (ret < 0) {
-				dev_err(dev, "Failed to stop qp%d!\n", i);
-				return ret;
-			}
+			qm_stop_qp_nolock(qp);
 		}
 	}
-
-	return 0;
 }
 
 /**
@@ -3356,11 +3346,7 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 			}
 		}
 
-		ret = qm_stop_started_qp(qm);
-		if (ret < 0) {
-			dev_err(dev, "Failed to stop started qp!\n");
-			goto err_unlock;
-		}
+		qm_stop_started_qp(qm);
 		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
 	}
 
@@ -4209,6 +4195,28 @@ static int qm_set_vf_mse(struct hisi_qm *qm, bool set)
 	return -ETIMEDOUT;
 }
 
+static void qm_dev_ecc_mbit_handle(struct hisi_qm *qm)
+{
+	u32 nfe_enb = 0;
+
+	/* Kunpeng930 hardware automatically close master ooo when NFE occurs */
+	if (qm->ver >= QM_HW_V3)
+		return;
+
+	if (!qm->err_status.is_dev_ecc_mbit &&
+	    qm->err_status.is_qm_ecc_mbit &&
+	    qm->err_ini->close_axi_master_ooo) {
+		qm->err_ini->close_axi_master_ooo(qm);
+	} else if (qm->err_status.is_dev_ecc_mbit &&
+		   !qm->err_status.is_qm_ecc_mbit &&
+		   !qm->err_ini->close_axi_master_ooo) {
+		nfe_enb = readl(qm->io_base + QM_RAS_NFE_ENABLE);
+		writel(nfe_enb & QM_RAS_NFE_MBIT_DISABLE,
+		       qm->io_base + QM_RAS_NFE_ENABLE);
+		writel(QM_ECC_MBIT, qm->io_base + QM_ABNORMAL_INT_SET);
+	}
+}
+
 static int qm_vf_reset_prepare(struct hisi_qm *qm,
 			       enum qm_stop_reason stop_reason)
 {
@@ -4273,6 +4281,8 @@ static int qm_controller_reset_prepare(struct hisi_qm *qm)
 		return ret;
 	}
 
+	qm_dev_ecc_mbit_handle(qm);
+
 	/* PF obtains the information of VF by querying the register. */
 	qm_cmd_uninit(qm);
 
@@ -4301,28 +4311,6 @@ static int qm_controller_reset_prepare(struct hisi_qm *qm)
 	return 0;
 }
 
-static void qm_dev_ecc_mbit_handle(struct hisi_qm *qm)
-{
-	u32 nfe_enb = 0;
-
-	/* Kunpeng930 hardware automatically close master ooo when NFE occurs */
-	if (qm->ver >= QM_HW_V3)
-		return;
-
-	if (!qm->err_status.is_dev_ecc_mbit &&
-	    qm->err_status.is_qm_ecc_mbit &&
-	    qm->err_ini->close_axi_master_ooo) {
-		qm->err_ini->close_axi_master_ooo(qm);
-	} else if (qm->err_status.is_dev_ecc_mbit &&
-		   !qm->err_status.is_qm_ecc_mbit &&
-		   !qm->err_ini->close_axi_master_ooo) {
-		nfe_enb = readl(qm->io_base + QM_RAS_NFE_ENABLE);
-		writel(nfe_enb & QM_RAS_NFE_MBIT_DISABLE,
-		       qm->io_base + QM_RAS_NFE_ENABLE);
-		writel(QM_ECC_MBIT, qm->io_base + QM_ABNORMAL_INT_SET);
-	}
-}
-
 static int qm_soft_reset_prepare(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -4347,8 +4335,6 @@ static int qm_soft_reset_prepare(struct hisi_qm *qm)
 		pci_err(pdev, "Fails to disable PEH MSI bit.\n");
 		return ret;
 	}
-
-	qm_dev_ecc_mbit_handle(qm);
 
 	/* OOO register set and check */
 	writel(ACC_MASTER_GLOBAL_CTRL_SHUTDOWN,
