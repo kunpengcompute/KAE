@@ -14,10 +14,10 @@ Autoreq: no
 Autoprov: no
 
 %define kernel_version %(rpm -q kernel-devel | sed 's/kernel-devel-//')
-%define kae_build_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/kae_build
-%define kae_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/
-%define kae_driver_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/KAEKernelDriver
-%define kae_uadk_path  %{_builddir}/%{name}-%{version}/%{name}-%{version}/uadk
+%define kae_build_path  %{_builddir}/%{name}-%{version}/kae_build
+%define kae_path  %{_builddir}/%{name}-%{version}/
+%define kae_driver_path  %{_builddir}/%{name}-%{version}/KAEKernelDriver
+%define kae_uadk_path  %{_builddir}/%{name}-%{version}/uadk
 %define zlib_version 1.2.11
 %define zstd_version 1.5.2
 
@@ -35,7 +35,6 @@ if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" !=
 fi
 
 %build
-cd %{name}-%{version}
 sh build.sh rpm
 
 
@@ -120,7 +119,11 @@ This package kae_driver library.
 /usr/local/lib/libwd_crypto.*
 /usr/local/lib/libhisi_hpre.*
 /usr/local/lib/libhisi_sec.* 
-/usr/local/lib/libhisi_zip.* 
+/usr/local/lib/libhisi_zip.*
+/usr/local/lib/libhisi_dae.*
+/usr/local/lib/libisa_ce.*
+/usr/local/lib/libisa_sve.*
+/usr/local/lib/libwd_dae.*
 
 %defattr(644,root,root)
 /usr/include/uadk/*.h
@@ -141,7 +144,10 @@ rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
-
+rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
 
 echo "checking installed modules"
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
@@ -258,6 +264,10 @@ rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
 
 rm -rf /lib/modules/%{kernel_version}/extra/uacce.ko > /dev/null 2>&1 || true
 rm -rf /lib/modules/%{kernel_version}/extra/hisi_qm.ko > /dev/null 2>&1 || true

@@ -28,11 +28,11 @@ function build_check_OS_version()
     elif [[ "$KERNEL_VERSION" == 5.10.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
-        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS=\"-Wl,-z,relro,-z,now -fstack-protector-strong\""
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
     elif [[ "$KERNEL_VERSION" == 5.4.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.4
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
-        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae CFLAGS=\"-Wl,-z,relro,-z,now -fstack-protector-strong\""
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
     else 
 		echo "[KAE error]:unsupport kernel version $KERNEL_VERSION"
     fi

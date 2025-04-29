@@ -40,6 +40,7 @@ then
 	then
 		#OPENSSL 1.1.1
 		AC_MSG_NOTICE([Build KAE engine against OpenSSL 1.1.1])
+		AC_SUBST([CFLAGS], [-Wl,-z,relro,-z,now -fstack-protector-strong])
 	else
 		#OPENSSL 3.0
 		if test "x$enable_kae_provider" = "xyes"

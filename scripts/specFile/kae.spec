@@ -8,7 +8,7 @@ ExclusiveOS:   linux
 BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel, chrpath
+BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel, chrpath, lz4-devel
 ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
@@ -67,20 +67,32 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/include
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/lib/pkgconfig
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezip/share/man/man3
-    cp -rf %{kae_path}/kae_build/KAEZlib/kaezip/lib/*                           ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
-    cp -rf %{kae_path}/kae_build/KAEZlib/kaezip/include/*                       ${RPM_BUILD_ROOT}/usr/local/kaezip/include
-    cp -rf %{kae_path}/kae_build/KAEZlib/kaezip/share/*                         ${RPM_BUILD_ROOT}/usr/local/kaezip/share  
+    cp -rf %{kae_path}/kae_build/kaezip/lib/*                           ${RPM_BUILD_ROOT}/usr/local/kaezip/lib
+    cp -rf %{kae_path}/kae_build/kaezip/include/*                       ${RPM_BUILD_ROOT}/usr/local/kaezip/include
+    cp -rf %{kae_path}/kae_build/kaezip/share/*                         ${RPM_BUILD_ROOT}/usr/local/kaezip/share  
 
-    #zstd只在SVA支持
+#zstd只在SVA支持
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib/pkgconfig
-    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/share/man/man3
-    cp -rf %{kae_path}/kae_build/KAEZstd/kaezstd/lib/*                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
-    cp -rf %{kae_path}/kae_build/KAEZstd/kaezstd/bin/*                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
-    cp -rf %{kae_path}/kae_build/KAEZstd/kaezstd/include/*                         ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
-    cp -rf %{kae_path}/kae_build/KAEZstd/kaezstd/share/*                           ${RPM_BUILD_ROOT}/usr/local/kaezstd/share 
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaezstd/share/man/man1
+    cp -rf %{kae_path}/kae_build/kaezstd/lib/*                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/lib
+    cp -rf %{kae_path}/kae_build/kaezstd/bin/*                             ${RPM_BUILD_ROOT}/usr/local/kaezstd/bin
+    cp -rf %{kae_path}/kae_build/kaezstd/include/*                         ${RPM_BUILD_ROOT}/usr/local/kaezstd/include
+    cp -rf %{kae_path}/kae_build/kaezstd/share/*                           ${RPM_BUILD_ROOT}/usr/local/kaezstd/share 
+
+#lz4
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaelz4/lib
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaelz4/bin
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaelz4/include
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaelz4/lib
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/kaelz4/share/man/man1
+    cp -rf %{kae_path}/kae_build/kaelz4/lib/*                             ${RPM_BUILD_ROOT}/usr/local/kaelz4/lib
+    cp -rf %{kae_path}/kae_build/kaelz4/bin/*                             ${RPM_BUILD_ROOT}/usr/local/kaelz4/bin
+    cp -rf %{kae_path}/kae_build/kaelz4/include/*                         ${RPM_BUILD_ROOT}/usr/local/kaelz4/include
+    cp -rf %{kae_path}/kae_build/kaelz4/share/*                           ${RPM_BUILD_ROOT}/usr/local/kaelz4/share 
+
 
 %clean
 rm -rf ${RPM_BUILD_ROOT}
@@ -105,6 +117,10 @@ This package kae_driver library.
 /usr/local/lib/libhisi_hpre.*
 /usr/local/lib/libhisi_sec.* 
 /usr/local/lib/libhisi_zip.* 
+/usr/local/lib/libhisi_dae.*
+/usr/local/lib/libisa_ce.*
+/usr/local/lib/libisa_sve.*
+/usr/local/lib/libwd_dae.*
 
 %defattr(644,root,root)
 /usr/include/uadk/*.h
@@ -124,7 +140,10 @@ rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
-
+rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
 
 echo "checking installed modules"
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
@@ -241,6 +260,10 @@ rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
 
 rm -rf /lib/modules/%{kernel_version}/extra/uacce.ko > /dev/null 2>&1 || true
 rm -rf /lib/modules/%{kernel_version}/extra/hisi_qm.ko > /dev/null 2>&1 || true
@@ -294,22 +317,26 @@ This package kaezip library.
 %files zip
 %defattr(755,root,root)
 /usr/local/kaezip/lib/*
+/usr/local/kaezstd/lib/*
+/usr/local/kaezstd/bin/*
+/usr/local/kaelz4/lib/*
+/usr/local/kaelz4/bin/*
+
 %defattr(644,root,root)
 /usr/local/kaezip/share/man/man3/zlib.3
 /usr/local/kaezip/include/*.h
+/usr/local/kaezstd/include/*.h
+/usr/local/kaezstd/share/man/man1/*
+/usr/local/kaelz4/include/*.h
+/usr/local/kaelz4/share/man/man1/*
 
-%defattr(755,root,root)
-%config(missingok) /usr/local/kaezstd/lib/*
-%config(missingok) /usr/local/kaezstd/bin/*
-%defattr(644,root,root)
-%config(missingok) /usr/local/kaezstd/include/*.h
-%config(missingok) /usr/local/kaezstd/share/man/man1/*
 
 %pre zip
 echo "installing pre zip..."
 if [ "$1" = "2" ] ; then  #2: update
     rm -rf /usr/local/kaezip     > /dev/null 2>&1 || true
     rm -rf /usr/local/kaezstd    > /dev/null 2>&1 || true
+    rm -rf /usr/local/kaelz4    > /dev/null 2>&1 || true
 fi
 
 %post zip
@@ -319,6 +346,7 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     if [ "${implementer}-${part}" == "0x48-0xd01" ]; then
         rm -rf /usr/local/kaezstd    > /dev/null 2>&1 || true
+        rm -rf /usr/local/kaelz4    > /dev/null 2>&1 || true
     fi
 fi
 /sbin/ldconfig
@@ -329,9 +357,19 @@ echo "uninstalling zip-rpm"
 
 %postun zip
 rm -rf /usr/local/kaezip                > /dev/null 2>&1 || true
-rm -rf /usr/local/kaezstd               > /dev/null 2>&1 || true
 rm -f /var/log/kaezip.log*              > /dev/null 2>&1 || true
-rm -f /var/log/kaezstd.log*             > /dev/null 2>&1 || true
+
+if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
+    implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
+    part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+    if [ "${implementer}-${part}" != "0x48-0xd01" ]; then
+        rm -rf /usr/local/kaezstd               > /dev/null 2>&1 || true
+        rm -rf /usr/local/kaelz4               > /dev/null 2>&1 || true
+
+        rm -f /var/log/kaezstd.log*             > /dev/null 2>&1 || true
+        rm -f /var/log/kaelz4.log*             > /dev/null 2>&1 || true
+    fi
+fi
 echo "zip-rpm uninstalled"
 /sbin/ldconfig
 
