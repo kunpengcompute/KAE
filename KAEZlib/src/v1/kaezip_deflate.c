@@ -31,6 +31,8 @@
 #include "kaezip_cpucheck.h"
 #include "kaezip_log.h"
 
+#include "deflate.h"
+
 #define KAEZIP_UPDATE_ZSTREAM_IN(zstrm, in_len) \
     do { \
         zstrm->next_in  += in_len;   \
@@ -56,11 +58,6 @@ int kz_deflateInit2_v1(z_streamp strm, int level,
 {
     if (windowBits == -8) { //  raw-deflate and 8 will get Z_STREAM_ERROR in lz_deflateInit2_(see deflate.c Line 301)
         windowBits = -9;
-    }
-    int ret = lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy, version, stream_size);
-    if (ret != Z_OK) {
-        US_ERR("zlib deflate init failed windowbits %d! ret is %d!", windowBits, ret);
-        return Z_ERRNO;
     }
 
     int alg_comp_type = kaezip_winbits2algtype(windowBits);
@@ -156,18 +153,14 @@ int kz_deflate_v1(z_streamp strm, int flush)
 
 int kz_deflateEnd_v1(z_streamp strm)
 {
-    int ret;
-    int comp_alg_type = -1;
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getDeflateKaezipCtx(strm);
     if (kaezip_ctx != NULL) {
         US_DEBUG("kaezip deflate end");
-        comp_alg_type = kaezip_ctx->comp_alg_type;  //  WCRYPTO_RAW_DEFLATE
         kaezip_put_ctx(kaezip_ctx);
     }
 
     setDeflateKaezipCtx(strm, 0);
-    ret = lz_deflateEnd(strm);
-    return comp_alg_type == WCRYPTO_RAW_DEFLATE ? Z_OK : ret;
+    return Z_OK;
 }
 
 int ZEXPORT kz_deflateReset_v1(z_streamp strm)
@@ -178,7 +171,7 @@ int ZEXPORT kz_deflateReset_v1(z_streamp strm)
         kaezip_init_ctx(kaezip_ctx);
     }
 
-    return lz_deflateReset(strm);
+    return Z_OK;
 }
 
 static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type)
@@ -240,4 +233,36 @@ static int kaezip_do_deflate(z_streamp strm, int flush)
         kaezip_ctx->remain, kaezip_ctx->status, flush);
 
     return KAEZIP_SUCCESS;
+}
+
+unsigned long getDeflateKaezipCtx(z_streamp strm)
+{
+    deflate_state *state;
+  
+    if (strm == Z_NULL) {
+        return (unsigned long)0;
+    }
+    state = (deflate_state *)strm->state;
+    if (state == Z_NULL) {
+        return (unsigned long)0;
+    }
+    state = (deflate_state *)strm->state;
+
+    return state->kaezip_ctx;
+}
+
+void setDeflateKaezipCtx(z_streamp strm, unsigned long kaezip_ctx)
+{
+    deflate_state *state;
+ 
+    if (strm == Z_NULL) {
+        return;
+    }
+    state = (deflate_state *)strm->state;
+    if (state == Z_NULL) {
+        return;
+    }
+
+    state->kaezip_ctx = kaezip_ctx;
+    return;
 }

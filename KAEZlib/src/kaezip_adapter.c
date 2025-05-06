@@ -61,7 +61,7 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_deflateInit2_(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
@@ -93,7 +93,7 @@ int kz_deflate(z_streamp strm, int flush)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_deflate(strm, flush);
+        ret = Z_CALL_SOFT;
         break;
     case HW_V1:
         kaezip_ctx = getDeflateKaezipCtx(strm);
@@ -101,7 +101,7 @@ int kz_deflate(z_streamp strm, int flush)
             ret = kz_deflate_v1(strm, flush);
         } else {
             US_WARN("HW_V1: using lz_deflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
-            ret = lz_deflate(strm, flush);
+            ret = Z_CALL_SOFT;
         }
         break;
     case HW_V2:
@@ -122,7 +122,7 @@ int kz_deflateEnd(z_streamp strm)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_deflateEnd(strm);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_deflateEnd_v1(strm);
@@ -145,7 +145,7 @@ int kz_deflateReset(z_streamp strm)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_deflateReset(strm);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_deflateReset_v1(strm);
@@ -169,7 +169,7 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_inflateInit2_(strm, windowBits, version, stream_size);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_inflateInit2_v1(strm, windowBits, version, stream_size);
@@ -199,7 +199,7 @@ int kz_inflate(z_streamp strm, int flush)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_inflate(strm, flush);
+        ret = Z_CALL_SOFT;
         break;
     case HW_V1:
         alg_type = kz_getAutoInflateAlgType(strm);
@@ -209,7 +209,7 @@ int kz_inflate(z_streamp strm, int flush)
             ret = kz_inflate_v1(strm, flush);
         } else {
             US_WARN("HW_V1: using lz_inflate! kaezip_ctx is %lu, flush is %d", kaezip_ctx, flush);
-            ret = lz_inflate(strm, flush);
+            ret = Z_CALL_SOFT;
         }
         break;
     case HW_V2:
@@ -230,7 +230,7 @@ int kz_inflateEnd(z_streamp strm)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_inflateEnd(strm);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_inflateEnd_v1(strm);
@@ -253,7 +253,7 @@ int kz_inflateReset(z_streamp strm)
     switch (g_platform)
     {
     case HW_NONE:
-        ret = lz_inflateReset(strm);
+        ret = Z_OK;
         break;
     case HW_V1:
         ret = kz_inflateReset_v1(strm);

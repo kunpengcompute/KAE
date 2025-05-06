@@ -30,8 +30,11 @@ function Target_zlib()
     rm -rf zlib-1.2.11
     tar -zxvf zlib-1.2.11.tar.gz
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
-    ./configure
-    make
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
+    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
+    patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
+    # ./configure
+    # make
 }
 
 function Dev_Build_kaezip()
@@ -42,9 +45,9 @@ function Dev_Build_kaezip()
 	make clean
     make
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
-    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
-    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
-    patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
+    # patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
+    # patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
+    # patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
     ./configure  --prefix=/usr/local/kaezip
     make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}
     echo "build zlib success"
@@ -60,9 +63,9 @@ function Build_kaezip()
     make install
 
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
-    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
-    patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
-    patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
+    # patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
+    # patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
+    # patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
     ./configure  --prefix=/usr/local/kaezip
     export LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
     make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}

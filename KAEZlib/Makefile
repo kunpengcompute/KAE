@@ -48,10 +48,11 @@ INCDIR += -I ${WORK_PATH}/src/v2
 # Include Libs.
 LIBDIR += -L/usr/lib64
 LIBDIR += -L/usr/local/lib
-LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.11
+#LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.11
 LIBDIR += -L$(WORK_PATH)/../kae_build/lib/
 #LIBDIR += -L$(WORK_PATH)/open_source/zlib-1.2.7
-LIBS := -lz -lwd -lwd_comp -pthread
+#LIBS := -lz -lwd -lwd_comp -pthread
+LIBS := -lwd -lwd_comp -pthread
 LIBS += -lc_nonshared
 
 # The flags

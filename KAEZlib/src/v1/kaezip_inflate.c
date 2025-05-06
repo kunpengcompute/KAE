@@ -30,6 +30,10 @@
 #include "kaezip_cpucheck.h"
 #include "kaezip_log.h"
 
+#include "zutil.h"
+#include "inftrees.h"
+#include "inflate.h"
+
 #define KAEZIP_UPDATE_ZSTREAM_IN(zstrm, in_len) \
     do { \
         zstrm->next_in  += in_len;   \
@@ -51,12 +55,6 @@ int ZEXPORT kz_inflateInit2_v1(z_streamp strm, int windowBits, const char *versi
 {
     static const int GZIP_INFLATE_MAX_AUTO_WBITS = 47;
     static const int GZIP_INFLATE_MIN_AUTO_WBITS = 32;
-
-    int ret = lz_inflateInit2_(strm, windowBits, version, stream_size);
-    if (unlikely(ret != Z_OK)) {
-        US_ERR("lz_inflateInit2_ error, windowBits %d! ret is %d!", windowBits, ret);
-        return Z_ERRNO;
-    }
 
     setInflateKaezipCtx(strm, (unsigned long)0);
     if (windowBits >= GZIP_INFLATE_MIN_AUTO_WBITS && windowBits <= GZIP_INFLATE_MAX_AUTO_WBITS) {
@@ -132,7 +130,7 @@ int kz_inflateEnd_v1(z_streamp strm)
     }
 
     setInflateKaezipCtx(strm, 0);
-    return lz_inflateEnd(strm);
+    return Z_OK;
 }
 
 int ZEXPORT kz_inflateReset_v1(z_streamp strm)
@@ -143,7 +141,7 @@ int ZEXPORT kz_inflateReset_v1(z_streamp strm)
         kaezip_init_ctx(kaezip_ctx);
     }
 
-    return lz_inflateReset(strm);
+    return Z_OK;
 }
 
 static int kaezip_do_inflate(z_streamp strm, int flush)
@@ -269,3 +267,51 @@ int kz_getAutoInflateAlgType(z_streamp strm)
     return WCRYPTO_NONE;
 }
 
+int getInflateStateWrap(z_streamp strm)
+{
+    struct inflate_state FAR *state;
+    
+    if (strm == Z_NULL) {
+        return 0;
+    }
+    state = (struct inflate_state FAR *)strm->state;
+
+    if (state == Z_NULL) {
+        return 0;
+    }
+
+    return state->wrap;
+}
+
+unsigned long getInflateKaezipCtx(z_streamp strm)
+{
+    struct inflate_state FAR *state;
+    
+    if (strm == Z_NULL) {
+        return (unsigned long)0;
+    }
+    
+    state = (struct inflate_state FAR *)strm->state;
+    if (state == Z_NULL) {
+        return (unsigned long)0;
+    }
+
+    return state->kaezip_ctx;
+}
+
+void setInflateKaezipCtx(z_streamp strm, unsigned long kaezip_ctx)
+{
+    struct inflate_state FAR *state;
+    
+    if (strm == Z_NULL) {
+        return;
+    }
+    state = (struct inflate_state FAR *)strm->state;
+
+    if (state == Z_NULL) {
+        return;
+    }
+
+    state->kaezip_ctx = kaezip_ctx;
+    return;
+}

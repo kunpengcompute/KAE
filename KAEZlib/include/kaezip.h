@@ -24,6 +24,8 @@
 #define KAEZIP_H
 #include "zlib.h"
 
+#define Z_CALL_SOFT 10
+
 #define VERSION_STRUCT_MAXLEN 100
 typedef struct {
     char productName[VERSION_STRUCT_MAXLEN];
