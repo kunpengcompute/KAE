@@ -491,8 +491,10 @@ static int hpre_ctx_init(struct hpre_ctx *ctx, u8 type)
 	int ret;
 
 	qp = hpre_get_qp_and_start(type);
-	if (IS_ERR(qp))
-		return PTR_ERR(qp);
+	if (IS_ERR(qp)) {
+		ctx->qp = NULL;
+		return -ENODEV;
+	}
 
 	qp->qp_ctx = ctx;
 	qp->req_cb = hpre_alg_cb;
@@ -794,7 +796,8 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 
 	/* For 512 and 1536 bits key size, use soft tfm instead */
 	if (ctx->key_sz == HPRE_RSA_512BITS_KSZ ||
-	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ) {
+	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ ||
+	    !ctx->qp) {
 		akcipher_request_set_tfm(req, ctx->rsa.soft_tfm);
 		ret = crypto_akcipher_encrypt(req);
 		akcipher_request_set_tfm(req, tfm);
@@ -842,7 +845,8 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 
 	/* For 512 and 1536 bits key size, use soft tfm instead */
 	if (ctx->key_sz == HPRE_RSA_512BITS_KSZ ||
-	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ) {
+	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ ||
+	    !ctx->qp) {
 		akcipher_request_set_tfm(req, ctx->rsa.soft_tfm);
 		ret = crypto_akcipher_decrypt(req);
 		akcipher_request_set_tfm(req, tfm);
@@ -1032,6 +1036,9 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, bool is_clear_all)
 	unsigned int half_key_sz = ctx->key_sz >> 1;
 	struct device *dev = ctx->dev;
 
+	if (!ctx->qp)
+		return;
+
 	if (is_clear_all)
 		hisi_qm_stop_qp(ctx->qp);
 
@@ -1131,6 +1138,9 @@ static int hpre_rsa_setpubkey(struct crypto_akcipher *tfm, const void *key,
 	if (ret)
 		return ret;
 
+	if (!ctx->qp)
+		return 0;
+
 	return hpre_rsa_setkey(ctx, key, keylen, false);
 }
 
@@ -1144,6 +1154,9 @@ static int hpre_rsa_setprivkey(struct crypto_akcipher *tfm, const void *key,
 	if (ret)
 		return ret;
 
+	if (!ctx->qp)
+		return 0;
+
 	return hpre_rsa_setkey(ctx, key, keylen, true);
 }
 
@@ -1151,9 +1164,10 @@ static unsigned int hpre_rsa_max_size(struct crypto_akcipher *tfm)
 {
 	struct hpre_ctx *ctx = akcipher_tfm_ctx(tfm);
 
-	/* For 512 and 1536 bits key size, use soft tfm instead */
+	/* For 512 and 1536 bits key size, device qp unavailable, use soft tfm instead */
 	if (ctx->key_sz == HPRE_RSA_512BITS_KSZ ||
-	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ)
+	    ctx->key_sz == HPRE_RSA_1536BITS_KSZ ||
+	    !ctx->qp)
 		return crypto_akcipher_maxsize(ctx->rsa.soft_tfm);
 
 	return ctx->key_sz;
@@ -1174,10 +1188,12 @@ static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 				  HPRE_ALIGN_SZ);
 
 	ret = hpre_ctx_init(ctx, HPRE_V2_ALG_TYPE);
-	if (ret)
+	if (ret && ret != -ENODEV) {
 		crypto_free_akcipher(ctx->rsa.soft_tfm);
+		return ret;
+	}
 
-	return ret;
+	return 0;
 }
 
 static void hpre_rsa_exit_tfm(struct crypto_akcipher *tfm)
