@@ -182,7 +182,15 @@ diff -uprN zstd/lib/compress/zstd_compress.c zstd_new/lib/compress/zstd_compress
      }
      DEBUGLOG(4, "ZSTD_compressBegin_usingDict (dictSize=%u)", (unsigned)dictSize);
      return ZSTD_compressBegin_internal(cctx, dict, dictSize, ZSTD_dct_auto, ZSTD_dtlm_fast, NULL,
-@@ -4716,6 +4770,9 @@ size_t ZSTD_compress_usingDict(ZSTD_CCtx
+@@ -4672,6 +4726,7 @@ size_t ZSTD_compressEnd (ZSTD_CCtx* cctx
+             (unsigned)cctx->consumedSrcSize);
+     }
+     ZSTD_CCtx_trace(cctx, endResult);
++    kaezstd_reset(cctx);
+     return cSize + endResult;
+ }
+ 
+@@ -4716,6 +4771,9 @@ size_t ZSTD_compress_usingDict(ZSTD_CCtx
          ZSTD_parameters const params = ZSTD_getParams_internal(compressionLevel, srcSize, dict ? dictSize : 0, ZSTD_cpm_noAttachDict);
          assert(params.fParams.contentSizeFlag == 1);
          ZSTD_CCtxParams_init_internal(&cctx->simpleApiParams, &params, (compressionLevel == 0) ? ZSTD_CLEVEL_DEFAULT: compressionLevel);

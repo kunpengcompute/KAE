@@ -32,6 +32,11 @@ static int kaezstd_data_parsing(ZSTD_CCtx* zc, kaezstd_ctx_t* config)
         config->zstd_data.seq_num * sizeof(seqDef));
     zc->seqStore.sequences += config->zstd_data.seq_num;
 
+    if (config->zstd_data.lit_length_overflow_cnt  == 1) {
+        zc->seqStore.longLengthType = ZSTD_llt_literalLength;
+        zc->seqStore.longLengthPos = config->zstd_data.lit_length_overflow_pos;
+    }
+
     // if (config->tuple.longLengthType != ZSTD_llt_none) {
     //     zc->seqStore.longLengthType = config->tuple.longLengthType;
     //     zc->seqStore.longLengthPos = config->tuple.longLengthPos;

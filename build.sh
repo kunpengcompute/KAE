@@ -131,6 +131,8 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch
 
     cd $KAE_UADK_DIR
     sh autogen.sh
@@ -295,6 +297,8 @@ function build_uadk()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch
 
 	cd ${SRC_PATH}/uadk
     sh autogen.sh

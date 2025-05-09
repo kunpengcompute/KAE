@@ -1,0 +1,90 @@
+From 3ab77b31bf03c28d812b8a77ae91b320dcaf2a70 Mon Sep 17 00:00:00 2001
+From: YuZhiHuan <yuzhihuan@huawei.com>
+Date: Fri, 9 May 2025 14:08:20 +0800
+Subject: [PATCH] fix uadk zstd bug
+
+---
+ uadk/drv/hisi_comp.c        |  6 ++++--
+ uadk/v1/drv/hisi_zip_udrv.c | 14 ++++++++------
+ 2 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/uadk/drv/hisi_comp.c b/uadk/drv/hisi_comp.c
+index 71e859f..7b95724 100644
+--- a/uadk/drv/hisi_comp.c
++++ b/uadk/drv/hisi_comp.c
+@@ -74,7 +74,8 @@
+ #define CTX_REPCODE1_OFFSET		12
+ #define CTX_REPCODE2_OFFSET		24
+ #define CTX_HW_REPCODE_OFFSET		784
+-#define OVERFLOW_DATA_SIZE		2
++#define OVERFLOW_DATA_SIZE		8
++#define SEQ_DATA_SIZE_SHIFT		3
+ #define ZSTD_FREQ_DATA_SIZE		784
+ #define ZSTD_LIT_RESV_SIZE		16
+ #define REPCODE_SIZE			12
+@@ -712,7 +713,8 @@ static void get_data_size_lz77_zstd(struct hisi_zip_sqe *sqe, enum wd_comp_op_ty
+ 	data->seq_num = sqe->produced;
+ 	data->lit_length_overflow_cnt = sqe->dw31 >> LITLEN_OVERFLOW_CNT_SHIFT;
+ 	data->lit_length_overflow_pos = sqe->dw31 & LITLEN_OVERFLOW_POS_MASK;
+-	data->freq = data->sequences_start + data->seq_num + OVERFLOW_DATA_SIZE;
++	data->freq = data->sequences_start + (data->seq_num << SEQ_DATA_SIZE_SHIFT) +
++    			OVERFLOW_DATA_SIZE;
+ 
+ 	if (ctx_buf) {
+ 		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
+diff --git a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
+index 8497ebc..83a812c 100644
+--- a/uadk/v1/drv/hisi_zip_udrv.c
++++ b/uadk/v1/drv/hisi_zip_udrv.c
+@@ -39,7 +39,7 @@
+ #define STREAM_POS_SHIFT		2
+ #define STREAM_MODE_SHIFT		1
+ #define WINDOWS_SIZE_SHIFT		12
+-#define SEQUENCE_SZIE			8
++#define SEQ_DATA_SIZE_SHIFT		3
+ 
+ #define HW_NEGACOMPRESS			0x0d
+ #define HW_CRC_ERR			0x10
+@@ -57,6 +57,7 @@
+ #define ZSTD_LIT_RSV_SIZE		16
+ #define ZSTD_FREQ_DATA_SIZE		784
+ #define REPCODE_SIZE			12
++#define OVERFLOW_DATA_SIZE		8
+ 
+ /* Error status 0xe indicates that dest_avail_out insufficient */
+ #define ERR_DSTLEN_OUT			0xe
+@@ -679,8 +680,8 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
+ }
+ 
+ /*
+- * Checksum[31:24] equals LitLength_Overflow_Pos;
+- * Checksum[23:0] equals Freq_Literal_Overflow_cnt;
++ * Checksum[31:24] equals Freq_Literal_Overflow_cnt;
++ * Checksum[23:0] equals LitLength_Overflow_Pos;
+  */
+ #define LILL_OVERFLOW_POS 	0x00ffffff
+ #define LILL_OVERFLOW_CNT_OFFSET 24
+@@ -695,8 +696,8 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
+ 	format->lit_num = sqe->comp_data_length;
+ 	format->seq_num = sqe->produced;
+ 
+-	format->lit_length_overflow_cnt = sqe->checksum & LILL_OVERFLOW_POS;
+-	format->lit_length_overflow_pos = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
++	format->lit_length_overflow_pos = sqe->checksum & LILL_OVERFLOW_POS;
++	format->lit_length_overflow_cnt = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
+ 					  LILL_OVERFLOW_CNT_OFFSET;
+ 
+ 	if (recv_msg->data_fmt == WD_SGL_BUF) {
+@@ -706,7 +707,8 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
+ 	} else {
+ 		format->literals_start = recv_msg->dst;
+ 		format->sequences_start = recv_msg->dst + recv_msg->in_size + ZSTD_LIT_RSV_SIZE;
+-		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
++		format->freq = format->sequences_start + (format->seq_num << SEQ_DATA_SIZE_SHIFT) +
++					   OVERFLOW_DATA_SIZE;
+ 	}
+ 
+ 	if (ctx_buf) {
+-- 
+2.33.0
+
