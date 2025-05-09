@@ -407,7 +407,7 @@ static const struct kernel_param_ops hpre_uacce_mode_ops = {
  * uacce_mode = 0 means hpre only register to crypto,
  * uacce_mode = 1 means hpre both register to crypto and uacce.
  */
-static u32 uacce_mode = UACCE_MODE_NOUACCE;
+static u32 uacce_mode = UACCE_MODE_NOIOMMU;
 module_param_cb(uacce_mode, &hpre_uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, UACCE_MODE_DESC);
 
