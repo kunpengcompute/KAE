@@ -89,7 +89,8 @@ static int kz_zlib_uadk_init(void)
 	int zlib_device_num = kz_getzlib_device_num();
 	if (zlib_device_num == 0) {
 		US_ERR("no zlib device!\n");
-		return Z_ERRNO;
+		ret = Z_ERRNO;
+		goto out_freebmp;
 	}
 	numa_bitmask_setbit(cparams.bmp, device_numaid[the_pid % zlib_device_num]);
 
