@@ -209,7 +209,7 @@ EVP_PKEY_METHOD *get_rsa_pkey_meth(void)
 	const EVP_PKEY_METHOD *def_rsa = EVP_PKEY_meth_get0(RSAPKEYMETH_IDX);
 #endif
 	if (g_hpre_pkey_meth == NULL) {
-		g_hpre_pkey_meth = EVP_PKEY_meth_new(EVP_PKEY_RSA, 0);
+		g_hpre_pkey_meth = EVP_PKEY_meth_new(EVP_PKEY_RSA, EVP_PKEY_FLAG_AUTOARGLEN);
 		if (g_hpre_pkey_meth == NULL) {
 			US_ERR("failed to new pkey meth");
 			return NULL;
