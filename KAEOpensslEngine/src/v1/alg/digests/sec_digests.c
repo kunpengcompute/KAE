@@ -465,9 +465,6 @@ static int sec_digests_cleanup(EVP_MD_CTX *ctx)
         (void)wd_digests_put_engine_ctx(md_ctx->e_digest_ctx);
         md_ctx->e_digest_ctx = NULL;
     }
-    if (md_ctx->is_copy) {
-		kae_free(md_ctx->last_update_buff);
-	}
 
     return OPENSSL_SUCCESS;
 }
@@ -502,17 +499,16 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 
 		tp = &to_ctx->e_digest_ctx->op_data;
 		fp = &from_ctx->e_digest_ctx->op_data;
-		memcpy(tp->in, fp->in, fp->in_bytes);
+		memcpy(tp->in, fp->in, from_ctx->last_update_bufflen);
 		memcpy(tp->out, fp->out, fp->out_bytes);
 		memcpy(tp->iv, fp->iv, fp->iv_bytes);
-		tp->in_bytes = fp->in_bytes;
+		tp->in_bytes = from_ctx->last_update_bufflen;
 		tp->out_bytes = fp->out_bytes;
 		tp->status = fp->status;
 		tp->has_next = fp->has_next;
 		tp->iv_bytes = fp->iv_bytes;
 
-		to_ctx->last_update_buff = malloc(DIGEST_BLOCK_SIZE);
-        to_ctx->is_copy = true;
+		to_ctx->last_update_buff = tp->in;
 
 		if (to_ctx->state != SEC_DIGEST_INIT) {
 			to_ctx->is_stream_copy = true;
@@ -523,7 +519,6 @@ static int sec_digests_copy(EVP_MD_CTX *to, const EVP_MD_CTX *from)
 			to_ctx->long_data_len = to_ctx->total_data_len - to_ctx->last_update_bufflen;
 			tp->priv = (void *)&to_ctx->long_data_len;
 		}
-		memcpy(to_ctx->last_update_buff, from_ctx->last_update_buff, from_ctx->last_update_bufflen);
 	}
 
 	return 1;

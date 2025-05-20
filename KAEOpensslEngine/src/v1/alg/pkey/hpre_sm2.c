@@ -34,6 +34,9 @@
 #include "../../async/async_task_queue.h"
 #include "../../async/async_event.h"
 
+#define SM2_DEFAULT_USERID "1234567812345678"
+#define SM2_DEFAULT_USERID_LEN 16
+
 KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
 
 DECLARE_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
@@ -749,6 +752,10 @@ static int hpre_sm2_digest_custom(EVP_PKEY_CTX *ctx, EVP_MD_CTX *mctx)
 		return OPENSSL_FAIL;
 	}
 
+    if (!smctx->ctx.id_set)
+        (void)hpre_sm2_ctrl(ctx, EVP_PKEY_CTRL_SET1_ID, SM2_DEFAULT_USERID_LEN
+            , (void *)SM2_DEFAULT_USERID);
+
 	if (!smctx->ctx.id_set) {
 		/*
 		 * An ID value must be set. The specifications are not clear whether a
@@ -876,6 +883,24 @@ static int hpre_sm2_ciphertext_size(const EC_KEY *key,
 	return OPENSSL_SUCCESS;
 }
 
+static int hpre_sm2_smctx_check(struct hpre_sm2_priv_ctx *smctx)
+{
+	if (!smctx) {
+		fprintf(stderr, "smctx is NULL\n");
+		return OPENSSL_FAIL;
+	}
+
+	if (!smctx->e_hpre_sm2_ctx) {
+		hpre_sm2_update_sess(smctx);
+	}
+
+	if (!smctx->e_hpre_sm2_ctx->wd_ctx) {
+		return OPENSSL_FAIL;
+	}
+
+	return OPENSSL_SUCCESS;
+}
+
 static int hpre_sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 			     unsigned char *out, size_t *outlen,
 			     const unsigned char *in, size_t inlen)
@@ -887,8 +912,7 @@ static int hpre_sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 	const EVP_MD *md;
 	int c3_size;
 
-	if (!smctx || !smctx->e_hpre_sm2_ctx || !smctx->e_hpre_sm2_ctx->wd_ctx) {
-		fprintf(stderr, "smctx or sess NULL\n");
+	if (!hpre_sm2_smctx_check(smctx)) {
 		return OPENSSL_FAIL;
 	}
 
@@ -1417,8 +1441,7 @@ static int hpre_sm2_decrypt_check(EVP_PKEY_CTX *ctx,
 	const EVP_MD *md;
 	int hash_size;
 
-	if (!smctx || !smctx->e_hpre_sm2_ctx || !smctx->e_hpre_sm2_ctx->wd_ctx) {
-		fprintf(stderr, "smctx or sess NULL\n");
+	if (!hpre_sm2_smctx_check(smctx)) {
 		return OPENSSL_FAIL;
 	}
 
@@ -1571,8 +1594,7 @@ static int hpre_sm2_sign_check(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *si
 		return OPENSSL_SUCCESS;
 	}
 
-	if (!smctx || !smctx->e_hpre_sm2_ctx || !smctx->e_hpre_sm2_ctx->wd_ctx) {
-		fprintf(stderr, "smctx or sess NULL\n");
+	if (!hpre_sm2_smctx_check(smctx)) {
 		return OPENSSL_FAIL;
 	}
 
@@ -1732,8 +1754,7 @@ static int hpre_sm2_verify_check(EVP_PKEY_CTX *ctx,
 {
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 
-	if (!smctx || !smctx->e_hpre_sm2_ctx || !smctx->e_hpre_sm2_ctx->wd_ctx) {
-		fprintf(stderr, "smctx or sess NULL\n");
+	if (!hpre_sm2_smctx_check(smctx)) {
 		return OPENSSL_FAIL;
 	}
 

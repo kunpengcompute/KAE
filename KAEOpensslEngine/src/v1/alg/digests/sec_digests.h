@@ -113,7 +113,6 @@ struct sec_digest_priv {
 	const EVP_MD *soft_md;
 	uint32_t                switch_flag;
 	uint32_t                app_datasize;
-    bool            is_copy;
  	bool			is_stream_copy;
 	uint32_t		total_data_len;
 	__u64			long_data_len;   
