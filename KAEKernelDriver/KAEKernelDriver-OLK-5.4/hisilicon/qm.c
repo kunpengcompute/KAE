@@ -5093,7 +5093,7 @@ static int qm_register_abnormal_irq(struct hisi_qm *qm)
 			return 0;
 
 		ret = request_irq(pci_irq_vector(pdev, irq_vector), qm_rsvd_irq,
-				  IRQF_NO_AUTOEN, qm->dev_name, qm);
+				  0, qm->dev_name, qm);
 		if (ret) {
 			dev_err(&pdev->dev, "failed to request reserved irq, ret = %d!\n", ret);
 			return ret;
