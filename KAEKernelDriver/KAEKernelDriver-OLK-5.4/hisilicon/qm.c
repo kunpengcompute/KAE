@@ -880,8 +880,9 @@ static int qm_pm_get_sync(struct hisi_qm *qm)
 	if (!test_bit(QM_SUPPORT_RPM, &qm->caps))
 		return 0;
 
-	ret = pm_runtime_resume_and_get(dev);
+	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
+		pm_runtime_put_noidle(dev);
 		dev_err(dev, "failed to get_sync(%d).\n", ret);
 		return ret;
 	}
