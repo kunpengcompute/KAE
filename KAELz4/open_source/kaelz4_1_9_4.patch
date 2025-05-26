@@ -1,6 +1,6 @@
 diff -uprN lz4-1.9.4/lib/lz4_accelerater.h lz4-1.9.4-KAELz4/lib/lz4_accelerater.h
 --- lz4-1.9.4/lib/lz4_accelerater.h	1970-01-01 08:00:00.000000000 +0800
-+++ lz4-1.9.4-KAELz4/lib/lz4_accelerater.h	2024-10-07 17:08:36.102874530 +0800
++++ lz4-1.9.4-KAELz4/lib/lz4_accelerater.h	2025-05-07 10:35:14.790112130 +0800
 @@ -0,0 +1,131 @@
 +/* *
 + * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
@@ -134,8 +134,8 @@ diff -uprN lz4-1.9.4/lib/lz4_accelerater.h lz4-1.9.4-KAELz4/lib/lz4_accelerater.
 +
 +#endif
 diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
---- lz4-1.9.4/lib/lz4.c	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/lib/lz4.c	2024-10-07 17:08:36.102874530 +0800
+--- lz4-1.9.4/lib/lz4.c	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/lib/lz4.c	2025-05-07 10:35:14.790112130 +0800
 @@ -56,7 +56,13 @@
   */
  #define LZ4_ACCELERATION_MAX 65537
@@ -388,7 +388,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +        LZ4_CCtx ctxBody;
 +        ctxBody.kaeInited = 0;
 +        ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
-+        ctxBody.kaeConfig = NULL;
++        ctxBody.kaeConfig = 0;
 +
 +        ctxBody.seqStore.llCode = NULL;
 +        ctxBody.seqStore.mlCode = NULL;
@@ -397,7 +397,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +        ctxBody.seqStore.litStart = NULL;
 +        ctxBody.seqStore.sequencesStart = NULL;
 +        ctxBody.seqStore.sequences = NULL;
-+        
++
 +        ctxBody.compressionLevel = 8;
 +        ctxBody.kaeLevel = 8;
 +        ctxBody.seqnum = 0;
@@ -438,7 +438,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +
 +        int sequenceCount = 0;
 +        U64 offset_hist[3] = {1, 4, 8};
-+        
++
 +        uint32_t offBase = 0;
 +        uint32_t litLength = 0;
 +        uint16_t mlBase = 0;
@@ -465,44 +465,44 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +
 +            sequencespoint = ctxBody.seqStore.sequencesStart;
 +            litpoint = ctxBody.seqStore.litStart;
-+        
++
 +            // part2.硬件压缩结果在ctxBody中，下面需要对ctx中的sequence逐个解析对应过来
 +            int i = 0;
 +            sequenceCount = 0;
 +            offset_hist[0] = 1; offset_hist[1] = 4; offset_hist[2] = 8;
-+            
++
 +            while (sequenceCount < ctxBody.seqnum) {
 +                US_DEBUG("sequenceCount:%d, ctxBody.seqnum:%d.", sequenceCount, ctxBody.seqnum);
 +                sequenceCount++; // sequence计数
-+                offBase = sequencespoint->offBase;
++                offBase = sequencespoint->offBase + 1;
 +                litLength = sequencespoint->litLength;
 +                mlBase = sequencespoint->mlBase;
 +                US_DEBUG("%d:Before trans: offBase %d-litLength %d-mlbase %d-remainingLength %d\n", i++, offBase, litLength, mlBase, remainingLength);
 +
 +                /* 1.从repcode还原出raw offset，根据的zstd的table的逻辑，具体查看mannual文档 */
-+                size_t realoffset;
-+                if (offBase <= 3) {
-+                    idx = offBase - 1;
-+                    if (litLength == 0) {
-+                        idx++;
-+                    }
-+                    if (idx == 0) {
-+                        realoffset = offset_hist[0];
-+                    } else {
-+                        realoffset = idx < 3 ? offset_hist[idx] : offset_hist[0] - 1;
-+                        if (idx > 1) {
-+                            offset_hist[2] = offset_hist[1];
-+                        }
-+                        offset_hist[1] = offset_hist[0];
-+                        offset_hist[0] = realoffset;
-+                    }
-+                } else {
-+                    realoffset = offBase - 3;
-+                    offset_hist[2] = offset_hist[1];
-+                    offset_hist[1] = offset_hist[0];
-+                    offset_hist[0] = realoffset;
-+                }
-+                offBase = realoffset; // 真正的offset
++                //size_t realoffset;
++                //if (offBase <= 3) {
++                //    idx = offBase - 1;
++                //    if (litLength == 0) {
++                //        idx++;
++                //    }
++                //    if (idx == 0) {
++                //        realoffset = offset_hist[0];
++                //    } else {
++                //        realoffset = idx < 3 ? offset_hist[idx] : offset_hist[0] - 1;
++                //        if (idx > 1) {
++                //            offset_hist[2] = offset_hist[1];
++                //        }
++                //        offset_hist[1] = offset_hist[0];
++                //        offset_hist[0] = realoffset;
++                //    }
++                //} else {
++                //    realoffset = offBase - 3;
++                //    offset_hist[2] = offset_hist[1];
++                //    offset_hist[1] = offset_hist[0];
++                //    offset_hist[0] = realoffset;
++                //}
++                // offBase = realoffset; // 真正的offset
 +
 +                /* 2.基于mlBase是否为0（即3），对offset和literal length进行校正 */
 +                if (mlBase <= TOKEN_NUM_CONTROL) {
@@ -522,7 +522,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +                    tempLiteralLength += mlBase + 3;
 +                    US_DEBUG("%d:3match After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
 +                    sequencespoint++;
-+                    // 追踪 
++                    // 追踪
 +                    ip += litLength + mlBase + 3;
 +
 +                    continue; // 存完即可开启下一轮，因为无需组织token了
@@ -633,7 +633,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +                src += remainingLength; // src直接指到最终
 +                ip = src;
 +                // 组织token
-+                if (lastRun >= RUN_MASK) { 
++                if (lastRun >= RUN_MASK) {
 +                    size_t accumulator = lastRun - RUN_MASK;
 +                    *op++ = RUN_MASK << ML_BITS;
 +                    for(; accumulator >= 255 ; accumulator-=255) *op++ = 255;
@@ -657,7 +657,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
 +            }
 +            int tempresult = (int)(((char*)op) - ((char*)dst));
 +            US_DEBUG("subblock compress over, compressed block size:%d\n", tempresult);
-+    
++
 +            ctxBody.seqStore.lit = ctxBody.seqStore.litStart;
 +            ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart;
 +        }
@@ -688,7 +688,26 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
              const tableType_t tableType = ((sizeof(void*)==4) && ((uptrval)source > LZ4_DISTANCE_MAX)) ? byPtr : byU32;
              return LZ4_compress_generic(ctx, source, dest, inputSize, NULL, 0, notLimited, tableType, noDict, noDictIssue, acceleration);
          }
-@@ -1749,7 +2090,7 @@ int LZ4_saveDict (LZ4_stream_t* LZ4_dict
+@@ -1438,6 +1779,18 @@ int LZ4_compress_default(const char* src
+ }
+ 
+ 
++LZ4LIB_API int LZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result)
++{
++    return KAELZ4_compress_async(src, dst, callback, result);
++}
++
++
++LZ4LIB_API void LZ4_teardown_async_compress(void)
++{
++    KAELZ4_teardown_async_compress();
++}
++
++
+ /* Note!: This function leaves the stream in an unclean/broken state!
+  * It is not safe to subsequently use the same state with a _fastReset() or
+  * _continue() call without resetting it. */
+@@ -1749,7 +2102,7 @@ int LZ4_saveDict (LZ4_stream_t* LZ4_dict
      if (dictSize > 0) {
          const BYTE* const previousDictEnd = dict->dictionary + dict->dictSize;
          assert(dict->dictionary);
@@ -697,7 +716,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
      }
  
      dict->dictionary = (const BYTE*)safeBuffer;
-@@ -1826,7 +2167,7 @@ LZ4_decompress_unsafe_generic(
+@@ -1826,7 +2179,7 @@ LZ4_decompress_unsafe_generic(
              ip += ll;
              if ((size_t)(oend-op) < MFLIMIT) {
                  if (op==oend) break;  /* end of block */
@@ -706,7 +725,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                  /* incorrect end of block :
                   * last match must start at least MFLIMIT==12 bytes before end of output block */
                  return -1;
-@@ -2020,7 +2361,7 @@ LZ4_decompress_generic(
+@@ -2020,7 +2373,7 @@ LZ4_decompress_generic(
                  /* We don't need to check oend, since we check it once for each loop below */
                  if (ip > iend-(16 + 1/*max lit + offset + nextToken*/)) { goto safe_literal_copy; }
                  /* Literals can only be <= 14, but hope compilers optimize better when copy by a register size */
@@ -715,7 +734,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                  ip += length; op = cpy;
              }
  
-@@ -2055,9 +2396,9 @@ LZ4_decompress_generic(
+@@ -2055,9 +2408,9 @@ LZ4_decompress_generic(
                          assert(match <= op);
                          assert(op + 18 <= oend);
  
@@ -728,7 +747,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                          op += length;
                          continue;
              }   }   }
-@@ -2076,7 +2417,7 @@ LZ4_decompress_generic(
+@@ -2076,7 +2429,7 @@ LZ4_decompress_generic(
  
                  if (length <= (size_t)(lowPrefix-match)) {
                      /* match fits entirely within external dictionary : just copy */
@@ -737,7 +756,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                      op += length;
                  } else {
                      /* match stretches into both external dictionary and current block */
-@@ -2115,7 +2456,6 @@ LZ4_decompress_generic(
+@@ -2115,7 +2468,6 @@ LZ4_decompress_generic(
              assert(ip < iend);
              token = *ip++;
              length = token >> ML_BITS;  /* literal length */
@@ -745,7 +764,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
              /* A two-stage shortcut for the most common case:
               * 1) If the literal length is 0..14, and there is enough space,
               * enter the shortcut and copy 16 bytes on behalf of the literals
-@@ -2130,6 +2470,7 @@ LZ4_decompress_generic(
+@@ -2130,6 +2482,7 @@ LZ4_decompress_generic(
                && likely((ip < shortiend) & (op <= shortoend)) ) {
                  /* Copy the literals */
                  LZ4_memcpy(op, ip, 16);
@@ -753,7 +772,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                  op += length; ip += length;
  
                  /* The second stage: prepare for match copying, decode full info.
-@@ -2144,9 +2485,9 @@ LZ4_decompress_generic(
+@@ -2144,9 +2497,9 @@ LZ4_decompress_generic(
                    && (offset >= 8)
                    && (dict==withPrefix64k || match >= lowPrefix) ) {
                      /* Copy the match. */
@@ -766,7 +785,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                      op += length + MINMATCH;
                      /* Both stages worked, load the next token. */
                      continue;
-@@ -2212,7 +2553,7 @@ LZ4_decompress_generic(
+@@ -2212,7 +2565,7 @@ LZ4_decompress_generic(
                          goto _output_error;
                      }
                  }
@@ -775,7 +794,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                  ip += length;
                  op += length;
                  /* Necessarily EOF when !partialDecoding.
-@@ -2258,7 +2599,7 @@ LZ4_decompress_generic(
+@@ -2258,7 +2611,7 @@ LZ4_decompress_generic(
  
                  if (length <= (size_t)(lowPrefix-match)) {
                      /* match fits entirely within external dictionary : just copy */
@@ -784,7 +803,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                      op += length;
                  } else {
                      /* match stretches into both external dictionary and current block */
-@@ -2304,10 +2645,10 @@ LZ4_decompress_generic(
+@@ -2304,10 +2657,10 @@ LZ4_decompress_generic(
                  op[2] = match[2];
                  op[3] = match[3];
                  match += inc32table[offset];
@@ -797,7 +816,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
                  match += 8;
              }
              op += 8;
-@@ -2322,12 +2663,11 @@ LZ4_decompress_generic(
+@@ -2322,12 +2675,11 @@ LZ4_decompress_generic(
                  }
                  while (op < cpy) { *op++ = *match++; }
              } else {
@@ -812,8 +831,8 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-KAELz4/lib/lz4.c
          DEBUGLOG(5, "decoded %i bytes", (int) (((char*)op)-dst));
          return (int) (((char*)op)-dst);     /* Nb of output bytes decoded */
 diff -uprN lz4-1.9.4/lib/lz4frame.c lz4-1.9.4-KAELz4/lib/lz4frame.c
---- lz4-1.9.4/lib/lz4frame.c	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/lib/lz4frame.c	2024-10-07 17:09:49.250874530 +0800
+--- lz4-1.9.4/lib/lz4frame.c	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/lib/lz4frame.c	2025-05-07 10:35:14.790112130 +0800
 @@ -390,8 +390,11 @@ static size_t LZ4F_compressBound_interna
          size_t const blockCRCSize = BFSize * prefsPtr->frameInfo.blockChecksumFlag;
          size_t const frameEnd = BHSize + (prefsPtr->frameInfo.contentChecksumFlag*BFSize);
@@ -838,7 +857,25 @@ diff -uprN lz4-1.9.4/lib/lz4frame.c lz4-1.9.4-KAELz4/lib/lz4frame.c
  
      MEM_INIT(&options, 0, sizeof(options));
      options.stableSrc = 1;
-@@ -831,9 +835,15 @@ static size_t LZ4F_makeBlock(void* dst,
+@@ -514,6 +518,17 @@ size_t LZ4F_compressFrame(void* dstBuffe
+     return result;
+ }
+ 
++#include "kaelz4.h"
++LZ4FLIB_API int LZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback,
++                                         struct kaelz4_result *result, const LZ4F_preferences_t* preferencesPtr)
++{
++    return KAELZ4F_compressFrame_async(src, dst, callback, result, preferencesPtr);
++}
++
++LZ4LIB_API void LZ4_async_compress_init(void)
++{
++    KAELZ4_async_compress_init(LZ4_compress_default, (sw_compress_frame_fn)LZ4F_compressFrame);
++}
+ 
+ /*-***************************************************
+ *   Dictionary compression
+@@ -831,9 +846,15 @@ static size_t LZ4F_makeBlock(void* dst,
      BYTE* const cSizePtr = (BYTE*)dst;
      U32 cSize;
      assert(compress != NULL);
@@ -857,9 +894,63 @@ diff -uprN lz4-1.9.4/lib/lz4frame.c lz4-1.9.4-KAELz4/lib/lz4frame.c
  
      if (cSize == 0 || cSize >= srcSize) {
          cSize = (U32)srcSize;
+diff -uprN lz4-1.9.4/lib/lz4frame.h lz4-1.9.4-KAELz4/lib/lz4frame.h
+--- lz4-1.9.4/lib/lz4frame.h	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/lib/lz4frame.h	2025-05-07 10:35:14.794112130 +0800
+@@ -225,6 +225,18 @@ LZ4FLIB_API size_t LZ4F_compressFrame(vo
+                                 const void* srcBuffer, size_t srcSize,
+                                 const LZ4F_preferences_t* preferencesPtr);
+ 
++#include "kaelz4.h"
++/**
++ * @brief: fream compress async api
++ * @param: src [IN] : input data
++ * @param: dst [OUT] : output data
++ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
++ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
++ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
++ * @return: 0 success, other fail
++ */
++LZ4FLIB_API int LZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback,
++                                         struct kaelz4_result *result, const LZ4F_preferences_t* preferencesPtr);
+ 
+ /*-***********************************
+ *  Advanced compression functions
+diff -uprN lz4-1.9.4/lib/lz4.h lz4-1.9.4-KAELz4/lib/lz4.h
+--- lz4-1.9.4/lib/lz4.h	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/lib/lz4.h	2025-05-07 10:56:15.122112130 +0800
+@@ -232,6 +232,28 @@ LZ4LIB_API int LZ4_compressBound(int inp
+ */
+ LZ4LIB_API int LZ4_compress_fast (const char* src, char* dst, int srcSize, int dstCapacity, int acceleration);
+ 
++#include "kaelz4.h"
++/**
++ * @brief: block compress async api
++ * @param: src [IN] : input data
++ * @param: dst [OUT] : output data
++ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
++ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
++ * @return: 0 success, other fail
++ */
++LZ4LIB_API int LZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result);
++
++/*! LZ4_async_compress_init() :
++ *  Register software compress function, initialize Task Queues and Threads on the KAE Side.
++ *  If not being called before, LZ4_compress_async will not handle any exceptions and simply return failure.
++ *  Note: Can not be called before fork();
++ */
++LZ4LIB_API void LZ4_async_compress_init(void);
++
++/*! LZ4_teardown_async_compress() :
++ *  Destroy all Task Queues and Threads on the KAE Side.
++ */
++LZ4LIB_API void LZ4_teardown_async_compress(void);
+ 
+ /*! LZ4_compress_fast_extState() :
+  *  Same as LZ4_compress_fast(), using an externally allocated memory space for its state.
 diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-KAELz4/lib/Makefile
---- lz4-1.9.4/lib/Makefile	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/lib/Makefile	2024-10-07 17:08:36.102874530 +0800
+--- lz4-1.9.4/lib/Makefile	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/lib/Makefile	2025-05-07 10:35:14.794112130 +0800
 @@ -53,6 +53,12 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -
               -Wswitch-enum -Wdeclaration-after-statement -Wstrict-prototypes \
               -Wundef -Wpointer-arith -Wstrict-aliasing=1
@@ -874,8 +965,8 @@ diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-KAELz4/lib/Makefile
  
  SRCFILES := $(sort $(wildcard *.c))
 diff -uprN lz4-1.9.4/programs/Makefile lz4-1.9.4-KAELz4/programs/Makefile
---- lz4-1.9.4/programs/Makefile	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/programs/Makefile	2024-10-07 17:08:36.110874530 +0800
+--- lz4-1.9.4/programs/Makefile	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/programs/Makefile	2025-05-07 10:35:14.794112130 +0800
 @@ -60,6 +60,11 @@ ifeq ($(TARGET_OS)$(shell $(OS_VERSION))
  LDFLAGS  += -lrt
  endif
@@ -889,8 +980,8 @@ diff -uprN lz4-1.9.4/programs/Makefile lz4-1.9.4-KAELz4/programs/Makefile
  
  LZ4_VERSION=$(LIBVER)
 diff -uprN lz4-1.9.4/tests/fuzzer.c lz4-1.9.4-KAELz4/tests/fuzzer.c
---- lz4-1.9.4/tests/fuzzer.c	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/tests/fuzzer.c	2024-10-07 17:08:36.110874530 +0800
+--- lz4-1.9.4/tests/fuzzer.c	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/tests/fuzzer.c	2025-05-07 10:35:14.794112130 +0800
 @@ -75,7 +75,7 @@ typedef size_t uintptr_t;   /* true on m
  /*-************************************
  *  Constants
@@ -922,8 +1013,8 @@ diff -uprN lz4-1.9.4/tests/fuzzer.c lz4-1.9.4-KAELz4/tests/fuzzer.c
              {   int const bufferSize = LZ4_DECOMPRESS_INPLACE_BUFFER_SIZE(sampleSize);
                  int const startInputIndex = bufferSize - cSize;
 diff -uprN lz4-1.9.4/tests/Makefile lz4-1.9.4-KAELz4/tests/Makefile
---- lz4-1.9.4/tests/Makefile	2024-10-07 17:08:31.038874530 +0800
-+++ lz4-1.9.4-KAELz4/tests/Makefile	2024-10-07 17:08:36.110874530 +0800
+--- lz4-1.9.4/tests/Makefile	2022-08-16 06:45:31.000000000 +0800
++++ lz4-1.9.4-KAELz4/tests/Makefile	2025-05-07 10:35:14.794112130 +0800
 @@ -41,6 +41,12 @@ CFLAGS  += -Wall -Wextra -Wundef -Wcast-
             -Wpointer-arith -Wstrict-aliasing=1
  CFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS)

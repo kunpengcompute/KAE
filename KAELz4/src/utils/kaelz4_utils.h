@@ -1,13 +1,13 @@
 /*
  * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
- * @Description: kaezstd init and utils
+ * @Description: kaelz4 init and utils
  * @Author: LiuYongYang
  * @Date: 2024-02-23
  * @LastEditTime: 2024-02-23
  */
 
 /*****************************************************************************
- * @file kaezstd_utils.h
+ * @file kaelz4_utils.h
  *
  * This file provides the utils funtion;
  *
@@ -24,6 +24,7 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 #define gettid() syscall(SYS_gettid)
 #define PRINTPID \
@@ -98,6 +99,28 @@ static inline int kae_spinlock_trylock(struct kae_spinlock *lock)
 static inline void kae_spinlock_unlock(struct kae_spinlock *lock)
 {
     __sync_lock_release(&lock->lock);
+}
+
+#define NSEC_TO_SEC 1000000000L
+static inline void get_time_out_spec(struct timespec *start, struct timespec *polling_timeout)
+{
+    clock_gettime(CLOCK_REALTIME, start); /* Get current real time. */
+    start->tv_sec += polling_timeout->tv_sec;
+    start->tv_nsec += polling_timeout->tv_nsec;
+    start->tv_sec += start->tv_nsec / NSEC_TO_SEC;
+    start->tv_nsec = start->tv_nsec % NSEC_TO_SEC;
+}
+
+static inline int check_time_out(struct timespec *time)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now); /* Get current real time. */
+
+    if ((now.tv_sec < time->tv_sec) || (now.tv_sec == time->tv_sec && now.tv_nsec <= time->tv_nsec)) {
+        return 0;
+    }
+
+    return 1;
 }
 
 #endif

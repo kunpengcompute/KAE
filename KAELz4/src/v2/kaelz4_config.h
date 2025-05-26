@@ -5,8 +5,8 @@
  * Create: 2021-7-19
  */
 
-#ifndef KAEZSTD_CTX_H
-#define KAEZSTD_CTX_H
+#ifndef KAELZ4_CTX_H
+#define KAELZ4_CTX_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +22,7 @@ typedef struct Comp4Tuple_S {
     seqDef* sequencesStart;     /* sequences address start */
     unsigned int litlen;        /* literal lens */
     unsigned int seqnum;        /* sequences lens */
-    ZSTD_longLengthType_e longLengthType;  /* litlen overflow flag */
+    LZ4_longLengthType_e longLengthType;  /* litlen overflow flag */
     unsigned int longLengthPos; /* litlen overflow position */
     char* additional_p;         /* addition data ptr */
     /*
@@ -46,7 +46,7 @@ typedef struct Info_S {
     struct wd_ctx_config ctx_config;
 } Info;
 
-typedef struct KaeZstdConfig_S {
+typedef struct KaeLz4Config_S {
     Info info;
     Options opts;
 
@@ -55,16 +55,16 @@ typedef struct KaeZstdConfig_S {
     struct wd_comp_req req;
 
     Comp4Tuple tuple;
-} KaeZstdConfig;
+} KaeLz4Config;
 
-#define KAEZSTD_DEFAULT_CTX_NUM		1
-#define KAEZSTD_DEFAULT_THREAD_NUM	1
+#define KAELZ4_DEFAULT_CTX_NUM		1
+#define KAELZ4_DEFAULT_THREAD_NUM	1
 #define REQ_SRCBUFF_LEN (128 * 1024)
 #define REQ_DSTBUFF_LEN (128 * 1024 * 10)
 #define REQ_WINDOW_SIZE 2
 #define REQ_COMPRESS_LEVEL 8
 
-KaeZstdConfig* kaezstd_get_config(LZ4_CCtx* zc);
-void kaezstd_set_config(LZ4_CCtx* zc, KaeZstdConfig* config);
+KaeLz4Config* kaelz4_get_config(LZ4_CCtx* zc);
+void kaelz4_set_config(LZ4_CCtx* zc, KaeLz4Config* config);
 
 #endif

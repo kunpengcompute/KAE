@@ -1,3 +1,11 @@
 .vscode
 kae_build
 KAEZlib/open_source/zlib-1.2.11
+open_source
+# *Test*
+*.so.*
+*.a
+*.o
+lz4.h
+lz4frame.h
+xxhash.*
