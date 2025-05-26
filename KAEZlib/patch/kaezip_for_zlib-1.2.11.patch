@@ -96,7 +96,7 @@ diff -Naru zlib-1.2.11/deflate.c zlib-1.2.11_new/deflate.c
      return ret;
  }
  
-+uLong ZEXPORT lz_deflateBound(strm, sourceLen);
++uLong ZEXPORT lz_deflateBound(z_streamp strm, uLong sourceLen);
 +int ZEXPORT deflateReset(strm)
 +z_streamp strm;
 +{
