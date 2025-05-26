@@ -153,7 +153,7 @@ function build_rpm()
     mkdir -p $KAE_BUILD/uadk/include/drv
     mkdir -p $KAE_BUILD/uadk/pkgconfig
 
-    cp ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/uadk/lib
+    cp ${KAE_UADK_DIR}/.libs/*.so* $KAE_BUILD/uadk/lib
     cp -r $KAE_UADK_DIR/include/*.h              $KAE_BUILD/uadk/include
     cp -r $KAE_UADK_DIR/v1/*.h                   $KAE_BUILD/uadk/include/v1
     cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD/uadk/include/drv
@@ -168,7 +168,7 @@ function build_rpm()
     cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD_HEAD/uadk/drv
 
     mkdir -p $KAE_BUILD/lib
-    cp ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/lib
+    cp ${KAE_UADK_DIR}/.libs/*.so* $KAE_BUILD/lib
 
 
     # 编译openssl
@@ -180,7 +180,7 @@ function build_rpm()
 
 
     mkdir -p $KAE_BUILD/KAEOpensslEngine/lib
-    cp -r $KAE_OPENSSL_DIR/src/.libs/*so* $KAE_BUILD/KAEOpensslEngine/lib
+    cp -r $KAE_OPENSSL_DIR/src/.libs/*.so* $KAE_BUILD/KAEOpensslEngine/lib
 
 
 
