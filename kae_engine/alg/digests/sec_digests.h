@@ -89,6 +89,9 @@ struct sec_digest_priv {
     uint32_t                switch_flag;
     uint32_t                copy;
     uint32_t                app_datasize;
+    bool			is_stream_copy;
+	uint32_t		total_data_len;
+    __u64			long_data_len;   
 };
 
 struct digest_engine_ctx {
