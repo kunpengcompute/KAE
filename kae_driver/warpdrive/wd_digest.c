@@ -254,6 +254,25 @@ static int digest_recv_sync(struct wcrypto_digest_ctx *ctx,
 	return ret;
 }
 
+static int append_tag_restore_status(struct wcrypto_digest_ctx *ctxt,
+				     struct wcrypto_digest_op_data *opdata,
+				     struct wcrypto_digest_msg *req)
+{
+	if (opdata->has_next == WCRYPTO_DIGEST_STREAM_END)
+		opdata->has_next = WCRYPTO_DIGEST_END;
+	else if (opdata->has_next == WCRYPTO_DIGEST_STREAM_DOING)
+		opdata->has_next = WCRYPTO_DIGEST_DOING;
+	else
+		return -WD_EINVAL;
+
+	ctxt->io_bytes = *(__u64 *)opdata->priv;
+	req->iv_bytes = opdata->out_bytes;
+	opdata->priv = NULL;
+
+	return WD_SUCCESS;
+}
+
+
 int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 		void *tag)
 {
@@ -270,6 +289,14 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 	cookie = get_digest_cookie(ctxt);
 	if (!cookie)
 		return -WD_EBUSY;
+	
+	req = &cookie->msg;
+	if (opdata->has_next > WCRYPTO_DIGEST_DOING) {
+			ret = append_tag_restore_status(ctxt, opdata, req);
+			if (unlikely(ret))
+				goto fail_with_cookie;
+	}
+
 	if (tag) {
 		if (!ctxt->setup.cb) {
 			WD_ERR("ctx call back is null!\n");
@@ -279,7 +306,6 @@ int wcrypto_do_digest(void *ctx, struct wcrypto_digest_op_data *opdata,
 	}
 	cookie->tag.priv = opdata->priv;
 
-	req = &cookie->msg;
 	ret = digest_request_init(req, opdata, ctxt);
 	if (ret)
 		goto fail_with_cookie;
