@@ -12,6 +12,9 @@ root_path=$curd/../..
 if [ -d ./googletest-release-1.11.0 ]
 then
     echo -e "\033[32m The googletest-release-1.11.0 directory already exists and does not need to be downloaded. \033[0m"
+    cd curd
+    cp ../../../KAEZlib/test/gtest/gtest-download/googletest-release-1.11.0.zip .
+    unzip googletest-release-1.11.0.zip
     exit 0
 fi
 
