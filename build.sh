@@ -400,11 +400,17 @@ function engine_clean_openssl3()
 
 function build_engine_gmssl()
 {
+    gmssl_install_path=$1
+    if [ "$1" = "" ];then
+        gmssl_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    gmssl_install_path=${gmssl_install_path%/}
+
     cd ${SRC_PATH}/KAEOpensslEngine
     export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
     autoreconf -i
     # gmssl当前仅支持no-sva设备
-    ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
+    ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl --with-openssl_install_dir=$gmssl_install_path  CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
     make -j
     make install
     build_engine_log
@@ -621,7 +627,8 @@ function clear_all_components()
 main() {  
     check_environment  
     build_check_OS_version  
-  
+    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    
     case "$1" in  
         "all")  
             build_all_components  
@@ -664,7 +671,7 @@ main() {
             if [ "$2" = "clean" ]; then  
                 engine_clean_gmssl
             else  
-                build_engine_gmssl
+                build_engine_gmssl $2
             fi  
             ;;
         "engine3_tongsuo")
