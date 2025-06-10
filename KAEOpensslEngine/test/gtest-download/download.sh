@@ -9,7 +9,7 @@ curd=$(pwd)
 test=$curd/..
 root_path=$curd/../..
 
-if [ -d ./googletest-release-1.11.0 ]
+if [ ! -d ./googletest-release-1.11.0 ]
 then
     echo -e "\033[32m The googletest-release-1.11.0 directory already exists and does not need to be downloaded. \033[0m"
     cd curd
