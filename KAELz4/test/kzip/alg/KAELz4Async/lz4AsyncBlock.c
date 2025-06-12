@@ -9,14 +9,13 @@ static int lz4async_block_compress(const unsigned char *src, unsigned char *dst,
     return ret;
 }
 
-
 // LZ4 解压实现
-static int lz4async_block_decompress_sync(const unsigned char *src, unsigned int *src_len, unsigned char *dst, unsigned int *dst_len)
+static int lz4async_block_decompress(const unsigned char *src, unsigned char *dst, lz4_async_callback cb, struct kaelz4_result *result)
 {
-    int ret =  LZ4_decompress_safe((const char *)src, (char *)dst, *src_len, *dst_len);
-    *dst_len = ret;  // lz4 LZ4_decompress_safe 的返回值才是解压的空间大小。
-    return ret > 0 ? 0 : ret;
+    int ret = LZ4_decompress_async(src, dst, cb, result);
+    return ret;
 }
+
 static int lz4_bound(int src_len) {
     return LZ4_compressBound(src_len);
 }
@@ -31,7 +30,7 @@ compression_algorithm_t lz4async_block_algorithm = {
     .name = "kaelz4async_block",
     .async_compress = lz4async_block_compress,
     .bound = lz4_bound,
-    .decompress = lz4async_block_decompress_sync,
+    .async_decompress = lz4async_block_decompress,
     .init = lz4_async_block_init
 };
 

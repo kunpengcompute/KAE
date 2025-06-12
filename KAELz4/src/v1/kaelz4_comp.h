@@ -84,6 +84,7 @@ struct kaelz4_async_ctrl {
     struct kaelz4_compress_ctx *tail;
     sw_compress_fn sw_compress;
     sw_compress_frame_fn sw_compress_frame;
+    sw_decompress_fn sw_decompress;
     int cur_num_in_comp; // 当前正在压缩的任务数量
     kaelz4_ctx_t *kz_ctx[MAX_NUM_IN_COMP];
     int ctx_index;

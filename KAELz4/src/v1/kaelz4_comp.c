@@ -341,10 +341,8 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
     size_t srcSize = req->src_size;
     U32 seqCount = 0;
     U32 tempLiteralLength = 0;
-    U32 tempSeqNum = 0;
     BYTE* token = NULL;
     U32 len = 0;
-    U32 matchCode = 0;
 
     while (seqCount < seqSum) {
         offBase = sequencesPtr->offBase + 1;
@@ -354,13 +352,13 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
         seqCount++;
 
         if (mlBase == 0) {
-            tempLiteralLength += litLength;
-            tempSeqNum++;
+            tempLiteralLength += litLength + 3;
             continue;
         }
 
-        litLength += tempLiteralLength + tempSeqNum * 3;
-        tempSeqNum = 0;
+        mlBase -= 1;
+        litLength += tempLiteralLength;
+        tempLiteralLength = 0;
 
         token = op++;
         if (litLength >= RUN_MASK) {
@@ -377,8 +375,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
 
         LZ4_wildCopy16(op, ip, op + litLength);
         op += litLength;
-        ip += litLength + mlBase + 3;
-        tempLiteralLength = 0;
+        ip += litLength + mlBase + 4;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
@@ -387,17 +384,16 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
             return KAE_LZ4_REBUILD_FAIL;
         }
 
-        matchCode = mlBase - 1;
-        if (matchCode >= ML_MASK) {
+        if (mlBase >= ML_MASK) {
             *token += ML_MASK;
-            matchCode -= ML_MASK;
-            while (matchCode >= 255) {
+            mlBase -= ML_MASK;
+            while (mlBase >= 255) {
                 *op++ = 255;
-                matchCode -= 255;
+                mlBase -= 255;
             }
-            *op++ = (BYTE)matchCode;
+            *op++ = (BYTE)mlBase;
         } else {
-            *token += (BYTE)(matchCode);
+            *token += (BYTE)(mlBase);
         }
     }
 
@@ -447,10 +443,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
     size_t srcSize = req->src_size;
     U32 seqCount = 0;
     U32 tempLiteralLength = 0;
-    U32 tempSeqNum = 0;
     BYTE* token = NULL;
     U32 len = 0;
-    U32 matchCode = 0;
 
     // 生成first new sequence 时，继承prev subblock的last literal
     // 如果无法生成，则本分块整体作为literal，留给后续的分块的first new sequence继承
@@ -463,13 +457,13 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
         seqCount++;
 
         if (mlBase == 0) {
-            tempLiteralLength += litLength;
-            tempSeqNum++;
+            tempLiteralLength += litLength + 3;
             continue;
         }
 
-        litLength += tempLiteralLength + tempSeqNum * 3 + req->compress_ctx->prev_last_lit_len;
-        tempSeqNum = 0;
+        mlBase -= 1;
+        litLength += tempLiteralLength + req->compress_ctx->prev_last_lit_len;
+        tempLiteralLength = 0;
 
         token = op++;
         if (litLength >= RUN_MASK) {
@@ -495,8 +489,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
 
         LZ4_wildCopy16(op, ip, op + litLength);
         op += litLength;
-        ip += litLength + mlBase + 3;
-        tempLiteralLength = 0;
+        ip += litLength + mlBase + 4;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
@@ -505,17 +498,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
             return KAE_LZ4_REBUILD_FAIL;
         }
 
-        matchCode = mlBase - 1;
-        if (matchCode >= ML_MASK) {
+        if (mlBase >= ML_MASK) {
             *token += ML_MASK;
-            matchCode -= ML_MASK;
-            while (matchCode >= 255) {
+            mlBase -= ML_MASK;
+            while (mlBase >= 255) {
                 *op++ = 255;
-                matchCode -= 255;
+                mlBase -= 255;
             }
-            *op++ = (BYTE)matchCode;
+            *op++ = (BYTE)mlBase;
         } else {
-            *token += (BYTE)(matchCode);
+            *token += (BYTE)(mlBase);
         }
         break;
     }
@@ -528,13 +520,13 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
         seqCount++;
 
         if (mlBase == 0) {
-            tempLiteralLength += litLength;
-            tempSeqNum++;
+            tempLiteralLength += litLength + 3;
             continue;
         }
 
-        litLength += tempLiteralLength + tempSeqNum * 3;
-        tempSeqNum = 0;
+        mlBase -= 1;
+        litLength += tempLiteralLength;
+        tempLiteralLength = 0;
 
         token = op++;
         if (litLength >= RUN_MASK) {
@@ -551,8 +543,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
 
         LZ4_wildCopy16(op, ip, op + litLength);
         op += litLength;
-        ip += litLength + mlBase + 3;
-        tempLiteralLength = 0;
+        ip += litLength + mlBase + 4;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
@@ -561,17 +552,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
             return KAE_LZ4_REBUILD_FAIL;
         }
 
-        matchCode = mlBase - 1;
-        if (matchCode >= ML_MASK) {
+        if (mlBase >= ML_MASK) {
             *token += ML_MASK;
-            matchCode -= ML_MASK;
-            while (matchCode >= 255) {
+            mlBase -= ML_MASK;
+            while (mlBase >= 255) {
                 *op++ = 255;
-                matchCode -= 255;
+                mlBase -= 255;
             }
-            *op++ = (BYTE)matchCode;
+            *op++ = (BYTE)mlBase;
         } else {
-            *token += (BYTE)(matchCode);
+            *token += (BYTE)(mlBase);
         }
     }
 
@@ -873,11 +863,13 @@ int kaelz4_async_is_thread_do_comp_full(void)
     return g_async_ctrl.cur_num_in_comp < MAX_NUM_IN_COMP ? 0 : 1;
 }
 
-void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame)
+void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+                       sw_decompress_fn sw_decompress)
 {
     g_async_ctrl.stop_flag = stop;
     g_async_ctrl.sw_compress = sw_compress;
     g_async_ctrl.sw_compress_frame = sw_compress_frame;
+    g_async_ctrl.sw_decompress = sw_decompress;
 }
 
 static int kaelz4_async_sw_compress(struct kaelz4_compress_ctx *compress_ctx)

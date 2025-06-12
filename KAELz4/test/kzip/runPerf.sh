@@ -1,9 +1,11 @@
 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:/usr/local/kaezstd/lib/:/usr/local/kaezip/lib/:$LD_LIBRARY_PATH
 export KAE_LZ4_WINTYPE=8
 export KAE_LZ4_COMP_TYPE=8
+export KAE_LZ4_ASYNC_THREAD_NUM=12
+export KAE_LZ4_ASYNC_DC_THREAD_NUM=10
 
 # 使用 getopts 解析命令行参数
-while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:" opt; do
+while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:" opt; do
   case $opt in
     A)  # 要测试的算法
       Alg="$OPTARG"
@@ -26,6 +28,12 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:" opt; do
     p)
       testFile="$OPTARG"
       ;;
+    k)
+      useKAENum="$OPTARG"
+      ;;
+    r)
+      isTestCrc="$OPTARG"
+      ;;
     *)
       echo "Usage: all params  m:l:n:w:f:o:v:A:h:g:s:c:"
       exit 1
@@ -40,6 +48,8 @@ loppTimes=${loppTimes:=1}
 inflightNum=${inflightNum:=64}
 threadsNum=${threadsNum:=1}
 testFile=${testFile:="../../../scripts/compressTestDataset/calgary"}
+useKAENum=${useKAENum:=2}
+isTestCrc=${isTestCrc:=0}
 
 buildParams="kaelz4"
 sh build.sh $buildParams
@@ -58,7 +68,7 @@ if [[ $cpu1_range =~ ([0-9]+)-([0-9]+) ]]; then
     cpu1_start_cpu=${BASH_REMATCH[1]}
     cpu1_end_cpu=${BASH_REMATCH[2]}
 fi
-useEngineNumsForThisTest=2 # 本次测试使用的加速器的数量
+useEngineNumsForThisTest=$useKAENum # 本次测试使用的加速器的数量
 # 本次测试使用的CPU配置。  机器中numa总量-单个numa的cpu核心数量-超线程的单核线程倍数-本次测试使用的加速器数量
 cpuConfigStr="$numa_nodes-$cpu_count_per_numa-$threads_per_core-$useEngineNumsForThisTest"
 # 获取使用前两个Numa的话，CPU的绑核范围
@@ -75,15 +85,16 @@ rm -rf $testFileOrigin
 rm -rf $testFileComped.meta
 rm -rf $testFileOrigin.meta
 
-echo "taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum"
-echo "./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum"
+echo "taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc"
+echo "taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc"
 
 date
 # gdb --args
-taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum
+taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
 date
 
-./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum
+# sleep 1
+taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
 date
 if [[ ! -f "$testFile" ]]; then
     echo "Error: 压缩异常!未成功压缩文件"

@@ -25,22 +25,25 @@ struct compress_out_buf {
 
 struct compress_ctx;
 
-struct compress_param {
+struct __attribute__((aligned(64))) compress_param {
     struct kaelz4_result result;
     struct compress_ctx *ctx;
-    struct timeval start_time;
     uint32_t ibuf_crc;
     uint32_t obuf_crc;
     unsigned int sn;
     unsigned int loop_index;
-    unsigned char*src;
     unsigned int src_len;
-    unsigned char*dst;
     unsigned int dst_len;
+    unsigned char*src;
+    unsigned char*dst;
+    uint64_t start_time;
     volatile unsigned int done;
 };
 
 struct compress_ctx {
+    struct compress_param param_buf[1024];
+    compression_algorithm_t *algorithm;
+    unsigned int param_index;
     unsigned int loop_times;
     unsigned int inflight_num;
     unsigned int loop_index;
@@ -50,13 +53,11 @@ struct compress_ctx {
     unsigned long src_len;
     unsigned long out_total_len;
     unsigned int chunk_len;
-    compression_algorithm_t *algorithm;
     int compress_or_decompress;
     struct compress_out_buf *out_buf_list;
     struct compress_out_buf *out_buf_tail;
     int thread_id;
-    struct compress_param param_buf[1024];
-    unsigned int param_index;
+    int with_crc;
 };
 
 

@@ -30,7 +30,7 @@
 #define GB *(1U << 30)
 
 int g_file_chunk_size = 0; // 测试分片大小。 默认 0kb 不分片
-int g_log_level = 0; // 打印日志级别。 0：不开启打印。 1: 压缩率打印。 2：单次时延打印
+int g_log_level = 1; // 打印日志级别。 0：不统计时延。 1:时延统计
 int g_cpu_threads_per_core = 1; // 是否开启超线程。 1: 未开启。 2:开启
 
 static uLong read_inputFile(const char* fileName, void** input)
@@ -219,16 +219,23 @@ static uint8_t *get_compress_input(size_t input_sz)
 
     return inbuf;
 }
-
+// 获取当前 ns 时间
+static uint64_t get_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
 static void compress_async_polling(struct compress_param *param)
 {
     struct compress_ctx *ctx = param->ctx;
 
-    while (param->done != 1) {
-        // usleep(1);
+    while (unlikely(param->done != 1)) {
+        ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
+        param = &ctx->param_buf[ctx->param_index];
     }
     param->done = 0;
-    rmb();
+
     if (param->loop_index > 0) {
         ctx->out_total_len += param->dst_len;
         ctx->finish_num++;
@@ -271,18 +278,20 @@ static void compress_async_callback(struct kaelz4_result *result)
         printf("[user]回调压缩异常 : %d\n", result->status);
     }
     struct compress_param *param = (struct compress_param *)result->user_data;
-    struct timeval stop_time;
 
-    if (unlikely(g_log_level == 1)) {
-        gettimeofday(&stop_time, NULL);
-        uLong timeonce = (stop_time.tv_sec - param->start_time.tv_sec) * 1000000 + stop_time.tv_usec -
-                         param->start_time.tv_usec;
-        // printf("单次  接口调用 delay: %.3f milliseconds\n", timeonce / 1000.0);
-        float rounded_time_delay = round(timeonce) / 1000.0;
-        record_latency(rounded_time_delay);
-    }
     param->dst_len = result->dst_len;
-    wmb();
+    if ((param->ctx->algorithm->async_compress != NULL && param->ctx->compress_or_decompress != 0) ||
+        ((param->ctx->algorithm->async_decompress != NULL && param->ctx->compress_or_decompress == 0))) {
+        wmb();
+    }
+
+    if (g_log_level == 1) {
+        uint64_t end = get_ns();
+        uint64_t timeonce = end - param->start_time;
+        if(timeonce > 0) {
+            record_latency(timeonce, param->sn);
+        }
+    }
     param->done = 1;
     return;
 }
@@ -298,7 +307,7 @@ static int do_real_compression(struct compress_ctx *ctx, const unsigned char *sr
         }
     } else { // 解压逻辑
         if (ctx->algorithm->async_decompress) {
-            // algorithm->async_decompress()
+            return ctx->algorithm->async_decompress(src, dst, compress_async_callback, param);
         } else {
             return ctx->algorithm->decompress(src, src_len, dst, dst_len);
         }
@@ -307,7 +316,7 @@ static int do_real_compression(struct compress_ctx *ctx, const unsigned char *sr
 }
 
 static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompress, unsigned int inflight_num,
-                       unsigned int chunk_len, compression_algorithm_t *algorithm)
+                       unsigned int chunk_len, compression_algorithm_t *algorithm, int is_test_crc)
 {
     ctx->algorithm = algorithm;
     ctx->chunk_len = chunk_len;
@@ -319,9 +328,8 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->out_total_len = 0;
     ctx->thread_id = 0;
     ctx->inflight_num = inflight_num;
-    if (algorithm->async_compress == NULL || compress_or_decompress == 0) {
-        ctx->inflight_num = 1;
-    }
+    ctx->with_crc = is_test_crc;
+
     memset(ctx->param_buf, 0, ctx->inflight_num * sizeof(struct compress_param));
     ctx->param_index = 0;
 }
@@ -417,7 +425,7 @@ static uLong get_src_content(struct compress_ctx *ctx, const char* in_filename, 
 {
     uLong src_len;
     if (in_filename) {
-        fprintf(stdout, "compress filename : %s\n", in_filename);
+        // fprintf(stdout, "compress filename : %s\n", in_filename);
         src_len = read_inputFile(in_filename, inbuf);
     } else {
         *inbuf = get_compress_input(ctx->chunk_len);
@@ -430,6 +438,7 @@ static uLong get_src_content(struct compress_ctx *ctx, const char* in_filename, 
     return src_len;
 }
 
+#define PRINT_DELAY_DATA_LEN 6
 static void printf_perf_data(struct compress_ctx *ctx, struct timeval start, struct timeval stop, uLong src_len,
                       const char* in_filename, const char* out_filename,int multi)
 {
@@ -437,26 +446,59 @@ static void printf_perf_data(struct compress_ctx *ctx, struct timeval start, str
     uLong time1 = (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
 
     uLong stream_len = ctx->compress_or_decompress ? src_len * ctx->loop_times : ctx->out_total_len;
-    float speed1 = 1000000.0 / time1 * multi * stream_len / (1 << 30);
+    float speed1 = 1000000.0 / time1 * multi * stream_len / (1 << 20);
     float iops = 1000.0 * ctx->sn / time1;
 
     printf("%s %s perf result when loop %d times: ", ctx->algorithm->name, ctx->compress_or_decompress ?
             "compress" : "decompress", ctx->loop_times);
-    printf(
-        "file:%s. chunk %d kb. time used: %lu us, speed = %.3f GB/s ", in_filename, g_file_chunk_size, time1, speed1);
+    printf( "file:%s. chunk %d kb.\ntime used: %lus, speed = %.1fMB/s (%.3fGB/s), ",
+           in_filename, g_file_chunk_size, time1 / 1000000, speed1, speed1 / 1024);
     printf("iops = %.3fk, %s latency avg = %.3fus, latency avg per io = %.3fus\n",
         iops,
         ctx->compress_or_decompress ? "compress" : "decompress",
         1.0 * time1 / ctx->sn,
         1.0 * time1 / ctx->sn * ctx->inflight_num);
     if (g_log_level) {
-        float top_latencies[3];
-        int top_counts[3];
-        get_top_latencies(top_latencies, top_counts);
-        int all_counts_num = get_all_data_count();
-        printf("%s delay result: chunk %d kb. total test %d times.  delay is %.3fms - %.3fms - %.3fms \n",
-                ctx->algorithm->name, g_file_chunk_size, all_counts_num, top_latencies[0], top_latencies[1],
-                top_latencies[2]);
+        double resp_latencies[PRINT_DELAY_DATA_LEN] = {0};
+        int p_counts[PRINT_DELAY_DATA_LEN] = {-200, 0, 50, 90, 99, 999};
+        get_percent_latencies(resp_latencies, p_counts, PRINT_DELAY_DATA_LEN, ctx->sn);
+        printf("%s delay result: chunk %d kb. inflightNum: %d, total test %d times.  \n",
+                ctx->algorithm->name, g_file_chunk_size, ctx->inflight_num, ctx->sn);
+        printf("P_avg : %.2f us\n", get_average_latency(ctx->sn));
+        for (int i = 0; i < PRINT_DELAY_DATA_LEN; ++i) {
+            if (p_counts[i] == 0) {
+                printf("P_min : %.2f us\n", resp_latencies[i]);
+            } else if (p_counts[i] <= -1) {
+                printf("P_max : %.2f us\n", resp_latencies[i]);
+            } else {
+                printf("P%-4d : %.2f us\n", p_counts[i], resp_latencies[i]);
+            }
+        }
+        char *cahr_print_table_data = getenv("PRINT_TABLE_DATA");;
+        if (cahr_print_table_data != NULL) {
+            char *task_queue_num = getenv("KAE_LZ4_ASYNC_THREAD_NUM");
+            int kae_task_num = 12;
+            if (task_queue_num != NULL) {
+                kae_task_num = atoi(task_queue_num);
+            }
+            printf( "console.log('kae-threads:%d, file:%s. chunk %d kb. inflightNum: %d, alg:%s ');",
+                kae_task_num, in_filename, g_file_chunk_size,  ctx->inflight_num, ctx->algorithm->name);
+            // // function t(r){console.log(r.split(' ').join('	'));}
+            double this_rate = (double)src_len * ctx->loop_times / ctx->out_total_len;
+            printf("t('%d 1-KAE %.3f %.3fGB/s 0 0 0 %.2fs %.2fus %.2fus %.2fus %.2fus %.2fus %.2fus %.2fus %d+1') \n",
+                g_file_chunk_size,
+                this_rate,
+                speed1 / 1024,
+                time1 / 1000000.0,
+                get_average_latency(ctx->sn),
+                resp_latencies[0],
+                resp_latencies[1],
+                resp_latencies[2],
+                resp_latencies[3],
+                resp_latencies[4],
+                resp_latencies[5],
+                kae_task_num);
+        }
     }
 
     double compress_rate = (double)src_len * ctx->loop_times / ctx->out_total_len;
@@ -494,7 +536,7 @@ static int do_comp_and_decomp_with_full_file(
     ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
     // 单次接口调用时延
     if (g_log_level == 1) {
-        gettimeofday(&param->start_time, NULL);
+        param->start_time = get_ns();
     }
     param->done = 2;
     param->ctx = ctx;
@@ -508,7 +550,7 @@ static int do_comp_and_decomp_with_full_file(
     param->src_len = src_len;
     param->ibuf_crc = 0;
     param->obuf_crc = 0;
-    if (ctx->loop_index == 0) {
+    if (ctx->with_crc == 1) {
         param->result.ibuf_crc = &param->ibuf_crc;
         param->result.obuf_crc = &param->obuf_crc;
     } else {
@@ -519,7 +561,7 @@ static int do_comp_and_decomp_with_full_file(
     param->result.src_size = src_len;
     param->result.dst_len = output_sz_tmp;
     int ret = do_real_compression(ctx, inbuf, (unsigned int *)&src_len, dst_start, (unsigned int *)&output_sz_tmp, &param->result);
-    if (ctx->algorithm->async_compress == NULL || ctx->compress_or_decompress == 0) {
+    if (ctx->algorithm->async_compress == NULL || (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress == NULL)) {
         param->result.dst_len = output_sz_tmp;
         compress_async_callback(&param->result);
     }
@@ -544,7 +586,7 @@ static int do_comp_with_split_file(
         ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
         // 单次接口调用时延
         if (g_log_level == 1) {
-            gettimeofday(&param->start_time, NULL);
+            param->start_time = get_ns();
         }
         param->done = 2;
         param->ctx = ctx;
@@ -563,7 +605,7 @@ static int do_comp_with_split_file(
         param->src_len = chunk_len_this_loop;
         param->ibuf_crc = 0;
         param->obuf_crc = 0;
-        if (ctx->loop_index == 0) {
+        if (ctx->with_crc == 1) {
             param->result.ibuf_crc = &param->ibuf_crc;
             param->result.obuf_crc = &param->obuf_crc;
         } else {
@@ -579,7 +621,7 @@ static int do_comp_with_split_file(
             printf("Error: do_real_compression error. ret = %d \nexit\n", ret);
             return ret;
         }
-        if (ctx->algorithm->async_compress == NULL || ctx->compress_or_decompress == 0) {
+        if (ctx->algorithm->async_compress == NULL || (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress == NULL)) {
             param->result.dst_len = output_sz_tmp;
             compress_async_callback(&param->result);
         }
@@ -683,6 +725,8 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
 
     return ret;
 }
+static int start_work_decompress(
+    struct compress_ctx *ctx, const char *in_filename, const char *out_filename, int multi, int window_bits, int level);
 static void *start_work_thread(void *arg)
 {
     struct thread_compress_args *args = (struct thread_compress_args *)arg;
@@ -692,7 +736,10 @@ static void *start_work_thread(void *arg)
     int multi = args->multi;
     int window_bits = args->window_bits;
     int level = args->level;
-    start_work(ctx, in_filename, out_filename, multi, window_bits, level);
+    if (ctx->compress_or_decompress)
+        start_work(ctx, in_filename, out_filename, multi, window_bits, level);
+    else
+        start_work_decompress(ctx, in_filename, out_filename, multi, window_bits, level);
 
     compress_ctx_destory(&args->ctx);
     free(args);  // 释放 args
@@ -738,6 +785,9 @@ static int start_work_decompress(
             break;
         }
     }
+    if(ctx->algorithm->async_decompress != NULL) {
+        LZ4_async_compress_init();
+    }
 
     struct timeval start, stop;
     gettimeofday(&start, NULL);
@@ -762,7 +812,7 @@ static int start_work_decompress(
                 ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
                 // 单次接口调用时延
                 if (g_log_level == 1) {
-                    gettimeofday(&param->start_time, NULL);
+                    param->start_time = get_ns();
                 }
                 param->done = 2;
                 param->ctx = ctx;
@@ -776,7 +826,7 @@ static int start_work_decompress(
                 param->src_len = this_src_len;
                 param->ibuf_crc = 0;
                 param->obuf_crc = 0;
-                if (ctx->loop_index == 0) {
+                if (ctx->with_crc == 1) {
                     param->result.ibuf_crc = &param->ibuf_crc;
                     param->result.obuf_crc = &param->obuf_crc;
                 } else {
@@ -796,12 +846,15 @@ static int start_work_decompress(
                         "./error-split-file-compressed-data.compressed", inbuf + this_offset, loaded_fragments[k].len);
                     return ret;
                 }
-                if (ctx->algorithm->async_compress == NULL || ctx->compress_or_decompress == 0) {
+                if (ctx->algorithm->async_compress == NULL || (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress == NULL)) {
                     param->result.dst_len = output_size_chunk;
                     compress_async_callback(&param->result);
                 }
                 ctx->sn++;
 
+                if (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress && g_file_chunk_size) {
+                    output_size_chunk = g_file_chunk_size * 1024 * 2;
+                }
                 out_offset += output_size_chunk; // 偏移本次解压实际使用的空间
             }
         }
@@ -813,7 +866,6 @@ static int start_work_decompress(
         }
 
         ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
-        usleep(10);
     }
 
     if (pid_child > 0) {
@@ -988,7 +1040,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
             return -1;
         }
         struct compress_ctx ctx;
-        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm);
+        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, 0);
         ctx.loop_times = loop_times;
         if (!ctx.compress_or_decompress) {
             ctx.loop_times = 1;
@@ -1003,7 +1055,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
                 int j;
                 for (j = 0; j < threadNum; j++) {
                     struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
-                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm);
+                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, 0);
                     args->ctx.thread_id = j;
                     args->ctx.loop_times = loop_times;
                     args->in_filename = in_filename;
@@ -1066,7 +1118,7 @@ int main(int argc, char **argv)
     initialize_algorithms();
     init_env_config();
 
-    const char *optstring = "dm:l:n:w:f:o:v:A:hg:s:c:i:t:T:F:";
+    const char *optstring = "dm:l:n:w:f:o:v:A:hg:s:c:i:t:T:F:r:";
     int ret = 0;
     int o = 0;
     int multi = 2;
@@ -1085,6 +1137,7 @@ int main(int argc, char **argv)
     // Fuzz RDG
     int fuzztest = 0;
     uint32_t RDGseed = 0; // 随机数据生成种子
+    int is_test_crc = 0; // 是否每次都带上crc32校验值
 
     while ((o = getopt(argc, argv, optstring)) != -1) {
         if(optstring == NULL) continue;
@@ -1117,6 +1170,9 @@ int main(int argc, char **argv)
                 break;
 	        case 'v':
                 level = atoi(optarg);
+                break;
+	        case 'r':
+                is_test_crc = atoi(optarg);
                 break;
             case 'n':
                 loop_times = atoi(optarg);
@@ -1179,14 +1235,10 @@ int main(int argc, char **argv)
     }
 
     struct compress_ctx ctx;
-    compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm);
+    compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
     ctx.loop_times = loop_times;
-    // if (!ctx.compress_or_decompress) {
-    //     ctx.loop_times = 1;
-    //     multi =1;
-    // }
 
-    if (!ctx.compress_or_decompress && g_file_chunk_size > 0) { // 如果是分片解压，单独处理
+    if (!ctx.compress_or_decompress && g_file_chunk_size > 0 && threadNum == 1) { // 如果是分片解压，单独处理
         ret = start_work_decompress(&ctx, in_filename, out_filename, multi, window_bits, level);
     } else {
         if (threadNum > 1) {
@@ -1194,7 +1246,7 @@ int main(int argc, char **argv)
             int j;
             for (j = 0; j < threadNum; j++) {
                 struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
-                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm);
+                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
                 args->ctx.thread_id = j;
                 args->ctx.loop_times = loop_times;
                 args->in_filename = in_filename;

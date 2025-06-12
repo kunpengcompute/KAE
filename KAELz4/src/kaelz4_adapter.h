@@ -9,6 +9,7 @@
 #ifndef KAELZ4_ADAPTER
 #define KAELZ4_ADAPTER
 #include <lz4frame.h>
+#include <lz4.h>
 #include "kaelz4_common.h"
 
 enum {
@@ -33,15 +34,16 @@ typedef struct {
     struct kaelz4_result *result;
     enum kae_lz4_async_data_format data_format;
     LZ4F_preferences_t preferences;
+    LZ4F_decompressOptions_t options;
+    atomic_bool ready;
 } lz4_async_task_t;
 
 typedef struct {
     lz4_async_task_t *tasks;
-    volatile size_t pi; // pi
-    volatile size_t ci;  // ci
+    atomic_uint pi; // pi
+    volatile unsigned int ci;  // ci
     pthread_mutex_t *mutex;   // 保护tasks资源的多线程互斥锁
     pthread_cond_t cond;
-    sem_t sem;
     pthread_t worker_thread;
     volatile int stop;  // 用于停止线程的标志
     int index;
@@ -49,11 +51,16 @@ typedef struct {
 
 typedef struct {
     lz4_task_queue task_queue[MAX_TASK_NUM];
+    lz4_task_queue decompress_queue[MAX_TASK_NUM];
     sw_compress_fn sw_compress;
     sw_compress_frame_fn sw_compress_frame;
-    int num;
+    sw_decompress_fn sw_decompress;
+    unsigned int num;
+    unsigned int decompress_queue_num;
     volatile int init;
 } lz4_task_queues;
+
+typedef void *(*task_queue_process_fn)(void *);
 
 int  kaelz4_init_v1(LZ4_CCtx* zc);
 void kaelz4_reset_v1(LZ4_CCtx* zc);
@@ -72,7 +79,8 @@ int  kaelz4_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize);
 
 int wd_get_available_dev_num(const char* alogrithm);
 int kaelz4_async_is_thread_do_comp_full();
-void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame);
+void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+                       sw_decompress_fn sw_decompress);
 void kaelz4_async_deinit(void);
 void kaelz4_ctx_clear(void);
 #endif

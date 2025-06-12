@@ -88,7 +88,7 @@ extern int kaelz4_compress(LZ4_CCtx* zc, const void* src, size_t srcSize);
 
 struct kaelz4_result {
     int status;
-    unsigned int flag;
+    unsigned int rsvd;
     void *user_data;
     size_t src_size;
     size_t dst_len;
@@ -100,9 +100,15 @@ typedef void (*lz4_async_callback)(struct kaelz4_result *result);
 typedef int (*sw_compress_fn)(const char* src, char* dst, int srcSize, int dstCapacity);
 typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, const void* srcBuffer, size_t srcSize,
                                        const void* preferences_ptr);
+typedef int (*sw_decompress_fn)(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
 int KAELZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result);
 int KAELZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback,
                                 struct kaelz4_result *result, const void *preferences_ptr);
 void KAELZ4_teardown_async_compress(void);
-int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame);
+int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+                               sw_decompress_fn sw_decompress);
+int KAELZ4_decompress_async(const void *src, void *dst, lz4_async_callback callback,
+                            struct kaelz4_result *result);
+int KAELZ4F_decompressFrame_async(const void* src, void* dst, lz4_async_callback callback,
+                                  struct kaelz4_result *result, const void *options_ptr);
 #endif

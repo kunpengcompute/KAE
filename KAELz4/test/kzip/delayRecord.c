@@ -1,61 +1,67 @@
 #include <stdlib.h>
-// #include <stdio.h>
-
+#include <stdint.h>
+#include <stdio.h> // printf
 // 定义哈希表条目的最大数量
-#define MAX_LATENCY_COUNT 3000
-// 用于存储每个时延的结构体
-typedef struct {
-    float latency;
-    int count;
-} LatencyEntry;
-// 哈希表，用于存储时延值及其出现次数
-LatencyEntry latencies[MAX_LATENCY_COUNT];
-int latency_count = 0;  // 当前存储的时延数
+#define MAX_LATENCY_COUNT 100000000
+#define MAX_REASONABLE_LATENCY_NS (10ULL * 1000000000ULL)  // 10s
+#define MIN_REASONABLE_LATENCY_NS 0  // 0ns
+
+static uint64_t all_delays[MAX_LATENCY_COUNT];
 // 记录时延数据
-void record_latency(float latency) {
-    // 查找是否已有该时延值
-    for (int i = 0; i < latency_count; i++) {
-        if (latencies[i].latency == latency) {
-            latencies[i].count++;
-            return;
-        }
-    }
-    // 如果没有找到该时延值，插入新条目
-    if (latency_count < MAX_LATENCY_COUNT) {
-        latencies[latency_count].latency = latency;
-        latencies[latency_count].count = 1;
-        latency_count++;
-    }
-}
-// 比较函数，用于排序（按时延出现的次数从大到小）
-int compare(const void *a, const void *b) {
-    return ((LatencyEntry *)b)->count - ((LatencyEntry *)a)->count;
-}
-// 获取出现次数最多的前三个时延
-void get_top_latencies(float top_latencies[3], int top_counts[3]) {
-    // 如果没有足够的数据，返回默认值
-    if (latency_count < 1) {
-        top_latencies[0] = top_latencies[1] = top_latencies[2] = 0;
-        top_counts[0] = top_counts[1] = top_counts[2] = 0;
+void record_latency(uint64_t latency, size_t sn)
+{
+    if (latency < MIN_REASONABLE_LATENCY_NS || latency > MAX_REASONABLE_LATENCY_NS) {
         return;
     }
-
-    // 排序时延数据，根据 count 值降序排列
-    qsort(latencies, latency_count, sizeof(LatencyEntry), compare);
-
-    // 获取前三个时延和它们的出现次数
-    for (int i = 0; i < 3 && i < latency_count; i++) {
-        top_latencies[i] = latencies[i].latency;
-        top_counts[i] = latencies[i].count;
-    }
-
-    // 如果总数不足3个，剩下的用默认值填充
-    for (int i = latency_count; i < 3; i++) {
-        top_latencies[i] = 0;
-        top_counts[i] = 0;
+    if (sn < MAX_LATENCY_COUNT) {
+        all_delays[sn] = latency;
     }
 }
 
-int get_all_data_count() {
-    return latency_count;
+static int compare_uint64(const void *a, const void *b)
+{
+    uint64_t ua = *(uint64_t *)a;
+    uint64_t ub = *(uint64_t *)b;
+    return (ua > ub) - (ua < ub);
+}
+
+double get_average_latency(size_t cnt)
+{
+    uint64_t total_latency = 0;    // 总时延（单位 ns）
+    if (cnt == 0) return -1.0;
+    for (int i = 0; i < cnt; ++i) {
+        total_latency += all_delays[i];
+    }
+
+    return total_latency / 1000.0 / cnt;
+}
+// 获取百分位置的时延数据。单位 us
+double get_percent_delay(int num, size_t cnt)
+{
+    if (cnt == 0) return -1.0;
+    uint64_t idx;
+    if (num >= 0 && num <= 100) {
+        idx = cnt * num / 100;
+    } else if (num > 100 && num <= 1000) {
+        idx = cnt * num / 1000;
+    } else if (num < 0) { // 负值从尾部开始计数
+        idx = cnt + num;
+    } else {
+        return -1.0;  // 非法参数
+    }
+    if (idx >= cnt || idx < 0) return -1.0;  // 防越界
+    return all_delays[idx] / 1000.0;  // 返回微秒，double 类型
+}
+
+void get_percent_latencies(double *out_latencies, const int *percentiles, int count, size_t sn)
+{
+    if (!out_latencies || !percentiles || count <= 0) return;
+    qsort(all_delays, sn, sizeof(uint64_t), compare_uint64);
+    for (int i = 0; i < count; ++i) {
+        out_latencies[i] = get_percent_delay(percentiles[i], sn);
+    }
+    // for(int j = 0; j < 200; j++) {
+    //     uint64_t idx = latency_count - 1 - j;
+    //     printf("%ld:%.2f \n",idx, all_delays[idx] / 1000.0);
+    // }
 }

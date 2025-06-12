@@ -8,6 +8,7 @@
 
 #include <stdlib.h>
 #include <semaphore.h>
+#include <stdatomic.h>
 #include "kaelz4_common.h"
 #include "kaelz4.h"
 #include "kaelz4_utils.h"
@@ -226,7 +227,7 @@ static void set_cpu_affinity_for_child(int i)
 
 static void kaelz4_dequeue_process(lz4_task_queue *task_queue, int budget)
 {
-    US_DEBUG("do kaelz4_dequeue_process. budget: %d", budget);
+    // US_DEBUG("do kaelz4_dequeue_process. budget: %d", budget);
     int cnt = 0;
     // 等待任务
     while (task_queue->pi != task_queue->ci && cnt < budget) {
@@ -240,12 +241,16 @@ static void kaelz4_dequeue_process(lz4_task_queue *task_queue, int budget)
         }
 
         // 获取任务
-        size_t ci = task_queue->ci;
+        unsigned int ci = task_queue->ci % KAELZ4_TASK_QUEUE_DEPTH;
         lz4_async_task_t task;
 
+        if (!atomic_load_explicit(&task_queue->tasks[ci].ready, memory_order_acquire)) {
+            continue;
+        }
         task = task_queue->tasks[ci];
+        atomic_store_explicit(&task_queue->tasks[ci].ready, false, memory_order_release);
         // 更新 ci，复用空闲位置
-        task_queue->ci = (task_queue->ci + 1) % KAELZ4_TASK_QUEUE_DEPTH;
+        task_queue->ci++;
         // 执行压缩操作
         kaelz4_compress_async(task.src, task.dst, task.callback, task.result,
                               task.data_format, &task.preferences);
@@ -263,7 +268,7 @@ static void *compress_thread_func(void *arg)
 
     set_cpu_affinity_for_child(task_queue->index);
 
-    kaelz4_async_init(&task_queue->stop, g_task_queues.sw_compress, g_task_queues.sw_compress_frame);
+    kaelz4_async_init(&task_queue->stop, g_task_queues.sw_compress, g_task_queues.sw_compress_frame, g_task_queues.sw_decompress);
 
     while (1) {
         // 等待任务
@@ -279,7 +284,9 @@ static void *compress_thread_func(void *arg)
 
             if (unlikely(check_time_out(&timeout))) {
                 kaelz4_ctx_clear();
-                sem_wait(&task_queue->sem);
+                pthread_mutex_lock(task_queue->mutex);
+                pthread_cond_wait(&task_queue->cond, task_queue->mutex);
+                pthread_mutex_unlock(task_queue->mutex);
             }
         }
 
@@ -300,6 +307,95 @@ exit_thread:
     return NULL;
 }
 
+static void *decompress_thread_func(void *arg)
+{
+    sw_decompress_fn sw_decompress = g_task_queues.sw_decompress ? g_task_queues.sw_decompress : LZ4_decompress_safe;
+    LZ4F_decompressionContext_t dctx;
+    lz4_task_queue *task_queue = arg;
+    struct timespec timeout;
+    int enter_idle = 0;
+    int ret = 0;
+
+    LZ4F_createDecompressionContext(&dctx, 100);
+
+    while (1) {
+        // 等待任务
+        while (task_queue->pi == task_queue->ci && ret == KAE_LZ4_PROCESS_IDLE) {
+            if (enter_idle == 0) {
+                get_time_out_spec(&timeout, &polling_timeout);
+                enter_idle = 1;
+            }
+            // 如果要停止线程
+            if (unlikely(task_queue->stop)) {
+                goto exit_thread;
+            }
+
+            if (unlikely(check_time_out(&timeout))) {
+                kaelz4_ctx_clear();
+                pthread_mutex_lock(task_queue->mutex);
+                pthread_cond_wait(&task_queue->cond, task_queue->mutex);
+                pthread_mutex_unlock(task_queue->mutex);
+            }
+        }
+
+        if (unlikely(task_queue->stop)) {
+            break;
+        }
+
+        enter_idle = 0;
+
+        while (task_queue->pi != task_queue->ci) {
+
+            // 如果要停止线程
+            if (task_queue->stop) {
+                goto exit_thread;
+            }
+
+            // 获取任务
+            unsigned int ci = task_queue->ci % KAELZ4_TASK_QUEUE_DEPTH;
+            lz4_async_task_t task;
+
+            if (!atomic_load_explicit(&task_queue->tasks[ci].ready, memory_order_acquire)) {
+                continue;
+            }
+            task = task_queue->tasks[ci];
+            atomic_store_explicit(&task_queue->tasks[ci].ready, false, memory_order_release);
+            // 更新 ci，复用空闲位置
+            task_queue->ci++;
+
+            // 执行压缩操作
+            if (task.data_format == KAELZ4_ASYNC_BLOCK) {
+                ret = sw_decompress(task.src, task.dst, task.result->src_size, task.result->dst_len);
+                if (ret > 0) {
+                    task.result->dst_len = ret;
+                    ret = 0;
+                } else if (ret == 0) {
+                    US_ERR("Error: sw_decompress ret = 0");
+                    ret = KAE_LZ4_COMP_FAIL;
+                }
+            } else {
+                ret = LZ4F_decompress(dctx, task.dst, &task.result->dst_len, task.src, &task.result->src_size, &task.options);
+                LZ4F_resetDecompressionContext(dctx);
+            }
+
+            if (ret != 0) {
+                task.result->status = KAE_LZ4_COMP_FAIL;
+                task.result->dst_len = 0;
+                US_ERR("Error: decompress ret = %d", ret);
+                printf("error ret = %d %p\n",ret, task_queue);
+            } else {
+                task.result->status = KAE_LZ4_SUCC;
+            }
+            task.callback(task.result);
+        }
+    }
+
+exit_thread:
+    LZ4F_freeDecompressionContext(dctx);
+    kaelz4_async_deinit();
+    return NULL;
+}
+
 static void init_env_config()
 {
 
@@ -308,6 +404,14 @@ static void init_env_config()
         g_task_queues.num = atoi(task_queue_num);
         if (g_task_queues.num > MAX_TASK_NUM) {
             g_task_queues.num = MAX_TASK_NUM;
+        }
+    }
+
+    char *decompress_queue_num = getenv("KAE_LZ4_ASYNC_DC_THREAD_NUM");
+    if (decompress_queue_num != NULL) {
+        g_task_queues.decompress_queue_num = atoi(decompress_queue_num);
+        if (g_task_queues.decompress_queue_num > MAX_TASK_NUM) {
+            g_task_queues.decompress_queue_num = MAX_TASK_NUM;
         }
     }
 
@@ -322,7 +426,7 @@ void async_thread_constructor(void)
     init_env_config();
 }
 
-static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index)
+static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index, task_queue_process_fn func)
 {
     task_queue->tasks = malloc(KAELZ4_TASK_QUEUE_DEPTH * sizeof(lz4_async_task_t));
     if (task_queue->tasks == NULL) {
@@ -332,9 +436,12 @@ static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index)
     task_queue->ci = 0;
     task_queue->stop = 0;
     task_queue->index = index;
-    sem_init(&task_queue->sem, 0, 0);
+    for (int i = 0; i < KAELZ4_TASK_QUEUE_DEPTH; i++) {
+        atomic_store_explicit(&task_queue->tasks[i].ready, false, memory_order_release);
+    }
     task_queue->mutex = &g_task_queue_mutex[index];
-    if (pthread_create(&task_queue->worker_thread, NULL, compress_thread_func, task_queue) != 0) {
+    pthread_cond_init(&task_queue->cond, NULL);
+    if (pthread_create(&task_queue->worker_thread, NULL, func, task_queue) != 0) {
         US_ERR("Error: Failed to create compression worker thread");
         free(task_queue->tasks);
         task_queue->tasks = NULL;
@@ -347,15 +454,18 @@ static void kaelz4_task_queue_free(lz4_task_queue *task_queue)
 {
     pthread_mutex_lock(task_queue->mutex);
     task_queue->stop = 1;
-    sem_post(&task_queue->sem);
+    pthread_cond_signal(&task_queue->cond);
+    pthread_mutex_unlock(task_queue->mutex);
+
     pthread_join(task_queue->worker_thread, NULL);
-    sem_destroy(&task_queue->sem);
+
+    pthread_mutex_lock(task_queue->mutex);
     free(task_queue->tasks);
     task_queue->tasks = NULL;
     pthread_mutex_unlock(task_queue->mutex);
 }
 
-static int kaelz4_task_queues_init(int task_queue_num)
+static int kaelz4_task_queues_init(int task_queue_num, int decompress_queue_num)
 {
     int i;
 
@@ -367,13 +477,30 @@ static int kaelz4_task_queues_init(int task_queue_num)
         return KAE_LZ4_INIT_FAIL;
     }
 
+    if (g_task_queues.decompress_queue_num == 0) {
+        g_task_queues.decompress_queue_num = decompress_queue_num;
+    }
+
+    if (g_task_queues.decompress_queue_num > MAX_TASK_NUM) {
+        return KAE_LZ4_INIT_FAIL;
+    }
+
     for (i = 0; i < g_task_queues.num; i++) {
-        if (kaelz4_task_queue_init(&g_task_queues.task_queue[i], i) != 0)
+        if (kaelz4_task_queue_init(&g_task_queues.task_queue[i], i, compress_thread_func) != 0)
             goto task_queue_free;
     }
 
-    return KAE_LZ4_SUCC;
+    for (i = 0; i < g_task_queues.decompress_queue_num; i++) {
+        if (kaelz4_task_queue_init(&g_task_queues.decompress_queue[i], g_task_queues.num + i, decompress_thread_func) != 0)
+            goto decompress_queue_free;
+    }
 
+    return KAE_LZ4_SUCC;
+decompress_queue_free:
+    while (i--) {
+        kaelz4_task_queue_free(&g_task_queues.decompress_queue[i]);
+    }
+    i = g_task_queues.num;
 task_queue_free:
     while (i--) {
         kaelz4_task_queue_free(&g_task_queues.task_queue[i]);
@@ -381,14 +508,16 @@ task_queue_free:
     return KAE_LZ4_INIT_FAIL;
 }
 
-int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame)
+int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+                               sw_decompress_fn sw_decompress)
 {
     int ret = 0;
     pthread_mutex_lock(&g_task_queue_init_mutex);
     if (g_task_queues.init == 0) {
         g_task_queues.sw_compress = sw_compress;
         g_task_queues.sw_compress_frame = sw_compress_frame;
-        ret = kaelz4_task_queues_init(KAELZ4_TASK_THREAD_NUM);
+        g_task_queues.sw_decompress = sw_decompress;
+        ret = kaelz4_task_queues_init(KAELZ4_TASK_THREAD_NUM, 1);
         if (ret != 0) {
             g_task_queues.init = 0;
             pthread_mutex_unlock(&g_task_queue_init_mutex);
@@ -412,47 +541,30 @@ void KAELZ4_teardown_async_compress(void)
     for (int i = 0; i < g_task_queues.num; i++) {
         kaelz4_task_queue_free(&g_task_queues.task_queue[i]);
     }
+    for (int i = 0; i < g_task_queues.decompress_queue_num; i++) {
+        kaelz4_task_queue_free(&g_task_queues.decompress_queue[i]);
+    }
     pthread_mutex_unlock(&g_task_queue_init_mutex);
     return;
 }
 
 static inline int kaelz4_enqueue(lz4_task_queue *task_queue, lz4_async_task_t *task)
 {
-    unsigned int cnt = 0;
-
-    pthread_mutex_lock(task_queue->mutex);
-    while ((task_queue->pi + 1) % KAELZ4_TASK_QUEUE_DEPTH == task_queue->ci) {
-        pthread_mutex_unlock(task_queue->mutex);
-        if (cnt > ENQUEUE_TIME_OUT_US) {
-            return KAE_LZ4_ALLOC_FAIL;
-        }
-
-        cnt++;
-        usleep(1);
-        pthread_mutex_lock(task_queue->mutex);
-    }
-
-    if (task_queue->tasks == NULL) {
-        return KAE_LZ4_ALLOC_FAIL;
-    }
-    US_DEBUG("receive a task, enqueue");
-
-    size_t task_index = task_queue->pi;
-    task_queue->tasks[task_index] = *task;
-    wmb();
-    task_queue->pi = (task_queue->pi + 1) % KAELZ4_TASK_QUEUE_DEPTH;
-
-    sem_post(&task_queue->sem);
-    pthread_mutex_unlock(task_queue->mutex);
+    uint32_t pos = atomic_fetch_add(&task_queue->pi, 1);
+    lz4_async_task_t *cell = &task_queue->tasks[pos % KAELZ4_TASK_QUEUE_DEPTH];
+    while (atomic_load_explicit(&cell->ready, memory_order_acquire)); // 等待槽空
+    *cell = *task;
+    atomic_store_explicit(&cell->ready, true, memory_order_release);
+    pthread_cond_signal(&task_queue->cond);
     return 0;
 }
 
-static unsigned int kaelz4_get_queue_id(void)
+static unsigned int kaelz4_get_queue_id(lz4_task_queue *task_queue, unsigned int num)
 {
     unsigned int index = 0;
     unsigned int min = 0xFFFFFFFF;
-    for (int i = 0; i < g_task_queues.num; i++) {
-        unsigned int depth = (g_task_queues.task_queue[i].pi + KAELZ4_TASK_QUEUE_DEPTH - g_task_queues.task_queue[i].ci) % KAELZ4_TASK_QUEUE_DEPTH;
+    for (int i = 0; i < num; i++) {
+        unsigned int depth = (task_queue[i].pi + KAELZ4_TASK_QUEUE_DEPTH - task_queue[i].ci) % KAELZ4_TASK_QUEUE_DEPTH;
         if (min > depth) {
             min = depth;
             index = i;
@@ -463,19 +575,47 @@ static unsigned int kaelz4_get_queue_id(void)
     }
     return index;
 }
+
+static int kaelz4_async_do_decomp(const void *src, void *dst,
+                                  lz4_async_callback callback, struct kaelz4_result *result,
+                                  enum kae_lz4_async_data_format data_format,
+                                  const LZ4F_decompressOptions_t* options_ptr)
+{
+    // 初始化队列容量
+    if (unlikely(g_task_queues.init == 0)) {
+        if (KAELZ4_async_compress_init(NULL, NULL, NULL) != 0) {
+            return KAE_LZ4_INIT_FAIL;
+        }
+    }
+
+    // 添加任务到队列
+    static unsigned int index = 0;
+    lz4_async_task_t task = {0};
+    task.src = src;
+    task.dst = dst;
+    task.callback = callback;
+    task.result = result;
+    task.data_format = data_format;
+    if (options_ptr != NULL) {
+        task.options = *options_ptr;
+    }
+
+    return kaelz4_enqueue(&g_task_queues.decompress_queue[(index++) % g_task_queues.decompress_queue_num], &task);
+}
+
 static int kaelz4_async_do_comp(const void *src, void *dst,
                                 lz4_async_callback callback, struct kaelz4_result *result,
                                 enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t* preferences_ptr)
 {
     // 初始化队列容量
     if (unlikely(g_task_queues.init == 0)) {
-        if (KAELZ4_async_compress_init(NULL, NULL) != 0) {
+        if (KAELZ4_async_compress_init(NULL, NULL, NULL) != 0) {
             return KAE_LZ4_INIT_FAIL;
         }
     }
 
     // 添加任务到队列
-    unsigned int index = kaelz4_get_queue_id();
+    unsigned int index = kaelz4_get_queue_id(g_task_queues.task_queue, g_task_queues.num);
     lz4_async_task_t task = {0};
     task.src = src;
     task.dst = dst;
@@ -511,4 +651,24 @@ int KAELZ4F_compressFrame_async(const void* src, void* dst, lz4_async_callback c
     }
 
     return kaelz4_async_do_comp(src, dst, callback, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
+}
+
+int KAELZ4_decompress_async(const void *src, void *dst, lz4_async_callback callback,
+                            struct kaelz4_result *result)
+{
+    if (unlikely(src == NULL || dst == NULL || callback == NULL || result == NULL || result->src_size == 0)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    return kaelz4_async_do_decomp(src, dst, callback, result, KAELZ4_ASYNC_BLOCK, NULL);
+}
+
+int KAELZ4F_decompressFrame_async(const void* src, void* dst, lz4_async_callback callback,
+                                  struct kaelz4_result *result, const void *options_ptr)
+{
+    if (unlikely(src == NULL || dst == NULL || callback == NULL || result == NULL || result->src_size == 0)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    return kaelz4_async_do_decomp(src, dst, callback, result, KAELZ4_ASYNC_FRAME, options_ptr);
 }
