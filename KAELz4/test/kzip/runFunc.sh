@@ -1,0 +1,54 @@
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:/usr/local/kaezstd/lib/:/usr/local/kaezip/lib/:$LD_LIBRARY_PATH
+export KAE_LZ4_WINTYPE=8
+export KAE_LZ4_COMP_TYPE=8
+
+
+sh build.sh kaelz4
+
+Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame")
+Datasets=("calgary" "itemdata" "dickens" "mozilla" "mr" "nci" "ooffice" "osdb" "reymont" "samba" "sao" "webster" "xml" "x-ray")
+Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
+BlockSize=("0" "4" "8" "16" "60" "64" "68" "128" "512" "1024" "2090" "10244")
+
+current_time=$(date +"%Y-%m-%d_%H-%M-%S")
+LogFile=kaelz4-function.log.$current_time
+testFilePath=../../../scripts/compressTestDataset
+
+diffFile() {
+    local testFile=$1
+    local testFileOrigin=$2
+    if [[ ! -f "$testFile" ]]; then
+        echo "Error: 压缩异常!未成功压缩文件"
+        exit 1
+    fi
+    if [[ ! -f "$testFileOrigin" ]]; then
+        echo "Error: 解压异常!未成功解压文件"
+        exit 1
+    fi
+    diffRes=$(diff $testFile $testFileOrigin)
+    if [[ -n "$diffRes" ]] ; then
+        echo "Error: 解压后数据与原始数据比对不通过！！"
+    else
+        echo "Success: 测试通过 解压数据校验通过"
+    fi
+}
+
+for da in "${Datasets[@]}"; do
+    for alg in "${Algthm[@]}"; do
+        for bs in "${BlockSize[@]}"; do
+            echo "Executing:  $da  $alg  $bs kb chunk testing"
+            testFile="$testFilePath/$da"
+            testFileComped="$testFile.compressed"
+            testFileOrigin="$testFile.origin"
+            rm -rf $testFileComped
+            rm -rf $testFileOrigin
+            rm -rf $testFileComped.meta
+            rm -rf $testFileOrigin.meta
+            ./kzip -A $alg -m 2 -f $testFile -o $testFileComped -n 2 -s $bs -i 256  >> $LogFile # 压缩测试
+            ./kzip -d -A $alg -m 1 -f $testFileComped -o $testFileOrigin -n 2 -s $bs -i 256  >> $LogFile # 压缩测试
+            diffFile $testFile $testFileOrigin
+        done
+    done
+done
+
+echo "功能测试结束"

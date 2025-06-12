@@ -134,6 +134,9 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch
 
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
+
     cd $KAE_UADK_DIR
     sh autogen.sh
     # sh conf.sh
@@ -299,6 +302,9 @@ function build_uadk()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch
+
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
 
 	cd ${SRC_PATH}/uadk
     sh autogen.sh

@@ -10,13 +10,15 @@
 
 #define CONF_KAELZ4
 
-#define KAE_ZSTD_SUCC 0
-#define KAE_ZSTD_INVAL_PARA 1
-#define KAE_ZSTD_INIT_FAIL 2
-#define KAE_ZSTD_COMP_FAIL 3
-#define KAE_ZSTD_RELEASE_FAIL 4
-#define KAE_ZSTD_ALLOC_FAIL 5
-#define KAE_ZSTD_SET_FAIL 6
+#define KAE_LZ4_PROCESS_IDLE 0
+#define KAE_LZ4_PROCESS_HW_BUSY -1
+
+enum kae_lz4_async_data_format {
+    KAELZ4_ASYNC_SMALL_BLOCK = 0,
+    KAELZ4_ASYNC_BLOCK,
+    KAELZ4_ASYNC_FRAME,
+    KAELZ4_ASYNC_BUTT,
+};
 
 #include "kaelz4.h"
 

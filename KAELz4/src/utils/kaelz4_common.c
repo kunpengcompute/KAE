@@ -1,6 +1,6 @@
 /*
  * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
- * @Description: zstd common func
+ * @Description: lz4 common func
  * @Author: LiuYongYang
  * @Date: 2024-02-22
  * @LastEditTime: 2024-03-28
@@ -18,7 +18,7 @@ typedef enum ARCH_TYPE {
     CPU_HISILICOM_V4, /* for the future */
     CPU_UNKNOW,
 } ARCH_TYPE;
-static int g_kaezstdInitialized = 0;
+static int g_kaelz4Initialized = 0;
 
 static inline void versionCpy(char str1[], const char str2[])
 {
@@ -33,13 +33,13 @@ static inline void versionCpy(char str1[], const char str2[])
 int kaelz4_get_version(KAELz4Version* ver)
 {
     if (ver == NULL) {
-        return KAE_ZSTD_INVAL_PARA;
+        return KAE_LZ4_INVAL_PARA;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
     versionCpy(ver->productVersion, "23.0.RC2");
     versionCpy(ver->componentName, "KAELz4");
     versionCpy(ver->componentVersion, "2.0.4");
-    return KAE_ZSTD_SUCC;
+    return KAE_LZ4_SUCC;
 }
 
 static ARCH_TYPE KaeLz4Detect(void)
@@ -61,15 +61,15 @@ static ARCH_TYPE KaeLz4Detect(void)
     return CPU_UNKNOW;
 }
 
-HIDDEN_API void CONSTRUCTOR KaeZstdInit(void)
+HIDDEN_API void CONSTRUCTOR KaeLz4Init(void)
 {
-    if (g_kaezstdInitialized != 0) {
+    if (g_kaelz4Initialized != 0) {
         return;
     }
 
     if (KaeLz4Detect() != CPU_HISILICOM_V2) {
-        fprintf(stderr, "KAEzstd only support in V2, please check CPU ID.\n");
+        fprintf(stderr, "KAElz4 only support in V2, please check CPU ID.\n");
         abort();
     }
-    g_kaezstdInitialized = 1;
+    g_kaelz4Initialized = 1;
 }

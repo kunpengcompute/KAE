@@ -4,3 +4,9 @@
 # 2.frame模式的功能测试：通过执行生成的可执行文件frametest，以及脚本test-lz4-list.py实现
 
 # 注：执行上述功能测试前，请确保kaelz4已安装完成
+
+# unit test
+
+~~~
+sh run.sh
+~~~

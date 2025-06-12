@@ -50,7 +50,7 @@ LIBS := -pthread -Wl,-rpath,/usr/local/lib -lwd -lwd_comp
 LIBS += -lc_nonshared
 
 # The flags
-CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared
+CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -O2 -march=armv8.2-a+crypto
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS)
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option

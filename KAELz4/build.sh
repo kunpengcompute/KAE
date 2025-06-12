@@ -13,6 +13,10 @@ function Target_lz4()
     rm -rf lz4-1.9.4
     tar -zxvf lz4-1.9.4.tar.gz
     patch -p0 < kaelz4_1_9_4.patch
+    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.h "${SRC_PATH}"/src/utils
+    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.c "${SRC_PATH}"/src/utils
+    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/lz4.h "${SRC_PATH}"/src/utils
+    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/lz4frame.h "${SRC_PATH}"/src/utils
     cd "${SRC_PATH}"/open_source/lz4-1.9.4/
 }
 
@@ -34,7 +38,7 @@ function Dev_Build_kaelz4()
     Target_lz4
     cd "${SRC_PATH}"
 	make clean
-    make 
+    make
     echo "install kaelz4"
 
     cd -
@@ -49,7 +53,7 @@ function Install_kaelz4()
         echo "build and intsall lz4."
         make
 		make PREFIX=/usr/local/kaelz4/ install
-    fi 
+    fi
     echo "install lz4 success"
 }
 
@@ -80,7 +84,7 @@ function Uninstall_kaelz4()
 function Operate()
 {
     cd "${SRC_PATH}"/open_source
-    case "$1" in 
+    case "$1" in
         devbuild)
             Dev_Build_kaelz4 "$2"
             ;;

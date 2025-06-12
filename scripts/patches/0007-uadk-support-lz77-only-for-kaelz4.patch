@@ -1,0 +1,75 @@
+diff --git a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
+index 8497ebc..d35c9c1 100644
+--- a/uadk/v1/drv/hisi_zip_udrv.c
++++ b/uadk/v1/drv/hisi_zip_udrv.c
+@@ -368,9 +368,17 @@ static int fill_zip_comp_alg_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
+ 	struct hisi_zip_sqe_v3 *sqe = ssqe;
+ 
+ 	if (msg->comp_lv == WCRYPTO_COMP_L9) {
+-		sqe->dw9 = HW_LZ77_ZSTD_PRICE;
++		if (msg->alg_type == WCRYPTO_LZ77_ONLY) {
++			sqe->dw9 = HW_LZ77_ZSTD_NOREPCODE;
++		} else {
++			sqe->dw9 = HW_LZ77_ZSTD_PRICE;
++		}
+ 	} else if (msg->comp_lv == WCRYPTO_COMP_L8 || msg->comp_lv == 0) {
+-		sqe->dw9 = HW_LZ77_ZSTD;
++		if (msg->alg_type == WCRYPTO_LZ77_ONLY) {
++			sqe->dw9 = HW_LZ77_ZSTD_PRICE_NOREPCODE;
++		} else {
++			sqe->dw9 = HW_LZ77_ZSTD;
++		}
+ 	} else {
+ 		WD_ERR("The compress level is invalid!\n");
+ 		return -WD_EINVAL;
+@@ -614,6 +622,13 @@ static struct zip_fill_sqe_ops ops[] = { {
+ 		.fill_sqe_window_size = fill_zip_window_size,
+ 		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
+ 		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
++	}, { // WCRYPTO_LZ77_ONLY
++		.alg_type = "lz77_only",
++		.fill_sqe_alg = fill_zip_comp_alg_zstd,
++		.fill_sqe_buffer_size = fill_zip_buffer_size_zstd,
++		.fill_sqe_window_size = fill_zip_window_size,
++		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
++		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
+ 	},
+ };
+ 
+diff --git a/uadk/v1/drv/hisi_zip_udrv.h b/uadk/v1/drv/hisi_zip_udrv.h
+index c93b01a..6389372 100644
+--- a/uadk/v1/drv/hisi_zip_udrv.h
++++ b/uadk/v1/drv/hisi_zip_udrv.h
+@@ -25,6 +25,8 @@ enum hw_comp_alg_type {
+ 	HW_GZIP,
+ 	HW_LZ77_ZSTD_PRICE = 0x42,
+ 	HW_LZ77_ZSTD,
++	HW_LZ77_ZSTD_PRICE_NOREPCODE = 0x40,
++	HW_LZ77_ZSTD_NOREPCODE,
+ };
+ 
+ enum hw_zip_cipher_alg_type {
+diff --git a/uadk/v1/wd_comp.h b/uadk/v1/wd_comp.h
+index 4c84ea3..61e3db1 100644
+--- a/uadk/v1/wd_comp.h
++++ b/uadk/v1/wd_comp.h
+@@ -70,6 +70,7 @@ enum wcrypto_comp_alg_type {
+ 	WCRYPTO_GZIP,
+ 	WCRYPTO_RAW_DEFLATE,
+ 	WCRYPTO_LZ77_ZSTD,
++	WCRYPTO_LZ77_ONLY,
+ 	WCRYPTO_COMP_MAX_ALG,
+ };
+ 
+diff --git a/uadk/wd_util.c b/uadk/wd_util.c
+index 93249a3..64ad157 100644
+--- a/uadk/wd_util.c
++++ b/uadk/wd_util.c
+@@ -106,6 +106,7 @@ static struct acc_alg_item alg_options[] = {
+ 	{"gzip", "gzip"},
+ 	{"deflate", "deflate"},
+ 	{"lz77_zstd", "lz77_zstd"},
++	{"lz77_only", "lz77_zstd"},
+ 	{"hashagg", "hashagg"},
+ 
+ 	{"rsa", "rsa"},

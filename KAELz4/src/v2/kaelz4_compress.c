@@ -16,21 +16,21 @@
 #include "uadk/uacce.h"
 
 #include "kaelz4_common.h"
-#include "kaezstd_config.h"
+#include "kaelz4_config.h"
 #include "kaelz4_log.h"
 
-void kaezstd_setstatus_v2(LZ4_CCtx* zc, unsigned int status)
+void kaelz4_setstatus_v2(LZ4_CCtx* zc, unsigned int status)
 {
-    KaeZstdConfig *config;
-    config = kaezstd_get_config(zc);
+    KaeLz4Config *config;
+    config = kaelz4_get_config(zc);
     config->tuple.bstatus = status;
 }
 
-static int kaezstd_data_parsing(LZ4_CCtx* zc, KaeZstdConfig* config)
+static int kaelz4_data_parsing(LZ4_CCtx* zc, KaeLz4Config* config)
 {
     if (config->tuple.litStart == NULL || config->tuple.sequencesStart == NULL) {
         US_ERR("config parameter invalid\n");
-        return KAE_ZSTD_INVAL_PARA;
+        return KAE_LZ4_INVAL_PARA;
     }
 
     memcpy(zc->seqStore.litStart, config->tuple.litStart, config->tuple.litlen);
@@ -40,7 +40,7 @@ static int kaezstd_data_parsing(LZ4_CCtx* zc, KaeZstdConfig* config)
         config->tuple.seqnum*sizeof(seqDef));
     zc->seqStore.sequences += config->tuple.seqnum;
 
-    if (config->tuple.longLengthType != ZSTD_llt_none) {
+    if (config->tuple.longLengthType != LZ4_llt_none) {
         zc->seqStore.longLengthType = config->tuple.longLengthType;
         zc->seqStore.longLengthPos = config->tuple.longLengthPos;
     }
@@ -48,18 +48,18 @@ static int kaezstd_data_parsing(LZ4_CCtx* zc, KaeZstdConfig* config)
     return 0;
 }
 
-int kaezstd_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize)
+int kaelz4_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize)
 {
-    KaeZstdConfig *config = NULL;
+    KaeLz4Config *config = NULL;
     int ret;
 
-    US_INFO("KAE zstd compress, srcSize is %lu", srcSize);
+    US_INFO("KAE lz4 compress, srcSize is %lu", srcSize);
     if (zc == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
-        return KAE_ZSTD_INVAL_PARA;
+        return KAE_LZ4_INVAL_PARA;
     }
 
-    config = kaezstd_get_config(zc);
+    config = kaelz4_get_config(zc);
 
     config->req.src = (void*)src;
     config->req.src_len = srcSize;
@@ -75,5 +75,5 @@ int kaezstd_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize)
             config->tuple.litlen, config->tuple.seqnum, config->tuple.longLengthType, config->tuple.longLengthPos);
     }
 
-    return kaezstd_data_parsing(zc, config);
+    return kaelz4_data_parsing(zc, config);
 }
