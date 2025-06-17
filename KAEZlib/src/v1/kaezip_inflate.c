@@ -60,7 +60,7 @@ int ZEXPORT kz_inflateInit2_v1(z_streamp strm, int windowBits, const char *versi
     if (windowBits >= GZIP_INFLATE_MIN_AUTO_WBITS && windowBits <= GZIP_INFLATE_MAX_AUTO_WBITS) {
         return Z_OK;
     }
-    US_DEBUG("kz_inflate_init windowBits %d\n", windowBits);
+    US_DEBUG("kz_inflate_init windowBits %d", windowBits);
 
     int alg_comp_type = kaezip_winbits2algtype(windowBits);
     return kz_do_inflateInit(strm, alg_comp_type);
@@ -218,7 +218,7 @@ int kz_do_inflateInit(z_streamp strm, int alg_comp_type)
     kaezip_ctx->status = KAEZIP_DECOMP_INIT;
     setInflateKaezipCtx(strm, (uLong)kaezip_ctx);
 
-    US_DEBUG("kae zip inflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
+    US_DEBUG("kaezip inflate init success, kaezip_ctx %p, kaezip_ctx->comp_alg_type %s!",
         kaezip_ctx, kaezip_ctx->comp_alg_type == WCRYPTO_ZLIB ? "zlib" :
         (kaezip_ctx->comp_alg_type == WCRYPTO_GZIP ? "gzip" : "deflate-raw"));
 

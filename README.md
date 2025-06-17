@@ -18,7 +18,7 @@
 
 > 由于不同版本内核接口可能存在差异，不同的操作系统使能KAE需要实际编译内核驱动验证是否匹配，若特定OS内核编译KAE驱动遇到接口报错，则说明驱动不兼容。
 
-# 二、安装前准备
+# 二、安装说明
 
 根据芯片款型及内核版本选择适合的KAE代码进行安装，安装前需要确定环境信息及安装license。
 
@@ -51,22 +51,22 @@ b6:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. H
 
 基于硬件cpu款型及内核OS情况，选择正确的KAE版本后，再获取软件包，用于后续安装。
 
-### 2.2.2 KAE2.0软件包获取
+### 2.2.1 KAE2.0软件包获取
 
 KAE2.0 版本支持RPM包安装、源码安装两种种方式。
 
 * **RPM包获取** KAE2.0 rpm包下载地址：尚未发布
-* **源码包获取** KAE2.0 源码下载方式：git clone [https://gitee.com/kunpengcompute/KAE.git](https://gitee.com/kunpengcompute/KAE.git "https://gitee.com/kunpengcompute/KAE.git") -b kae2 或者访问Kunpeng/KAE代码仓下载源码包：[https://gitee.com/kunpengcompute/KAE](https://gitee.com/kunpengcompute/KAE "https://gitee.com/kunpengcompute/KAE")
+* **源码包获取** KAE2.0 源码下载方式：git clone [https://gitee.com/kunpengcompute/KAE.git](https://gitee.com/kunpengcompute/KAE.git "https://gitee.com/kunpengcompute/KAE.git") -b kae2 , 或访问Kunpeng/KAE代码仓下载源码包：[https://gitee.com/kunpengcompute/KAE](https://gitee.com/kunpengcompute/KAE "https://gitee.com/kunpengcompute/KAE")
 
-## 2.4 KAE2.0安装
+## 2.3 KAE2.0安装
 
-### 2.4.1 RPM包安装
+### 2.3.1 RPM包安装
 
 RPM包在gitee社区[release界面](https://gitee.com/kunpengcompute/KAE/releases)
 
 > 内核RPM包的安装会依赖OS的内核版本号，gitee社区提供的RPM都是在特性OS版本编译，安装需要依赖对应版本，若OS版本不匹配，可以通过源码按照方式使用，或者通过源码sh build.sh rpmpack命令生成特点版本的RPM使用。
 
-### 2.4.2 源码安装
+### 2.3.2 源码安装
 
 通过2.2节获取到源码后，进入KAE文件夹，目录结构如下所示：
 
@@ -81,7 +81,6 @@ drwxr-xr-x.  6 root root   166 May  7 20:22 KAEZstd
 -rw-r--r--.  1 root root 29683 Feb 12 10:48 README.md
 drwxr-xr-x.  5 root root    83 May  7 20:05 scripts
 drwxr-xr-x. 10 root root  4096 May  7 20:05 uadk
-
 ```
 
 需要依次安装驱动、安装UADK、安装应用层软件（KAEOpensslEngine、KAEZlib、KAEZstd、KAELz4、KAEGzip）。
@@ -90,7 +89,7 @@ drwxr-xr-x. 10 root root  4096 May  7 20:05 uadk
 `sh build.sh -h`  查看帮助信息
 `sh build.sh all` 一键简易安装
 
-#### 2.4.2.1 安装内核驱动
+#### 2.3.2.1 安装内核驱动
 
 ```shell
 [root@localhost KAE]# sh build.sh driver
@@ -158,7 +157,7 @@ lrwxrwxrwx. 1 root root 0 Aug 22 17:14 hisi_zip-5 -> ../../devices/pci0000:b4/00
 
 > 说明： 若无内容显示，可能是因为uacce默认安装了内核版本，可以先卸载后重新安装。 sh build cleanup
 
-#### 2.4.2.2 安装用户态驱动
+#### 2.3.2.2 安装用户态驱动
 
 ```shell
 sh build.sh uadk
@@ -183,7 +182,7 @@ lrwxrwxrwx. 1 root root      14 Aug 22 17:23 /usr/local/lib/libwd.so.2 -> libwd.
 -rwxr-xr-x. 1 root root 1342080 Aug 22 17:23 /usr/local/lib/libwd.so.2.5.0
 ```
 
-#### 2.4.2.3 安装OpenSSLEngine（按需）
+#### 2.3.2.3 安装OpenSSLEngine（按需）
 
 ```shell
 sh build.sh engine
@@ -227,9 +226,7 @@ compiler: gcc -fPIC -pthread -Wa,--noexecstack -Wall -O3 -O2 -g -pipe -Wall -Wer
 rsa 2048 bits 0.000154s 0.000019s   6491.3  51968.5
 ```
 
-#### 2.4.2.4 安装KAEZlib（按需）
-
-此特性仅在920新型号处理器有效
+#### 2.3.2.4 安装KAEZlib（按需）
 
 ```shell
 sh build.sh zlib
@@ -248,14 +245,11 @@ lrwxrwxrwx. 1 root root     14 May 10 09:29 libz.so -> libz.so.1.2.11
 lrwxrwxrwx. 1 root root     14 May 10 09:29 libz.so.1 -> libz.so.1.2.11
 -rwxr-xr-x. 1 root root 144208 May 10 09:29 libz.so.1.2.11
 drwxr-xr-x. 2 root root   4096 May 10 09:29 pkgconfig
-
 ```
 
 若通过**ldd**命令查看zlib加速库没链接到libwd和libkaezip，可以通过LD_LIBRARY_PATH指定依赖库地址。
 
-#### 2.4.2.5 安装KAEGzip（按需）
-
-此特性仅在920新型号处理器有效
+#### 2.3.2.5 安装KAEGzip（按需）
 
 ```shell
 sh build.sh gzip
@@ -271,7 +265,7 @@ total 116
 
 若通过**ldd**命令查看zlib加速库没链接到libwd和libkaezip，可以通过LD_LIBRARY_PATH指定依赖库地址。
 
-#### 2.4.2.5 安装KAEZztd（按需）
+#### 2.3.2.6 安装KAEZztd（按需）
 
 此特性仅在920新型号处理器有效
 
@@ -293,12 +287,11 @@ lrwxrwxrwx. 1 root root     16 May 10 09:29 libzstd.so -> libzstd.so.1.5.2
 lrwxrwxrwx. 1 root root     16 May 10 09:29 libzstd.so.1 -> libzstd.so.1.5.2
 -rwxr-xr-x. 1 root root 843000 May 10 09:29 libzstd.so.1.5.2
 drwxr-xr-x. 2 root root   4096 May 10 09:29 pkgconfig
-
 ```
 
 若通过**ldd**命令查看zstd加速库没链接到libwd和libkaezstd，可以通过LD_LIBRARY_PATH指定依赖库地址。
 
-#### 2.4.2.6 安装KAELz4（按需）
+#### 2.3.2.7 安装KAELz4（按需）
 
 此特性仅在920新型号处理器有效
 
@@ -324,18 +317,17 @@ drwxr-xr-x. 2 root root   4096 May 10 09:30 pkgconfig
 
 若通过**ldd**命令查看zstd加速库没链接到libwd和libkaelz4，可以通过LD_LIBRARY_PATH指定依赖库地址。
 
-#### 2.4.2.6 源码方式卸载
+#### 2.3.2.8 源码方式卸载
 
 ```shell
 sh build.sh driver clean  内核驱动卸载
-sh build.sh uadk clean 用户态驱动卸载
-sh build.sh engine clean 加解密引擎卸载
-sh build.sh zlib clean 压缩库zlib卸载
-sh build.sh gzip clean  压缩库gzip卸载
-sh build.sh zstd clean 压缩库zstd卸载
-sh build.sh lz4 clean 压缩库lz4卸载
-###
-sh build.sh cleanup 一键式卸载
+sh build.sh uadk clean    用户态驱动卸载
+sh build.sh engine clean  加解密引擎卸载
+sh build.sh zlib clean    压缩库zlib卸载
+sh build.sh gzip clean    压缩库gzip卸载
+sh build.sh zstd clean    压缩库zstd卸载
+sh build.sh lz4 clean     压缩库lz4卸载
+sh build.sh cleanup       一键式卸载
 ```
 
 # 三、常见问题
@@ -357,3 +349,9 @@ sh build.sh cleanup 一键式卸载
   > lspci | grep ZIP
   
   解决办法：920申请license安装；920新型号更新免license版本BIOS
+
+## 参与贡献
+```
+如果您想为本仓库贡献代码，请向本仓库任意maintainer发送邮件
+如果您找到产品中的任何Bug，欢迎您提出ISSUE
+```
