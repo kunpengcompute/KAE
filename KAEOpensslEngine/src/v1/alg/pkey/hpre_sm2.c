@@ -106,6 +106,7 @@ static int hpre_sm2_compute_hash(const char *in, size_t in_len,
 	EVP_MD_CTX *hash = EVP_MD_CTX_new();
 	int ret = 0;
 
+    digest = digest ? digest : EVP_sm3();
 	if (EVP_DigestInit(hash, digest) == 0 ||
 		EVP_DigestUpdate(hash, in, in_len) == 0 ||
 		EVP_DigestFinal(hash, (void *)out, NULL) == 0) {
@@ -999,7 +1000,7 @@ int hpre_sm2_set_public_key(void *sess, const EC_KEY *eckey)
 		ret = OPENSSL_FAIL;
 	}
 
-	free(point_bin);
+	OPENSSL_free(point_bin);
 
 	return OPENSSL_SUCCESS;
 }
