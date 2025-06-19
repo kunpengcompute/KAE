@@ -348,7 +348,7 @@ function build_engine()
     ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae --with-openssl_install_dir=$openssl_install_path CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
     make -j
     make install
-    build_engine_log
+    # build_engine_log
 }
 
 function engine_clean()
@@ -357,7 +357,7 @@ function engine_clean()
     make uninstall
     make clean
     rm -rf /usr/local/lib/engines-1.1
-    engine_log_clean
+    # engine_log_clean
 }
 
 function build_engine_openssl3()
@@ -392,7 +392,7 @@ function build_engine_openssl3()
     ./configure --libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=$openssl3_install_path  #/usr/local/ssl3 
     make -j
     make install
-    build_engine_log
+    # build_engine_log
 }
 
 function engine_clean_openssl3()
@@ -401,7 +401,7 @@ function engine_clean_openssl3()
     make uninstall
     make clean
     rm -rf /usr/local/lib/engines-3.0
-    engine_log_clean
+    # engine_log_clean
 }
 
 function build_engine_gmssl()
@@ -419,7 +419,7 @@ function build_engine_gmssl()
     ./configure --libdir=/usr/local/gmssl/lib/engines-1.1 --enable-kae --enable-kae-gmssl --with-openssl_install_dir=$gmssl_install_path  CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong -I/usr/local/gmssl/include/" 
     make -j
     make install
-    build_engine_log
+    # build_engine_log
 }
 
 function engine_clean_gmssl()
@@ -428,7 +428,7 @@ function engine_clean_gmssl()
     make uninstall
     make clean
     rm -rf /usr/local/gmssl/lib/engines-1.1
-    engine_log_clean
+    # engine_log_clean
 }
 
 function build_engine3_tongsuo()
@@ -459,7 +459,7 @@ function build_engine3_tongsuo()
     ./configure --libdir=/usr/local/tongsuo/lib/engines-3.0 --enable-kae --enable-engine --enable-kae-tongsuo --with-openssl_install_dir=$tongsuo_install_path
     make -j
     make install
-    build_engine_log
+    # build_engine_log
 }
 
 function engine3_clean_tongsuo()
@@ -468,7 +468,7 @@ function engine3_clean_tongsuo()
     make uninstall
     make clean
     rm -rf /usr/local/tongsuo/lib/engines-3.0
-    engine_log_clean
+    # engine_log_clean
 }
 
 function build_engine_boringssl()
@@ -487,7 +487,7 @@ function build_engine_boringssl()
     ./configure --libdir=/usr/local/boringssl/lib/engines-1.1 --enable-kae --enable-engine --enable-kae-boringssl --with-openssl_install_dir=$boringssl_install_path
     make -j
     make install
-    build_engine_log
+    # build_engine_log
 }
 
 function engine_clean_boringssl()
@@ -496,7 +496,7 @@ function engine_clean_boringssl()
     make uninstall
     make clean
     rm -rf /usr/local/boringssl/lib/engines-1.1
-    engine_log_clean
+    # engine_log_clean
 }
 
 function build_zlib()
