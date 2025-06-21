@@ -192,7 +192,7 @@ static void uadk_e_set_env_enabled(const char *alg_name, __u8 value)
 	while (i < len) {
 		if (!strcmp(uadk_env_enabled[i].alg_name, alg_name)) {
 			uadk_env_enabled[i].env_enabled = value;
-			US_DEBUG("set %s env %s",alg_name ? "Enable":"Disable");
+			US_DEBUG("set %s env %s", alg_name, value == 0 ? "Disable" : "Enable");
 			return;
 		}
 

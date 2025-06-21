@@ -168,7 +168,8 @@ void hpre_free_eng_ctx(hpre_engine_ctx_t *eng_ctx)
 
 	if (eng_ctx->opdata.op_type != WCRYPTO_RSA_GENKEY) {
 		if (eng_ctx->opdata.in)
-			eng_ctx->rsa_setup.br.free(eng_ctx->qlist->kae_queue_mem_pool, eng_ctx->opdata.in);
+            if (eng_ctx->qlist != NULL)
+			    eng_ctx->rsa_setup.br.free(eng_ctx->qlist->kae_queue_mem_pool, eng_ctx->opdata.in);
 		if (eng_ctx->opdata.out) {
 			if (eng_ctx->qlist != NULL)
 				eng_ctx->rsa_setup.br.free(eng_ctx->qlist->kae_queue_mem_pool, eng_ctx->opdata.out);

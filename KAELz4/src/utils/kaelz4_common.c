@@ -23,7 +23,7 @@ static int g_kaelz4Initialized = 0;
 static inline void versionCpy(char str1[], const char str2[])
 {
     int i = 0;
-    while (i < VERSION_STRUCT_LEN && str2[i] != '\0') {
+    while (i < VERSION_STRUCT_LEN - 1 && str2[i] != '\0') {
         str1[i] = str2[i];
         ++i;
     }
