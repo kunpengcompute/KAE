@@ -1,0 +1,8889 @@
+diff -Nur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_decompress.c
+--- zstd-1.5.4/lib/decompress/huf_decompress.c	2023-02-10 08:41:50.000000000 +0800
++++ zstd/lib/decompress/huf_decompress.c	2025-06-23 16:52:55.825521370 +0800
+@@ -11,6 +11,7 @@
+  * in the COPYING file in the root directory of this source tree).
+  * You may select, at your option, one of the above-listed licenses.
+ ****************************************************************** */
++#define   OPTIMIZE_LIT_HUF_DECODE   1
+ 
+ /* **************************************************************
+ *  Dependencies
+@@ -843,9 +844,110 @@
+ 
+ HUF_DGEN(HUF_decompress1X1_usingDTable_internal)
+ 
++#if OPTIMIZE_LIT_HUF_DECODE
++
++// allowed range x = 1~((1<<64)-1)
++inline static int8_t trailbit_u64 (uint64_t val) {
++    return (int8_t)__builtin_ctzll(val);
++}
++
++// allowed range x = 1~511
++inline static int8_t highbit_u9 (uint16_t x) {
++    return 31 - __builtin_clz((uint32_t)x);
++}
++
++inline void MEM_COPY16B (uint8_t *p_dst, const uint8_t *p_src) {
++    vst1q_u8(p_dst, vld1q_u8(p_src));
++}
++
++inline static void HUF_decompress4X1_usingDTable_ver2 (U8 *dst, size_t dst_size, const U8 *src, size_t src_size, const HUF_DTable* huf_dtable) {
++    U8 backup [16];
++    MEM_COPY16B(backup, (dst+dst_size));      // 保存 (dst+dst_size) 开始的 16B，避免 wildcopy 的篡改
++
++    typedef struct { U8 n_bit; U8 symb; } HUF_item;
++
++    const HUF_item * dtable = (const HUF_item*)(huf_dtable + 1);
++    const U8 table_sft = (64 - HUF_getDTableDesc(huf_dtable).tableLog) & 0x3F;
++
++    #define HUF4X1_RELD(k)   { int8_t c=trailbit_u64(d[k]);  ip[k]-=(c>>3);  d[k]=(1|(*(U64*)ip[k]));  d[k]<<=(c&7); }
++    #define HUF4X1_DECJ(k,j) { HUF_item item=dtable[(d[k]>>table_sft)];  d[k]<<=item.n_bit;    op[k][j]=item.symb; }
++    #define HUF4X1_DECK(k)   { HUF_item item=dtable[(d[k]>>table_sft)];  d[k]<<=item.n_bit;  *(op[k]++)=item.symb; }
++
++    const U32 u = ((dst_size+3) >> 2);
++    const U32 y = u / 5;
++    const U32 z = u - y*5;
++    U8* op1 = (U8*)dst;
++    U8* op2 = op1 + u;
++    U8* op3 = op2 + u;
++    U8* op4 = op3 + u;
++    const U8 *ip1 = ((U8*)src) + 6 + ((const U16*)src)[0] - 8;
++    const U8 *ip2 = ip1            + ((const U16*)src)[1];
++    const U8 *ip3 = ip2            + ((const U16*)src)[2];
++    const U8 *ip4 = ((U8*)src) + src_size - 8;
++
++    const U8 * ip[] = {ip1, ip2, ip3, ip4};
++    U8       * op[] = {op1, op2, op3, op4};
++    U64        d[4];
++    
++    for (int k=0; k<4; k++) {
++        d[k]   = (1|(*(U64*)ip[k]));
++        d[k] <<= (8 - highbit_u9(ip[k][7]));
++    }
++    
++    for (U32 i=0; i<y; i++) {
++        HUF4X1_DECJ(0, 0);
++        HUF4X1_DECJ(1, 0);
++        HUF4X1_DECJ(2, 0);
++        HUF4X1_DECJ(3, 0);
++        HUF4X1_DECJ(0, 1);
++        HUF4X1_DECJ(1, 1);
++        HUF4X1_DECJ(2, 1);
++        HUF4X1_DECJ(3, 1);
++        HUF4X1_DECJ(0, 2);
++        HUF4X1_DECJ(1, 2);
++        HUF4X1_DECJ(2, 2);
++        HUF4X1_DECJ(3, 2);
++        HUF4X1_DECJ(0, 3);
++        HUF4X1_DECJ(1, 3);
++        HUF4X1_DECJ(2, 3);
++        HUF4X1_DECJ(3, 3);
++        HUF4X1_DECJ(0, 4);
++        HUF4X1_DECJ(1, 4);
++        HUF4X1_DECJ(2, 4);
++        HUF4X1_DECJ(3, 4);
++        op[0] += 5;
++        op[1] += 5;
++        op[2] += 5;
++        op[3] += 5;
++        HUF4X1_RELD(0);
++        HUF4X1_RELD(1);
++        HUF4X1_RELD(2);
++        HUF4X1_RELD(3);
++    }
++
++    for (U32 i=0; i<z; i++) {
++        HUF4X1_DECK(0);
++        HUF4X1_DECK(1);
++        HUF4X1_DECK(2);
++        HUF4X1_DECK(3);
++    }
++
++    MEM_COPY16B((dst+dst_size), backup);      // 恢复 (dst+dst_size) 开始的 16B，避免 wildcopy 的篡改
++}
++
++#endif
++
+ static size_t HUF_decompress4X1_usingDTable_internal(void* dst, size_t dstSize, void const* cSrc,
+                     size_t cSrcSize, HUF_DTable const* DTable, int flags)
+ {
++#if OPTIMIZE_LIT_HUF_DECODE
++    {
++        (void)flags;
++        HUF_decompress4X1_usingDTable_ver2(dst, dstSize, cSrc, cSrcSize, DTable);
++        return dstSize;
++    }
++#endif
++
+     HUF_DecompressUsingDTableFn fallbackFn = HUF_decompress4X1_usingDTable_internal_default;
+     HUF_DecompressFastLoopFn loopFn = HUF_decompress4X1_usingDTable_internal_fast_c_loop;
+ 
+diff -Nur zstd-1.5.4/lib/decompress/zstd_decompress_block_aarch64.S zstd/lib/decompress/zstd_decompress_block_aarch64.S
+--- zstd-1.5.4/lib/decompress/zstd_decompress_block_aarch64.S	1970-01-01 08:00:00.000000000 +0800
++++ zstd/lib/decompress/zstd_decompress_block_aarch64.S	2025-06-23 16:47:39.873521370 +0800
+@@ -0,0 +1,8736 @@
++	.arch armv8-a
++	.file	"zstd_decompress_block.c"
++	.text
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_safecopy, %function
++ZSTD_safecopy:
++.LFB4518:
++	.cfi_startproc
++	add	x5, x0, x3
++	cmp	x3, 7
++	ble	.L34
++	cmp	w4, 1
++	beq	.L35
++	cmp	x5, x1
++	bls	.L19
++	cmp	x1, x0
++	bcs	.L36
++.L12:
++	cmp	x0, x5
++	bcs	.L1
++	.p2align 3,,7
++.L18:
++	ldrb	w1, [x2], 1
++	strb	w1, [x0], 1
++	cmp	x0, x5
++	bcc	.L18
++.L1:
++	ret
++	.p2align 2,,3
++.L35:
++	sub	x4, x0, x2
++	cmp	x4, 7
++	bls	.L37
++	ldr	d0, [x2]
++	str	d0, [x0]
++.L7:
++	add	x6, x2, 8
++	add	x4, x0, 8
++	cmp	x5, x1
++	bhi	.L8
++	sub	x2, x0, x2
++	cmp	x2, 15
++	bgt	.L9
++	.p2align 3,,7
++.L10:
++	ldr	d0, [x6], 8
++	str	d0, [x4], 8
++	cmp	x5, x4
++	bhi	.L10
++	ret
++	.p2align 2,,3
++.L34:
++	mov	x1, 0
++	cmp	x5, x0
++	bls	.L1
++	.p2align 3,,7
++.L3:
++	ldrb	w4, [x2, x1]
++	strb	w4, [x0, x1]
++	add	x1, x1, 1
++	cmp	x3, x1
++	bne	.L3
++	ret
++	.p2align 2,,3
++.L37:
++	ldrb	w7, [x2]
++	adrp	x6, .LANCHOR0
++	strb	w7, [x0]
++	add	x6, x6, :lo12:.LANCHOR0
++	add	x7, x6, 32
++	ldrb	w8, [x2, 1]
++	strb	w8, [x0, 1]
++	ldr	w7, [x7, x4, lsl 2]
++	ldrb	w8, [x2, 2]
++	strb	w8, [x0, 2]
++	add	x8, x2, x7
++	ldrsw	x6, [x6, x4, lsl 2]
++	ldrb	w4, [x2, 3]
++	strb	w4, [x0, 3]
++	ldr	w4, [x2, x7]
++	sub	x2, x8, x6
++	str	w4, [x0, 4]
++	b	.L7
++	.p2align 2,,3
++.L8:
++	cmp	x1, x4
++	bcc	.L23
++	sub	x0, x0, x2
++	sub	x2, x1, x4
++	mov	x3, x2
++	cmp	x0, 15
++	bgt	.L24
++	mov	x0, x6
++	.p2align 3,,7
++.L14:
++	ldr	d0, [x0], 8
++	str	d0, [x4], 8
++	cmp	x1, x4
++	bhi	.L14
++.L16:
++	add	x2, x6, x2
++	mov	x0, x1
++	ldrb	w1, [x2], 1
++	strb	w1, [x0], 1
++	cmp	x0, x5
++	bcc	.L18
++	b	.L1
++.L9:
++	sub	x3, x3, #8
++	mov	x2, x6
++	mov	x0, x4
++	.p2align 3,,7
++.L19:
++	ldr	q0, [x2]
++	str	q0, [x0]
++	cmp	x3, 16
++	ble	.L1
++	add	x0, x0, 16
++	add	x2, x2, 16
++	.p2align 3,,7
++.L11:
++	ldr	q0, [x2]
++	add	x0, x0, 32
++	add	x2, x2, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L11
++	ret
++	.p2align 2,,3
++.L36:
++	sub	x3, x1, x0
++	mov	x6, x2
++	mov	x2, x3
++.L13:
++	ldr	q0, [x6]
++	str	q0, [x0]
++	cmp	x3, 16
++	ble	.L16
++	add	x0, x0, 16
++	add	x3, x6, 16
++	.p2align 3,,7
++.L17:
++	ldr	q0, [x3]
++	add	x0, x0, 32
++	add	x3, x3, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x3, -16]
++	str	q0, [x0, -16]
++	cmp	x0, x1
++	bcc	.L17
++	b	.L16
++.L24:
++	mov	x0, x4
++	b	.L13
++.L23:
++	mov	x2, x6
++	mov	x0, x4
++	b	.L12
++	.cfi_endproc
++.LFE4518:
++	.size	ZSTD_safecopy, .-ZSTD_safecopy
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_execSequenceEnd, %function
++ZSTD_execSequenceEnd:
++.LFB4520:
++	.cfi_startproc
++	stp	x29, x30, [sp, -64]!
++	.cfi_def_cfa_offset 64
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	sub	x8, x1, x0
++	mov	x29, sp
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	ldp	x10, x21, [x2]
++	add	x22, x10, x21
++	cmp	x8, x22
++	bcc	.L44
++	ldr	x12, [x3]
++	mov	x9, x3
++	ldr	x13, [x2, 16]
++	sub	x4, x4, x12
++	cmp	x4, x10
++	bcc	.L42
++	stp	x19, x20, [sp, 16]
++	.cfi_offset 20, -40
++	.cfi_offset 19, -48
++	sub	x20, x1, #32
++	add	x19, x0, x10
++	mov	x15, x5
++	mov	x2, x12
++	mov	x11, x6
++	mov	x14, x7
++	mov	x1, x20
++	mov	x3, x10
++	mov	w4, 0
++	str	x23, [sp, 48]
++	.cfi_offset 23, -16
++	bl	ZSTD_safecopy
++	add	x12, x12, x10
++	sub	x0, x19, x15
++	str	x12, [x9]
++	sub	x23, x19, x13
++	cmp	x0, x13
++	bcs	.L41
++	sub	x6, x19, x11
++	cmp	x6, x13
++	bcc	.L46
++	sub	x2, x15, x23
++	sub	x1, x14, x2
++	add	x0, x1, x21
++	cmp	x14, x0
++	bcs	.L47
++	mov	x0, x19
++	sub	x21, x21, x2
++	mov	x23, x15
++	add	x19, x19, x2
++	bl	memmove
++.L41:
++	mov	x2, x23
++	mov	x1, x20
++	mov	x0, x19
++	mov	x3, x21
++	mov	w4, 1
++	bl	ZSTD_safecopy
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++.L38:
++	mov	x0, x22
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L46:
++	.cfi_def_cfa_offset 64
++	.cfi_offset 19, -48
++	.cfi_offset 20, -40
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	.cfi_offset 23, -16
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++.L42:
++	mov	x22, -20
++	mov	x0, x22
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L44:
++	.cfi_restore_state
++	mov	x22, -70
++	mov	x0, x22
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L47:
++	.cfi_def_cfa_offset 64
++	.cfi_offset 19, -48
++	.cfi_offset 20, -40
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	.cfi_offset 23, -16
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	mov	x0, x19
++	mov	x2, x21
++	bl	memmove
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++	b	.L38
++	.cfi_endproc
++.LFE4520:
++	.size	ZSTD_execSequenceEnd, .-ZSTD_execSequenceEnd
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_safecopyDstBeforeSrc, %function
++ZSTD_safecopyDstBeforeSrc:
++.LFB4519:
++	.cfi_startproc
++	cmp	x2, 7
++	sub	x3, x0, x1
++	ccmn	x3, #7, 0, gt
++	add	x4, x0, x2
++	bge	.L62
++	sub	x5, x4, #32
++	cmp	x5, x0
++	ccmn	x3, #16, 0, cs
++	blt	.L63
++.L52:
++	cmp	x4, x0
++	bls	.L48
++	sub	x4, x4, x0
++	mov	x2, 0
++	.p2align 3,,7
++.L55:
++	ldrb	w3, [x1, x2]
++	strb	w3, [x0, x2]
++	add	x2, x2, 1
++	cmp	x4, x2
++	bne	.L55
++.L48:
++	ret
++	.p2align 2,,3
++.L62:
++	cmp	x0, x4
++	bcs	.L48
++	mov	x3, 0
++	.p2align 3,,7
++.L51:
++	ldrb	w4, [x1, x3]
++	strb	w4, [x0, x3]
++	add	x3, x3, 1
++	cmp	x2, x3
++	bne	.L51
++	ret
++	.p2align 2,,3
++.L63:
++	ldr	q0, [x1]
++	sub	x3, x5, x0
++	str	q0, [x0]
++	cmp	x3, 16
++	ble	.L53
++	add	x0, x0, 16
++	add	x2, x1, 16
++	.p2align 3,,7
++.L54:
++	ldr	q0, [x2]
++	add	x0, x0, 32
++	add	x2, x2, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L54
++.L53:
++	add	x1, x1, x3
++	mov	x0, x5
++	b	.L52
++	.cfi_endproc
++.LFE4519:
++	.size	ZSTD_safecopyDstBeforeSrc, .-ZSTD_safecopyDstBeforeSrc
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_execSequenceEndSplitLitBuffer, %function
++ZSTD_execSequenceEndSplitLitBuffer:
++.LFB4521:
++	.cfi_startproc
++	stp	x29, x30, [sp, -64]!
++	.cfi_def_cfa_offset 64
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	sub	x1, x1, x0
++	mov	x29, sp
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	ldp	x10, x22, [x3]
++	stp	x19, x20, [sp, 16]
++	.cfi_offset 19, -48
++	.cfi_offset 20, -40
++	add	x20, x10, x22
++	cmp	x1, x20
++	bcc	.L71
++	ldr	x1, [x4]
++	mov	x11, x4
++	ldr	x9, [x3, 16]
++	sub	x5, x5, x1
++	cmp	x5, x10
++	bcc	.L68
++	add	x12, x1, x10
++	cmp	x0, x12
++	ccmp	x1, x0, 2, cc
++	bcc	.L71
++	add	x19, x0, x10
++	mov	x21, x2
++	mov	x2, x10
++	str	x23, [sp, 48]
++	.cfi_offset 23, -16
++	bl	ZSTD_safecopyDstBeforeSrc
++	str	x12, [x11]
++	sub	x0, x19, x6
++	sub	x23, x19, x9
++	cmp	x0, x9
++	bcs	.L67
++	sub	x7, x19, x7
++	cmp	x7, x9
++	bcc	.L73
++	ldr	x0, [sp, 64]
++	sub	x2, x6, x23
++	ldr	x3, [sp, 64]
++	sub	x1, x0, x2
++	add	x0, x1, x22
++	cmp	x3, x0
++	bcs	.L74
++	mov	x0, x19
++	sub	x22, x22, x2
++	mov	x23, x6
++	add	x19, x19, x2
++	bl	memmove
++.L67:
++	mov	x2, x23
++	mov	x3, x22
++	mov	x1, x21
++	mov	x0, x19
++	mov	w4, 1
++	bl	ZSTD_safecopy
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++.L64:
++	mov	x0, x20
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L71:
++	.cfi_restore_state
++	mov	x20, -70
++	mov	x0, x20
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L73:
++	.cfi_def_cfa_offset 64
++	.cfi_offset 19, -48
++	.cfi_offset 20, -40
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	.cfi_offset 23, -16
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++.L68:
++	mov	x20, -20
++	mov	x0, x20
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 64
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L74:
++	.cfi_def_cfa_offset 64
++	.cfi_offset 19, -48
++	.cfi_offset 20, -40
++	.cfi_offset 21, -32
++	.cfi_offset 22, -24
++	.cfi_offset 23, -16
++	.cfi_offset 29, -64
++	.cfi_offset 30, -56
++	mov	x2, x22
++	mov	x0, x19
++	bl	memmove
++	ldr	x23, [sp, 48]
++	.cfi_restore 23
++	b	.L64
++	.cfi_endproc
++.LFE4521:
++	.size	ZSTD_execSequenceEndSplitLitBuffer, .-ZSTD_execSequenceEndSplitLitBuffer
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_buildFSETable_body_default.constprop.0, %function
++ZSTD_buildFSETable_body_default.constprop.0:
++.LFB4547:
++	.cfi_startproc
++	mov	w7, 1
++	stp	x29, x30, [sp, -32]!
++	.cfi_def_cfa_offset 32
++	.cfi_offset 29, -32
++	.cfi_offset 30, -24
++	lsl	w14, w7, w5
++	mov	x30, 0
++	sub	w9, w5, #1
++	lsr	w8, w14, 3
++	bfi	x30, x5, 32, 32
++	add	w8, w8, w14, lsr 1
++	mov	x29, sp
++	mov	x15, 1
++	lsl	w7, w7, w9
++	bfi	x30, x15, 0, 32
++	add	w9, w8, 3
++	add	x11, x0, 8
++	sub	w8, w14, #1
++	add	x17, x6, 106
++	cmn	w2, #1
++	beq	.L76
++	sxth	w18, w7
++	uxtw	x16, w2
++	mov	w10, w8
++	mov	x7, 0
++	str	x19, [sp, 16]
++	.cfi_offset 19, -16
++	mov	w19, 0
++	b	.L80
++	.p2align 2,,3
++.L77:
++	cmp	w18, w12
++	strh	w13, [x6, x7, lsl 1]
++	csel	w15, w15, wzr, gt
++	add	x12, x7, 1
++	mov	w19, 1
++	cmp	x16, x7
++	beq	.L116
++.L99:
++	mov	x7, x12
++.L80:
++	ldrsh	w12, [x1, x7, lsl 1]
++	and	w13, w12, 65535
++	cmn	w12, #1
++	bne	.L77
++	add	x12, x11, w10, uxtw 3
++	mov	w13, 1
++	sub	w10, w10, #1
++	str	w7, [x12, 4]
++	add	x12, x7, 1
++	strh	w13, [x6, x7, lsl 1]
++	cmp	x16, x7
++	bne	.L99
++.L116:
++	lsr	w7, w30, 0
++	cmp	w19, 0
++	csel	x15, x15, x7, ne
++	bfi	x30, x15, 0, 32
++	str	x30, [x0]
++	cmp	w8, w10
++	beq	.L98
++	mov	x15, 0
++	mov	w0, 0
++	.p2align 3,,7
++.L94:
++	ldrsh	w12, [x1, x15, lsl 1]
++	mov	w13, w15
++	cmp	w12, 0
++	ble	.L90
++	mov	w2, 0
++	.p2align 3,,7
++.L93:
++	add	x7, x11, w0, uxtw 3
++	add	w0, w0, w9
++	and	w0, w8, w0
++	str	w13, [x7, 4]
++	cmp	w0, w10
++	bhi	.L92
++.L91:
++	add	w2, w2, 1
++	cmp	w12, w2
++	bne	.L93
++.L90:
++	add	x2, x15, 1
++	cmp	x16, x15
++	beq	.L117
++	mov	x15, x2
++	b	.L94
++	.p2align 2,,3
++.L92:
++	add	w0, w0, w9
++	and	w0, w8, w0
++	cmp	w0, w10
++	bls	.L91
++	add	w0, w0, w9
++	and	w0, w8, w0
++	cmp	w0, w10
++	bls	.L91
++	b	.L92
++	.p2align 2,,3
++.L117:
++	ldr	x19, [sp, 16]
++	.cfi_restore 19
++	cbz	w14, .L75
++.L87:
++	and	w5, w5, 255
++	and	w12, w14, 65535
++	mov	x2, x11
++	mov	w8, 0
++	mov	w11, 31
++	.p2align 3,,7
++.L96:
++	ldr	w7, [x2, 4]
++	add	w8, w8, 1
++	add	x2, x2, 8
++	ubfiz	x9, x7, 1, 32
++	ldrh	w1, [x6, x9]
++	clz	w0, w1
++	add	w10, w1, 1
++	sub	w0, w11, w0
++	strh	w10, [x6, x9]
++	sub	w0, w5, w0
++	and	w0, w0, 255
++	strb	w0, [x2, -5]
++	lsl	w1, w1, w0
++	sub	w1, w1, w12
++	strh	w1, [x2, -8]
++	ldrb	w0, [x4, w7, uxtw]
++	strb	w0, [x2, -6]
++	ldr	w0, [x3, w7, uxtw 2]
++	str	w0, [x2, -4]
++	cmp	w14, w8
++	bhi	.L96
++.L75:
++	ldp	x29, x30, [sp], 32
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_def_cfa_offset 0
++	ret
++.L98:
++	.cfi_def_cfa_offset 32
++	.cfi_offset 19, -16
++	.cfi_offset 29, -32
++	.cfi_offset 30, -24
++	add	x0, x1, 2
++	mov	x10, 0
++	add	x2, x0, w2, uxtw 1
++	mov	x13, 0
++	mov	x15, 72340172838076673
++	.p2align 3,,7
++.L83:
++	ldrsh	w12, [x1]
++	add	x7, x13, 106
++	str	x10, [x17, x13]
++	add	x7, x6, x7
++	mov	x0, 8
++	cmp	w12, 8
++	ble	.L85
++	.p2align 3,,7
++.L82:
++	str	x10, [x7, x0]
++	add	x0, x0, 8
++	cmp	w12, w0
++	bgt	.L82
++.L85:
++	add	x1, x1, 2
++	add	x13, x13, w12, sxth
++	add	x10, x10, x15
++	cmp	x2, x1
++	bne	.L83
++	ldr	x19, [sp, 16]
++	.cfi_restore 19
++.L84:
++	uxtw	x0, w14
++	cbz	w14, .L75
++	sub	x12, x0, #1
++	mov	x1, x17
++	add	x0, x6, 108
++	and	x12, x12, -2
++	add	x12, x12, x0
++	mov	x0, 0
++	.p2align 3,,7
++.L89:
++	and	x7, x8, x0
++	add	x0, x9, x0
++	and	x2, x8, x0
++	ldrb	w10, [x1]
++	add	x7, x11, x7, lsl 3
++	add	x0, x9, x0
++	add	x2, x11, x2, lsl 3
++	add	x1, x1, 2
++	and	x0, x0, x8
++	str	w10, [x7, 4]
++	ldrb	w7, [x1, -1]
++	str	w7, [x2, 4]
++	cmp	x12, x1
++	bne	.L89
++	b	.L87
++.L76:
++	str	x30, [x0]
++	b	.L84
++	.cfi_endproc
++.LFE4547:
++	.size	ZSTD_buildFSETable_body_default.constprop.0, .-ZSTD_buildFSETable_body_default.constprop.0
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_buildSeqTable.constprop.0, %function
++ZSTD_buildSeqTable.constprop.0:
++.LFB4548:
++	.cfi_startproc
++	stp	x29, x30, [sp, -208]!
++	.cfi_def_cfa_offset 208
++	.cfi_offset 29, -208
++	.cfi_offset 30, -200
++	mov	x29, sp
++	stp	x19, x20, [sp, 16]
++	.cfi_offset 19, -192
++	.cfi_offset 20, -184
++	mov	w19, w4
++	mov	x20, x7
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 21, -176
++	.cfi_offset 22, -168
++	mov	x22, x0
++	str	x23, [sp, 48]
++	.cfi_offset 23, -160
++	mov	x23, x1
++	str	w3, [sp, 76]
++	cmp	w2, 2
++	beq	.L119
++	cmp	w2, 3
++	beq	.L120
++	cmp	w2, 1
++	beq	.L136
++	ldr	x0, [sp, 216]
++	mov	x21, 0
++	str	x0, [x1]
++.L118:
++	mov	x0, x21
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldr	x23, [sp, 48]
++	ldp	x29, x30, [sp], 208
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 23
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L119:
++	.cfi_restore_state
++	mov	x4, x6
++	mov	x3, x5
++	add	x0, sp, 96
++	add	x2, sp, 92
++	add	x1, sp, 76
++	bl	FSE_readNCount
++	mov	x21, x0
++	cmn	x0, #120
++	bhi	.L130
++	ldr	w5, [sp, 92]
++	cmp	w19, w5
++	bcc	.L130
++	ldr	w2, [sp, 76]
++	mov	x3, x20
++	ldr	x4, [sp, 208]
++	add	x1, sp, 96
++	ldr	x6, [sp, 248]
++	mov	x0, x22
++	bl	ZSTD_buildFSETable_body_default.constprop.0
++	str	x22, [x23]
++	b	.L118
++	.p2align 2,,3
++.L136:
++	mov	x21, -72
++	cbz	x6, .L118
++	ldrb	w0, [x5]
++	mov	x21, -20
++	cmp	w0, w3
++	bhi	.L118
++	ldr	x1, [sp, 208]
++	uxtw	x2, w0
++	and	x0, x0, 255
++	mov	x21, 1
++	ldrb	w1, [x1, x0]
++	ldr	w0, [x7, x2, lsl 2]
++	str	xzr, [x22]
++	strh	wzr, [x22, 8]
++	strb	w1, [x22, 10]
++	strb	wzr, [x22, 11]
++	str	w0, [x22, 12]
++	mov	x0, x21
++	str	x22, [x23]
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldr	x23, [sp, 48]
++	ldp	x29, x30, [sp], 208
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 23
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L120:
++	.cfi_restore_state
++	ldr	w0, [sp, 224]
++	mov	x21, -20
++	cbz	w0, .L118
++	ldr	w0, [sp, 232]
++	mov	x21, 0
++	cmp	w0, 0
++	ldr	w0, [sp, 240]
++	ccmp	w0, 24, 4, ne
++	ble	.L118
++	mov	w1, 1
++	mov	x0, 0
++	lsl	w1, w1, w4
++	add	w1, w1, 1
++	ldr	x2, [x23]
++	sbfiz	x1, x1, 3, 32
++	.p2align 3,,7
++.L123:
++	prfm	PLDL2KEEP, [x2, x0]
++	add	x0, x0, 64
++	cmp	x1, x0
++	bhi	.L123
++	mov	x21, 0
++	b	.L118
++	.p2align 2,,3
++.L130:
++	mov	x21, -20
++	mov	x0, x21
++	ldp	x19, x20, [sp, 16]
++	ldp	x21, x22, [sp, 32]
++	ldr	x23, [sp, 48]
++	ldp	x29, x30, [sp], 208
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 23
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.cfi_endproc
++.LFE4548:
++	.size	ZSTD_buildSeqTable.constprop.0, .-ZSTD_buildSeqTable.constprop.0
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_initFseState, %function
++ZSTD_initFseState:
++.LFB4524:
++	.cfi_startproc
++	ldr	w6, [x2, 4]
++	adrp	x5, .LANCHOR0
++	add	x5, x5, :lo12:.LANCHOR0
++	ldr	w3, [x1, 8]
++	add	x5, x5, 64
++	ldr	x4, [x1]
++	add	w3, w6, w3
++	ldr	w5, [x5, w6, uxtw 2]
++	neg	w6, w3
++	str	w3, [x1, 8]
++	lsr	x4, x4, x6
++	and	x4, x4, x5
++	str	x4, [x0]
++	cmp	w3, 64
++	bhi	.L138
++	ldr	x4, [x1, 16]
++	ldr	x5, [x1, 32]
++	cmp	x4, x5
++	bcs	.L141
++	ldr	x6, [x1, 24]
++	cmp	x4, x6
++	beq	.L138
++	lsr	w5, w3, 3
++	lsr	w7, w3, 3
++	sub	x5, x4, x5
++	cmp	x6, x5
++	bls	.L140
++	sub	x6, x4, x6
++	mov	w7, w6
++	sub	x5, x4, w6, uxtw
++.L140:
++	ldr	x4, [x5]
++	sub	w7, w3, w7, lsl 3
++	str	x4, [x1]
++	str	w7, [x1, 8]
++	str	x5, [x1, 16]
++.L138:
++	add	x2, x2, 8
++	str	x2, [x0, 8]
++	ret
++	.p2align 2,,3
++.L141:
++	lsr	w5, w3, 3
++	and	w3, w3, 7
++	sub	x4, x4, x5
++	str	w3, [x1, 8]
++	str	x4, [x1, 16]
++	add	x2, x2, 8
++	ldr	x3, [x4]
++	str	x3, [x1]
++	str	x2, [x0, 8]
++	ret
++	.cfi_endproc
++.LFE4524:
++	.size	ZSTD_initFseState, .-ZSTD_initFseState
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_decompressSequencesLong_default.constprop.0, %function
++ZSTD_decompressSequencesLong_default.constprop.0:
++.LFB4550:
++	.cfi_startproc
++	sub	sp, sp, #800
++	.cfi_def_cfa_offset 800
++	stp	x29, x30, [sp, 16]
++	.cfi_offset 29, -784
++	.cfi_offset 30, -776
++	add	x29, sp, 16
++	stp	x25, x26, [sp, 80]
++	.cfi_offset 25, -720
++	.cfi_offset 26, -712
++	add	x25, x0, 16384
++	stp	x21, x22, [sp, 48]
++	.cfi_offset 21, -752
++	.cfi_offset 22, -744
++	mov	x22, x0
++	add	x0, x1, x2
++	str	x0, [sp, 128]
++	ldr	w0, [x25, 13976]
++	stp	x23, x24, [sp, 64]
++	.cfi_offset 23, -736
++	.cfi_offset 24, -728
++	mov	x23, x3
++	stp	x27, x28, [sp, 96]
++	str	w5, [sp, 116]
++	str	x1, [sp, 152]
++	cmp	w0, 1
++	.cfi_offset 27, -704
++	.cfi_offset 28, -696
++	bne	.L144
++	ldr	x1, [x22, 30344]
++	str	x1, [sp, 128]
++.L144:
++	ldr	x2, [x22, 29904]
++	str	x2, [sp, 160]
++	ldr	x2, [x22, 30352]
++	str	x2, [sp, 136]
++	ldr	w2, [sp, 116]
++	ldr	x1, [x22, 30120]
++	str	x1, [sp, 344]
++	ldr	x24, [x22, 29896]
++	ldr	x26, [x22, 29912]
++	cbz	w2, .L314
++	ldr	w3, [x25, 10300]
++	mov	w0, 1
++	ldr	w2, [x25, 10304]
++	ldr	w1, [x25, 10308]
++	str	x3, [sp, 584]
++	str	x2, [sp, 592]
++	str	x1, [sp, 600]
++	str	w0, [x25, 13620]
++	cbz	x4, .L146
++	add	x0, x23, x4
++	add	x1, x23, 8
++	str	x1, [sp, 120]
++	str	x23, [sp, 520]
++	str	x1, [sp, 528]
++	ldrb	w0, [x0, -1]
++	cmp	x4, 7
++	bls	.L147
++	sub	x1, x4, #8
++	add	x2, x23, x1
++	str	x2, [sp, 512]
++	ldr	x1, [x23, x1]
++	str	x1, [sp, 496]
++	cbz	w0, .L146
++	clz	w0, w0
++	sub	w0, w0, #23
++	str	w0, [sp, 504]
++	cmn	x4, #120
++	bhi	.L146
++	stp	x19, x20, [sp, 32]
++	.cfi_offset 20, -760
++	.cfi_offset 19, -768
++.L148:
++	ldr	w3, [sp, 116]
++	ldr	x2, [x22]
++	cmp	w3, 8
++	mov	w0, 8
++	csel	w0, w3, w0, le
++	add	x1, sp, 496
++	str	w0, [sp, 144]
++	add	x0, sp, 536
++	bl	ZSTD_initFseState
++	ldr	x2, [x22, 16]
++	add	x0, sp, 552
++	bl	ZSTD_initFseState
++	add	x0, sp, 568
++	ldr	x2, [x22, 8]
++	bl	ZSTD_initFseState
++	ldr	w20, [sp, 504]
++	cmp	w20, 64
++	bhi	.L315
++	add	x10, sp, 536
++	adrp	x16, .LANCHOR0
++	ldr	x0, [sp, 152]
++	add	x16, x16, :lo12:.LANCHOR0
++	ldp	x9, x1, [x10]
++	sub	x19, x0, x24
++	ldp	x6, x8, [x10, 16]
++	add	x3, sp, 608
++	ldr	x10, [sp, 576]
++	mov	w2, w20
++	ldr	x0, [sp, 496]
++	add	x16, x16, 64
++	ldr	x5, [sp, 568]
++	add	x27, sp, 504
++	stp	x8, x22, [sp, 184]
++	mov	x22, x10
++	mov	w30, 0
++	stp	x25, x3, [sp, 200]
++	mov	x25, x1
++	mov	w4, 0
++	str	w20, [sp, 216]
++	mov	x20, x8
++	ldr	x7, [sp, 512]
++	mov	w21, 0
++	stp	x1, x10, [sp, 168]
++	str	x7, [sp, 224]
++	.p2align 3,,7
++.L157:
++	ldr	x1, [sp, 120]
++	cmp	x1, x7
++	bls	.L429
++	mov	w1, w4
++	cmp	x23, x7
++	beq	.L172
++	lsr	w0, w2, 3
++	lsr	w1, w2, 3
++	sub	x0, x7, x0
++	cmp	x23, x0
++	bls	.L173
++	sub	x0, x7, x23
++	mov	w1, w0
++	sub	x0, x7, w0, uxtw
++.L173:
++	mov	x7, x0
++	sub	w2, w2, w1, lsl 3
++	ldr	x0, [x0]
++	mov	w1, 1
++	mov	w30, w1
++.L172:
++	ldr	w8, [sp, 144]
++	cmp	w8, w21
++	ble	.L430
++.L174:
++	ldr	x8, [x25, x9, lsl 3]
++	ldr	x5, [x22, x5, lsl 3]
++	ldr	x6, [x20, x6, lsl 3]
++	ubfx	w14, w8, 16, 8
++	ubfx	w15, w5, 16, 8
++	lsr	x28, x8, 32
++	add	w9, w14, w15
++	lsr	x12, x5, 32
++	ubfx	w11, w6, 16, 8
++	mov	x13, x28
++	add	w9, w11, w9
++	lsr	x18, x6, 32
++	and	w9, w9, 255
++	lsr	w10, w8, 24
++	lsr	w1, w5, 24
++	lsr	w17, w6, 24
++	cmp	w11, 1
++	bls	.L158
++	neg	w28, w11
++	lsl	x4, x0, x2
++	add	w2, w2, w11
++	ldr	x11, [sp, 592]
++	str	x11, [sp, 600]
++	ldr	x11, [sp, 584]
++	lsr	x4, x4, x28
++	add	x4, x18, x4
++.L159:
++	str	x4, [sp, 584]
++	str	x11, [sp, 592]
++	cbnz	w15, .L431
++.L164:
++	cmp	w9, 30
++	bhi	.L432
++.L165:
++	cbnz	w14, .L433
++.L168:
++	uxtw	x11, w17
++	add	w9, w10, w2
++	add	x19, x13, x19
++	uxtw	x14, w1
++	cmp	x19, x4
++	add	w1, w1, w9
++	add	w2, w17, w1
++	ldr	w10, [x16, x10, lsl 2]
++	ldr	w17, [x16, x11, lsl 2]
++	csel	x15, x26, x24, cc
++	sub	x11, x19, x4
++	neg	w9, w9
++	add	x11, x15, x11
++	ldr	w14, [x16, x14, lsl 2]
++	neg	w1, w1
++	lsr	x9, x0, x9
++	and	x9, x9, x10
++	neg	w10, w2
++	prfm	PLDL1KEEP, [x11]
++	lsr	x1, x0, x1
++	prfm	PLDL1KEEP, [x11, 64]
++	and	x1, x1, x14
++	lsr	x10, x0, x10
++	and	x10, x10, x17
++	stp	x13, x12, [x3]
++	add	w21, w21, 1
++	add	x9, x9, w8, uxth
++	str	x4, [x3, 16]
++	add	x5, x1, w5, uxth
++	add	x6, x10, w6, uxth
++	add	x19, x19, x12
++	add	x3, x3, 24
++	mov	w4, 1
++	cmp	w2, 64
++	bls	.L157
++	ldp	x22, x25, [sp, 192]
++	cbz	w30, .L309
++	str	x0, [sp, 496]
++	str	w2, [sp, 504]
++	str	x7, [sp, 512]
++.L310:
++	str	x9, [sp, 536]
++	str	x6, [sp, 552]
++	str	x5, [sp, 568]
++.L156:
++	ldr	w0, [sp, 144]
++	cmp	w0, w21
++	ble	.L424
++.L420:
++	ldp	x19, x20, [sp, 32]
++	.cfi_restore 20
++	.cfi_restore 19
++.L146:
++	mov	x3, -20
++.L142:
++	mov	x0, x3
++	ldp	x29, x30, [sp, 16]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	ldp	x27, x28, [sp, 96]
++	add	sp, sp, 800
++	.cfi_remember_state
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 27
++	.cfi_restore 28
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L314:
++	.cfi_restore_state
++	ldr	x28, [sp, 152]
++.L145:
++	ldp	x3, x2, [sp, 128]
++	sub	x2, x2, x1
++	sub	x3, x3, x28
++	cmp	w0, 2
++	beq	.L434
++	cmp	x2, x3
++	bhi	.L306
++	cbnz	x28, .L308
++.L307:
++	ldr	x0, [sp, 152]
++	sub	x3, x28, x0
++.L437:
++	mov	x0, x3
++	ldp	x29, x30, [sp, 16]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	ldp	x27, x28, [sp, 96]
++	add	sp, sp, 800
++	.cfi_remember_state
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 27
++	.cfi_restore 28
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L147:
++	.cfi_restore_state
++	ldrb	w1, [x23]
++	str	x1, [sp, 496]
++	str	x23, [sp, 512]
++	cmp	x4, 5
++	beq	.L149
++	bhi	.L150
++	cmp	x4, 3
++	beq	.L151
++	cmp	x4, 4
++	bne	.L435
++.L152:
++	ldrb	w2, [x23, 3]
++	add	x1, x1, x2, lsl 24
++.L151:
++	ldrb	w2, [x23, 2]
++	add	x1, x1, x2, lsl 16
++	ldrb	w2, [x23, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 496]
++.L154:
++	cbz	w0, .L146
++	mov	w1, 8
++	sub	w1, w1, w4
++	clz	w0, w0
++	stp	x19, x20, [sp, 32]
++	.cfi_remember_state
++	.cfi_offset 20, -760
++	.cfi_offset 19, -768
++	add	w0, w0, w1, lsl 3
++	sub	w0, w0, #23
++	str	w0, [sp, 504]
++	b	.L148
++	.p2align 2,,3
++.L150:
++	.cfi_restore_state
++	cmp	x4, 6
++	beq	.L155
++	ldrb	w2, [x23, 6]
++	add	x1, x1, x2, lsl 48
++.L155:
++	ldrb	w2, [x23, 5]
++	add	x1, x1, x2, lsl 40
++.L149:
++	ldrb	w2, [x23, 4]
++	add	x1, x1, x2, lsl 32
++	b	.L152
++	.p2align 2,,3
++.L435:
++	cmp	x4, 2
++	bne	.L154
++	ldrb	w2, [x23, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 496]
++	b	.L154
++	.p2align 2,,3
++.L434:
++	cmp	x2, x3
++	bhi	.L306
++	stp	x19, x20, [sp, 32]
++	.cfi_offset 20, -760
++	.cfi_offset 19, -768
++	mov	x0, 30364
++	mov	x19, 65536
++	add	x22, x22, x0
++	cbz	x28, .L436
++	mov	x0, x28
++	add	x28, x28, x2
++	bl	memmove
++	str	x22, [sp, 344]
++	ldr	x0, [sp, 128]
++	sub	x0, x0, x28
++	cmp	x0, x19
++	bcc	.L419
++	mov	x2, x19
++	mov	x1, x22
++	ldp	x19, x20, [sp, 32]
++	.cfi_restore 20
++	.cfi_restore 19
++.L308:
++	mov	x0, x28
++	add	x28, x28, x2
++	bl	memmove
++	ldr	x0, [sp, 152]
++	sub	x3, x28, x0
++	b	.L437
++	.p2align 2,,3
++.L432:
++	.cfi_offset 19, -768
++	.cfi_offset 20, -760
++	cmp	w2, 64
++	bhi	.L165
++	ldr	x9, [sp, 120]
++	cmp	x7, x9
++	bcs	.L438
++	cmp	x23, x7
++	beq	.L165
++	lsr	w9, w2, 3
++	lsr	w11, w2, 3
++	sub	x9, x7, x9
++	cmp	x23, x9
++	bls	.L167
++	sub	x9, x7, x23
++	mov	w11, w9
++	sub	x9, x7, w9, uxtw
++.L167:
++	sub	w2, w2, w11, lsl 3
++	mov	x7, x9
++	mov	w30, 1
++	ldr	x0, [x9]
++	cbz	w14, .L168
++	.p2align 3,,7
++.L433:
++	neg	w11, w14
++	lsl	x9, x0, x2
++	add	w2, w2, w14
++	lsr	x9, x9, x11
++	add	x13, x13, x9
++	b	.L168
++	.p2align 2,,3
++.L424:
++	ldr	x28, [sp, 152]
++	.p2align 3,,7
++.L178:
++	ldr	w0, [sp, 116]
++	cmp	w0, w21
++	bgt	.L420
++.L250:
++	ldr	w0, [sp, 144]
++	sub	w21, w21, w0
++	ldr	w0, [sp, 116]
++	cmp	w0, w21
++	ble	.L251
++	add	x19, x22, 94208
++	adrp	x20, .LANCHOR0
++	add	x0, x20, :lo12:.LANCHOR0
++	add	x19, x19, 1692
++	stp	x19, x0, [sp, 176]
++	add	x0, x0, 32
++	mov	w1, w21
++	str	x0, [sp, 192]
++	add	x0, sp, 608
++	ldr	x27, [sp, 128]
++	mov	x21, x24
++	ldr	x19, [sp, 136]
++	mov	x23, x25
++	mov	w24, w1
++	mov	x25, x0
++	.p2align 3,,7
++.L301:
++	and	x11, x24, 7
++	ubfiz	x6, x24, 1, 3
++	add	x6, x6, x11
++	ldr	w1, [x23, 13976]
++	ldr	x13, [sp, 344]
++	lsl	x0, x6, 3
++	ldr	x7, [x25, x6, lsl 3]
++	add	x14, x13, x7
++	cmp	w1, 2
++	beq	.L439
++	add	x1, sp, 624
++	add	x2, sp, 616
++	add	x4, x25, x0
++	add	x20, x28, x7
++	sub	x15, x27, #32
++	ldr	x11, [x1, x6, lsl 3]
++	ldr	x12, [x2, x6, lsl 3]
++	sub	x2, x20, x11
++	ldp	x0, x1, [x4]
++	add	x3, x12, x7
++	ldr	x4, [x4, 16]
++	add	x5, x28, x3
++	prfm	PLDL1KEEP, [x2]
++	cmp	x5, x15
++	stp	x0, x1, [sp, 448]
++	ccmp	x19, x14, 0, ls
++	str	x4, [sp, 464]
++	bcc	.L287
++	ldr	q0, [x13]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L288
++.L291:
++	sub	x0, x20, x21
++	str	x14, [sp, 344]
++	cmp	x11, x0
++	bls	.L290
++	ldr	x0, [sp, 160]
++	sub	x0, x20, x0
++	cmp	x11, x0
++	bhi	.L420
++	sub	x1, x2, x21
++	add	x1, x26, x1
++	add	x0, x1, x12
++	cmp	x26, x0
++	bcs	.L440
++	sub	x2, x21, x2
++	mov	x0, x20
++	sub	x12, x12, x2
++	add	x20, x20, x2
++	str	x12, [sp, 120]
++	stp	x11, x5, [sp, 136]
++	str	x3, [sp, 168]
++	bl	memmove
++	ldp	x11, x5, [sp, 136]
++	mov	x2, x21
++	ldr	x12, [sp, 120]
++	ldr	x3, [sp, 168]
++.L290:
++	cmp	x11, 15
++	bls	.L294
++	ldr	q0, [x2]
++	str	q0, [x20]
++	cmp	x12, 16
++	ble	.L276
++	add	x1, x20, 16
++	add	x2, x2, 16
++	.p2align 3,,7
++.L295:
++	ldr	q0, [x2]
++	add	x1, x1, 32
++	add	x2, x2, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x1, -16]
++	cmp	x5, x1
++	bhi	.L295
++.L276:
++	cmn	x3, #120
++	bhi	.L417
++	ldr	w0, [sp, 116]
++	add	w24, w24, 1
++	add	x28, x28, x3
++	cmp	w0, w24
++	bne	.L301
++	mov	x25, x23
++	str	x19, [sp, 136]
++.L251:
++	ldr	x0, [sp, 584]
++	ldp	x19, x20, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	str	w0, [x25, 10300]
++	ldr	x0, [sp, 592]
++	str	w0, [x25, 10304]
++	ldr	x0, [sp, 600]
++	str	w0, [x25, 10308]
++	ldr	w0, [x25, 13976]
++	ldr	x1, [sp, 344]
++	b	.L145
++	.p2align 2,,3
++.L158:
++	.cfi_restore_state
++	cmp	w28, 0
++	cset	w4, eq
++	cmp	w11, 1
++	beq	.L160
++	cmp	w28, 0
++	add	x4, x4, 10
++	cset	x11, ne
++	add	x11, x11, 10
++	ldr	x4, [x27, x4, lsl 3]
++	ldr	x11, [x27, x11, lsl 3]
++	str	x4, [sp, 584]
++	str	x11, [sp, 592]
++	cbz	w15, .L164
++.L431:
++	neg	w18, w15
++	lsl	x11, x0, x2
++	add	w2, w2, w15
++	lsr	x11, x11, x18
++	add	x12, x12, x11
++	b	.L164
++	.p2align 2,,3
++.L429:
++	lsr	w0, w2, 3
++	ldr	w8, [sp, 144]
++	sub	x7, x7, x0
++	mov	w30, 1
++	and	w2, w2, 7
++	mov	w1, w30
++	ldr	x0, [x7]
++	cmp	w8, w21
++	bgt	.L174
++.L430:
++	ldr	w20, [sp, 216]
++	ldp	x22, x25, [sp, 192]
++	cbz	w30, .L175
++	str	x7, [sp, 512]
++	cbz	w1, .L313
++	mov	w20, w2
++	str	w2, [sp, 504]
++.L313:
++	str	x0, [sp, 496]
++.L312:
++	cbz	w4, .L177
++.L451:
++	str	x9, [sp, 536]
++	str	x6, [sp, 552]
++	str	x5, [sp, 568]
++.L177:
++	cmp	w20, 64
++	bhi	.L424
++	adrp	x0, .LANCHOR0
++	add	x0, x0, :lo12:.LANCHOR0
++	add	x12, x0, 64
++	str	x0, [sp, 296]
++	add	x0, x22, 94208
++	mov	x11, x26
++	add	x0, x0, 1692
++	str	x0, [sp, 192]
++	ldr	x0, [sp, 120]
++	mov	x15, x22
++	mov	x10, x24
++	mov	w22, w21
++	mov	x13, x23
++	mov	x14, x25
++	mov	x21, x19
++	ldr	x28, [sp, 152]
++	ldr	x26, [sp, 208]
++	cmp	x0, x7
++	bls	.L441
++	.p2align 3,,7
++.L246:
++	mov	x5, x13
++	cmp	x13, x7
++	beq	.L247
++	lsr	w5, w20, 3
++	lsr	w0, w20, 3
++	sub	x5, x7, x5
++	cmp	x13, x5
++	bls	.L248
++	sub	x5, x7, x13
++	mov	w0, w5
++	sub	x5, x7, w5, uxtw
++.L248:
++	ldr	x1, [x5]
++	sub	w0, w20, w0, lsl 3
++	str	x1, [sp, 496]
++	str	w0, [sp, 504]
++	str	x5, [sp, 512]
++.L247:
++	ldr	w0, [sp, 116]
++	cmp	w0, w22
++	ble	.L442
++	ldr	x3, [sp, 168]
++	ldr	x2, [sp, 536]
++	ldr	x1, [sp, 568]
++	ldr	x3, [x3, x2, lsl 3]
++	ldr	x2, [sp, 176]
++	ldr	x0, [sp, 552]
++	ubfx	w9, w3, 16, 8
++	ldr	x7, [x2, x1, lsl 3]
++	lsr	x18, x3, 32
++	ldr	x1, [sp, 184]
++	mov	x25, x18
++	ubfx	w16, w7, 16, 8
++	lsr	w6, w3, 24
++	add	w4, w9, w16
++	lsr	x24, x7, 32
++	ldr	x2, [x1, x0, lsl 3]
++	lsr	w1, w7, 24
++	ldr	w0, [sp, 504]
++	ubfx	w8, w2, 16, 8
++	lsr	x19, x2, 32
++	add	w4, w8, w4
++	lsr	w20, w2, 24
++	and	w4, w4, 255
++	cmp	w8, 1
++	bls	.L180
++	ldr	x17, [sp, 496]
++	neg	w18, w8
++	ldr	x23, [sp, 592]
++	str	x23, [sp, 600]
++	lsl	x17, x17, x0
++	add	w0, w0, w8
++	ldr	x8, [sp, 584]
++	lsr	x17, x17, x18
++	add	x19, x19, x17
++	str	w0, [sp, 504]
++.L181:
++	str	x19, [sp, 584]
++	str	x8, [sp, 592]
++	cbnz	w16, .L443
++.L186:
++	cmp	w4, 30
++	bhi	.L187
++.L421:
++	ldr	x4, [sp, 496]
++.L188:
++	cbnz	w9, .L444
++.L193:
++	uxtw	x8, w6
++	uxtw	x5, w1
++	add	w0, w6, w0
++	uxtw	x9, w20
++	add	w1, w1, w0
++	and	x23, x22, 7
++	ubfiz	x6, x22, 1, 3
++	add	w20, w20, w1
++	ldr	w16, [x12, x8, lsl 2]
++	add	x6, x6, x23
++	ldr	w5, [x12, x5, lsl 2]
++	neg	w0, w0
++	neg	w1, w1
++	ldr	w8, [x12, x9, lsl 2]
++	lsr	x0, x4, x0
++	neg	w9, w20
++	lsr	x1, x4, x1
++	and	x0, x0, x16
++	and	x1, x1, x5
++	add	x0, x0, w3, uxth
++	add	x3, x1, w7, uxth
++	lsr	x4, x4, x9
++	ldr	x7, [x26, x6, lsl 3]
++	and	x4, x4, x8
++	ldr	x1, [sp, 344]
++	add	x2, x4, w2, uxth
++	ldr	w5, [x14, 13976]
++	lsl	x4, x6, 3
++	str	w20, [sp, 504]
++	str	x0, [sp, 536]
++	add	x0, x1, x7
++	str	x2, [sp, 552]
++	str	x3, [sp, 568]
++	cmp	w5, 2
++	beq	.L445
++	add	x9, sp, 616
++	add	x8, sp, 624
++	add	x4, x26, x4
++	add	x27, x28, x7
++	ldr	x2, [sp, 128]
++	ldr	x5, [x9, x6, lsl 3]
++	sub	x2, x2, #32
++	ldr	x6, [x8, x6, lsl 3]
++	add	x3, x5, x7
++	ldp	x16, x17, [x4]
++	sub	x30, x27, x6
++	ldr	x18, [x4, 16]
++	add	x4, x28, x3
++	cmp	x4, x2
++	prfm	PLDL1KEEP, [x30]
++	ldr	x2, [sp, 136]
++	stp	x16, x17, [sp, 352]
++	str	x18, [sp, 368]
++	ccmp	x2, x0, 0, ls
++	bcc	.L231
++	ldr	q0, [x1]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L232
++.L235:
++	str	x0, [sp, 344]
++	sub	x0, x27, x10
++	cmp	x6, x0
++	bls	.L234
++	ldr	x0, [sp, 160]
++	sub	x0, x27, x0
++	cmp	x6, x0
++	bhi	.L420
++	sub	x1, x30, x10
++	add	x1, x11, x1
++	add	x0, x1, x5
++	cmp	x11, x0
++	bcs	.L423
++	sub	x2, x10, x30
++	mov	x0, x27
++	sub	x5, x5, x2
++	add	x27, x27, x2
++	stp	x5, x10, [sp, 200]
++	stp	x6, x4, [sp, 216]
++	stp	x9, x8, [sp, 232]
++	stp	x11, x15, [sp, 248]
++	stp	x13, x14, [sp, 264]
++	stp	x12, x3, [sp, 280]
++	bl	memmove
++	ldp	x5, x10, [sp, 200]
++	ldp	x6, x4, [sp, 216]
++	ldp	x9, x8, [sp, 232]
++	ldp	x11, x15, [sp, 248]
++	mov	x30, x10
++	ldp	x13, x14, [sp, 264]
++	ldp	x12, x3, [sp, 280]
++.L234:
++	cmp	x6, 15
++	bls	.L238
++	ldr	q0, [x30]
++	str	q0, [x27]
++	cmp	x5, 16
++	ble	.L220
++	add	x27, x27, 16
++	add	x30, x30, 16
++	.p2align 3,,7
++.L239:
++	ldr	q0, [x30]
++	add	x27, x27, 32
++	add	x30, x30, 32
++	str	q0, [x27, -32]
++	ldr	q0, [x30, -16]
++	str	q0, [x27, -16]
++	cmp	x4, x27
++	bhi	.L239
++.L220:
++	cmn	x3, #120
++	bhi	.L417
++	add	x21, x25, x21
++	add	x23, x23, x23, lsl 1
++	cmp	x19, x21
++	sub	x1, x21, x19
++	csel	x0, x11, x10, hi
++	add	x28, x28, x3
++	add	x0, x0, x1
++	add	x21, x24, x21
++	add	w22, w22, 1
++	prfm	PLDL1KEEP, [x0]
++	prfm	PLDL1KEEP, [x0, 64]
++	str	x25, [x26, x23, lsl 3]
++	str	x24, [x9, x23, lsl 3]
++	str	x19, [x8, x23, lsl 3]
++	cmp	w20, 64
++	bhi	.L403
++.L448:
++	ldr	x0, [sp, 120]
++	ldr	x7, [sp, 512]
++	cmp	x0, x7
++	bhi	.L246
++.L441:
++	lsr	w5, w20, 3
++	and	w20, w20, 7
++	sub	x5, x7, x5
++	str	w20, [sp, 504]
++	str	x5, [sp, 512]
++	ldr	x0, [x5]
++	str	x0, [sp, 496]
++	b	.L247
++	.p2align 2,,3
++.L187:
++	cmp	w0, 64
++	bhi	.L421
++	ldr	x4, [sp, 120]
++	cmp	x4, x5
++	bls	.L446
++	cmp	x13, x5
++	beq	.L421
++	lsr	w4, w0, 3
++	lsr	w8, w0, 3
++	sub	x4, x5, x4
++	cmp	x13, x4
++	bls	.L192
++	sub	x4, x5, x13
++	mov	w8, w4
++	sub	x4, x5, w4, uxtw
++.L192:
++	str	x4, [sp, 512]
++	sub	w0, w0, w8, lsl 3
++	ldr	x4, [x4]
++	str	x4, [sp, 496]
++	cbz	w9, .L193
++	.p2align 3,,7
++.L444:
++	neg	w8, w9
++	lsl	x5, x4, x0
++	add	w0, w0, w9
++	lsr	x5, x5, x8
++	add	x25, x25, x5
++	b	.L193
++	.p2align 2,,3
++.L180:
++	cmp	w18, 0
++	cset	w17, eq
++	cmp	w8, 1
++	beq	.L182
++	cmp	w18, 0
++	add	x17, x17, 10
++	cset	x8, ne
++	add	x18, sp, 504
++	add	x8, x8, 10
++	ldr	x19, [x18, x17, lsl 3]
++	ldr	x8, [x18, x8, lsl 3]
++	str	x19, [sp, 584]
++	str	x8, [sp, 592]
++	cbz	w16, .L186
++.L443:
++	ldr	x8, [sp, 496]
++	neg	w17, w16
++	lsl	x8, x8, x0
++	add	w0, w0, w16
++	lsr	x8, x8, x17
++	add	x24, x24, x8
++	str	w0, [sp, 504]
++	b	.L186
++	.p2align 2,,3
++.L445:
++	ldr	x2, [x15, 30352]
++	cmp	x2, x0
++	bcs	.L195
++	subs	x2, x2, x1
++	beq	.L196
++	ldr	x0, [sp, 128]
++	sub	x0, x0, x28
++	cmp	x2, x0
++	bhi	.L255
++	mov	x0, x28
++	sub	x7, x7, x2
++	add	x28, x28, x2
++	bl	ZSTD_safecopyDstBeforeSrc
++	str	x7, [x26, x6, lsl 3]
++.L196:
++	add	x3, x23, x23, lsl 1
++	add	x8, sp, 624
++	add	x9, sp, 616
++	add	x4, x28, x7
++	add	x1, x26, x3, lsl 3
++	mov	x18, 30364
++	ldr	x27, [x8, x3, lsl 3]
++	ldp	x16, x17, [x1]
++	stp	x16, x17, [sp, 400]
++	ldr	x6, [x9, x3, lsl 3]
++	sub	x16, x4, x27
++	ldr	x0, [sp, 128]
++	add	x3, x6, x7
++	ldr	x30, [x1, 16]
++	sub	x2, x0, #32
++	ldr	x1, [sp, 192]
++	add	x0, x15, x18
++	prfm	PLDL1KEEP, [x16]
++	add	x5, x28, x3
++	str	x1, [sp, 136]
++	cmp	x5, x2
++	str	x0, [sp, 344]
++	add	x0, x0, x7
++	str	x30, [sp, 416]
++	ccmp	x1, x0, 0, ls
++	str	wzr, [x14, 13976]
++	bcc	.L199
++	ldr	q0, [x15, x18]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L200
++.L204:
++	str	x0, [sp, 344]
++	sub	x0, x4, x10
++	cmp	x27, x0
++	bls	.L202
++	ldr	x0, [sp, 160]
++	sub	x0, x4, x0
++	cmp	x27, x0
++	bhi	.L420
++	sub	x1, x16, x10
++	add	x1, x11, x1
++	add	x0, x1, x6
++	cmp	x11, x0
++	bcs	.L447
++	sub	x2, x10, x16
++	mov	x0, x4
++	sub	x6, x6, x2
++	add	x4, x4, x2
++	stp	x4, x6, [sp, 200]
++	stp	x10, x5, [sp, 216]
++	stp	x9, x8, [sp, 232]
++	stp	x11, x15, [sp, 248]
++	stp	x13, x14, [sp, 264]
++	stp	x12, x3, [sp, 280]
++	bl	memmove
++	ldp	x10, x5, [sp, 216]
++	ldp	x4, x6, [sp, 200]
++	ldp	x9, x8, [sp, 232]
++	ldp	x11, x15, [sp, 248]
++	mov	x16, x10
++	ldp	x13, x14, [sp, 264]
++	ldp	x12, x3, [sp, 280]
++.L202:
++	cmp	x27, 15
++	bls	.L207
++	ldr	q0, [x16]
++	str	q0, [x4]
++	cmp	x6, 16
++	ble	.L203
++	add	x0, x4, 16
++	add	x1, x16, 16
++	.p2align 3,,7
++.L208:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L208
++.L203:
++	cmn	x3, #120
++	bhi	.L417
++	add	x21, x25, x21
++	add	x23, x23, x23, lsl 1
++	subs	x1, x21, x19
++	add	x28, x28, x3
++	csel	x0, x11, x10, cc
++	add	x21, x21, x24
++	add	x0, x0, x1
++	add	w22, w22, 1
++	prfm	PLDL1KEEP, [x0]
++	prfm	PLDL1KEEP, [x0, 64]
++	str	x25, [x26, x23, lsl 3]
++	str	x24, [x9, x23, lsl 3]
++	str	x19, [x8, x23, lsl 3]
++	cmp	w20, 64
++	bls	.L448
++	.p2align 3,,7
++.L403:
++	mov	w21, w22
++	mov	x24, x10
++	mov	x26, x11
++	mov	x22, x15
++	mov	x25, x14
++	b	.L178
++	.p2align 2,,3
++.L195:
++	add	x9, sp, 616
++	add	x18, x26, x4
++	add	x8, sp, 624
++	add	x4, sp, 512
++	ldr	x3, [sp, 136]
++	sub	x2, x7, #32
++	ldr	x5, [x9, x6, lsl 3]
++	cmp	x3, x0
++	ldp	x16, x17, [x18]
++	add	x3, x5, x7
++	ldr	x6, [x8, x6, lsl 3]
++	stp	x16, x17, [x4, -136]
++	add	x2, x1, x2
++	ldr	x18, [x18, 16]
++	str	x18, [sp, 392]
++	add	x27, x28, x7
++	add	x4, x28, x3
++	sub	x30, x27, x6
++	ccmp	x2, x4, 0, cs
++	bcc	.L216
++	ldr	q0, [x1]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L217
++.L221:
++	str	x0, [sp, 344]
++	sub	x0, x27, x10
++	cmp	x6, x0
++	bls	.L219
++	ldr	x0, [sp, 160]
++	sub	x0, x27, x0
++	cmp	x6, x0
++	bhi	.L420
++	sub	x1, x30, x10
++	add	x1, x11, x1
++	add	x0, x1, x5
++	cmp	x11, x0
++	bcs	.L423
++	sub	x2, x10, x30
++	mov	x0, x27
++	sub	x5, x5, x2
++	add	x27, x27, x2
++	stp	x5, x10, [sp, 200]
++	stp	x6, x4, [sp, 216]
++	stp	x9, x8, [sp, 232]
++	stp	x11, x15, [sp, 248]
++	stp	x13, x14, [sp, 264]
++	stp	x12, x3, [sp, 280]
++	bl	memmove
++	ldp	x5, x10, [sp, 200]
++	ldp	x6, x4, [sp, 216]
++	ldp	x9, x8, [sp, 232]
++	ldp	x11, x15, [sp, 248]
++	mov	x30, x10
++	ldp	x13, x14, [sp, 264]
++	ldp	x12, x3, [sp, 280]
++.L219:
++	cmp	x6, 15
++	bls	.L224
++	ldr	q0, [x30]
++	str	q0, [x27]
++	cmp	x5, 16
++	ble	.L220
++	add	x27, x27, 16
++	add	x30, x30, 16
++	.p2align 3,,7
++.L225:
++	ldr	q0, [x30]
++	add	x27, x27, 32
++	add	x30, x30, 32
++	str	q0, [x27, -32]
++	ldr	q0, [x30, -16]
++	str	q0, [x27, -16]
++	cmp	x4, x27
++	bhi	.L225
++	b	.L220
++	.p2align 2,,3
++.L423:
++	mov	x2, x5
++	mov	x0, x27
++	stp	x9, x8, [sp, 200]
++	stp	x10, x11, [sp, 216]
++	stp	x15, x13, [sp, 232]
++	stp	x14, x12, [sp, 248]
++	str	x3, [sp, 264]
++	bl	memmove
++	ldp	x9, x8, [sp, 200]
++	ldp	x10, x11, [sp, 216]
++	ldp	x15, x13, [sp, 232]
++	ldp	x14, x12, [sp, 248]
++	ldr	x3, [sp, 264]
++	b	.L220
++	.p2align 2,,3
++.L436:
++	ldr	x0, [sp, 128]
++	cmp	x0, x19
++	bcs	.L418
++.L419:
++	ldp	x19, x20, [sp, 32]
++	.cfi_restore 20
++	.cfi_restore 19
++.L306:
++	mov	x3, -70
++	mov	x0, x3
++	ldp	x29, x30, [sp, 16]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	ldp	x27, x28, [sp, 96]
++	add	sp, sp, 800
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 27
++	.cfi_restore 28
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L309:
++	.cfi_def_cfa_offset 800
++	.cfi_offset 19, -768
++	.cfi_offset 20, -760
++	.cfi_offset 21, -752
++	.cfi_offset 22, -744
++	.cfi_offset 23, -736
++	.cfi_offset 24, -728
++	.cfi_offset 25, -720
++	.cfi_offset 26, -712
++	.cfi_offset 27, -704
++	.cfi_offset 28, -696
++	.cfi_offset 29, -784
++	.cfi_offset 30, -776
++	str	w2, [sp, 504]
++	b	.L310
++	.p2align 2,,3
++.L160:
++	ldr	x11, [sp, 584]
++	add	w4, w4, w18
++	lsl	x18, x0, x2
++	add	w2, w2, 1
++	add	x18, x4, x18, lsr 63
++	subs	x4, x11, #1
++	cinc	x4, x4, eq
++	cmp	x18, 3
++	beq	.L162
++	add	x4, x18, 10
++	ldr	x4, [x27, x4, lsl 3]
++	cmp	x4, 0
++	cinc	x4, x4, eq
++	cmp	x18, 1
++	beq	.L159
++.L162:
++	ldr	x18, [sp, 592]
++	str	x18, [sp, 600]
++	b	.L159
++	.p2align 2,,3
++.L231:
++	ldr	x1, [sp, 128]
++	mov	x4, x2
++	ldr	x6, [sp, 160]
++	mov	x7, x11
++	add	x2, sp, 304
++	mov	x5, x10
++	add	x3, sp, 344
++	mov	x0, x28
++	stp	x10, x11, [sp, 200]
++	stp	x9, x8, [sp, 216]
++	stp	x15, x13, [sp, 232]
++	stp	x14, x12, [sp, 248]
++	stp	x16, x17, [sp, 304]
++	str	x18, [sp, 320]
++	bl	ZSTD_execSequenceEnd
++.L422:
++	mov	x3, x0
++	ldp	x10, x11, [sp, 200]
++	ldp	x9, x8, [sp, 216]
++	ldp	x15, x13, [sp, 232]
++	ldp	x14, x12, [sp, 248]
++	b	.L220
++	.p2align 2,,3
++.L232:
++	ldr	q0, [x1, 16]
++	sub	x7, x7, #16
++	str	q0, [x28, 16]
++	cmp	x7, 16
++	ble	.L235
++	add	x1, x1, 32
++	add	x2, x28, 32
++	.p2align 3,,7
++.L236:
++	ldr	q0, [x1]
++	add	x2, x2, 32
++	add	x1, x1, 32
++	str	q0, [x2, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x2, -16]
++	cmp	x27, x2
++	bhi	.L236
++	b	.L235
++	.p2align 2,,3
++.L182:
++	ldr	x18, [sp, 496]
++	add	w17, w17, w19
++	ldr	x8, [sp, 584]
++	lsl	x18, x18, x0
++	add	w0, w0, 1
++	subs	x19, x8, #1
++	add	x17, x17, x18, lsr 63
++	str	w0, [sp, 504]
++	cinc	x19, x19, eq
++	cmp	x17, 3
++	beq	.L184
++	add	x18, sp, 800
++	add	x18, x18, x17, lsl 3
++	ldr	x19, [x18, -216]
++	cmp	x19, 0
++	cinc	x19, x19, eq
++	cmp	x17, 1
++	beq	.L181
++.L184:
++	ldr	x17, [sp, 592]
++	str	x17, [sp, 600]
++	b	.L181
++	.p2align 2,,3
++.L238:
++	cmp	x6, 7
++	bhi	.L240
++	ldr	x2, [sp, 296]
++	ldrb	w1, [x30]
++	strb	w1, [x27]
++	add	x0, x2, 32
++	ldrsw	x1, [x2, x6, lsl 2]
++	ldrb	w2, [x30, 1]
++	strb	w2, [x27, 1]
++	ldr	w0, [x0, x6, lsl 2]
++	ldrb	w2, [x30, 2]
++	strb	w2, [x27, 2]
++	add	x2, x30, x0
++	ldrb	w6, [x30, 3]
++	strb	w6, [x27, 3]
++	ldr	w0, [x30, x0]
++	sub	x30, x2, x1
++	str	w0, [x27, 4]
++.L241:
++	cmp	x5, 8
++	bls	.L220
++	sub	x2, x27, x30
++	add	x1, x30, 8
++	add	x0, x27, 8
++	cmp	x2, 15
++	bgt	.L242
++	.p2align 3,,7
++.L243:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x4, x0
++	bhi	.L243
++	b	.L220
++	.p2align 2,,3
++.L438:
++	lsr	w0, w2, 3
++	mov	w30, 1
++	sub	x7, x7, x0
++	and	w2, w2, 7
++	ldr	x0, [x7]
++	b	.L165
++	.p2align 2,,3
++.L315:
++	mov	w21, 0
++	b	.L156
++	.p2align 2,,3
++.L418:
++	ldp	x19, x20, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L307
++.L240:
++	.cfi_restore_state
++	ldr	d0, [x30]
++	str	d0, [x27]
++	b	.L241
++	.p2align 2,,3
++.L439:
++	ldr	x1, [x22, 30352]
++	cmp	x1, x14
++	bcs	.L253
++	subs	x2, x1, x13
++	beq	.L254
++	sub	x0, x27, x28
++	cmp	x2, x0
++	bhi	.L255
++	mov	x0, x28
++	sub	x7, x7, x2
++	add	x28, x28, x2
++	mov	x1, x13
++	bl	ZSTD_safecopyDstBeforeSrc
++	str	x7, [x25, x6, lsl 3]
++.L254:
++	add	x11, x11, x11, lsl 1
++	add	x0, sp, 616
++	add	x3, sp, 624
++	add	x20, x28, x7
++	add	x2, x25, x11, lsl 3
++	sub	x1, x27, #32
++	ldr	x6, [x0, x11, lsl 3]
++	mov	x4, 30364
++	ldp	x12, x13, [x2]
++	add	x0, x22, x4
++	ldr	x11, [x3, x11, lsl 3]
++	add	x3, x6, x7
++	ldr	x10, [x2, 16]
++	add	x2, sp, 512
++	add	x5, x28, x3
++	cmp	x5, x1
++	stp	x12, x13, [x2, -88]
++	sub	x2, x20, x11
++	ldr	x1, [sp, 176]
++	prfm	PLDL1KEEP, [x2]
++	str	x0, [sp, 344]
++	add	x0, x0, x7
++	str	x10, [sp, 440]
++	mov	x19, x1
++	str	wzr, [x23, 13976]
++	ccmp	x1, x0, 0, ls
++	bcc	.L256
++	ldr	q0, [x22, x4]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L257
++.L261:
++	str	x0, [sp, 344]
++	sub	x0, x20, x21
++	cmp	x11, x0
++	bls	.L259
++	ldr	x0, [sp, 160]
++	sub	x0, x20, x0
++	cmp	x11, x0
++	bhi	.L420
++	sub	x1, x2, x21
++	add	x1, x26, x1
++	add	x0, x1, x6
++	cmp	x26, x0
++	bcs	.L449
++	sub	x2, x21, x2
++	mov	x0, x20
++	sub	x6, x6, x2
++	add	x20, x20, x2
++	str	x6, [sp, 120]
++	stp	x11, x5, [sp, 136]
++	str	x3, [sp, 168]
++	bl	memmove
++	ldp	x11, x5, [sp, 136]
++	mov	x2, x21
++	ldr	x6, [sp, 120]
++	ldr	x3, [sp, 168]
++.L259:
++	cmp	x11, 15
++	bls	.L264
++	ldr	q0, [x2]
++	str	q0, [x20]
++	cmp	x6, 16
++	ble	.L276
++	add	x0, x20, 16
++	add	x1, x2, 16
++	.p2align 3,,7
++.L265:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L265
++	b	.L276
++	.p2align 2,,3
++.L253:
++	add	x1, sp, 616
++	add	x11, sp, 624
++	add	x4, x25, x0
++	sub	x2, x7, #32
++	cmp	x19, x14
++	add	x2, x13, x2
++	ldr	x5, [x1, x6, lsl 3]
++	add	x20, x28, x7
++	ldr	x11, [x11, x6, lsl 3]
++	add	x6, sp, 704
++	ldp	x0, x1, [x4]
++	add	x3, x5, x7
++	stp	x0, x1, [x6, -232]
++	add	x6, x28, x3
++	ccmp	x2, x6, 0, cs
++	ldr	x0, [x4, 16]
++	str	x0, [sp, 488]
++	sub	x0, x20, x11
++	bcc	.L272
++	ldr	q0, [x13]
++	str	q0, [x28]
++	cmp	x7, 16
++	bhi	.L273
++.L277:
++	sub	x1, x20, x21
++	str	x14, [sp, 344]
++	cmp	x11, x1
++	bls	.L275
++	ldr	x1, [sp, 160]
++	sub	x1, x20, x1
++	cmp	x11, x1
++	bhi	.L420
++	sub	x1, x0, x21
++	add	x1, x26, x1
++	add	x2, x1, x5
++	cmp	x26, x2
++	bcs	.L450
++	sub	x2, x21, x0
++	mov	x0, x20
++	sub	x5, x5, x2
++	add	x20, x20, x2
++	str	x5, [sp, 120]
++	stp	x11, x6, [sp, 136]
++	str	x3, [sp, 168]
++	bl	memmove
++	ldp	x11, x6, [sp, 136]
++	mov	x0, x21
++	ldr	x5, [sp, 120]
++	ldr	x3, [sp, 168]
++.L275:
++	cmp	x11, 15
++	bls	.L280
++	ldr	q0, [x0]
++	str	q0, [x20]
++	cmp	x5, 16
++	ble	.L276
++	add	x1, x20, 16
++	add	x2, x0, 16
++	.p2align 3,,7
++.L281:
++	ldr	q0, [x2]
++	add	x1, x1, 32
++	add	x2, x2, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x1, -16]
++	cmp	x6, x1
++	bhi	.L281
++	b	.L276
++	.p2align 2,,3
++.L417:
++	ldp	x19, x20, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L142
++	.p2align 2,,3
++.L216:
++	.cfi_restore_state
++	ldp	x1, x5, [sp, 128]
++	str	x11, [sp]
++	ldr	x7, [sp, 160]
++	add	x3, sp, 304
++	mov	x6, x10
++	add	x4, sp, 344
++	mov	x0, x28
++	stp	x10, x11, [sp, 200]
++	stp	x9, x8, [sp, 216]
++	stp	x15, x13, [sp, 232]
++	stp	x14, x12, [sp, 248]
++	stp	x16, x17, [sp, 304]
++	str	x18, [sp, 320]
++	bl	ZSTD_execSequenceEndSplitLitBuffer
++	b	.L422
++	.p2align 2,,3
++.L446:
++	lsr	w4, w0, 3
++	and	w0, w0, 7
++	sub	x4, x5, x4
++	str	x4, [sp, 512]
++	ldr	x4, [x4]
++	str	x4, [sp, 496]
++	b	.L188
++	.p2align 2,,3
++.L217:
++	ldr	q0, [x1, 16]
++	sub	x7, x7, #16
++	str	q0, [x28, 16]
++	cmp	x7, 16
++	ble	.L221
++	add	x1, x1, 32
++	add	x2, x28, 32
++	.p2align 3,,7
++.L222:
++	ldr	q0, [x1]
++	add	x2, x2, 32
++	add	x1, x1, 32
++	str	q0, [x2, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x2, -16]
++	cmp	x27, x2
++	bhi	.L222
++	b	.L221
++	.p2align 2,,3
++.L447:
++	mov	x2, x6
++	mov	x0, x4
++	stp	x9, x8, [sp, 200]
++	stp	x10, x11, [sp, 216]
++	stp	x15, x13, [sp, 232]
++	stp	x14, x12, [sp, 248]
++	str	x3, [sp, 264]
++	bl	memmove
++	ldp	x9, x8, [sp, 200]
++	ldp	x10, x11, [sp, 216]
++	ldp	x15, x13, [sp, 232]
++	ldp	x14, x12, [sp, 248]
++	ldr	x3, [sp, 264]
++	b	.L203
++	.p2align 2,,3
++.L442:
++	mov	w21, w22
++	mov	x24, x10
++	mov	x26, x11
++	mov	x22, x15
++	mov	x25, x14
++	b	.L250
++	.p2align 2,,3
++.L440:
++	mov	x2, x12
++	mov	x0, x20
++	str	x3, [sp, 120]
++	bl	memmove
++	ldr	x3, [sp, 120]
++	b	.L276
++.L224:
++	cmp	x6, 7
++	bhi	.L226
++	ldr	x2, [sp, 296]
++	ldrb	w1, [x30]
++	strb	w1, [x27]
++	add	x0, x2, 32
++	ldrsw	x1, [x2, x6, lsl 2]
++	ldrb	w2, [x30, 1]
++	strb	w2, [x27, 1]
++	ldr	w0, [x0, x6, lsl 2]
++	ldrb	w2, [x30, 2]
++	strb	w2, [x27, 2]
++	add	x2, x30, x0
++	ldrb	w6, [x30, 3]
++	strb	w6, [x27, 3]
++	ldr	w0, [x30, x0]
++	sub	x30, x2, x1
++	str	w0, [x27, 4]
++.L227:
++	cmp	x5, 8
++	bls	.L220
++	sub	x2, x27, x30
++	add	x1, x30, 8
++	add	x0, x27, 8
++	cmp	x2, 15
++	bgt	.L228
++	.p2align 3,,7
++.L229:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x4, x0
++	bhi	.L229
++	b	.L220
++.L199:
++	stp	x6, x27, [sp, 408]
++	mov	x4, x1
++	mov	x7, x11
++	ldp	x0, x1, [sp, 400]
++	stp	x0, x1, [sp, 304]
++	mov	x5, x10
++	ldr	x1, [sp, 128]
++	add	x3, sp, 344
++	ldr	x6, [sp, 160]
++	add	x2, sp, 304
++	mov	x0, x28
++	stp	x10, x11, [sp, 200]
++	stp	x9, x8, [sp, 216]
++	stp	x15, x13, [sp, 232]
++	stp	x14, x12, [sp, 248]
++	str	x27, [sp, 320]
++	bl	ZSTD_execSequenceEnd
++	mov	x3, x0
++	ldp	x10, x11, [sp, 200]
++	ldp	x9, x8, [sp, 216]
++	ldp	x15, x13, [sp, 232]
++	ldp	x14, x12, [sp, 248]
++	b	.L203
++.L287:
++	stp	x12, x11, [sp, 456]
++	add	x2, sp, 304
++	mov	x7, x26
++	ldr	x6, [sp, 160]
++	mov	x5, x21
++	mov	x4, x19
++	add	x3, sp, 344
++	ldp	x0, x1, [sp, 448]
++	stp	x0, x1, [sp, 304]
++.L427:
++	mov	x1, x27
++	mov	x0, x28
++	str	x11, [sp, 320]
++	bl	ZSTD_execSequenceEnd
++	mov	x3, x0
++	b	.L276
++.L200:
++	mov	x1, 30380
++	sub	x7, x7, #16
++	ldr	q0, [x15, x1]
++	str	q0, [x28, 16]
++	cmp	x7, 16
++	ble	.L204
++	mov	x7, 30396
++	add	x1, x28, 32
++	add	x2, x15, x7
++	.p2align 3,,7
++.L205:
++	ldr	q0, [x2]
++	add	x1, x1, 32
++	add	x2, x2, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x1, -16]
++	cmp	x4, x1
++	bhi	.L205
++	b	.L204
++.L288:
++	ldr	q0, [x13, 16]
++	sub	x4, x7, #16
++	str	q0, [x28, 16]
++	cmp	x4, 16
++	ble	.L291
++	add	x1, x13, 32
++	add	x0, x28, 32
++	.p2align 3,,7
++.L292:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x20, x0
++	bhi	.L292
++	b	.L291
++.L207:
++	cmp	x27, 7
++	bhi	.L209
++	ldr	x2, [sp, 296]
++	ldrb	w1, [x16]
++	strb	w1, [x4]
++	add	x0, x2, 32
++	ldrsw	x1, [x2, x27, lsl 2]
++	ldrb	w2, [x16, 1]
++	strb	w2, [x4, 1]
++	ldr	w0, [x0, x27, lsl 2]
++	ldrb	w2, [x16, 2]
++	strb	w2, [x4, 2]
++	add	x2, x16, x0
++	ldrb	w7, [x16, 3]
++	strb	w7, [x4, 3]
++	ldr	w0, [x16, x0]
++	sub	x16, x2, x1
++	str	w0, [x4, 4]
++.L210:
++	cmp	x6, 8
++	bls	.L203
++	sub	x2, x4, x16
++	add	x1, x16, 8
++	add	x0, x4, 8
++	cmp	x2, 15
++	bgt	.L211
++	.p2align 3,,7
++.L212:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x5, x0
++	bhi	.L212
++	b	.L203
++.L294:
++	cmp	x11, 7
++	bhi	.L296
++	ldrb	w0, [x2]
++	strb	w0, [x20]
++	ldrb	w1, [x2, 1]
++	strb	w1, [x20, 1]
++	ldp	x1, x0, [sp, 184]
++	ldrb	w6, [x2, 2]
++	strb	w6, [x20, 2]
++	ldrb	w6, [x2, 3]
++	ldr	w0, [x0, x11, lsl 2]
++	ldrsw	x1, [x1, x11, lsl 2]
++	strb	w6, [x20, 3]
++	add	x4, x2, x0
++	ldr	w0, [x2, x0]
++	sub	x2, x4, x1
++	str	w0, [x20, 4]
++.L297:
++	cmp	x12, 8
++	bls	.L276
++	sub	x4, x20, x2
++	add	x1, x2, 8
++	add	x0, x20, 8
++	cmp	x4, 15
++	bgt	.L298
++	.p2align 3,,7
++.L299:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x5, x0
++	bhi	.L299
++	b	.L276
++.L450:
++	mov	x2, x5
++	mov	x0, x20
++	str	x3, [sp, 120]
++	bl	memmove
++	ldr	x3, [sp, 120]
++	b	.L276
++.L226:
++	ldr	d0, [x30]
++	str	d0, [x27]
++	b	.L227
++.L272:
++	add	x0, sp, 704
++	str	x26, [sp]
++	stp	x5, x11, [sp, 480]
++	add	x3, sp, 304
++	mov	x6, x21
++	ldr	x7, [sp, 160]
++	add	x4, sp, 344
++	ldp	x0, x1, [x0, -232]
++	mov	x5, x19
++	stp	x0, x1, [sp, 304]
++	mov	x1, x27
++	mov	x0, x28
++	str	x11, [sp, 320]
++	bl	ZSTD_execSequenceEndSplitLitBuffer
++	mov	x3, x0
++	b	.L276
++.L273:
++	ldr	q0, [x13, 16]
++	sub	x4, x7, #16
++	str	q0, [x28, 16]
++	cmp	x4, 16
++	ble	.L277
++	add	x1, x13, 32
++	add	x2, x28, 32
++	.p2align 3,,7
++.L278:
++	ldr	q0, [x1]
++	add	x2, x2, 32
++	add	x1, x1, 32
++	str	q0, [x2, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x2, -16]
++	cmp	x20, x2
++	bhi	.L278
++	b	.L277
++.L449:
++	mov	x2, x6
++	mov	x0, x20
++	str	x3, [sp, 120]
++	bl	memmove
++	ldr	x3, [sp, 120]
++	b	.L276
++.L242:
++	ldr	q0, [x30, 8]
++	str	q0, [x27, 8]
++	cmp	x5, 24
++	ble	.L220
++	add	x27, x27, 24
++	add	x30, x30, 24
++	.p2align 3,,7
++.L244:
++	ldr	q0, [x30]
++	add	x27, x27, 32
++	add	x30, x30, 32
++	str	q0, [x27, -32]
++	ldr	q0, [x30, -16]
++	str	q0, [x27, -16]
++	cmp	x4, x27
++	bhi	.L244
++	b	.L220
++.L209:
++	ldr	d0, [x16]
++	str	d0, [x4]
++	b	.L210
++.L280:
++	cmp	x11, 7
++	bhi	.L282
++	ldrb	w1, [x0]
++	strb	w1, [x20]
++	ldrb	w2, [x0, 1]
++	strb	w2, [x20, 1]
++	ldp	x2, x1, [sp, 184]
++	ldrb	w7, [x0, 2]
++	strb	w7, [x20, 2]
++	ldrb	w7, [x0, 3]
++	ldr	w1, [x1, x11, lsl 2]
++	ldrsw	x2, [x2, x11, lsl 2]
++	strb	w7, [x20, 3]
++	add	x4, x0, x1
++	ldr	w1, [x0, x1]
++	sub	x0, x4, x2
++	str	w1, [x20, 4]
++.L283:
++	cmp	x5, 8
++	bls	.L276
++	sub	x4, x20, x0
++	add	x2, x0, 8
++	add	x1, x20, 8
++	cmp	x4, 15
++	bgt	.L284
++.L285:
++	ldr	d0, [x2], 8
++	str	d0, [x1], 8
++	cmp	x6, x1
++	bhi	.L285
++	b	.L276
++.L296:
++	ldr	d0, [x2]
++	str	d0, [x20]
++	b	.L297
++.L256:
++	add	x0, sp, 512
++	stp	x6, x11, [sp, 432]
++	mov	x4, x1
++	add	x2, sp, 304
++	mov	x7, x26
++	ldp	x0, x1, [x0, -88]
++	mov	x5, x21
++	add	x3, sp, 344
++	stp	x0, x1, [sp, 304]
++	ldr	x6, [sp, 160]
++	b	.L427
++.L257:
++	mov	x1, 30380
++	sub	x4, x7, #16
++	ldr	q0, [x22, x1]
++	str	q0, [x28, 16]
++	cmp	x4, 16
++	ble	.L261
++	mov	x4, 30396
++	add	x1, x28, 32
++	add	x4, x22, x4
++	.p2align 3,,7
++.L262:
++	ldr	q0, [x4]
++	add	x1, x1, 32
++	add	x4, x4, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x4, -16]
++	str	q0, [x1, -16]
++	cmp	x20, x1
++	bhi	.L262
++	b	.L261
++.L264:
++	cmp	x11, 7
++	bhi	.L266
++	ldrb	w0, [x2]
++	strb	w0, [x20]
++	ldrb	w1, [x2, 1]
++	strb	w1, [x20, 1]
++	ldp	x1, x0, [sp, 184]
++	ldrb	w7, [x2, 2]
++	strb	w7, [x20, 2]
++	ldrb	w7, [x2, 3]
++	ldr	w0, [x0, x11, lsl 2]
++	ldrsw	x1, [x1, x11, lsl 2]
++	strb	w7, [x20, 3]
++	add	x4, x2, x0
++	ldr	w0, [x2, x0]
++	sub	x2, x4, x1
++	str	w0, [x20, 4]
++.L267:
++	cmp	x6, 8
++	bls	.L276
++	sub	x4, x20, x2
++	add	x1, x2, 8
++	add	x0, x20, 8
++	cmp	x4, 15
++	bgt	.L268
++.L269:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x5, x0
++	bhi	.L269
++	b	.L276
++.L228:
++	ldr	q0, [x30, 8]
++	str	q0, [x27, 8]
++	cmp	x5, 24
++	ble	.L220
++	add	x27, x27, 24
++	add	x30, x30, 24
++.L230:
++	ldr	q0, [x30]
++	add	x27, x27, 32
++	add	x30, x30, 32
++	str	q0, [x27, -32]
++	ldr	q0, [x30, -16]
++	str	q0, [x27, -16]
++	cmp	x4, x27
++	bhi	.L230
++	b	.L220
++.L282:
++	ldr	d0, [x0]
++	str	d0, [x20]
++	b	.L283
++.L255:
++	mov	x3, -70
++	ldp	x19, x20, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L142
++.L298:
++	.cfi_restore_state
++	ldr	q0, [x2, 8]
++	str	q0, [x20, 8]
++	cmp	x12, 24
++	ble	.L276
++	add	x1, x20, 24
++	add	x2, x2, 24
++.L300:
++	ldr	q0, [x2]
++	add	x1, x1, 32
++	add	x2, x2, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x1, -16]
++	cmp	x5, x1
++	bhi	.L300
++	b	.L276
++.L211:
++	ldr	q0, [x16, 8]
++	str	q0, [x4, 8]
++	cmp	x6, 24
++	ble	.L203
++	add	x0, x4, 24
++	add	x1, x16, 24
++.L213:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L213
++	b	.L203
++.L266:
++	ldr	d0, [x2]
++	str	d0, [x20]
++	b	.L267
++.L284:
++	ldr	q0, [x0, 8]
++	str	q0, [x20, 8]
++	cmp	x5, 24
++	ble	.L276
++	add	x1, x20, 24
++	add	x0, x0, 24
++.L286:
++	ldr	q0, [x0]
++	add	x1, x1, 32
++	add	x0, x0, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x1, -16]
++	cmp	x6, x1
++	bhi	.L286
++	b	.L276
++.L268:
++	ldr	q0, [x2, 8]
++	str	q0, [x20, 8]
++	cmp	x6, 24
++	ble	.L276
++	add	x0, x20, 24
++	add	x1, x2, 24
++.L270:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x5, x0
++	bhi	.L270
++	b	.L276
++.L175:
++	ldr	x7, [sp, 224]
++	cbz	w1, .L312
++	str	w2, [sp, 504]
++	mov	w20, w2
++	cbnz	w4, .L451
++	b	.L177
++	.cfi_endproc
++.LFE4550:
++	.size	ZSTD_decompressSequencesLong_default.constprop.0, .-ZSTD_decompressSequencesLong_default.constprop.0
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_decompressSequences_default.constprop.0, %function
++ZSTD_decompressSequences_default.constprop.0:
++.LFB4551:
++	.cfi_startproc
++	add	x10, x0, 16384
++	stp	x29, x30, [sp, -416]!
++	.cfi_def_cfa_offset 416
++	.cfi_offset 29, -416
++	.cfi_offset 30, -408
++	mov	x8, x0
++	mov	x29, sp
++	ldr	w0, [x10, 13976]
++	stp	x19, x20, [sp, 16]
++	stp	x23, x24, [sp, 48]
++	.cfi_offset 19, -400
++	.cfi_offset 20, -392
++	.cfi_offset 23, -368
++	.cfi_offset 24, -360
++	mov	x24, x3
++	stp	x25, x26, [sp, 64]
++	.cfi_offset 25, -352
++	.cfi_offset 26, -344
++	mov	w25, w5
++	str	x1, [sp, 104]
++	cbnz	w0, .L453
++	add	x0, x1, x2
++	str	x0, [sp, 112]
++.L454:
++	ldr	x20, [x8, 30120]
++	str	x20, [sp, 272]
++	ldr	x0, [x8, 30152]
++	ldr	x5, [x8, 29896]
++	add	x0, x20, x0
++	str	x0, [sp, 96]
++	ldr	x0, [x8, 29904]
++	str	x0, [sp, 120]
++	ldr	x26, [x8, 29912]
++	cbz	w25, .L600
++	ldr	w3, [x10, 10300]
++	mov	w0, 1
++	ldr	w2, [x10, 10304]
++	ldr	w1, [x10, 10308]
++	stp	x3, x2, [sp, 392]
++	str	x1, [sp, 408]
++	str	w0, [x10, 13620]
++	cbz	x4, .L456
++	add	x0, x24, x4
++	add	x9, x24, 8
++	stp	x24, x9, [sp, 328]
++	ldrb	w0, [x0, -1]
++	cmp	x4, 7
++	bls	.L457
++	sub	x1, x4, #8
++	add	x2, x24, x1
++	str	x2, [sp, 320]
++	ldr	x1, [x24, x1]
++	str	x1, [sp, 304]
++	cbz	w0, .L456
++	clz	w0, w0
++	sub	w0, w0, #23
++	str	w0, [sp, 312]
++	cmn	x4, #120
++	bhi	.L456
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 22, -376
++	.cfi_offset 21, -384
++	stp	x27, x28, [sp, 80]
++	.cfi_offset 28, -328
++	.cfi_offset 27, -336
++.L458:
++	add	x1, sp, 304
++	ldr	x2, [x8]
++	add	x0, sp, 344
++	str	x5, [sp, 128]
++	str	x3, [sp, 144]
++	bl	ZSTD_initFseState
++	add	x0, sp, 360
++	ldr	x2, [x8, 16]
++	bl	ZSTD_initFseState
++	add	x0, sp, 376
++	ldr	x2, [x8, 8]
++	bl	ZSTD_initFseState
++	cmp	w25, 12
++	ldr	x5, [sp, 128]
++	ble	.L466
++	ldp	x22, x28, [sp, 376]
++	adrp	x0, .LANCHOR0
++	ldp	x21, x27, [sp, 344]
++	add	x0, x0, :lo12:.LANCHOR0
++	ldp	x23, x8, [sp, 360]
++	add	x4, x0, 64
++	ldr	w19, [sp, 312]
++	mov	x15, x22
++	ldr	x11, [sp, 104]
++	mov	x22, x20
++	ldr	x3, [sp, 144]
++	str	x0, [sp, 216]
++	adrp	x0, dec64table.1
++	add	x0, x0, :lo12:dec64table.1
++	str	x0, [sp, 128]
++	adrp	x0, dec32table.0
++	add	x0, x0, :lo12:dec32table.0
++	str	x0, [sp, 136]
++	.p2align 3,,7
++.L561:
++	ldr	x6, [x27, x21, lsl 3]
++	ldr	x7, [x8, x23, lsl 3]
++	ldr	x12, [x28, x15, lsl 3]
++	ubfx	w15, w6, 16, 8
++	ldr	q0, [x22]
++	ubfx	w14, w7, 16, 8
++	add	w0, w14, w15
++	ubfx	w16, w12, 16, 8
++	add	w0, w16, w0
++	lsr	x18, x6, 32
++	str	q0, [x11]
++	and	w1, w0, 255
++	mov	x2, x18
++	lsr	x20, x12, 32
++	lsr	x21, x7, 32
++	lsr	w13, w6, 24
++	lsr	w0, w12, 24
++	lsr	w17, w7, 24
++	cmp	w14, 1
++	bhi	.L691
++	cbnz	w14, .L469
++	cbz	x18, .L692
++	cbnz	w16, .L693
++.L473:
++	cbnz	w15, .L694
++.L474:
++	cmp	w1, 30
++	bhi	.L475
++.L688:
++	ldr	x21, [sp, 304]
++.L476:
++	add	w1, w13, w19
++	uxtw	x15, w0
++	uxtw	x14, w17
++	add	w0, w0, w1
++	ldr	w16, [x4, x13, lsl 2]
++	add	w19, w17, w0
++	neg	w1, w1
++	ldr	w15, [x4, x15, lsl 2]
++	neg	w0, w0
++	ldr	w14, [x4, x14, lsl 2]
++	neg	w13, w19
++	lsr	x1, x21, x1
++	and	x1, x1, x16
++	lsr	x0, x21, x0
++	and	x0, x0, x15
++	lsr	x13, x21, x13
++	and	x13, x13, x14
++	add	x23, x1, w6, uxth
++	add	x12, x0, w12, uxth
++	add	x7, x13, w7, uxth
++	str	w19, [sp, 312]
++	str	x23, [sp, 344]
++	add	x6, x11, x2
++	str	x7, [sp, 360]
++	str	x12, [sp, 376]
++	cmp	x2, 16
++	bhi	.L481
++.L484:
++	add	x22, x22, x2
++	str	x22, [sp, 272]
++	add	x13, x2, x20
++	sub	x1, x6, x3
++	cbnz	x26, .L695
++.L483:
++	cmp	x3, 15
++	bls	.L488
++	ldr	q0, [x1]
++	str	q0, [x6]
++	cmp	x20, 16
++	ble	.L487
++	add	x20, x6, x20
++	add	x0, x6, 16
++	add	x1, x1, 16
++	.p2align 3,,7
++.L490:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x20, x0
++	bhi	.L490
++.L487:
++	add	x20, x11, x13
++	cmp	w19, 64
++	bhi	.L497
++	ldr	x0, [sp, 320]
++	cmp	x9, x0
++	bls	.L696
++	cmp	x24, x0
++	beq	.L497
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x24, x1
++	bls	.L499
++	sub	x1, x0, x24
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L499:
++	ldr	x21, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x21, [sp, 304]
++	str	w19, [sp, 312]
++	str	x1, [sp, 320]
++.L497:
++	ldr	x6, [x27, x23, lsl 3]
++	ldr	x12, [x28, x12, lsl 3]
++	ldr	x11, [x8, x7, lsl 3]
++	ubfx	w15, w6, 16, 8
++	ldr	q0, [x22]
++	ubfx	w16, w12, 16, 8
++	add	w7, w15, w16
++	ubfx	w14, w11, 16, 8
++	add	w7, w14, w7
++	lsr	x18, x6, 32
++	str	q0, [x20]
++	and	w7, w7, 255
++	mov	x2, x18
++	lsr	x23, x12, 32
++	lsr	x17, x11, 32
++	lsr	w13, w6, 24
++	lsr	w1, w12, 24
++	lsr	w0, w11, 24
++	cmp	w14, 1
++	bhi	.L697
++	cbnz	w14, .L502
++	cbz	x18, .L698
++	cbnz	w16, .L699
++.L506:
++	cbnz	w15, .L700
++.L507:
++	cmp	w7, 30
++	bhi	.L701
++.L508:
++	add	w19, w13, w19
++	uxtw	x14, w1
++	uxtw	x16, w0
++	add	w1, w1, w19
++	add	w7, w0, w1
++	ldr	w15, [x4, x13, lsl 2]
++	ldr	w14, [x4, x14, lsl 2]
++	neg	w19, w19
++	ldr	w13, [x4, x16, lsl 2]
++	neg	w1, w1
++	neg	w0, w7
++	lsr	x19, x21, x19
++	lsr	x1, x21, x1
++	and	x19, x19, x15
++	and	x1, x1, x14
++	lsr	x0, x21, x0
++	and	x0, x0, x13
++	add	x19, x19, w6, uxth
++	add	x11, x0, w11, uxth
++	add	x6, x1, w12, uxth
++	str	w7, [sp, 312]
++	add	x12, x20, x2
++	str	x19, [sp, 344]
++	str	x11, [sp, 360]
++	str	x6, [sp, 376]
++	cmp	x2, 16
++	bhi	.L511
++.L514:
++	add	x22, x22, x2
++	str	x22, [sp, 272]
++	add	x18, x2, x23
++	sub	x1, x12, x3
++	cbnz	x26, .L702
++.L513:
++	cmp	x3, 15
++	bls	.L518
++	ldr	q0, [x1]
++	str	q0, [x12]
++	cmp	x23, 16
++	ble	.L517
++	add	x23, x12, x23
++	add	x0, x12, 16
++	add	x1, x1, 16
++	.p2align 3,,7
++.L520:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x23, x0
++	bhi	.L520
++.L517:
++	add	x13, x20, x18
++	cmp	w7, 64
++	bhi	.L527
++	ldr	x0, [sp, 320]
++	cmp	x9, x0
++	bls	.L703
++	cmp	x24, x0
++	beq	.L527
++	lsr	w1, w7, 3
++	lsr	w2, w7, 3
++	sub	x1, x0, x1
++	cmp	x24, x1
++	bls	.L529
++	sub	x1, x0, x24
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L529:
++	ldr	x21, [x1]
++	sub	w7, w7, w2, lsl 3
++	str	x21, [sp, 304]
++	str	w7, [sp, 312]
++	str	x1, [sp, 320]
++.L527:
++	ldr	x15, [x28, x6, lsl 3]
++	ldr	x12, [x27, x19, lsl 3]
++	ldr	x14, [x8, x11, lsl 3]
++	ubfx	w23, w15, 16, 8
++	ldr	q0, [x22]
++	ubfx	w19, w12, 16, 8
++	add	w0, w19, w23
++	ubfx	w17, w14, 16, 8
++	add	w0, w17, w0
++	lsr	x30, x12, 32
++	str	q0, [x20, x18]
++	and	w0, w0, 255
++	mov	x6, x30
++	lsr	x11, x15, 32
++	lsr	w16, w12, 24
++	lsr	w2, w15, 24
++	lsr	w1, w14, 24
++	lsr	x18, x14, 32
++	cmp	w17, 1
++	bhi	.L704
++	cbnz	w17, .L532
++	cbz	x30, .L705
++	cbnz	w23, .L706
++.L536:
++	cbnz	w19, .L707
++.L537:
++	cmp	w0, 30
++	bhi	.L708
++.L538:
++	add	w0, w16, w7
++	uxtw	x18, w2
++	uxtw	x7, w1
++	add	w2, w2, w0
++	add	w19, w1, w2
++	ldr	w17, [x4, x16, lsl 2]
++	neg	w0, w0
++	ldr	w16, [x4, x18, lsl 2]
++	ldr	w1, [x4, x7, lsl 2]
++	neg	w2, w2
++	neg	w7, w19
++	lsr	x0, x21, x0
++	lsr	x2, x21, x2
++	and	x0, x0, x17
++	lsr	x23, x21, x7
++	and	x2, x2, x16
++	and	x23, x23, x1
++	add	x21, x0, w12, uxth
++	add	x15, x2, w15, uxth
++	add	x23, x23, w14, uxth
++	str	w19, [sp, 312]
++	add	x7, x13, x6
++	str	x21, [sp, 344]
++	str	x23, [sp, 360]
++	str	x15, [sp, 376]
++	cmp	x6, 16
++	bhi	.L541
++.L544:
++	add	x22, x22, x6
++	str	x22, [sp, 272]
++	add	x20, x6, x11
++	sub	x1, x7, x3
++	cbnz	x26, .L709
++.L543:
++	cmp	x3, 15
++	bls	.L548
++	ldr	q0, [x1]
++	str	q0, [x7]
++	cmp	x11, 16
++	ble	.L547
++	add	x2, x7, x11
++	add	x0, x7, 16
++	add	x1, x1, 16
++	.p2align 3,,7
++.L550:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x2, x0
++	bhi	.L550
++.L547:
++	add	x11, x13, x20
++	cmp	w19, 64
++	bhi	.L557
++	ldr	x0, [sp, 320]
++	cmp	x9, x0
++	bls	.L710
++	cmp	x24, x0
++	beq	.L557
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x24, x1
++	bls	.L559
++	sub	x1, x0, x24
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L559:
++	ldr	x0, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x0, [sp, 304]
++	str	w19, [sp, 312]
++	str	x1, [sp, 320]
++.L557:
++	sub	w25, w25, #3
++	cmp	w25, 12
++	ble	.L681
++.L716:
++	ldr	x3, [sp, 392]
++	b	.L561
++	.p2align 2,,3
++.L453:
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 27
++	.cfi_restore 28
++	ldr	x0, [x8, 30344]
++	str	x0, [sp, 112]
++	b	.L454
++	.p2align 2,,3
++.L600:
++	ldr	x11, [sp, 104]
++.L455:
++	mov	x7, -70
++	ldr	x0, [sp, 96]
++	sub	x2, x0, x20
++	ldr	x0, [sp, 112]
++	sub	x0, x0, x11
++	cmp	x2, x0
++	bhi	.L452
++	cbz	x11, .L599
++	mov	x0, x11
++	add	x11, x11, x2
++	mov	x1, x20
++	str	x11, [sp, 96]
++	bl	memcpy
++	ldr	x11, [sp, 96]
++.L599:
++	ldr	x0, [sp, 104]
++	sub	x7, x11, x0
++.L452:
++	mov	x0, x7
++	ldp	x19, x20, [sp, 16]
++	ldp	x23, x24, [sp, 48]
++	ldp	x25, x26, [sp, 64]
++	ldp	x29, x30, [sp], 416
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L457:
++	.cfi_restore_state
++	ldrb	w1, [x24]
++	str	x1, [sp, 304]
++	str	x24, [sp, 320]
++	cmp	x4, 5
++	beq	.L459
++	bhi	.L460
++	cmp	x4, 3
++	beq	.L461
++	cmp	x4, 4
++	bne	.L711
++.L462:
++	ldrb	w2, [x24, 3]
++	add	x1, x1, x2, lsl 24
++.L461:
++	ldrb	w2, [x24, 2]
++	add	x1, x1, x2, lsl 16
++	ldrb	w2, [x24, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 304]
++.L464:
++	cbnz	w0, .L712
++.L456:
++	mov	x7, -20
++.L725:
++	mov	x0, x7
++	ldp	x19, x20, [sp, 16]
++	ldp	x23, x24, [sp, 48]
++	ldp	x25, x26, [sp, 64]
++	ldp	x29, x30, [sp], 416
++	.cfi_remember_state
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++.L460:
++	.cfi_restore_state
++	cmp	x4, 6
++	beq	.L465
++	ldrb	w2, [x24, 6]
++	add	x1, x1, x2, lsl 48
++.L465:
++	ldrb	w2, [x24, 5]
++	add	x1, x1, x2, lsl 40
++.L459:
++	ldrb	w2, [x24, 4]
++	add	x1, x1, x2, lsl 32
++	b	.L462
++.L711:
++	cmp	x4, 2
++	bne	.L464
++	ldrb	w2, [x24, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 304]
++	b	.L464
++	.p2align 2,,3
++.L706:
++	.cfi_offset 21, -384
++	.cfi_offset 22, -376
++	.cfi_offset 27, -336
++	.cfi_offset 28, -328
++	lsl	x17, x21, x7
++	neg	w18, w23
++	add	w7, w7, w23
++	str	w7, [sp, 312]
++	lsr	x17, x17, x18
++	add	x11, x11, x17
++	cbz	w19, .L537
++.L707:
++	neg	w18, w19
++	lsl	x17, x21, x7
++	add	w7, w7, w19
++	str	w7, [sp, 312]
++	lsr	x17, x17, x18
++	add	x6, x6, x17
++	cmp	w0, 30
++	bls	.L538
++.L708:
++	cmp	w7, 64
++	bhi	.L538
++	ldr	x17, [sp, 320]
++	cmp	x9, x17
++	bls	.L713
++	cmp	x24, x17
++	beq	.L538
++	lsr	w0, w7, 3
++	lsr	w18, w7, 3
++	sub	x0, x17, x0
++	cmp	x24, x0
++	bls	.L540
++	sub	x0, x17, x24
++	mov	w18, w0
++	sub	x0, x17, w0, uxtw
++.L540:
++	ldr	x21, [x0]
++	sub	w7, w7, w18, lsl 3
++	str	x21, [sp, 304]
++	str	x0, [sp, 320]
++	b	.L538
++	.p2align 2,,3
++.L693:
++	ldr	x14, [sp, 304]
++	neg	w18, w16
++	lsl	x14, x14, x19
++	add	w19, w19, w16
++	str	w19, [sp, 312]
++	lsr	x14, x14, x18
++	add	x20, x20, x14
++	cbz	w15, .L474
++.L694:
++	ldr	x14, [sp, 304]
++	neg	w16, w15
++	lsl	x14, x14, x19
++	add	w19, w19, w15
++	str	w19, [sp, 312]
++	lsr	x14, x14, x16
++	add	x2, x2, x14
++	cmp	w1, 30
++	bls	.L688
++.L475:
++	cmp	w19, 64
++	bhi	.L688
++	ldr	x1, [sp, 320]
++	cmp	x9, x1
++	bls	.L714
++	cmp	x24, x1
++	beq	.L688
++	lsr	w14, w19, 3
++	lsr	w15, w19, 3
++	sub	x14, x1, x14
++	cmp	x24, x14
++	bls	.L480
++	sub	x14, x1, x24
++	mov	w15, w14
++	sub	x14, x1, w14, uxtw
++.L480:
++	ldr	x21, [x14]
++	sub	w19, w19, w15, lsl 3
++	str	x21, [sp, 304]
++	str	x14, [sp, 320]
++	b	.L476
++	.p2align 2,,3
++.L699:
++	lsl	x14, x21, x19
++	neg	w17, w16
++	add	w19, w19, w16
++	str	w19, [sp, 312]
++	lsr	x14, x14, x17
++	add	x23, x23, x14
++	cbz	w15, .L507
++.L700:
++	neg	w16, w15
++	lsl	x14, x21, x19
++	add	w19, w19, w15
++	str	w19, [sp, 312]
++	lsr	x14, x14, x16
++	add	x2, x2, x14
++	cmp	w7, 30
++	bls	.L508
++.L701:
++	cmp	w19, 64
++	bhi	.L508
++	ldr	x14, [sp, 320]
++	cmp	x9, x14
++	bls	.L715
++	cmp	x24, x14
++	beq	.L508
++	lsr	w7, w19, 3
++	lsr	w15, w19, 3
++	sub	x7, x14, x7
++	cmp	x24, x7
++	bls	.L510
++	sub	x7, x14, x24
++	mov	w15, w7
++	sub	x7, x14, w7, uxtw
++.L510:
++	ldr	x21, [x7]
++	sub	w19, w19, w15, lsl 3
++	str	x21, [sp, 304]
++	str	x7, [sp, 320]
++	b	.L508
++	.p2align 2,,3
++.L705:
++	ldr	x17, [sp, 400]
++	stp	x17, x3, [sp, 392]
++	mov	x3, x17
++	cbz	w23, .L536
++	b	.L706
++	.p2align 2,,3
++.L698:
++	ldr	x14, [sp, 400]
++	stp	x14, x3, [sp, 392]
++	mov	x3, x14
++	cbz	w16, .L506
++	b	.L699
++	.p2align 2,,3
++.L692:
++	ldr	x14, [sp, 400]
++	stp	x14, x3, [sp, 392]
++	mov	x3, x14
++	cbz	w16, .L473
++	b	.L693
++	.p2align 2,,3
++.L712:
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 27
++	.cfi_restore 28
++	mov	w1, 8
++	sub	w1, w1, w4
++	clz	w0, w0
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 22, -376
++	.cfi_offset 21, -384
++	add	w0, w0, w1, lsl 3
++	sub	w0, w0, #23
++	stp	x27, x28, [sp, 80]
++	.cfi_offset 28, -328
++	.cfi_offset 27, -336
++	str	w0, [sp, 312]
++	b	.L458
++	.p2align 2,,3
++.L703:
++	lsr	w1, w7, 3
++	and	w7, w7, 7
++	sub	x0, x0, x1
++	str	w7, [sp, 312]
++	str	x0, [sp, 320]
++	ldr	x21, [x0]
++	str	x21, [sp, 304]
++	b	.L527
++	.p2align 2,,3
++.L710:
++	lsr	w1, w19, 3
++	sub	w25, w25, #3
++	sub	x0, x0, x1
++	str	x0, [sp, 320]
++	and	w19, w19, 7
++	str	w19, [sp, 312]
++	ldr	x0, [x0]
++	str	x0, [sp, 304]
++	cmp	w25, 12
++	bgt	.L716
++.L681:
++	mov	x20, x22
++	mov	x22, x15
++.L560:
++	ldr	x0, [sp, 112]
++	mov	x12, x28
++	mov	x16, x20
++	mov	x28, x26
++	sub	x15, x0, #32
++	mov	x26, x11
++	ldr	x0, [sp, 216]
++	str	x9, [sp, 128]
++	mov	x9, x27
++	add	x13, x0, 64
++	add	x0, x0, 32
++	mov	x27, x13
++	mov	x13, x24
++	mov	x24, x5
++	stp	x10, x0, [sp, 224]
++	mov	w10, w25
++	.p2align 3,,7
++.L562:
++	ldr	x21, [x9, x21, lsl 3]
++	ldr	x22, [x12, x22, lsl 3]
++	ldr	x23, [x8, x23, lsl 3]
++	ubfx	w17, w21, 16, 8
++	ubfx	w20, w22, 16, 8
++	lsr	x30, x21, 32
++	add	w2, w17, w20
++	lsr	x3, x22, 32
++	ubfx	w6, w23, 16, 8
++	mov	x1, x30
++	add	w2, w6, w2
++	lsr	x25, x23, 32
++	and	w2, w2, 255
++	lsr	w4, w21, 24
++	lsr	w0, w22, 24
++	lsr	w18, w23, 24
++	cmp	w6, 1
++	bls	.L563
++	ldr	x14, [sp, 304]
++	neg	w30, w6
++	ldr	x5, [sp, 400]
++	str	x5, [sp, 408]
++	lsl	x14, x14, x19
++	add	w19, w19, w6
++	lsr	x14, x14, x30
++	add	x25, x25, x14
++	ldr	x14, [sp, 392]
++	str	w19, [sp, 312]
++.L564:
++	stp	x25, x14, [sp, 392]
++	cbnz	w20, .L717
++.L569:
++	cmp	w2, 30
++	bhi	.L570
++.L689:
++	ldr	x6, [sp, 304]
++.L571:
++	cbnz	w17, .L718
++.L576:
++	uxtw	x20, w0
++	add	w2, w4, w19
++	add	w0, w0, w2
++	uxtw	x17, w18
++	add	w19, w18, w0
++	neg	w2, w2
++	ldr	w20, [x27, x20, lsl 2]
++	neg	w0, w0
++	ldr	w30, [x27, x4, lsl 2]
++	lsr	x2, x6, x2
++	lsr	x0, x6, x0
++	and	x0, x0, x20
++	add	x20, x26, x1
++	and	x4, x2, x30
++	ldr	w17, [x27, x17, lsl 2]
++	neg	w18, w19
++	sub	x2, x20, x25
++	add	x21, x4, w21, uxth
++	ldr	x5, [sp, 96]
++	lsr	x6, x6, x18
++	and	x6, x6, x17
++	prfm	PLDL1KEEP, [x2]
++	add	x22, x0, w22, uxth
++	add	x23, x6, w23, uxth
++	add	x0, x16, x1
++	add	x6, x1, x3
++	str	w19, [sp, 312]
++	add	x4, x26, x6
++	str	x21, [sp, 344]
++	cmp	x5, x0
++	str	x23, [sp, 360]
++	ccmp	x4, x15, 2, cs
++	str	x22, [sp, 376]
++	bhi	.L577
++	ldr	q0, [x16]
++	str	q0, [x26]
++	cmp	x1, 16
++	bhi	.L578
++.L582:
++	str	x0, [sp, 272]
++	sub	x0, x20, x24
++	cmp	x25, x0
++	bls	.L580
++	ldr	x0, [sp, 120]
++	sub	x0, x20, x0
++	cmp	x25, x0
++	bhi	.L687
++	sub	x1, x2, x24
++	add	x1, x28, x1
++	add	x0, x1, x3
++	cmp	x28, x0
++	bcs	.L719
++	sub	x2, x24, x2
++	mov	x0, x20
++	sub	x3, x3, x2
++	add	x20, x20, x2
++	stp	x3, x4, [sp, 136]
++	stp	x9, x12, [sp, 152]
++	stp	x8, x15, [sp, 168]
++	str	x13, [sp, 184]
++	str	w10, [sp, 192]
++	stp	x14, x6, [sp, 200]
++	bl	memmove
++	ldr	w10, [sp, 192]
++	ldp	x3, x4, [sp, 136]
++	mov	x2, x24
++	ldp	x9, x12, [sp, 152]
++	ldp	x8, x15, [sp, 168]
++	ldp	x14, x6, [sp, 200]
++	ldr	x13, [sp, 184]
++.L580:
++	cmp	x25, 15
++	bls	.L585
++	ldr	q0, [x2]
++	str	q0, [x20]
++	cmp	x3, 16
++	ble	.L581
++	add	x20, x20, 16
++	add	x2, x2, 16
++	.p2align 3,,7
++.L586:
++	ldr	q0, [x2]
++	add	x20, x20, 32
++	add	x2, x2, 32
++	str	q0, [x20, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x20, -16]
++	cmp	x4, x20
++	bhi	.L586
++.L581:
++	cmn	x6, #120
++	bhi	.L682
++	add	x26, x26, x6
++	subs	w10, w10, #1
++	beq	.L593
++	cmp	w19, 64
++	bhi	.L594
++	ldr	x1, [sp, 128]
++	ldr	x0, [sp, 320]
++	cmp	x1, x0
++	bls	.L720
++	cmp	x13, x0
++	beq	.L594
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x13, x1
++	bls	.L596
++	sub	x1, x0, x13
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L596:
++	ldr	x0, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x0, [sp, 304]
++	str	w19, [sp, 312]
++	str	x1, [sp, 320]
++.L594:
++	ldr	x16, [sp, 272]
++	b	.L562
++	.p2align 2,,3
++.L696:
++	lsr	w1, w19, 3
++	and	w19, w19, 7
++	sub	x0, x0, x1
++	str	w19, [sp, 312]
++	str	x0, [sp, 320]
++	ldr	x21, [x0]
++	str	x21, [sp, 304]
++	b	.L497
++	.p2align 2,,3
++.L570:
++	cmp	w19, 64
++	bhi	.L689
++	ldr	x2, [sp, 128]
++	ldr	x6, [sp, 320]
++	cmp	x2, x6
++	bls	.L721
++	cmp	x13, x6
++	beq	.L689
++	lsr	w2, w19, 3
++	lsr	w20, w19, 3
++	sub	x2, x6, x2
++	cmp	x13, x2
++	bls	.L575
++	sub	x2, x6, x13
++	mov	w20, w2
++	sub	x2, x6, w2, uxtw
++.L575:
++	ldr	x6, [x2]
++	str	x6, [sp, 304]
++	str	x2, [sp, 320]
++	sub	w19, w19, w20, lsl 3
++	cbz	w17, .L576
++	.p2align 3,,7
++.L718:
++	neg	w20, w17
++	lsl	x2, x6, x19
++	add	w19, w19, w17
++	lsr	x2, x2, x20
++	add	x1, x1, x2
++	b	.L576
++	.p2align 2,,3
++.L563:
++	cmp	w30, 0
++	cset	w14, eq
++	cmp	w6, 1
++	beq	.L565
++	cmp	w30, 0
++	add	x14, x14, 10
++	cset	x6, ne
++	add	x5, sp, 312
++	add	x6, x6, 10
++	ldr	x25, [x5, x14, lsl 3]
++	ldr	x14, [x5, x6, lsl 3]
++	stp	x25, x14, [sp, 392]
++	cbz	w20, .L569
++.L717:
++	ldr	x6, [sp, 304]
++	neg	w30, w20
++	lsl	x6, x6, x19
++	add	w19, w19, w20
++	lsr	x6, x6, x30
++	add	x3, x3, x6
++	str	w19, [sp, 312]
++	b	.L569
++	.p2align 2,,3
++.L720:
++	lsr	w1, w19, 3
++	and	w19, w19, 7
++	sub	x0, x0, x1
++	str	x0, [sp, 320]
++	str	w19, [sp, 312]
++	ldr	x16, [sp, 272]
++	ldr	x0, [x0]
++	str	x0, [sp, 304]
++	b	.L562
++	.p2align 2,,3
++.L697:
++	ldr	x18, [sp, 400]
++	neg	w30, w14
++	stp	x3, x18, [sp, 400]
++	lsl	x18, x21, x19
++	lsr	x18, x18, x30
++	add	w19, w19, w14
++	add	x17, x17, x18
++	str	w19, [sp, 312]
++	mov	x3, x17
++	str	x17, [sp, 392]
++	cbz	w16, .L506
++	b	.L699
++	.p2align 2,,3
++.L691:
++	ldr	x30, [sp, 304]
++	neg	w23, w14
++	ldr	x18, [sp, 400]
++	stp	x3, x18, [sp, 400]
++	lsl	x3, x30, x19
++	add	w19, w19, w14
++	lsr	x14, x3, x23
++	add	x14, x21, x14
++	str	w19, [sp, 312]
++	str	x14, [sp, 392]
++	mov	x3, x14
++	cbz	w16, .L473
++	b	.L693
++	.p2align 2,,3
++.L709:
++	sub	x0, x7, x5
++	cmp	x3, x0
++	bls	.L543
++	sub	x0, x1, x5
++	add	x0, x26, x0
++	add	x2, x0, x11
++	cmp	x26, x2
++	bcs	.L722
++	sub	x2, x5, x1
++	mov	x1, x0
++	sub	x11, x11, x2
++	mov	x0, x7
++	add	x7, x7, x2
++	stp	x7, x11, [sp, 144]
++	stp	x5, x13, [sp, 160]
++	stp	x3, x15, [sp, 176]
++	stp	x9, x8, [sp, 192]
++	str	x4, [sp, 208]
++	str	x10, [sp, 224]
++	bl	memmove
++	ldp	x5, x13, [sp, 160]
++	ldp	x7, x11, [sp, 144]
++	ldp	x3, x15, [sp, 176]
++	mov	x1, x5
++	ldp	x9, x8, [sp, 192]
++	ldr	x4, [sp, 208]
++	ldr	x10, [sp, 224]
++	b	.L543
++	.p2align 2,,3
++.L541:
++	ldr	q0, [x22, 16]
++	sub	x0, x6, #16
++	str	q0, [x13, 16]
++	cmp	x0, 16
++	ble	.L544
++	add	x0, x13, 32
++	add	x1, x22, 32
++	.p2align 3,,7
++.L545:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x0, x7
++	bcc	.L545
++	b	.L544
++	.p2align 2,,3
++.L511:
++	ldr	q0, [x22, 16]
++	sub	x0, x2, #16
++	str	q0, [x20, 16]
++	cmp	x0, 16
++	ble	.L514
++	add	x0, x20, 32
++	add	x1, x22, 32
++	.p2align 3,,7
++.L515:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x0, x12
++	bcc	.L515
++	add	x22, x22, x2
++	str	x22, [sp, 272]
++	add	x18, x2, x23
++	sub	x1, x12, x3
++	cbz	x26, .L513
++	.p2align 3,,7
++.L702:
++	sub	x0, x12, x5
++	cmp	x3, x0
++	bls	.L513
++	sub	x0, x1, x5
++	add	x0, x26, x0
++	add	x2, x0, x23
++	cmp	x26, x2
++	bcs	.L723
++	sub	x2, x5, x1
++	mov	x1, x0
++	mov	x0, x12
++	add	x12, x12, x2
++	sub	x23, x23, x2
++	stp	x12, x5, [sp, 144]
++	stp	x6, x11, [sp, 160]
++	str	x18, [sp, 176]
++	str	w7, [sp, 184]
++	stp	x3, x9, [sp, 192]
++	str	x8, [sp, 208]
++	stp	x4, x10, [sp, 224]
++	bl	memmove
++	ldr	w7, [sp, 184]
++	ldp	x12, x5, [sp, 144]
++	ldp	x6, x11, [sp, 160]
++	ldr	x18, [sp, 176]
++	mov	x1, x5
++	ldp	x3, x9, [sp, 192]
++	ldr	x8, [sp, 208]
++	ldp	x4, x10, [sp, 224]
++	b	.L513
++	.p2align 2,,3
++.L704:
++	ldr	x20, [sp, 400]
++	neg	w30, w17
++	stp	x3, x20, [sp, 400]
++	lsl	x20, x21, x7
++	lsr	x20, x20, x30
++	add	w7, w7, w17
++	add	x18, x18, x20
++	str	w7, [sp, 312]
++	mov	x3, x18
++	str	x18, [sp, 392]
++	cbz	w23, .L536
++	b	.L706
++	.p2align 2,,3
++.L481:
++	ldr	q0, [x22, 16]
++	sub	x0, x2, #16
++	str	q0, [x11, 16]
++	cmp	x0, 16
++	ble	.L484
++	add	x0, x11, 32
++	add	x1, x22, 32
++	.p2align 3,,7
++.L485:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x0, x6
++	bcc	.L485
++	add	x22, x22, x2
++	str	x22, [sp, 272]
++	add	x13, x2, x20
++	sub	x1, x6, x3
++	cbz	x26, .L483
++	.p2align 3,,7
++.L695:
++	sub	x0, x6, x5
++	cmp	x3, x0
++	bls	.L483
++	sub	x0, x1, x5
++	add	x0, x26, x0
++	add	x2, x0, x20
++	cmp	x26, x2
++	bcs	.L724
++	sub	x2, x5, x1
++	mov	x1, x0
++	mov	x0, x6
++	add	x6, x6, x2
++	sub	x20, x20, x2
++	stp	x6, x5, [sp, 144]
++	stp	x12, x7, [sp, 160]
++	stp	x13, x3, [sp, 176]
++	stp	x11, x9, [sp, 192]
++	str	x8, [sp, 208]
++	stp	x4, x10, [sp, 224]
++	bl	memmove
++	ldp	x6, x5, [sp, 144]
++	ldp	x12, x7, [sp, 160]
++	ldp	x13, x3, [sp, 176]
++	mov	x1, x5
++	ldp	x11, x9, [sp, 192]
++	ldr	x8, [sp, 208]
++	ldp	x4, x10, [sp, 224]
++	b	.L483
++	.p2align 2,,3
++.L488:
++	cmp	x3, 7
++	bhi	.L492
++	ldrb	w0, [x1]
++	strb	w0, [x6]
++	ldrb	w2, [x1, 1]
++	strb	w2, [x6, 1]
++	ldrb	w2, [x1, 2]
++	strb	w2, [x6, 2]
++	ldrb	w2, [x1, 3]
++	strb	w2, [x6, 3]
++	ldp	x2, x0, [sp, 128]
++	ldr	w0, [x0, x3, lsl 2]
++	ldrsw	x2, [x2, x3, lsl 2]
++	add	x15, x1, x0
++	ldr	w14, [x1, x0]
++	sub	x1, x15, x2
++	str	w14, [x6, 4]
++.L493:
++	cmp	x20, 8
++	bls	.L487
++	sub	x15, x6, x1
++	add	x0, x6, 8
++	add	x2, x1, 8
++	add	x14, x6, x20
++	cmp	x15, 15
++	bgt	.L494
++	.p2align 3,,7
++.L495:
++	ldr	d0, [x2], 8
++	str	d0, [x0], 8
++	cmp	x14, x0
++	bhi	.L495
++	b	.L487
++	.p2align 2,,3
++.L518:
++	cmp	x3, 7
++	bhi	.L522
++	ldrb	w0, [x1]
++	strb	w0, [x12]
++	ldrb	w2, [x1, 1]
++	strb	w2, [x12, 1]
++	ldrb	w2, [x1, 2]
++	strb	w2, [x12, 2]
++	ldrb	w2, [x1, 3]
++	strb	w2, [x12, 3]
++	ldp	x2, x0, [sp, 128]
++	ldr	w0, [x0, x3, lsl 2]
++	ldrsw	x2, [x2, x3, lsl 2]
++	add	x14, x1, x0
++	ldr	w13, [x1, x0]
++	sub	x1, x14, x2
++	str	w13, [x12, 4]
++.L523:
++	cmp	x23, 8
++	bls	.L517
++	sub	x14, x12, x1
++	add	x0, x12, 8
++	add	x2, x1, 8
++	add	x13, x12, x23
++	cmp	x14, 15
++	bgt	.L524
++	.p2align 3,,7
++.L525:
++	ldr	d0, [x2], 8
++	str	d0, [x0], 8
++	cmp	x13, x0
++	bhi	.L525
++	b	.L517
++	.p2align 2,,3
++.L548:
++	cmp	x3, 7
++	bhi	.L552
++	ldrb	w0, [x1]
++	strb	w0, [x7]
++	ldrb	w2, [x1, 1]
++	strb	w2, [x7, 1]
++	ldp	x2, x0, [sp, 128]
++	ldr	w0, [x0, x3, lsl 2]
++	ldrsw	x2, [x2, x3, lsl 2]
++	ldrb	w3, [x1, 2]
++	add	x6, x1, x0
++	strb	w3, [x7, 2]
++	ldrb	w3, [x1, 3]
++	strb	w3, [x7, 3]
++	ldr	w0, [x1, x0]
++	sub	x1, x6, x2
++	str	w0, [x7, 4]
++.L553:
++	cmp	x11, 8
++	bls	.L547
++	sub	x6, x7, x1
++	add	x0, x7, 8
++	add	x2, x1, 8
++	add	x3, x7, x11
++	cmp	x6, 15
++	bgt	.L554
++	.p2align 3,,7
++.L555:
++	ldr	d0, [x2], 8
++	str	d0, [x0], 8
++	cmp	x3, x0
++	bhi	.L555
++	b	.L547
++	.p2align 2,,3
++.L469:
++	ldr	x23, [sp, 304]
++	cmp	w18, 0
++	cinc	w14, w21, eq
++	uxtw	x14, w14
++	lsl	x18, x23, x19
++	add	w19, w19, 1
++	add	x14, x14, x18, lsr 63
++	str	w19, [sp, 312]
++	sub	x18, x3, #1
++	cmp	x14, 3
++	beq	.L471
++	add	x18, sp, 416
++	add	x18, x18, x14, lsl 3
++	ldr	x18, [x18, -24]
++	cmp	x14, 1
++	beq	.L472
++.L471:
++	ldr	x14, [sp, 400]
++	str	x14, [sp, 408]
++.L472:
++	stp	x18, x3, [sp, 392]
++	mov	x3, x18
++	cbz	w16, .L473
++	b	.L693
++	.p2align 2,,3
++.L532:
++	cmp	w30, 0
++	lsl	x20, x21, x7
++	cinc	w17, w18, eq
++	add	w7, w7, 1
++	uxtw	x17, w17
++	str	w7, [sp, 312]
++	add	x17, x17, x20, lsr 63
++	sub	x18, x3, #1
++	cmp	x17, 3
++	beq	.L534
++	add	x18, sp, 416
++	add	x18, x18, x17, lsl 3
++	ldr	x18, [x18, -24]
++	cmp	x17, 1
++	beq	.L535
++.L534:
++	ldr	x17, [sp, 400]
++	str	x17, [sp, 408]
++.L535:
++	stp	x18, x3, [sp, 392]
++	mov	x3, x18
++	cbz	w23, .L536
++	b	.L706
++	.p2align 2,,3
++.L502:
++	cmp	w18, 0
++	lsl	x18, x21, x19
++	cinc	w14, w17, eq
++	add	w19, w19, 1
++	uxtw	x14, w14
++	str	w19, [sp, 312]
++	add	x14, x14, x18, lsr 63
++	sub	x17, x3, #1
++	cmp	x14, 3
++	beq	.L504
++	add	x17, sp, 416
++	add	x17, x17, x14, lsl 3
++	ldr	x17, [x17, -24]
++	cmp	x14, 1
++	beq	.L505
++.L504:
++	ldr	x14, [sp, 400]
++	str	x14, [sp, 408]
++.L505:
++	stp	x17, x3, [sp, 392]
++	mov	x3, x17
++	cbz	w16, .L506
++	b	.L699
++	.p2align 2,,3
++.L719:
++	mov	x2, x3
++	mov	x0, x20
++	stp	x9, x12, [sp, 136]
++	stp	x8, x15, [sp, 152]
++	str	x13, [sp, 168]
++	str	w10, [sp, 176]
++	stp	x14, x6, [sp, 184]
++	bl	memmove
++	ldr	w10, [sp, 176]
++	ldp	x9, x12, [sp, 136]
++	ldp	x8, x15, [sp, 152]
++	ldr	x13, [sp, 168]
++	ldp	x14, x6, [sp, 184]
++	b	.L581
++	.p2align 2,,3
++.L577:
++	add	x0, sp, 512
++	stp	x1, x3, [sp, 280]
++	mov	x4, x5
++	ldr	x6, [sp, 120]
++	mov	x7, x28
++	ldp	x0, x1, [x0, -232]
++	stp	x0, x1, [sp, 240]
++	mov	x5, x24
++	ldr	x1, [sp, 112]
++	add	x2, sp, 240
++	add	x3, sp, 272
++	mov	x0, x26
++	stp	x9, x12, [sp, 136]
++	stp	x8, x15, [sp, 152]
++	str	x13, [sp, 168]
++	str	w10, [sp, 176]
++	str	x14, [sp, 184]
++	str	x25, [sp, 256]
++	str	x25, [sp, 296]
++	bl	ZSTD_execSequenceEnd
++	ldr	w10, [sp, 176]
++	mov	x6, x0
++	ldp	x9, x12, [sp, 136]
++	ldp	x8, x15, [sp, 152]
++	ldr	x13, [sp, 168]
++	ldr	x14, [sp, 184]
++	b	.L581
++	.p2align 2,,3
++.L578:
++	ldr	q0, [x16, 16]
++	sub	x1, x1, #16
++	str	q0, [x26, 16]
++	cmp	x1, 16
++	ble	.L582
++	add	x16, x16, 32
++	add	x1, x26, 32
++	.p2align 3,,7
++.L583:
++	ldr	q0, [x16]
++	add	x1, x1, 32
++	add	x16, x16, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x16, -16]
++	str	q0, [x1, -16]
++	cmp	x20, x1
++	bhi	.L583
++	b	.L582
++.L687:
++	mov	x7, -20
++	ldp	x21, x22, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 22
++	.cfi_restore 21
++	ldp	x27, x28, [sp, 80]
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L725
++.L492:
++	.cfi_restore_state
++	ldr	d0, [x1]
++	str	d0, [x6]
++	b	.L493
++.L522:
++	ldr	d0, [x1]
++	str	d0, [x12]
++	b	.L523
++.L552:
++	ldr	d0, [x1]
++	str	d0, [x7]
++	b	.L553
++.L585:
++	cmp	x25, 7
++	bls	.L726
++	ldr	d0, [x2]
++	str	d0, [x20]
++.L588:
++	cmp	x3, 8
++	bls	.L581
++	sub	x16, x20, x2
++	add	x1, x2, 8
++	add	x0, x20, 8
++	cmp	x16, 15
++	bgt	.L589
++	.p2align 3,,7
++.L590:
++	ldr	d0, [x1], 8
++	str	d0, [x0], 8
++	cmp	x4, x0
++	bhi	.L590
++	b	.L581
++.L682:
++	mov	x7, x6
++	ldp	x21, x22, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 22
++	.cfi_restore 21
++	ldp	x27, x28, [sp, 80]
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L452
++	.p2align 2,,3
++.L593:
++	.cfi_restore_state
++	mov	x11, x26
++	mov	x12, x25
++	ldr	x9, [sp, 128]
++	ldr	x10, [sp, 224]
++	cmp	w19, 64
++	bhi	.L597
++	ldr	x0, [sp, 320]
++	cmp	x9, x0
++	bls	.L687
++	cmp	x13, x0
++	bne	.L687
++	cmp	w19, 64
++	bne	.L687
++.L597:
++	ldr	x0, [sp, 408]
++	ldp	x21, x22, [sp, 32]
++	.cfi_remember_state
++	.cfi_restore 22
++	.cfi_restore 21
++	ldp	x27, x28, [sp, 80]
++	.cfi_restore 28
++	.cfi_restore 27
++	str	w12, [x10, 10300]
++	str	w14, [x10, 10304]
++	str	w0, [x10, 10308]
++	ldr	x20, [sp, 272]
++	b	.L455
++.L565:
++	.cfi_restore_state
++	ldr	x6, [sp, 304]
++	add	w25, w14, w25
++	ldr	x14, [sp, 392]
++	lsl	x6, x6, x19
++	add	w19, w19, 1
++	add	x6, x25, x6, lsr 63
++	subs	x25, x14, #1
++	str	w19, [sp, 312]
++	cinc	x25, x25, eq
++	cmp	x6, 3
++	beq	.L567
++	add	x25, x6, 10
++	add	x5, sp, 312
++	ldr	x25, [x5, x25, lsl 3]
++	cmp	x25, 0
++	cinc	x25, x25, eq
++	cmp	x6, 1
++	beq	.L564
++.L567:
++	ldr	x6, [sp, 400]
++	str	x6, [sp, 408]
++	b	.L564
++.L714:
++	lsr	w14, w19, 3
++	and	w19, w19, 7
++	sub	x1, x1, x14
++	str	x1, [sp, 320]
++	ldr	x21, [x1]
++	str	x21, [sp, 304]
++	b	.L476
++.L715:
++	lsr	w7, w19, 3
++	and	w19, w19, 7
++	sub	x7, x14, x7
++	ldr	x21, [x7]
++	str	x21, [sp, 304]
++	str	x7, [sp, 320]
++	b	.L508
++.L713:
++	lsr	w0, w7, 3
++	and	w7, w7, 7
++	sub	x0, x17, x0
++	ldr	x21, [x0]
++	str	x21, [sp, 304]
++	str	x0, [sp, 320]
++	b	.L538
++.L726:
++	ldrb	w0, [x2]
++	strb	w0, [x20]
++	ldr	x0, [sp, 232]
++	ldrb	w1, [x2, 1]
++	strb	w1, [x20, 1]
++	ldr	w0, [x0, x25, lsl 2]
++	ldrb	w1, [x2, 2]
++	strb	w1, [x20, 2]
++	add	x17, x2, x0
++	ldrb	w1, [x2, 3]
++	strb	w1, [x20, 3]
++	ldr	x1, [sp, 216]
++	ldr	w16, [x2, x0]
++	str	w16, [x20, 4]
++	ldrsw	x1, [x1, x25, lsl 2]
++	sub	x2, x17, x1
++	b	.L588
++.L721:
++	lsr	w2, w19, 3
++	and	w19, w19, 7
++	sub	x2, x6, x2
++	ldr	x6, [x2]
++	str	x6, [sp, 304]
++	str	x2, [sp, 320]
++	b	.L571
++.L554:
++	ldr	q0, [x1, 8]
++	str	q0, [x7, 8]
++	cmp	x11, 24
++	ble	.L547
++	add	x0, x7, 24
++	add	x1, x1, 24
++	.p2align 3,,7
++.L556:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x3, x0
++	bhi	.L556
++	b	.L547
++.L524:
++	ldr	q0, [x1, 8]
++	str	q0, [x12, 8]
++	cmp	x23, 24
++	ble	.L517
++	add	x0, x12, 24
++	add	x1, x1, 24
++	.p2align 3,,7
++.L526:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x13, x0
++	bhi	.L526
++	b	.L517
++.L494:
++	ldr	q0, [x1, 8]
++	str	q0, [x6, 8]
++	cmp	x20, 24
++	ble	.L487
++	add	x0, x6, 24
++	add	x1, x1, 24
++	.p2align 3,,7
++.L496:
++	ldr	q0, [x1]
++	add	x0, x0, 32
++	add	x1, x1, 32
++	str	q0, [x0, -32]
++	ldr	q0, [x1, -16]
++	str	q0, [x0, -16]
++	cmp	x14, x0
++	bhi	.L496
++	b	.L487
++.L466:
++	adrp	x0, .LANCHOR0
++	ldr	w19, [sp, 312]
++	add	x0, x0, :lo12:.LANCHOR0
++	str	x0, [sp, 216]
++	ldr	x11, [sp, 104]
++	ldp	x21, x27, [sp, 344]
++	ldp	x23, x8, [sp, 360]
++	ldp	x22, x28, [sp, 376]
++	b	.L560
++.L589:
++	ldr	q0, [x2, 8]
++	str	q0, [x20, 8]
++	cmp	x3, 24
++	ble	.L581
++	add	x20, x20, 24
++	add	x2, x2, 24
++.L591:
++	ldr	q0, [x2]
++	add	x20, x20, 32
++	add	x2, x2, 32
++	str	q0, [x20, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x20, -16]
++	cmp	x4, x20
++	bhi	.L591
++	b	.L581
++.L724:
++	mov	x1, x0
++	mov	x2, x20
++	mov	x0, x6
++	stp	x12, x7, [sp, 144]
++	stp	x13, x5, [sp, 160]
++	stp	x3, x11, [sp, 176]
++	stp	x9, x8, [sp, 192]
++	str	x4, [sp, 208]
++	str	x10, [sp, 224]
++	bl	memmove
++	ldp	x12, x7, [sp, 144]
++	ldp	x13, x5, [sp, 160]
++	ldp	x3, x11, [sp, 176]
++	ldp	x9, x8, [sp, 192]
++	ldr	x4, [sp, 208]
++	ldr	x10, [sp, 224]
++	b	.L487
++.L722:
++	mov	x1, x0
++	mov	x2, x11
++	mov	x0, x7
++	stp	x13, x5, [sp, 144]
++	stp	x15, x9, [sp, 160]
++	stp	x8, x4, [sp, 176]
++	str	x10, [sp, 192]
++	bl	memmove
++	ldp	x13, x5, [sp, 144]
++	ldp	x15, x9, [sp, 160]
++	ldp	x8, x4, [sp, 176]
++	ldr	x10, [sp, 192]
++	b	.L547
++.L723:
++	mov	x1, x0
++	mov	x2, x23
++	mov	x0, x12
++	stp	x6, x11, [sp, 144]
++	str	x18, [sp, 160]
++	str	w7, [sp, 168]
++	stp	x5, x3, [sp, 176]
++	stp	x9, x8, [sp, 192]
++	str	x4, [sp, 208]
++	str	x10, [sp, 224]
++	bl	memmove
++	ldr	w7, [sp, 168]
++	ldp	x6, x11, [sp, 144]
++	ldr	x18, [sp, 160]
++	ldp	x5, x3, [sp, 176]
++	ldp	x9, x8, [sp, 192]
++	ldr	x4, [sp, 208]
++	ldr	x10, [sp, 224]
++	b	.L517
++	.cfi_endproc
++.LFE4551:
++	.size	ZSTD_decompressSequences_default.constprop.0, .-ZSTD_decompressSequences_default.constprop.0
++	.align	2
++	.p2align 4,,11
++	.type	ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0, %function
++ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0:
++.LFB4552:
++	.cfi_startproc
++	sub	sp, sp, #480
++	.cfi_def_cfa_offset 480
++	stp	x29, x30, [sp, 16]
++	.cfi_offset 29, -464
++	.cfi_offset 30, -456
++	add	x29, sp, 16
++	ldr	x8, [x0, 30120]
++	stp	x19, x20, [sp, 32]
++	.cfi_offset 19, -448
++	.cfi_offset 20, -440
++	mov	x20, x0
++	add	x0, x1, x2
++	str	x0, [sp, 112]
++	stp	x21, x22, [sp, 48]
++	ldr	x0, [x20, 29904]
++	stp	x23, x24, [sp, 64]
++	stp	x25, x26, [sp, 80]
++	.cfi_offset 21, -432
++	.cfi_offset 22, -424
++	.cfi_offset 23, -416
++	.cfi_offset 24, -408
++	.cfi_offset 25, -400
++	.cfi_offset 26, -392
++	mov	x25, x1
++	str	x0, [sp, 120]
++	str	x8, [sp, 288]
++	ldr	x11, [x20, 29896]
++	ldr	x14, [x20, 29912]
++	ldr	x24, [x20, 30352]
++	cbz	w5, .L848
++	add	x23, x20, 16384
++	mov	w0, 1
++	ldr	w13, [x23, 10300]
++	ldr	w18, [x23, 10304]
++	ldr	w1, [x23, 10308]
++	stp	x13, x18, [sp, 456]
++	str	x1, [sp, 472]
++	str	w0, [x23, 13620]
++	cbz	x4, .L729
++	add	x0, x3, x4
++	stp	x27, x28, [sp, 96]
++	.cfi_offset 28, -376
++	.cfi_offset 27, -384
++	add	x1, x3, 8
++	str	x1, [sp, 128]
++	mov	x27, x3
++	stp	x3, x1, [sp, 392]
++	mov	w28, w5
++	ldrb	w0, [x0, -1]
++	cmp	x4, 7
++	bls	.L730
++	sub	x1, x4, #8
++	add	x2, x3, x1
++	str	x2, [sp, 384]
++	ldr	x1, [x3, x1]
++	str	x1, [sp, 368]
++	cbz	w0, .L951
++	clz	w0, w0
++	sub	w0, w0, #23
++	str	w0, [sp, 376]
++	cmn	x4, #120
++	bhi	.L951
++.L731:
++	ldr	x2, [x20]
++	add	x1, sp, 368
++	add	x0, sp, 408
++	bl	ZSTD_initFseState
++	add	x0, sp, 424
++	ldr	x2, [x20, 16]
++	bl	ZSTD_initFseState
++	add	x0, sp, 440
++	ldr	x2, [x20, 8]
++	bl	ZSTD_initFseState
++	ldp	x2, x0, [sp, 408]
++	ldp	x12, x1, [sp, 432]
++	ldr	x10, [sp, 448]
++	mov	x3, x0
++	str	x3, [sp, 136]
++	ldr	x4, [x0, x2, lsl 3]
++	ldr	x0, [sp, 424]
++	ldr	x2, [x10, x1, lsl 3]
++	ubfx	w17, w4, 16, 8
++	ldr	x3, [x12, x0, lsl 3]
++	lsr	x30, x4, 32
++	ubfx	w21, w2, 16, 8
++	lsr	x5, x2, 32
++	add	w7, w17, w21
++	mov	x6, x30
++	ubfx	w16, w3, 16, 8
++	lsr	w15, w4, 24
++	add	w7, w16, w7
++	lsr	w1, w2, 24
++	lsr	x22, x3, 32
++	and	w7, w7, 255
++	lsr	w19, w3, 24
++	cmp	w16, 1
++	bls	.L739
++	ldr	x9, [sp, 368]
++	neg	w30, w16
++	ldr	w26, [sp, 376]
++	str	x18, [sp, 472]
++	add	w0, w16, w26
++	str	w0, [sp, 376]
++	lsl	x16, x9, x26
++	lsr	x16, x16, x30
++	add	x22, x22, x16
++.L740:
++	stp	x22, x13, [sp, 456]
++	cbnz	w21, .L956
++.L745:
++	cmp	w7, 30
++	bhi	.L746
++.L952:
++	ldr	x7, [sp, 368]
++.L747:
++	cbnz	w17, .L957
++.L752:
++	adrp	x13, .LANCHOR0
++	add	x9, x13, :lo12:.LANCHOR0
++	add	x26, x9, 64
++	add	w0, w15, w0
++	uxtw	x17, w1
++	uxtw	x16, w19
++	add	w1, w1, w0
++	neg	w0, w0
++	ldr	w15, [x26, x15, lsl 2]
++	add	w19, w19, w1
++	lsr	x0, x7, x0
++	ldr	w17, [x26, x17, lsl 2]
++	and	x0, x0, x15
++	ldr	w16, [x26, x16, lsl 2]
++	neg	w15, w19
++	neg	w1, w1
++	add	x0, x0, w4, uxth
++	str	x9, [sp, 208]
++	lsr	x1, x7, x1
++	and	x1, x1, x17
++	lsr	x7, x7, x15
++	and	x7, x7, x16
++	add	x2, x1, w2, uxth
++	add	x3, x7, w3, uxth
++	add	x15, x8, x6
++	str	w19, [sp, 376]
++	str	x0, [sp, 408]
++	str	x3, [sp, 424]
++	str	x2, [sp, 440]
++	cmp	x24, x15
++	bcc	.L849
++	add	x0, x9, 32
++	mov	x21, x25
++	mov	x9, x27
++	mov	x27, x11
++	mov	x11, x20
++	mov	x20, x26
++	mov	x26, x12
++	stp	x25, x23, [sp, 192]
++	mov	x23, x24
++	mov	x25, x14
++	mov	w24, w28
++	mov	x28, x10
++	str	x0, [sp, 216]
++.L788:
++	sub	x2, x6, #32
++	add	x4, x6, x5
++	cmp	x23, x15
++	add	x2, x8, x2
++	add	x7, x21, x4
++	add	x3, x21, x6
++	ccmp	x2, x7, 0, cs
++	sub	x0, x3, x22
++	bcc	.L754
++	ldr	q0, [x8]
++	str	q0, [x21]
++	cmp	x6, 16
++	bhi	.L755
++.L759:
++	sub	x1, x3, x27
++	str	x15, [sp, 288]
++	cmp	x22, x1
++	bls	.L757
++	ldr	x1, [sp, 120]
++	sub	x1, x3, x1
++	cmp	x22, x1
++	bhi	.L951
++	sub	x1, x0, x27
++	add	x1, x25, x1
++	add	x2, x1, x5
++	cmp	x25, x2
++	bcs	.L958
++	sub	x2, x27, x0
++	mov	x0, x3
++	sub	x5, x5, x2
++	add	x3, x3, x2
++	stp	x3, x5, [sp, 144]
++	stp	x7, x11, [sp, 160]
++	stp	x9, x4, [sp, 176]
++	bl	memmove
++	mov	x0, x27
++	ldp	x3, x5, [sp, 144]
++	ldp	x7, x11, [sp, 160]
++	ldp	x9, x4, [sp, 176]
++.L757:
++	cmp	x22, 15
++	bls	.L762
++	ldr	q0, [x0]
++	str	q0, [x3]
++	cmp	x5, 16
++	ble	.L758
++	add	x1, x3, 16
++	add	x2, x0, 16
++	.p2align 3,,7
++.L763:
++	ldr	q0, [x2]
++	add	x1, x1, 32
++	add	x2, x2, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x2, -16]
++	str	q0, [x1, -16]
++	cmp	x7, x1
++	bhi	.L763
++.L758:
++	cmn	x4, #120
++	bhi	.L947
++	add	x21, x21, x4
++	subs	w24, w24, #1
++	beq	.L935
++	cmp	w19, 64
++	bhi	.L771
++	ldr	x1, [sp, 128]
++	ldr	x0, [sp, 384]
++	cmp	x1, x0
++	bls	.L959
++	cmp	x9, x0
++	beq	.L771
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x9, x1
++	bls	.L773
++	sub	x1, x0, x9
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L773:
++	ldr	x0, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x0, [sp, 368]
++	str	w19, [sp, 376]
++	str	x1, [sp, 384]
++.L771:
++	ldr	x3, [sp, 136]
++	ldr	x1, [sp, 408]
++	ldr	x2, [sp, 440]
++	ldr	x0, [sp, 424]
++	ldr	x1, [x3, x1, lsl 3]
++	ldr	x2, [x28, x2, lsl 3]
++	ldr	x3, [x26, x0, lsl 3]
++	ubfx	w15, w1, 16, 8
++	ubfx	w16, w2, 16, 8
++	lsr	x30, x1, 32
++	add	w4, w15, w16
++	lsr	x5, x2, 32
++	ubfx	w8, w3, 16, 8
++	mov	x6, x30
++	add	w4, w8, w4
++	lsr	x22, x3, 32
++	and	w4, w4, 255
++	lsr	w7, w1, 24
++	lsr	w0, w2, 24
++	lsr	w18, w3, 24
++	cmp	w8, 1
++	bls	.L774
++	ldr	x17, [sp, 368]
++	neg	w30, w8
++	ldr	x10, [sp, 464]
++	str	x10, [sp, 472]
++	lsl	x17, x17, x19
++	add	w19, w19, w8
++	lsr	x17, x17, x30
++	add	x22, x22, x17
++	ldr	x30, [sp, 456]
++	str	w19, [sp, 376]
++.L775:
++	stp	x22, x30, [sp, 456]
++	cbnz	w16, .L960
++.L780:
++	cmp	w4, 30
++	bhi	.L781
++.L953:
++	ldr	x4, [sp, 368]
++.L782:
++	cbnz	w15, .L961
++.L787:
++	add	w8, w7, w19
++	uxtw	x16, w0
++	uxtw	x15, w18
++	add	w0, w0, w8
++	neg	w8, w8
++	ldr	w7, [x20, x7, lsl 2]
++	add	w19, w18, w0
++	ldr	w16, [x20, x16, lsl 2]
++	lsr	x8, x4, x8
++	neg	w0, w0
++	ldr	w15, [x20, x15, lsl 2]
++	and	x7, x8, x7
++	neg	w17, w19
++	lsr	x0, x4, x0
++	ldr	x8, [sp, 288]
++	and	x0, x0, x16
++	ldr	x16, [x11, 30352]
++	lsr	x4, x4, x17
++	and	x4, x4, x15
++	add	x1, x7, w1, uxth
++	add	x2, x0, w2, uxth
++	add	x3, x4, w3, uxth
++	add	x15, x8, x6
++	str	w19, [sp, 376]
++	str	x1, [sp, 408]
++	str	x3, [sp, 424]
++	str	x2, [sp, 440]
++	cmp	x15, x16
++	bls	.L788
++	mov	x14, x25
++	mov	x10, x28
++	ldp	x25, x23, [sp, 192]
++	mov	x20, x11
++	mov	x12, x26
++	mov	x11, x27
++	mov	w28, w24
++	mov	x27, x9
++.L753:
++	cmp	w28, 0
++	ble	.L951
++	subs	x2, x16, x8
++	beq	.L789
++	ldr	x0, [sp, 112]
++	str	x5, [sp, 144]
++	mov	x4, -70
++	sub	x0, x0, x21
++	cmp	x2, x0
++	bhi	.L947
++	mov	x0, x21
++	sub	x6, x6, x2
++	add	x21, x21, x2
++	mov	x1, x8
++	bl	ZSTD_safecopyDstBeforeSrc
++	ldr	x5, [sp, 144]
++.L789:
++	add	x26, x21, x6
++	sub	x0, x26, x22
++	mov	x7, 30364
++	add	x1, x20, x7
++	add	x24, x20, 94208
++	add	x2, x1, x6
++	add	x24, x24, 1692
++	prfm	PLDL1KEEP, [x0]
++	add	x4, x5, x6
++	str	x1, [sp, 288]
++	cmp	x24, x2
++	ldr	x1, [sp, 112]
++	str	wzr, [x23, 13976]
++	add	x3, x21, x4
++	sub	x1, x1, #32
++	str	x1, [sp, 144]
++	ccmp	x3, x1, 2, cs
++	bhi	.L790
++	ldr	q0, [x20, x7]
++	str	q0, [x21]
++	cmp	x6, 16
++	bhi	.L791
++.L795:
++	sub	x1, x26, x11
++	str	x2, [sp, 288]
++	cmp	x1, x22
++	bcs	.L793
++	ldr	x1, [sp, 120]
++	sub	x1, x26, x1
++	cmp	x1, x22
++	bcc	.L951
++	sub	x1, x0, x11
++	add	x1, x14, x1
++	add	x2, x1, x5
++	cmp	x14, x2
++	bcs	.L962
++	sub	x2, x11, x0
++	mov	x0, x26
++	sub	x5, x5, x2
++	add	x26, x26, x2
++	stp	x5, x11, [sp, 152]
++	stp	x14, x10, [sp, 168]
++	stp	x12, x3, [sp, 184]
++	str	x4, [sp, 200]
++	bl	memmove
++	ldp	x5, x11, [sp, 152]
++	ldp	x14, x10, [sp, 168]
++	ldp	x12, x3, [sp, 184]
++	ldr	x4, [sp, 200]
++	mov	x0, x11
++.L793:
++	cmp	x22, 15
++	bls	.L798
++	ldr	q0, [x0]
++	str	q0, [x26]
++	cmp	x5, 16
++	ble	.L794
++	add	x26, x26, 16
++	add	x0, x0, 16
++	.p2align 3,,7
++.L799:
++	ldr	q0, [x0]
++	add	x26, x26, 32
++	add	x0, x0, 32
++	str	q0, [x26, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x26, -16]
++	cmp	x3, x26
++	bhi	.L799
++.L794:
++	cmn	x4, #120
++	bhi	.L947
++	add	x21, x21, x4
++	subs	w9, w28, #1
++	beq	.L770
++	cmp	w19, 64
++	bhi	.L805
++	ldr	x1, [sp, 128]
++	ldr	x0, [sp, 384]
++	cmp	x1, x0
++	bls	.L963
++	cmp	x27, x0
++	beq	.L805
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x27, x1
++	bls	.L808
++	sub	x1, x0, x27
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L808:
++	ldr	x0, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x0, [sp, 368]
++	str	w19, [sp, 376]
++	str	x1, [sp, 384]
++.L805:
++	ldr	x0, [sp, 208]
++	mov	x8, x27
++	ldr	x22, [sp, 408]
++	add	x18, x0, 64
++	ldr	x28, [sp, 424]
++	add	x0, x0, 32
++	ldr	x26, [sp, 440]
++	mov	x13, x22
++	mov	x27, x18
++	stp	x20, x25, [sp, 224]
++	mov	x20, x24
++	mov	x25, x14
++	mov	x24, x21
++	stp	x23, x0, [sp, 240]
++	mov	x23, x11
++	.p2align 3,,7
++.L807:
++	ldr	x0, [sp, 136]
++	ldr	x26, [x10, x26, lsl 3]
++	ldr	x1, [x0, x13, lsl 3]
++	ldr	x28, [x12, x28, lsl 3]
++	ubfx	w15, w26, 16, 8
++	ubfx	w13, w1, 16, 8
++	lsr	x16, x1, 32
++	add	w2, w13, w15
++	lsr	x3, x26, 32
++	ubfx	w7, w28, 16, 8
++	lsr	x21, x28, 32
++	add	w2, w7, w2
++	lsr	w17, w28, 24
++	mov	x5, x16
++	and	w2, w2, 255
++	lsr	w6, w1, 24
++	lsr	w0, w26, 24
++	cmp	w7, 1
++	bls	.L809
++	ldr	x16, [sp, 368]
++	neg	w18, w7
++	ldr	x22, [sp, 464]
++	str	x22, [sp, 472]
++	lsl	x16, x16, x19
++	add	w19, w19, w7
++	ldr	x7, [sp, 456]
++	lsr	x16, x16, x18
++	add	x21, x21, x16
++	str	w19, [sp, 376]
++.L810:
++	stp	x21, x7, [sp, 456]
++	cbnz	w15, .L964
++.L815:
++	cmp	w2, 30
++	bhi	.L816
++.L954:
++	ldr	x7, [sp, 368]
++.L817:
++	cbnz	w13, .L965
++.L822:
++	add	w16, w6, w19
++	uxtw	x13, w17
++	add	w2, w0, w16
++	uxtw	x15, w0
++	add	w19, w17, w2
++	neg	w16, w16
++	ldr	w0, [x27, x13, lsl 2]
++	neg	w2, w2
++	neg	w13, w19
++	ldr	w17, [x27, x15, lsl 2]
++	add	x22, x24, x5
++	ldr	w18, [x27, x6, lsl 2]
++	lsr	x2, x7, x2
++	and	x2, x2, x17
++	lsr	x6, x7, x16
++	add	x26, x2, w26, uxth
++	lsr	x7, x7, x13
++	and	x7, x7, x0
++	sub	x0, x22, x21
++	and	x6, x6, x18
++	ldr	x15, [sp, 288]
++	add	x13, x6, w1, uxth
++	ldr	x2, [sp, 144]
++	add	x28, x7, w28, uxth
++	prfm	PLDL1KEEP, [x0]
++	add	x7, x5, x3
++	add	x1, x15, x5
++	str	w19, [sp, 376]
++	str	x13, [sp, 408]
++	add	x6, x24, x7
++	str	x28, [sp, 424]
++	cmp	x20, x1
++	str	x26, [sp, 440]
++	ccmp	x2, x6, 0, cs
++	bcc	.L823
++	ldr	q0, [x15]
++	str	q0, [x24]
++	cmp	x5, 16
++	bhi	.L824
++.L828:
++	str	x1, [sp, 288]
++	sub	x1, x22, x23
++	cmp	x21, x1
++	bls	.L826
++	ldr	x1, [sp, 120]
++	sub	x1, x22, x1
++	cmp	x21, x1
++	bhi	.L951
++	sub	x1, x0, x23
++	add	x1, x25, x1
++	add	x2, x1, x3
++	cmp	x25, x2
++	bcs	.L966
++	sub	x2, x23, x0
++	mov	x0, x22
++	sub	x3, x3, x2
++	add	x22, x22, x2
++	stp	x3, x6, [sp, 152]
++	stp	x10, x12, [sp, 168]
++	str	x13, [sp, 184]
++	str	w9, [sp, 192]
++	str	x8, [sp, 200]
++	str	x7, [sp, 216]
++	bl	memmove
++	ldp	x3, x6, [sp, 152]
++	mov	x0, x23
++	ldp	x10, x12, [sp, 168]
++	ldr	w9, [sp, 192]
++	ldr	x13, [sp, 184]
++	ldr	x8, [sp, 200]
++	ldr	x7, [sp, 216]
++.L826:
++	cmp	x21, 15
++	bls	.L831
++	ldr	q0, [x0]
++	str	q0, [x22]
++	cmp	x3, 16
++	ble	.L827
++	add	x22, x22, 16
++	add	x0, x0, 16
++	.p2align 3,,7
++.L832:
++	ldr	q0, [x0]
++	add	x22, x22, 32
++	add	x0, x0, 32
++	str	q0, [x22, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x22, -16]
++	cmp	x6, x22
++	bhi	.L832
++.L827:
++	cmn	x7, #120
++	bhi	.L936
++	add	x24, x24, x7
++	subs	w9, w9, #1
++	beq	.L937
++	cmp	w19, 64
++	bhi	.L807
++	ldr	x1, [sp, 128]
++	ldr	x0, [sp, 384]
++	cmp	x1, x0
++	bls	.L967
++	cmp	x8, x0
++	beq	.L807
++	lsr	w1, w19, 3
++	lsr	w2, w19, 3
++	sub	x1, x0, x1
++	cmp	x8, x1
++	bls	.L840
++	sub	x1, x0, x8
++	mov	w2, w1
++	sub	x1, x0, w1, uxtw
++.L840:
++	ldr	x0, [x1]
++	sub	w19, w19, w2, lsl 3
++	str	x0, [sp, 368]
++	str	w19, [sp, 376]
++	str	x1, [sp, 384]
++	b	.L807
++	.p2align 2,,3
++.L848:
++	.cfi_restore 27
++	.cfi_restore 28
++	mov	x21, x1
++	add	x23, x20, 16384
++.L728:
++	ldr	x0, [sp, 112]
++	ldr	w1, [x23, 13976]
++	sub	x0, x0, x21
++	cmp	w1, 2
++	beq	.L968
++	sub	x2, x24, x8
++	cmp	x2, x0
++	bhi	.L846
++.L971:
++	cbz	x21, .L847
++	mov	x0, x21
++	mov	x1, x8
++	add	x21, x21, x2
++	bl	memcpy
++.L847:
++	sub	x4, x21, x25
++.L727:
++	mov	x0, x4
++	ldp	x29, x30, [sp, 16]
++	ldp	x19, x20, [sp, 32]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	add	sp, sp, 480
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L730:
++	.cfi_def_cfa_offset 480
++	.cfi_offset 19, -448
++	.cfi_offset 20, -440
++	.cfi_offset 21, -432
++	.cfi_offset 22, -424
++	.cfi_offset 23, -416
++	.cfi_offset 24, -408
++	.cfi_offset 25, -400
++	.cfi_offset 26, -392
++	.cfi_offset 27, -384
++	.cfi_offset 28, -376
++	.cfi_offset 29, -464
++	.cfi_offset 30, -456
++	ldrb	w1, [x3]
++	str	x1, [sp, 368]
++	str	x3, [sp, 384]
++	cmp	x4, 5
++	beq	.L732
++	bhi	.L733
++	cmp	x4, 3
++	beq	.L734
++	cmp	x4, 4
++	bne	.L969
++.L735:
++	ldrb	w2, [x27, 3]
++	add	x1, x1, x2, lsl 24
++.L734:
++	ldrb	w2, [x27, 2]
++	add	x1, x1, x2, lsl 16
++	ldrb	w2, [x27, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 368]
++.L737:
++	cbnz	w0, .L970
++.L951:
++	ldp	x27, x28, [sp, 96]
++	.cfi_restore 28
++	.cfi_restore 27
++.L729:
++	mov	x4, -20
++	mov	x0, x4
++	ldp	x29, x30, [sp, 16]
++	ldp	x19, x20, [sp, 32]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	add	sp, sp, 480
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L733:
++	.cfi_def_cfa_offset 480
++	.cfi_offset 19, -448
++	.cfi_offset 20, -440
++	.cfi_offset 21, -432
++	.cfi_offset 22, -424
++	.cfi_offset 23, -416
++	.cfi_offset 24, -408
++	.cfi_offset 25, -400
++	.cfi_offset 26, -392
++	.cfi_offset 27, -384
++	.cfi_offset 28, -376
++	.cfi_offset 29, -464
++	.cfi_offset 30, -456
++	cmp	x4, 6
++	beq	.L738
++	ldrb	w2, [x3, 6]
++	add	x1, x1, x2, lsl 48
++.L738:
++	ldrb	w2, [x27, 5]
++	add	x1, x1, x2, lsl 40
++.L732:
++	ldrb	w2, [x27, 4]
++	add	x1, x1, x2, lsl 32
++	b	.L735
++	.p2align 2,,3
++.L969:
++	cmp	x4, 2
++	bne	.L737
++	ldrb	w2, [x27, 1]
++	add	x1, x1, x2, lsl 8
++	str	x1, [sp, 368]
++	b	.L737
++	.p2align 2,,3
++.L968:
++	.cfi_restore 27
++	.cfi_restore 28
++	sub	x2, x24, x8
++	cmp	x2, x0
++	bhi	.L846
++	cbz	x21, .L845
++	mov	x0, x21
++	mov	x1, x8
++	add	x21, x21, x2
++	bl	memmove
++	ldr	x0, [sp, 112]
++	sub	x0, x0, x21
++.L845:
++	add	x24, x20, 94208
++	mov	x1, 30364
++	add	x24, x24, 1692
++	add	x8, x20, x1
++	sub	x2, x24, x8
++	str	x8, [sp, 288]
++	str	wzr, [x23, 13976]
++	cmp	x2, x0
++	bls	.L971
++.L846:
++	mov	x4, -70
++	mov	x0, x4
++	ldp	x29, x30, [sp, 16]
++	ldp	x19, x20, [sp, 32]
++	ldp	x21, x22, [sp, 48]
++	ldp	x23, x24, [sp, 64]
++	ldp	x25, x26, [sp, 80]
++	add	sp, sp, 480
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L970:
++	.cfi_def_cfa_offset 480
++	.cfi_offset 19, -448
++	.cfi_offset 20, -440
++	.cfi_offset 21, -432
++	.cfi_offset 22, -424
++	.cfi_offset 23, -416
++	.cfi_offset 24, -408
++	.cfi_offset 25, -400
++	.cfi_offset 26, -392
++	.cfi_offset 27, -384
++	.cfi_offset 28, -376
++	.cfi_offset 29, -464
++	.cfi_offset 30, -456
++	mov	w1, 8
++	sub	w1, w1, w4
++	clz	w0, w0
++	add	w0, w0, w1, lsl 3
++	sub	w0, w0, #23
++	str	w0, [sp, 376]
++	b	.L731
++	.p2align 2,,3
++.L781:
++	cmp	w19, 64
++	bhi	.L953
++	ldr	x4, [sp, 128]
++	ldr	x8, [sp, 384]
++	cmp	x4, x8
++	bls	.L972
++	cmp	x9, x8
++	beq	.L953
++	lsr	w4, w19, 3
++	lsr	w16, w19, 3
++	sub	x4, x8, x4
++	cmp	x9, x4
++	bls	.L786
++	sub	x4, x8, x9
++	mov	w16, w4
++	sub	x4, x8, w4, uxtw
++.L786:
++	str	x4, [sp, 384]
++	sub	w19, w19, w16, lsl 3
++	ldr	x4, [x4]
++	str	x4, [sp, 368]
++	cbz	w15, .L787
++	.p2align 3,,7
++.L961:
++	neg	w16, w15
++	lsl	x8, x4, x19
++	add	w19, w19, w15
++	lsr	x8, x8, x16
++	add	x6, x6, x8
++	b	.L787
++	.p2align 2,,3
++.L774:
++	cmp	w30, 0
++	cset	w17, eq
++	cmp	w8, 1
++	beq	.L776
++	cmp	w30, 0
++	add	x10, sp, 376
++	cset	x8, ne
++	add	x17, x17, 10
++	add	x8, x8, 10
++	ldr	x22, [x10, x17, lsl 3]
++	ldr	x30, [x10, x8, lsl 3]
++	stp	x22, x30, [sp, 456]
++	cbz	w16, .L780
++.L960:
++	ldr	x8, [sp, 368]
++	neg	w17, w16
++	lsl	x8, x8, x19
++	add	w19, w19, w16
++	lsr	x8, x8, x17
++	add	x5, x5, x8
++	str	w19, [sp, 376]
++	b	.L780
++	.p2align 2,,3
++.L959:
++	lsr	w1, w19, 3
++	and	w19, w19, 7
++	sub	x0, x0, x1
++	str	x0, [sp, 384]
++	str	w19, [sp, 376]
++	ldr	x0, [x0]
++	str	x0, [sp, 368]
++	b	.L771
++	.p2align 2,,3
++.L958:
++	mov	x2, x5
++	mov	x0, x3
++	stp	x11, x9, [sp, 144]
++	str	x4, [sp, 160]
++	bl	memmove
++	ldp	x11, x9, [sp, 144]
++	ldr	x4, [sp, 160]
++	b	.L758
++	.p2align 2,,3
++.L754:
++	add	x0, sp, 512
++	str	x25, [sp]
++	stp	x6, x5, [sp, 296]
++	add	x4, sp, 288
++	add	x3, sp, 256
++	ldp	x0, x1, [x0, -216]
++	stp	x0, x1, [sp, 256]
++	mov	x6, x27
++	ldr	x1, [sp, 112]
++	mov	x5, x23
++	ldr	x7, [sp, 120]
++	mov	x0, x21
++	stp	x11, x9, [sp, 144]
++	str	x22, [sp, 272]
++	str	x22, [sp, 312]
++	bl	ZSTD_execSequenceEndSplitLitBuffer
++	mov	x4, x0
++	ldp	x11, x9, [sp, 144]
++	b	.L758
++	.p2align 2,,3
++.L739:
++	cmp	w30, 0
++	ldr	w0, [sp, 376]
++	cset	w26, eq
++	cmp	w16, 1
++	beq	.L741
++	cmp	w30, 0
++	uxtw	x16, w26
++	cset	x13, ne
++	add	x18, sp, 376
++	add	x16, x16, 10
++	add	x13, x13, 10
++	ldr	x22, [x18, x16, lsl 3]
++	ldr	x13, [x18, x13, lsl 3]
++	b	.L740
++	.p2align 2,,3
++.L755:
++	ldr	q0, [x8, 16]
++	sub	x6, x6, #16
++	str	q0, [x21, 16]
++	cmp	x6, 16
++	ble	.L759
++	add	x8, x8, 32
++	add	x1, x21, 32
++	.p2align 3,,7
++.L760:
++	ldr	q0, [x8]
++	add	x1, x1, 32
++	add	x8, x8, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x8, -16]
++	str	q0, [x1, -16]
++	cmp	x3, x1
++	bhi	.L760
++	b	.L759
++	.p2align 2,,3
++.L935:
++	mov	x24, x23
++	mov	x20, x11
++	ldp	x25, x23, [sp, 192]
++	mov	x27, x9
++.L770:
++	cmp	w19, 64
++	bhi	.L841
++	ldr	x1, [sp, 128]
++	ldr	x0, [sp, 384]
++	cmp	x1, x0
++	bls	.L951
++	cmp	x27, x0
++	bne	.L951
++	cmp	w19, 64
++	bne	.L951
++.L841:
++	ldr	x0, [sp, 456]
++	ldp	x27, x28, [sp, 96]
++	.cfi_remember_state
++	.cfi_restore 28
++	.cfi_restore 27
++	str	w0, [x23, 10300]
++	ldr	x0, [sp, 464]
++	str	w0, [x23, 10304]
++	ldr	x0, [sp, 472]
++	str	w0, [x23, 10308]
++	ldr	x8, [sp, 288]
++	b	.L728
++	.p2align 2,,3
++.L956:
++	.cfi_restore_state
++	ldr	x13, [sp, 368]
++	neg	w16, w21
++	lsl	x13, x13, x0
++	add	w0, w0, w21
++	lsr	x13, x13, x16
++	add	x5, x5, x13
++	str	w0, [sp, 376]
++	b	.L745
++	.p2align 2,,3
++.L957:
++	neg	w16, w17
++	lsl	x13, x7, x0
++	add	w0, w0, w17
++	lsr	x13, x13, x16
++	add	x6, x6, x13
++	b	.L752
++	.p2align 2,,3
++.L947:
++	ldp	x27, x28, [sp, 96]
++	.cfi_remember_state
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L727
++	.p2align 2,,3
++.L762:
++	.cfi_restore_state
++	cmp	x22, 7
++	bhi	.L764
++	ldrb	w1, [x0]
++	strb	w1, [x3]
++	ldrb	w2, [x0, 1]
++	strb	w2, [x3, 1]
++	ldp	x2, x1, [sp, 208]
++	ldrb	w8, [x0, 2]
++	strb	w8, [x3, 2]
++	ldrb	w8, [x0, 3]
++	ldr	w1, [x1, x22, lsl 2]
++	ldrsw	x2, [x2, x22, lsl 2]
++	strb	w8, [x3, 3]
++	add	x6, x0, x1
++	ldr	w1, [x0, x1]
++	sub	x0, x6, x2
++	str	w1, [x3, 4]
++.L765:
++	cmp	x5, 8
++	bls	.L758
++	sub	x6, x3, x0
++	add	x2, x0, 8
++	add	x1, x3, 8
++	cmp	x6, 15
++	bgt	.L766
++	.p2align 3,,7
++.L767:
++	ldr	d0, [x2], 8
++	str	d0, [x1], 8
++	cmp	x7, x1
++	bhi	.L767
++	b	.L758
++.L764:
++	ldr	d0, [x0]
++	str	d0, [x3]
++	b	.L765
++.L816:
++	cmp	w19, 64
++	bhi	.L954
++	ldr	x2, [sp, 128]
++	ldr	x7, [sp, 384]
++	cmp	x2, x7
++	bls	.L973
++	cmp	x8, x7
++	beq	.L954
++	lsr	w2, w19, 3
++	lsr	w15, w19, 3
++	sub	x2, x7, x2
++	cmp	x8, x2
++	bls	.L821
++	sub	x2, x7, x8
++	mov	w15, w2
++	sub	x2, x7, w2, uxtw
++.L821:
++	ldr	x7, [x2]
++	str	x7, [sp, 368]
++	str	x2, [sp, 384]
++	sub	w19, w19, w15, lsl 3
++	cbz	w13, .L822
++	.p2align 3,,7
++.L965:
++	neg	w15, w13
++	lsl	x2, x7, x19
++	add	w19, w19, w13
++	lsr	x2, x2, x15
++	add	x5, x5, x2
++	b	.L822
++.L746:
++	cmp	w0, 64
++	bhi	.L952
++	ldr	x7, [sp, 128]
++	ldr	x13, [sp, 384]
++	cmp	x7, x13
++	bls	.L974
++	cmp	x27, x13
++	beq	.L952
++	lsr	w7, w0, 3
++	lsr	w16, w0, 3
++	sub	x7, x13, x7
++	cmp	x27, x7
++	bls	.L751
++	sub	x7, x13, x27
++	mov	w16, w7
++	sub	x7, x13, w7, uxtw
++.L751:
++	str	x7, [sp, 384]
++	sub	w0, w0, w16, lsl 3
++	ldr	x7, [x7]
++	str	x7, [sp, 368]
++	b	.L747
++.L972:
++	lsr	w4, w19, 3
++	and	w19, w19, 7
++	sub	x4, x8, x4
++	str	x4, [sp, 384]
++	ldr	x4, [x4]
++	str	x4, [sp, 368]
++	b	.L782
++	.p2align 2,,3
++.L809:
++	cmp	w16, 0
++	cset	w18, eq
++	cmp	w7, 1
++	beq	.L811
++	cmp	w16, 0
++	uxtw	x16, w18
++	cset	x7, ne
++	add	x4, sp, 376
++	add	x16, x16, 10
++	add	x7, x7, 10
++	ldr	x21, [x4, x16, lsl 3]
++	ldr	x7, [x4, x7, lsl 3]
++	stp	x21, x7, [sp, 456]
++	cbz	w15, .L815
++.L964:
++	ldr	x7, [sp, 368]
++	neg	w16, w15
++	lsl	x7, x7, x19
++	add	w19, w19, w15
++	lsr	x7, x7, x16
++	add	x3, x3, x7
++	str	w19, [sp, 376]
++	b	.L815
++	.p2align 2,,3
++.L967:
++	lsr	w1, w19, 3
++	and	w19, w19, 7
++	sub	x0, x0, x1
++	str	x0, [sp, 384]
++	str	w19, [sp, 376]
++	ldr	x0, [x0]
++	str	x0, [sp, 368]
++	b	.L807
++	.p2align 2,,3
++.L966:
++	mov	x2, x3
++	mov	x0, x22
++	stp	x10, x12, [sp, 152]
++	str	x13, [sp, 168]
++	str	w9, [sp, 176]
++	stp	x8, x7, [sp, 184]
++	bl	memmove
++	ldr	w9, [sp, 176]
++	ldp	x10, x12, [sp, 152]
++	ldr	x13, [sp, 168]
++	ldp	x8, x7, [sp, 184]
++	b	.L827
++.L776:
++	ldr	x8, [sp, 368]
++	add	w17, w17, w22
++	ldr	x30, [sp, 456]
++	lsl	x8, x8, x19
++	add	w19, w19, 1
++	subs	x22, x30, #1
++	add	x8, x17, x8, lsr 63
++	str	w19, [sp, 376]
++	cinc	x22, x22, eq
++	cmp	x8, 3
++	beq	.L778
++	add	x17, x8, 10
++	add	x10, sp, 376
++	ldr	x22, [x10, x17, lsl 3]
++	cmp	x22, 0
++	cinc	x22, x22, eq
++	cmp	x8, 1
++	beq	.L775
++.L778:
++	ldr	x8, [sp, 464]
++	str	x8, [sp, 472]
++	b	.L775
++.L823:
++	add	x0, sp, 512
++	stp	x5, x3, [sp, 344]
++	mov	x7, x25
++	ldr	x6, [sp, 120]
++	mov	x4, x20
++	ldp	x0, x1, [x0, -168]
++	stp	x0, x1, [sp, 256]
++	add	x2, sp, 256
++	ldr	x1, [sp, 112]
++	mov	x5, x23
++	add	x3, sp, 288
++	mov	x0, x24
++	stp	x10, x12, [sp, 152]
++	str	x13, [sp, 168]
++	str	w9, [sp, 176]
++	str	x8, [sp, 184]
++	str	x21, [sp, 272]
++	str	x21, [sp, 360]
++	bl	ZSTD_execSequenceEnd
++	ldr	w9, [sp, 176]
++	mov	x7, x0
++	ldp	x10, x12, [sp, 152]
++	ldr	x13, [sp, 168]
++	ldr	x8, [sp, 184]
++	b	.L827
++.L824:
++	ldr	q0, [x15, 16]
++	sub	x5, x5, #16
++	str	q0, [x24, 16]
++	cmp	x5, 16
++	ble	.L828
++	add	x15, x15, 32
++	add	x2, x24, 32
++	.p2align 3,,7
++.L829:
++	ldr	q0, [x15]
++	add	x2, x2, 32
++	add	x15, x15, 32
++	str	q0, [x2, -32]
++	ldr	q0, [x15, -16]
++	str	q0, [x2, -16]
++	cmp	x22, x2
++	bhi	.L829
++	b	.L828
++.L937:
++	mov	x21, x24
++	mov	x27, x8
++	mov	x24, x20
++	ldp	x20, x25, [sp, 224]
++	ldr	x23, [sp, 240]
++	b	.L770
++.L831:
++	cmp	x21, 7
++	bhi	.L833
++	ldrb	w1, [x0]
++	strb	w1, [x22]
++	ldr	x1, [sp, 248]
++	ldrb	w2, [x0, 1]
++	strb	w2, [x22, 1]
++	ldr	x2, [sp, 208]
++	ldrb	w15, [x0, 2]
++	strb	w15, [x22, 2]
++	ldr	w1, [x1, x21, lsl 2]
++	ldrb	w15, [x0, 3]
++	ldrsw	x2, [x2, x21, lsl 2]
++	add	x5, x0, x1
++	strb	w15, [x22, 3]
++	ldr	w1, [x0, x1]
++	sub	x0, x5, x2
++	str	w1, [x22, 4]
++.L834:
++	cmp	x3, 8
++	bls	.L827
++	sub	x5, x22, x0
++	add	x2, x0, 8
++	add	x1, x22, 8
++	cmp	x5, 15
++	bgt	.L835
++	.p2align 3,,7
++.L836:
++	ldr	d0, [x2], 8
++	str	d0, [x1], 8
++	cmp	x6, x1
++	bhi	.L836
++	b	.L827
++.L936:
++	mov	x4, x7
++	ldp	x27, x28, [sp, 96]
++	.cfi_remember_state
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L727
++.L811:
++	.cfi_restore_state
++	ldr	x16, [sp, 368]
++	add	w18, w18, w21
++	ldr	x7, [sp, 456]
++	lsl	x16, x16, x19
++	add	w19, w19, 1
++	subs	x21, x7, #1
++	add	x16, x18, x16, lsr 63
++	str	w19, [sp, 376]
++	cinc	x21, x21, eq
++	cmp	x16, 3
++	beq	.L813
++	add	x18, x16, 10
++	add	x4, sp, 376
++	ldr	x21, [x4, x18, lsl 3]
++	cmp	x21, 0
++	cinc	x21, x21, eq
++	cmp	x16, 1
++	beq	.L810
++.L813:
++	ldr	x16, [sp, 464]
++	str	x16, [sp, 472]
++	b	.L810
++.L766:
++	ldr	q0, [x0, 8]
++	str	q0, [x3, 8]
++	cmp	x5, 24
++	ble	.L758
++	add	x1, x3, 24
++	add	x0, x0, 24
++	.p2align 3,,7
++.L768:
++	ldr	q0, [x0]
++	add	x1, x1, 32
++	add	x0, x0, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x1, -16]
++	cmp	x7, x1
++	bhi	.L768
++	b	.L758
++.L833:
++	ldr	d0, [x0]
++	str	d0, [x22]
++	b	.L834
++.L741:
++	ldr	x16, [sp, 368]
++	add	w22, w26, w22
++	lsl	x16, x16, x0
++	add	w0, w0, 1
++	add	x26, x22, x16, lsr 63
++	subs	x22, x13, #1
++	str	w0, [sp, 376]
++	cinc	x22, x22, eq
++	cmp	x26, 3
++	beq	.L743
++	add	x9, sp, 480
++	add	x16, x9, x26, lsl 3
++	ldr	x22, [x16, -24]
++	cmp	x22, 0
++	cinc	x22, x22, eq
++	cmp	x26, 1
++	beq	.L740
++.L743:
++	str	x18, [sp, 472]
++	b	.L740
++.L973:
++	lsr	w2, w19, 3
++	and	w19, w19, 7
++	sub	x2, x7, x2
++	ldr	x7, [x2]
++	str	x7, [sp, 368]
++	str	x2, [sp, 384]
++	b	.L817
++.L849:
++	mov	x16, x24
++	mov	x21, x25
++	b	.L753
++.L962:
++	mov	x2, x5
++	mov	x0, x26
++	stp	x11, x14, [sp, 152]
++	stp	x10, x12, [sp, 168]
++	str	x4, [sp, 184]
++	bl	memmove
++	ldp	x11, x14, [sp, 152]
++	ldp	x10, x12, [sp, 168]
++	ldr	x4, [sp, 184]
++	b	.L794
++.L974:
++	lsr	w7, w0, 3
++	and	w0, w0, 7
++	sub	x7, x13, x7
++	str	x7, [sp, 384]
++	ldr	x7, [x7]
++	str	x7, [sp, 368]
++	b	.L747
++.L790:
++	stp	x6, x5, [sp, 320]
++	mov	x7, x14
++	mov	x4, x24
++	ldp	x0, x1, [sp, 320]
++	stp	x0, x1, [sp, 256]
++	mov	x5, x11
++	ldp	x1, x6, [sp, 112]
++	add	x2, sp, 256
++	add	x3, sp, 288
++	mov	x0, x21
++	stp	x11, x14, [sp, 152]
++	stp	x10, x12, [sp, 168]
++	str	x22, [sp, 272]
++	str	x22, [sp, 336]
++	bl	ZSTD_execSequenceEnd
++	mov	x4, x0
++	ldp	x11, x14, [sp, 152]
++	ldp	x10, x12, [sp, 168]
++	b	.L794
++.L791:
++	mov	x1, 30380
++	sub	x6, x6, #16
++	ldr	q0, [x20, x1]
++	str	q0, [x21, 16]
++	cmp	x6, 16
++	ble	.L795
++	mov	x6, 30396
++	add	x1, x21, 32
++	add	x6, x20, x6
++.L796:
++	ldr	q0, [x6]
++	add	x1, x1, 32
++	add	x6, x6, 32
++	str	q0, [x1, -32]
++	ldr	q0, [x6, -16]
++	str	q0, [x1, -16]
++	cmp	x26, x1
++	bhi	.L796
++	b	.L795
++.L963:
++	lsr	w1, w19, 3
++	and	w19, w19, 7
++	sub	x0, x0, x1
++	str	x0, [sp, 384]
++	str	w19, [sp, 376]
++	ldr	x0, [x0]
++	str	x0, [sp, 368]
++	b	.L805
++.L798:
++	cmp	x22, 7
++	bhi	.L800
++	ldr	x6, [sp, 208]
++	ldrb	w2, [x0]
++	strb	w2, [x26]
++	add	x1, x6, 32
++	ldrsw	x2, [x6, x22, lsl 2]
++	ldrb	w6, [x0, 1]
++	strb	w6, [x26, 1]
++	ldr	w1, [x1, x22, lsl 2]
++	ldrb	w6, [x0, 2]
++	strb	w6, [x26, 2]
++	add	x6, x0, x1
++	ldrb	w7, [x0, 3]
++	strb	w7, [x26, 3]
++	ldr	w1, [x0, x1]
++	sub	x0, x6, x2
++	str	w1, [x26, 4]
++.L801:
++	cmp	x5, 8
++	bls	.L794
++	sub	x6, x26, x0
++	add	x2, x0, 8
++	add	x1, x26, 8
++	cmp	x6, 15
++	bgt	.L802
++.L803:
++	ldr	d0, [x2], 8
++	str	d0, [x1], 8
++	cmp	x3, x1
++	bhi	.L803
++	b	.L794
++.L835:
++	ldr	q0, [x0, 8]
++	str	q0, [x22, 8]
++	cmp	x3, 24
++	ble	.L827
++	add	x22, x22, 24
++	add	x0, x0, 24
++.L837:
++	ldr	q0, [x0]
++	add	x22, x22, 32
++	add	x0, x0, 32
++	str	q0, [x22, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x22, -16]
++	cmp	x6, x22
++	bhi	.L837
++	b	.L827
++.L800:
++	ldr	d0, [x0]
++	str	d0, [x26]
++	b	.L801
++.L802:
++	ldr	q0, [x0, 8]
++	str	q0, [x26, 8]
++	cmp	x5, 24
++	ble	.L794
++	add	x26, x26, 24
++	add	x0, x0, 24
++.L804:
++	ldr	q0, [x0]
++	add	x26, x26, 32
++	add	x0, x0, 32
++	str	q0, [x26, -32]
++	ldr	q0, [x0, -16]
++	str	q0, [x26, -16]
++	cmp	x3, x26
++	bhi	.L804
++	b	.L794
++	.cfi_endproc
++.LFE4552:
++	.size	ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0, .-ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_getcBlockSize
++	.type	ZSTD_getcBlockSize, %function
++ZSTD_getcBlockSize:
++.LFB4507:
++	.cfi_startproc
++	mov	x3, x0
++	mov	x0, -72
++	cmp	x1, 2
++	bls	.L975
++	ldrb	w1, [x3, 2]
++	mov	x0, 1
++	ldrh	w3, [x3]
++	add	w1, w3, w1, lsl 16
++	and	w3, w1, 1
++	str	w3, [x2, 4]
++	lsr	w3, w1, 3
++	ubfx	x1, x1, 1, 2
++	str	w1, [x2]
++	str	w3, [x2, 8]
++	cmp	w1, 1
++	beq	.L975
++	cmp	w1, 3
++	mov	x0, -20
++	csel	x0, x3, x0, ne
++.L975:
++	ret
++	.cfi_endproc
++.LFE4507:
++	.size	ZSTD_getcBlockSize, .-ZSTD_getcBlockSize
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_decodeLiteralsBlock
++	.type	ZSTD_decodeLiteralsBlock, %function
++ZSTD_decodeLiteralsBlock:
++.LFB4509:
++	.cfi_startproc
++	stp	x29, x30, [sp, -80]!
++	.cfi_def_cfa_offset 80
++	.cfi_offset 29, -80
++	.cfi_offset 30, -72
++	mov	x29, sp
++	stp	x21, x22, [sp, 32]
++	cmp	x2, 1
++	.cfi_offset 21, -48
++	.cfi_offset 22, -40
++	bls	.L988
++	stp	x19, x20, [sp, 16]
++	.cfi_offset 20, -56
++	.cfi_offset 19, -64
++	mov	x22, x1
++	mov	x20, x0
++	ldrb	w6, [x1]
++	and	w19, w6, 3
++	cmp	w19, 2
++	beq	.L984
++	cmp	w19, 3
++	beq	.L985
++	cmp	w19, 1
++	beq	.L1061
++	cmp	x4, 131072
++	ubfx	x1, x6, 2, 2
++	mov	x0, 131072
++	csel	x0, x4, x0, ls
++	cmp	w1, 1
++	beq	.L1002
++	cmp	w1, 3
++	bne	.L1062
++	cmp	x2, 2
++	beq	.L1054
++	ldrb	w6, [x22, 2]
++	mov	x1, 3
++	ldrh	w7, [x22]
++	add	w6, w7, w6, lsl 16
++	ubfx	x19, x6, 4, 21
++.L1004:
++	cmp	x19, 0
++	mov	x21, -70
++	ccmp	x3, 0, 0, ne
++	ccmp	x19, x0, 2, ne
++	bhi	.L1053
++	cbnz	w5, .L1005
++	add	x5, x19, 131072
++	add	x5, x5, 64
++	cmp	x4, x5
++	bls	.L1005
++	add	x0, x3, 131072
++	mov	w5, 1
++	add	x0, x0, 32
++	add	x3, x0, x19
++	b	.L1006
++	.p2align 2,,3
++.L985:
++	add	x0, x0, 16384
++	mov	x21, -30
++	ldr	w0, [x0, 13616]
++	cbz	w0, .L1053
++.L984:
++	cmp	x2, 4
++	bls	.L1054
++	ldr	w1, [x22]
++	cmp	x3, 0
++	stp	x23, x24, [sp, 48]
++	.cfi_offset 24, -24
++	.cfi_offset 23, -32
++	add	x24, x20, 16384
++	ubfx	x6, x6, 2, 2
++	cset	w8, eq
++	lsr	w0, w1, 4
++	ldr	w10, [x24, 13836]
++	cmp	w6, 2
++	beq	.L989
++	cmp	w6, 3
++	bne	.L1063
++	ands	x23, x0, 262143
++	mov	x21, -70
++	and	w0, w0, 262143
++	ccmp	w8, 0, 4, ne
++	bne	.L1059
++	ldrb	w6, [x22, 4]
++	cmp	w0, 131072
++	bls	.L1064
++.L1058:
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldp	x23, x24, [sp, 48]
++	.cfi_restore 24
++	.cfi_restore 23
++.L988:
++	mov	x21, -20
++.L981:
++	mov	x0, x21
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 80
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1061:
++	.cfi_def_cfa_offset 80
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	.cfi_offset 21, -48
++	.cfi_offset 22, -40
++	.cfi_offset 29, -80
++	.cfi_offset 30, -72
++	ubfx	x0, x6, 2, 2
++	stp	x23, x24, [sp, 48]
++	.cfi_offset 24, -24
++	.cfi_offset 23, -32
++	cmp	w0, 1
++	beq	.L1011
++	cmp	w0, 3
++	beq	.L1012
++	ubfx	x19, x6, 3, 5
++	mov	x21, 2
++	mov	x24, 1
++.L1013:
++	cmp	x19, 0
++	ccmp	x3, 0, 0, ne
++	beq	.L1028
++.L1019:
++	cmp	x4, 131072
++	mov	x0, 131072
++	csel	x0, x4, x0, ls
++	cmp	x0, x19
++	bcc	.L1028
++	cbnz	w5, .L1014
++	add	x1, x19, 131072
++	add	x1, x1, 64
++	cmp	x4, x1
++	bls	.L1014
++	add	x23, x3, 131072
++	mov	w3, 1
++	add	x23, x23, 32
++	add	x0, x23, x19
++.L1015:
++	add	x1, x20, 16384
++	str	x23, [x20, 30344]
++	str	x0, [x20, 30352]
++	mov	x2, x19
++	mov	x0, x23
++	str	w3, [x1, 13976]
++	ldrb	w1, [x22, x24]
++	bl	memset
++.L1017:
++	ldr	x0, [x20, 30344]
++	ldp	x23, x24, [sp, 48]
++	.cfi_remember_state
++	.cfi_restore 24
++	.cfi_restore 23
++	str	x0, [x20, 30120]
++	str	x19, [x20, 30152]
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L981
++	.p2align 2,,3
++.L1063:
++	.cfi_restore_state
++	eor	w6, w6, 1
++	and	x23, x0, 1023
++	ubfx	x9, x1, 14, 10
++	mov	x7, 3
++.L991:
++	cmp	x23, 0
++	mov	x21, -70
++	ccmp	w8, 0, 4, ne
++	bne	.L1059
++	eor	w0, w6, 1
++	and	w0, w0, 1
++.L1018:
++	cmp	w0, 0
++	ccmp	x23, 5, 2, ne
++	bls	.L1022
++	add	x21, x7, x9
++	cmp	x21, x2
++	bhi	.L1058
++	cmp	x4, 131072
++	mov	x0, 131072
++	csel	x0, x4, x0, ls
++	cmp	x0, x23
++	bcc	.L1028
++	cbnz	w5, .L992
++	add	x1, x23, 131072
++	add	x1, x1, 64
++	cmp	x4, x1
++	bls	.L992
++	add	x1, x3, 131072
++	mov	w0, 1
++	add	x1, x1, 32
++	add	x4, x1, x23
++.L993:
++	str	x1, [x20, 30344]
++	cmp	x23, 768
++	str	x4, [x20, 30352]
++	str	w0, [x24, 13976]
++	ldr	w0, [x24, 13812]
++	ccmp	w0, 0, 4, hi
++	bne	.L1065
++.L995:
++	cmp	w10, 0
++	add	x2, x22, x7
++	cset	w5, ne
++	lsl	w7, w5, 4
++	cmp	w19, 3
++	beq	.L1066
++	mov	x8, 10296
++	mov	x10, 27324
++	add	x0, x20, x8
++	add	x5, x20, x10
++	mov	x4, x9
++	mov	x3, x2
++	cbz	w6, .L1000
++	mov	x2, x23
++	mov	x6, 2560
++	bl	HUF_decompress1X1_DCtx_wksp
++	mov	x22, x0
++.L999:
++	ldr	w0, [x24, 13976]
++	cmp	w0, 2
++	beq	.L1067
++.L1001:
++	cmn	x22, #120
++	bhi	.L1058
++	ldr	x0, [x20, 30344]
++	str	x0, [x20, 30120]
++	str	x23, [x20, 30152]
++	mov	w0, 1
++	str	w0, [x24, 13616]
++	cmp	w19, 2
++	bne	.L1059
++	mov	x6, 10296
++	add	x0, x20, x6
++	ldp	x23, x24, [sp, 48]
++	.cfi_restore 24
++	.cfi_restore 23
++	str	x0, [x20, 24]
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L981
++	.p2align 2,,3
++.L1062:
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	ubfx	x19, x6, 3, 5
++	mov	x1, 1
++	b	.L1004
++	.p2align 2,,3
++.L1012:
++	.cfi_offset 23, -32
++	.cfi_offset 24, -24
++	cmp	x2, 3
++	bls	.L1058
++	ldrh	w0, [x1]
++	mov	x21, -70
++	ldrb	w6, [x1, 2]
++	add	w6, w0, w6, lsl 16
++	tst	x6, 33554416
++	lsr	w0, w6, 4
++	ccmp	x3, 0, 0, ne
++	ubfx	x19, x6, 4, 21
++	beq	.L1059
++	cmp	w0, 131072
++	bhi	.L1058
++	mov	x21, 4
++	mov	x24, 3
++	b	.L1019
++	.p2align 2,,3
++.L989:
++	and	x23, x0, 16383
++	lsr	w9, w1, 18
++	mov	w6, 0
++	mov	x7, 4
++	b	.L991
++	.p2align 2,,3
++.L1011:
++	cmp	x2, 2
++	beq	.L1058
++	ldrh	w6, [x1]
++	mov	x21, 3
++	mov	x24, 2
++	ubfx	x19, x6, 4, 12
++	b	.L1013
++	.p2align 2,,3
++.L1002:
++	.cfi_restore 23
++	.cfi_restore 24
++	ldrh	w6, [x22]
++	mov	x1, 2
++	ubfx	x19, x6, 4, 12
++	b	.L1004
++	.p2align 2,,3
++.L1053:
++	mov	x0, x21
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldp	x21, x22, [sp, 32]
++	ldp	x29, x30, [sp], 80
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L992:
++	.cfi_def_cfa_offset 80
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	.cfi_offset 21, -48
++	.cfi_offset 22, -40
++	.cfi_offset 23, -32
++	.cfi_offset 24, -24
++	.cfi_offset 29, -80
++	.cfi_offset 30, -72
++	cmp	x23, 65536
++	bls	.L994
++	sub	x2, x0, x23
++	add	x4, x3, x0
++	add	x1, x3, x2
++	mov	w0, 2
++	b	.L993
++	.p2align 2,,3
++.L1014:
++	mov	x2, 30364
++	add	x23, x20, x2
++	cmp	x19, 65536
++	bls	.L1016
++	mov	x1, 65504
++	add	x0, x0, x1
++	sub	x0, x0, x19
++	add	x1, x20, 16384
++	sub	x2, x19, #65536
++	add	x0, x3, x0
++	add	x3, x0, x2
++	str	x0, [x20, 30344]
++	str	x3, [x20, 30352]
++	mov	w3, 2
++	str	w3, [x1, 13976]
++	ldrb	w1, [x22, x24]
++	bl	memset
++	ldrb	w1, [x22, x24]
++	mov	x0, x23
++	mov	x2, 65536
++	bl	memset
++	b	.L1017
++	.p2align 2,,3
++.L1005:
++	.cfi_restore 23
++	.cfi_restore 24
++	cmp	x19, 65536
++	bhi	.L1068
++	mov	x4, 30364
++	add	x0, x20, x4
++	add	x3, x0, x19
++	mov	w5, 0
++.L1006:
++	add	x4, x20, 16384
++	add	x21, x19, x1
++	str	x0, [x20, 30344]
++	add	x6, x21, 32
++	str	x3, [x20, 30352]
++	str	w5, [x4, 13976]
++	cmp	x6, x2
++	bls	.L1008
++	cmp	x21, x2
++	bhi	.L1054
++	add	x1, x22, x1
++	cmp	w5, 2
++	beq	.L1069
++	mov	x2, x19
++	bl	memcpy
++.L1010:
++	ldr	x0, [x20, 30344]
++	str	x0, [x20, 30120]
++	str	x19, [x20, 30152]
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L981
++	.p2align 2,,3
++.L1059:
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	.cfi_offset 23, -32
++	.cfi_offset 24, -24
++	mov	x0, x21
++	ldp	x19, x20, [sp, 16]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	ldp	x21, x22, [sp, 32]
++	ldp	x23, x24, [sp, 48]
++	.cfi_restore 24
++	.cfi_restore 23
++	ldp	x29, x30, [sp], 80
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1028:
++	.cfi_restore_state
++	mov	x21, -70
++	mov	x0, x21
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	ldp	x21, x22, [sp, 32]
++	ldp	x23, x24, [sp, 48]
++	.cfi_restore 24
++	.cfi_restore 23
++	ldp	x29, x30, [sp], 80
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1054:
++	.cfi_def_cfa_offset 80
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	.cfi_offset 21, -48
++	.cfi_offset 22, -40
++	.cfi_offset 29, -80
++	.cfi_offset 30, -72
++	ldp	x19, x20, [sp, 16]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	b	.L988
++	.p2align 2,,3
++.L1068:
++	.cfi_restore_state
++	mov	x5, 65504
++	add	x0, x0, x5
++	sub	x0, x0, x19
++	sub	x4, x19, #65536
++	add	x0, x3, x0
++	mov	w5, 2
++	add	x3, x0, x4
++	b	.L1006
++	.p2align 2,,3
++.L994:
++	.cfi_offset 23, -32
++	.cfi_offset 24, -24
++	mov	x12, 30364
++	add	x1, x20, x12
++	add	x4, x1, x23
++	mov	w0, 0
++	b	.L993
++	.p2align 2,,3
++.L1016:
++	add	x0, x23, x19
++	mov	w3, 0
++	b	.L1015
++	.p2align 2,,3
++.L1064:
++	ubfiz	x6, x6, 10, 8
++	lsr	w1, w1, 22
++	add	x9, x1, x6
++	mov	w0, 1
++	mov	w6, 0
++	mov	x7, 5
++	b	.L1018
++	.p2align 2,,3
++.L1008:
++	.cfi_restore 23
++	.cfi_restore 24
++	add	x1, x22, x1
++	str	x1, [x20, 30120]
++	add	x1, x1, x19
++	str	x19, [x20, 30152]
++	str	x1, [x20, 30352]
++	ldp	x19, x20, [sp, 16]
++	.cfi_restore 20
++	.cfi_restore 19
++	str	wzr, [x4, 13976]
++	b	.L981
++	.p2align 2,,3
++.L1066:
++	.cfi_offset 19, -64
++	.cfi_offset 20, -56
++	.cfi_offset 23, -32
++	.cfi_offset 24, -24
++	mov	x0, x1
++	mov	w5, w7
++	mov	x3, x9
++	mov	x1, x23
++	ldr	x4, [x20, 24]
++	cbz	w6, .L998
++	bl	HUF_decompress1X_usingDTable
++	mov	x22, x0
++	b	.L999
++	.p2align 2,,3
++.L1000:
++	mov	x2, x23
++	mov	x6, 2560
++	bl	HUF_decompress4X_hufOnly_wksp
++	mov	x22, x0
++	b	.L999
++.L1065:
++	ldr	x4, [x20, 24]
++	mov	x11, 16448
++	add	x5, x4, x11
++	.p2align 3,,7
++.L996:
++	prfm	PLDL2KEEP, [x4]
++	add	x4, x4, 64
++	cmp	x4, x5
++	bne	.L996
++	b	.L995
++.L1022:
++	mov	x21, -24
++	ldp	x19, x20, [sp, 16]
++	.cfi_remember_state
++	.cfi_restore 20
++	.cfi_restore 19
++	ldp	x23, x24, [sp, 48]
++	.cfi_restore 24
++	.cfi_restore 23
++	b	.L981
++.L1067:
++	.cfi_restore_state
++	ldr	x1, [x20, 30352]
++	mov	x7, 30364
++	mov	x2, 65536
++	add	x0, x20, x7
++	sub	x1, x1, #65536
++	str	x25, [sp, 64]
++	.cfi_offset 25, -16
++	bl	memcpy
++	mov	x25, 65504
++	ldr	x1, [x20, 30344]
++	sub	x2, x23, #65536
++	add	x0, x1, x25
++	bl	memmove
++	ldr	x1, [x20, 30344]
++	ldr	x0, [x20, 30352]
++	add	x1, x1, x25
++	ldr	x25, [sp, 64]
++	.cfi_restore 25
++	sub	x0, x0, #32
++	str	x1, [x20, 30344]
++	str	x0, [x20, 30352]
++	b	.L1001
++.L998:
++	bl	HUF_decompress4X_usingDTable
++	mov	x22, x0
++	b	.L999
++.L1069:
++	.cfi_restore 23
++	.cfi_restore 24
++	sub	x2, x19, #65536
++	bl	memcpy
++	mov	x3, 30364
++	sub	x1, x21, #65536
++	add	x1, x22, x1
++	add	x0, x20, x3
++	mov	x2, 65536
++	bl	memcpy
++	b	.L1010
++	.cfi_endproc
++.LFE4509:
++	.size	ZSTD_decodeLiteralsBlock, .-ZSTD_decodeLiteralsBlock
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_buildFSETable
++	.type	ZSTD_buildFSETable, %function
++ZSTD_buildFSETable:
++.LFB4513:
++	.cfi_startproc
++	b	ZSTD_buildFSETable_body_default.constprop.0
++	.cfi_endproc
++.LFE4513:
++	.size	ZSTD_buildFSETable, .-ZSTD_buildFSETable
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_decodeSeqHeaders
++	.type	ZSTD_decodeSeqHeaders, %function
++ZSTD_decodeSeqHeaders:
++.LFB4515:
++	.cfi_startproc
++	cbz	x3, .L1102
++	sub	sp, sp, #272
++	.cfi_def_cfa_offset 272
++	stp	x29, x30, [sp, 48]
++	.cfi_offset 29, -224
++	.cfi_offset 30, -216
++	add	x29, sp, 48
++	stp	x19, x20, [sp, 64]
++	.cfi_offset 19, -208
++	.cfi_offset 20, -200
++	mov	x20, x2
++	stp	x21, x22, [sp, 80]
++	.cfi_offset 21, -192
++	.cfi_offset 22, -184
++	ldrb	w22, [x2]
++	cbnz	w22, .L1073
++	str	wzr, [x1]
++	mov	x0, 1
++	cmp	x3, x0
++	beq	.L1071
++.L1072:
++	mov	x0, -72
++.L1071:
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	add	sp, sp, 272
++	.cfi_remember_state
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1073:
++	.cfi_restore_state
++	stp	x23, x24, [sp, 96]
++	.cfi_offset 24, -168
++	.cfi_offset 23, -176
++	add	x19, x2, x3
++	mov	x23, x0
++	add	x0, x2, 1
++	cmp	w22, 127
++	ble	.L1075
++	cmp	w22, 255
++	beq	.L1109
++	cmp	x19, x0
++	bls	.L1107
++	ldrb	w2, [x2, 1]
++	sub	w22, w22, #128
++	add	x0, x20, 2
++	add	w22, w2, w22, lsl 8
++.L1075:
++	add	x21, x0, 1
++	str	w22, [x1]
++	cmp	x21, x19
++	bhi	.L1107
++	stp	x25, x26, [sp, 112]
++	.cfi_offset 26, -152
++	.cfi_offset 25, -160
++	add	x25, x23, 16384
++	mov	w1, 35
++	stp	x27, x28, [sp, 128]
++	.cfi_offset 28, -136
++	.cfi_offset 27, -144
++	mov	x10, 27324
++	ldr	w2, [x25, 13620]
++	ldrb	w26, [x0]
++	add	x28, x23, 32
++	str	w1, [sp, 152]
++	sub	x6, x19, x21
++	ldr	w3, [x25, 13812]
++	add	x27, x23, x10
++	lsr	w1, w26, 6
++	cmp	w1, 2
++	beq	.L1077
++	cmp	w1, 3
++	beq	.L1078
++	cmp	w1, 1
++	beq	.L1110
++	adrp	x24, .LANCHOR0
++	add	x24, x24, :lo12:.LANCHOR0
++	add	x0, x24, 376
++	str	x0, [x23]
++.L1082:
++	add	x0, x24, 1024
++	add	x1, x24, 1288
++	mov	x8, 4136
++	stp	x1, x0, [sp]
++	add	x7, x24, 896
++	str	w2, [sp, 16]
++	mov	x5, x21
++	str	w3, [sp, 24]
++	ubfx	x2, x26, 4, 2
++	str	w22, [sp, 32]
++	add	x1, x23, 16
++	str	x27, [sp, 40]
++	add	x0, x23, x8
++	mov	w4, 8
++	mov	w3, 31
++	bl	ZSTD_buildSeqTable.constprop.0
++	cmn	x0, #120
++	bhi	.L1088
++	ldr	w2, [x25, 13620]
++	add	x3, x24, 1536
++	ldr	w1, [x25, 13812]
++	add	x4, x24, 2056
++	stp	x4, x3, [sp]
++	add	x21, x21, x0
++	sub	x6, x19, x21
++	str	w2, [sp, 16]
++	mov	x0, 6192
++	str	w1, [sp, 24]
++	mov	x5, x21
++	str	w22, [sp, 32]
++	add	x7, x24, 1320
++	str	x27, [sp, 40]
++	add	x0, x23, x0
++	ubfx	x2, x26, 2, 2
++	add	x1, x23, 8
++	mov	w4, 9
++	mov	w3, 52
++	bl	ZSTD_buildSeqTable.constprop.0
++	cmn	x0, #120
++	bhi	.L1088
++	add	x21, x21, x0
++	sub	x0, x21, x20
++	ldp	x23, x24, [sp, 96]
++	.cfi_restore 24
++	.cfi_restore 23
++	ldp	x25, x26, [sp, 112]
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L1071
++	.p2align 2,,3
++.L1107:
++	.cfi_offset 23, -176
++	.cfi_offset 24, -168
++	ldp	x23, x24, [sp, 96]
++	.cfi_restore 24
++	.cfi_restore 23
++	b	.L1072
++	.p2align 2,,3
++.L1102:
++	.cfi_def_cfa_offset 0
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 29
++	.cfi_restore 30
++	mov	x0, -72
++	ret
++	.p2align 2,,3
++.L1109:
++	.cfi_def_cfa_offset 272
++	.cfi_offset 19, -208
++	.cfi_offset 20, -200
++	.cfi_offset 21, -192
++	.cfi_offset 22, -184
++	.cfi_offset 23, -176
++	.cfi_offset 24, -168
++	.cfi_offset 29, -224
++	.cfi_offset 30, -216
++	add	x0, x2, 3
++	cmp	x0, x19
++	bhi	.L1107
++	ldrh	w22, [x2, 1]
++	mov	w11, 32512
++	add	w22, w22, w11
++	b	.L1075
++	.p2align 2,,3
++.L1078:
++	.cfi_offset 25, -160
++	.cfi_offset 26, -152
++	.cfi_offset 27, -144
++	.cfi_offset 28, -136
++	cbz	w2, .L1088
++	cmp	w3, 0
++	ccmp	w22, 24, 4, ne
++	ble	.L1108
++	ldr	x0, [x23]
++	mov	x9, 4160
++	add	x1, x0, x9
++	.p2align 3,,7
++.L1083:
++	prfm	PLDL2KEEP, [x0]
++	add	x0, x0, 64
++	cmp	x0, x1
++	bne	.L1083
++.L1108:
++	adrp	x24, .LANCHOR0
++	add	x24, x24, :lo12:.LANCHOR0
++	b	.L1082
++	.p2align 2,,3
++.L1110:
++	cbz	x6, .L1088
++	ldrb	w1, [x0, 1]
++	cmp	w1, 35
++	bhi	.L1088
++	adrp	x24, .LANCHOR0
++	add	x24, x24, :lo12:.LANCHOR0
++	uxtw	x6, w1
++	add	x5, x24, 192
++	and	x1, x1, 255
++	add	x4, x24, 336
++	add	x21, x0, 2
++	ldr	w0, [x5, x6, lsl 2]
++	sub	x6, x19, x21
++	ldrb	w1, [x4, x1]
++	str	x28, [x23]
++	str	xzr, [x23, 32]
++	strh	wzr, [x23, 40]
++	strb	w1, [x23, 42]
++	strb	wzr, [x23, 43]
++	str	w0, [x23, 44]
++	b	.L1082
++	.p2align 2,,3
++.L1077:
++	mov	x4, x6
++	add	x0, sp, 160
++	mov	x3, x21
++	add	x2, sp, 156
++	add	x1, sp, 152
++	bl	FSE_readNCount
++	cmn	x0, #120
++	bhi	.L1088
++	ldr	w5, [sp, 156]
++	cmp	w5, 9
++	bhi	.L1088
++	ldr	w2, [sp, 152]
++	adrp	x24, .LANCHOR0
++	add	x24, x24, :lo12:.LANCHOR0
++	add	x21, x21, x0
++	add	x3, x24, 192
++	mov	x6, x27
++	add	x1, sp, 160
++	add	x4, x24, 336
++	mov	x0, x28
++	bl	ZSTD_buildFSETable_body_default.constprop.0
++	ldr	w2, [x25, 13620]
++	sub	x6, x19, x21
++	ldr	w3, [x25, 13812]
++	str	x28, [x23]
++	b	.L1082
++	.p2align 2,,3
++.L1088:
++	mov	x0, -20
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	ldp	x23, x24, [sp, 96]
++	.cfi_restore 24
++	.cfi_restore 23
++	ldp	x25, x26, [sp, 112]
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	add	sp, sp, 272
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.cfi_endproc
++.LFE4515:
++	.size	ZSTD_decodeSeqHeaders, .-ZSTD_decodeSeqHeaders
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_decompressBlock_internal
++	.type	ZSTD_decompressBlock_internal, %function
++ZSTD_decompressBlock_internal:
++.LFB4541:
++	.cfi_startproc
++	cmp	x4, 131072
++	bhi	.L1165
++	sub	sp, sp, #320
++	.cfi_def_cfa_offset 320
++	stp	x29, x30, [sp, 48]
++	.cfi_offset 29, -272
++	.cfi_offset 30, -264
++	add	x29, sp, 48
++	stp	x19, x20, [sp, 64]
++	.cfi_offset 19, -256
++	.cfi_offset 20, -248
++	mov	x19, x4
++	mov	x20, x3
++	mov	x4, x2
++	mov	x3, x1
++	stp	x21, x22, [sp, 80]
++	.cfi_offset 21, -240
++	.cfi_offset 22, -232
++	mov	x22, x2
++	mov	w21, w5
++	mov	x2, x19
++	mov	w5, w6
++	stp	x23, x24, [sp, 96]
++	.cfi_offset 23, -224
++	.cfi_offset 24, -216
++	mov	x24, x1
++	mov	x23, x0
++	mov	x1, x20
++	bl	ZSTD_decodeLiteralsBlock
++	cmn	x0, #120
++	bhi	.L1111
++	stp	x25, x26, [sp, 112]
++	.cfi_offset 26, -200
++	.cfi_offset 25, -208
++	add	x8, x20, x0
++	add	x26, x23, 16384
++	stp	x27, x28, [sp, 128]
++	.cfi_offset 28, -184
++	.cfi_offset 27, -192
++	mov	x5, 131072
++	sub	x27, x19, x0
++	cbz	w21, .L1114
++	ldr	w5, [x26, 13560]
++.L1114:
++	cmp	x22, x5
++	ldr	w28, [x26, 13812]
++	ldr	x0, [x23, 29904]
++	csel	x5, x22, x5, ls
++	add	x5, x24, x5
++	sub	x21, x5, x0
++	cbz	x27, .L1115
++	mov	x3, x8
++	ldrb	w25, [x3], 1
++	cbnz	w25, .L1116
++	mov	x4, 0
++	cmp	x27, 1
++	bne	.L1115
++.L1117:
++	cmp	w28, 0
++	mov	x0, 16777216
++	mov	w25, 0
++	ccmp	x21, x0, 0, eq
++	bhi	.L1164
++.L1133:
++	str	wzr, [x26, 13812]
++	cbnz	w28, .L1166
++.L1135:
++	ldr	w0, [x26, 13976]
++	mov	w5, w25
++	mov	x2, x22
++	mov	x1, x24
++	cmp	w0, 2
++	mov	x0, x23
++	ldp	x25, x26, [sp, 112]
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	beq	.L1167
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	ldp	x23, x24, [sp, 96]
++	add	sp, sp, 320
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	b	ZSTD_decompressSequences_default.constprop.0
++	.p2align 2,,3
++.L1116:
++	.cfi_def_cfa_offset 320
++	.cfi_offset 19, -256
++	.cfi_offset 20, -248
++	.cfi_offset 21, -240
++	.cfi_offset 22, -232
++	.cfi_offset 23, -224
++	.cfi_offset 24, -216
++	.cfi_offset 25, -208
++	.cfi_offset 26, -200
++	.cfi_offset 27, -192
++	.cfi_offset 28, -184
++	.cfi_offset 29, -272
++	.cfi_offset 30, -264
++	add	x20, x20, x19
++	cmp	w25, 127
++	ble	.L1118
++	cmp	w25, 255
++	beq	.L1168
++	cmp	x20, x3
++	bhi	.L1169
++	.p2align 3,,7
++.L1115:
++	ldp	x25, x26, [sp, 112]
++	.cfi_restore 26
++	.cfi_restore 25
++	mov	x0, -72
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++.L1111:
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	ldp	x23, x24, [sp, 96]
++	add	sp, sp, 320
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1165:
++	mov	x0, -72
++	ret
++	.p2align 2,,3
++.L1169:
++	.cfi_def_cfa_offset 320
++	.cfi_offset 19, -256
++	.cfi_offset 20, -248
++	.cfi_offset 21, -240
++	.cfi_offset 22, -232
++	.cfi_offset 23, -224
++	.cfi_offset 24, -216
++	.cfi_offset 25, -208
++	.cfi_offset 26, -200
++	.cfi_offset 27, -192
++	.cfi_offset 28, -184
++	.cfi_offset 29, -272
++	.cfi_offset 30, -264
++	ldrb	w0, [x8, 1]
++	sub	w25, w25, #128
++	add	x3, x8, 2
++	add	w25, w0, w25, lsl 8
++.L1118:
++	add	x19, x3, 1
++	cmp	x20, x19
++	bcc	.L1115
++	ldrb	w10, [x3]
++	mov	w0, 35
++	str	w0, [sp, 200]
++	mov	x11, 27324
++	ldr	w1, [x26, 13620]
++	add	x7, x23, 32
++	lsr	w0, w10, 6
++	sub	x6, x20, x19
++	add	x11, x23, x11
++	cmp	w0, 2
++	beq	.L1120
++	cmp	w0, 3
++	beq	.L1121
++	cmp	w0, 1
++	beq	.L1170
++	adrp	x9, .LANCHOR0
++	mov	w3, w28
++	add	x9, x9, :lo12:.LANCHOR0
++	add	x0, x9, 376
++	str	x0, [x23]
++.L1125:
++	add	x0, x9, 1024
++	add	x2, x9, 1288
++	stp	x2, x0, [sp]
++	add	x7, x9, 896
++	ubfx	x2, x10, 4, 2
++	str	w1, [sp, 16]
++	mov	x5, x19
++	str	w3, [sp, 24]
++	add	x1, x23, 16
++	str	w25, [sp, 32]
++	mov	w4, 8
++	str	x11, [sp, 40]
++	mov	w3, 31
++	str	x8, [sp, 176]
++	mov	x8, 4136
++	add	x0, x23, x8
++	str	w10, [sp, 152]
++	stp	x11, x9, [sp, 160]
++	bl	ZSTD_buildSeqTable.constprop.0
++	ldr	w10, [sp, 152]
++	cmn	x0, #120
++	ldp	x11, x9, [sp, 160]
++	ldr	x8, [sp, 176]
++	bhi	.L1131
++	ldr	w2, [x26, 13620]
++	add	x3, x9, 1536
++	ldr	w1, [x26, 13812]
++	add	x4, x9, 2056
++	stp	x4, x3, [sp]
++	add	x19, x19, x0
++	sub	x6, x20, x19
++	str	w2, [sp, 16]
++	mov	x0, 6192
++	str	w1, [sp, 24]
++	mov	x5, x19
++	str	w25, [sp, 32]
++	add	x7, x9, 1320
++	str	x11, [sp, 40]
++	add	x0, x23, x0
++	ubfx	x2, x10, 2, 2
++	add	x1, x23, 8
++	mov	w4, 9
++	mov	w3, 52
++	str	x8, [sp, 152]
++	bl	ZSTD_buildSeqTable.constprop.0
++	cmn	x0, #120
++	bhi	.L1131
++	ldr	x8, [sp, 152]
++	add	x3, x19, x0
++	sub	x0, x3, x8
++	cmn	x0, #120
++	bhi	.L1163
++	sub	x4, x27, x0
++	cbz	x24, .L1171
++	cmp	w28, 0
++	mov	x0, 16777216
++	ccmp	x21, x0, 0, eq
++	bls	.L1133
++	cmp	w25, 8
++	ble	.L1164
++	ldr	x0, [x23, 16]
++	mov	w2, 1
++	ldr	w6, [x0, 4]
++	lsl	w2, w2, w6
++	cbz	w2, .L1164
++	sub	w2, w2, #1
++	add	x5, x0, 18
++	add	x0, x0, 10
++	mov	w1, 0
++	add	x2, x5, w2, uxtw 3
++	.p2align 3,,7
++.L1138:
++	ldrb	w5, [x0], 8
++	cmp	w5, 22
++	cinc	w1, w1, hi
++	cmp	x2, x0
++	bne	.L1138
++	mov	w0, 8
++	sub	w0, w0, w6
++	lsl	w1, w1, w0
++	cmp	w1, 6
++	cset	w28, hi
++	b	.L1133
++	.p2align 2,,3
++.L1131:
++	mov	x0, -20
++	ldp	x25, x26, [sp, 112]
++	.cfi_remember_state
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L1111
++	.p2align 2,,3
++.L1164:
++	.cfi_restore_state
++	str	wzr, [x26, 13812]
++	b	.L1135
++	.p2align 2,,3
++.L1167:
++	.cfi_restore 25
++	.cfi_restore 26
++	.cfi_restore 27
++	.cfi_restore 28
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	ldp	x23, x24, [sp, 96]
++	add	sp, sp, 320
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	b	ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0
++	.p2align 2,,3
++.L1166:
++	.cfi_def_cfa_offset 320
++	.cfi_offset 19, -256
++	.cfi_offset 20, -248
++	.cfi_offset 21, -240
++	.cfi_offset 22, -232
++	.cfi_offset 23, -224
++	.cfi_offset 24, -216
++	.cfi_offset 25, -208
++	.cfi_offset 26, -200
++	.cfi_offset 27, -192
++	.cfi_offset 28, -184
++	.cfi_offset 29, -272
++	.cfi_offset 30, -264
++	mov	w5, w25
++	mov	x2, x22
++	mov	x1, x24
++	mov	x0, x23
++	ldp	x29, x30, [sp, 48]
++	ldp	x19, x20, [sp, 64]
++	ldp	x21, x22, [sp, 80]
++	ldp	x23, x24, [sp, 96]
++	ldp	x25, x26, [sp, 112]
++	.cfi_remember_state
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	add	sp, sp, 320
++	.cfi_restore 29
++	.cfi_restore 30
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	b	ZSTD_decompressSequencesLong_default.constprop.0
++	.p2align 2,,3
++.L1171:
++	.cfi_restore_state
++	mov	x0, -70
++	cbz	w25, .L1117
++.L1163:
++	ldp	x25, x26, [sp, 112]
++	.cfi_remember_state
++	.cfi_restore 26
++	.cfi_restore 25
++	ldp	x27, x28, [sp, 128]
++	.cfi_restore 28
++	.cfi_restore 27
++	b	.L1111
++	.p2align 2,,3
++.L1168:
++	.cfi_restore_state
++	add	x3, x8, 3
++	cmp	x20, x3
++	bcc	.L1115
++	ldrh	w25, [x8, 1]
++	mov	w12, 32512
++	add	w25, w25, w12
++	b	.L1118
++	.p2align 2,,3
++.L1170:
++	cbz	x6, .L1131
++	ldrb	w0, [x3, 1]
++	cmp	w0, 35
++	bhi	.L1131
++	adrp	x9, .LANCHOR0
++	add	x9, x9, :lo12:.LANCHOR0
++	uxtw	x5, w0
++	add	x2, x9, 192
++	and	x0, x0, 255
++	add	x4, x9, 336
++	add	x19, x3, 2
++	mov	w3, w28
++	ldr	w2, [x2, x5, lsl 2]
++	sub	x6, x20, x19
++	ldrb	w0, [x4, x0]
++	str	x7, [x23]
++	str	xzr, [x23, 32]
++	strh	wzr, [x23, 40]
++	strb	w0, [x23, 42]
++	strb	wzr, [x23, 43]
++	str	w2, [x23, 44]
++	b	.L1125
++	.p2align 2,,3
++.L1121:
++	cbz	w1, .L1131
++	cmp	w28, 0
++	ccmp	w25, 24, 4, ne
++	ble	.L1142
++	ldr	x0, [x23]
++	mov	x9, 4160
++	add	x2, x0, x9
++	.p2align 3,,7
++.L1126:
++	prfm	PLDL2KEEP, [x0]
++	add	x0, x0, 64
++	cmp	x2, x0
++	bne	.L1126
++.L1142:
++	adrp	x9, .LANCHOR0
++	mov	w3, w28
++	add	x9, x9, :lo12:.LANCHOR0
++	b	.L1125
++	.p2align 2,,3
++.L1120:
++	mov	x4, x6
++	add	x0, sp, 208
++	mov	x3, x19
++	add	x2, sp, 204
++	add	x1, sp, 200
++	str	x8, [sp, 152]
++	str	w10, [sp, 160]
++	stp	x7, x11, [sp, 168]
++	bl	FSE_readNCount
++	ldr	w10, [sp, 160]
++	cmn	x0, #120
++	ldr	x8, [sp, 152]
++	ldp	x7, x11, [sp, 168]
++	bhi	.L1131
++	ldr	w5, [sp, 204]
++	str	x8, [sp, 152]
++	str	w10, [sp, 160]
++	cmp	w5, 9
++	bhi	.L1131
++	ldr	w2, [sp, 200]
++	adrp	x9, .LANCHOR0
++	add	x9, x9, :lo12:.LANCHOR0
++	mov	x6, x11
++	add	x3, x9, 192
++	add	x19, x19, x0
++	add	x1, sp, 208
++	add	x4, x9, 336
++	mov	x0, x7
++	stp	x7, x11, [sp, 168]
++	str	x9, [sp, 184]
++	bl	ZSTD_buildFSETable_body_default.constprop.0
++	ldp	x7, x11, [sp, 168]
++	sub	x6, x20, x19
++	ldr	w1, [x26, 13620]
++	ldr	w3, [x26, 13812]
++	ldr	w10, [sp, 160]
++	str	x7, [x23]
++	ldr	x8, [sp, 152]
++	ldr	x9, [sp, 184]
++	b	.L1125
++	.cfi_endproc
++.LFE4541:
++	.size	ZSTD_decompressBlock_internal, .-ZSTD_decompressBlock_internal
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_checkContinuity
++	.type	ZSTD_checkContinuity, %function
++ZSTD_checkContinuity:
++.LFB4542:
++	.cfi_startproc
++	cmp	x2, 0
++	ldr	x2, [x0, 29888]
++	ccmp	x2, x1, 4, ne
++	bne	.L1177
++	ret
++	.p2align 2,,3
++.L1177:
++	ldr	x3, [x0, 29896]
++	str	x1, [x0, 29888]
++	str	x1, [x0, 29896]
++	sub	x3, x2, x3
++	str	x2, [x0, 29912]
++	sub	x1, x1, x3
++	str	x1, [x0, 29904]
++	ret
++	.cfi_endproc
++.LFE4542:
++	.size	ZSTD_checkContinuity, .-ZSTD_checkContinuity
++	.align	2
++	.p2align 4,,11
++	.global	ZSTD_decompressBlock
++	.type	ZSTD_decompressBlock, %function
++ZSTD_decompressBlock:
++.LFB4543:
++	.cfi_startproc
++	stp	x29, x30, [sp, -96]!
++	.cfi_def_cfa_offset 96
++	.cfi_offset 29, -96
++	.cfi_offset 30, -88
++	cmp	x2, 0
++	mov	x29, sp
++	stp	x19, x20, [sp, 16]
++	.cfi_offset 19, -80
++	.cfi_offset 20, -72
++	mov	x20, x0
++	mov	x19, x1
++	ldr	x0, [x0, 29888]
++	stp	x21, x22, [sp, 32]
++	.cfi_offset 21, -64
++	.cfi_offset 22, -56
++	mov	x22, x3
++	stp	x23, x24, [sp, 48]
++	mov	x21, x4
++	.cfi_offset 23, -48
++	.cfi_offset 24, -40
++	mov	x23, x2
++	ccmp	x1, x0, 4, ne
++	beq	.L1179
++	ldr	x1, [x20, 29896]
++	str	x19, [x20, 29888]
++	str	x19, [x20, 29896]
++	sub	x1, x0, x1
++	str	x0, [x20, 29912]
++	sub	x0, x19, x1
++	str	x0, [x20, 29904]
++.L1179:
++	mov	x0, -72
++	cmp	x21, 131072
++	bhi	.L1180
++	mov	x4, x23
++	mov	x3, x19
++	mov	x2, x21
++	mov	x1, x22
++	mov	x0, x20
++	mov	w5, 0
++	bl	ZSTD_decodeLiteralsBlock
++	cmn	x0, #120
++	bhi	.L1180
++	stp	x25, x26, [sp, 64]
++	.cfi_offset 26, -24
++	.cfi_offset 25, -32
++	add	x25, x20, 16384
++	add	x22, x22, x0
++	sub	x21, x21, x0
++	mov	x2, x22
++	ldr	w26, [x25, 13812]
++	mov	x3, x21
++	add	x1, sp, 92
++	mov	x0, x20
++	ldr	x24, [x20, 29904]
++	bl	ZSTD_decodeSeqHeaders
++	cmn	x0, #120
++	bhi	.L1204
++	ldr	w5, [sp, 92]
++	add	x3, x22, x0
++	sub	x4, x21, x0
++	cbz	x19, .L1206
++.L1182:
++	cmp	x23, 131072
++	mov	x0, 131072
++	csel	x0, x23, x0, ls
++	cmp	w26, 0
++	add	x0, x19, x0
++	mov	x1, 16777216
++	sub	x0, x0, x24
++	ccmp	x0, x1, 0, eq
++	bls	.L1183
++	cmp	w5, 8
++	ble	.L1205
++	ldr	x0, [x20, 16]
++	mov	w2, 1
++	ldr	w7, [x0, 4]
++	lsl	w2, w2, w7
++	cbz	w2, .L1205
++	sub	w2, w2, #1
++	add	x6, x0, 18
++	add	x0, x0, 10
++	mov	w1, 0
++	add	x2, x6, w2, uxtw 3
++	.p2align 3,,7
++.L1188:
++	ldrb	w6, [x0], 8
++	cmp	w6, 22
++	cinc	w1, w1, hi
++	cmp	x2, x0
++	bne	.L1188
++	mov	w0, 8
++	sub	w0, w0, w7
++	lsl	w1, w1, w0
++	cmp	w1, 6
++	cset	w26, hi
++.L1183:
++	str	wzr, [x25, 13812]
++	cbnz	w26, .L1207
++.L1185:
++	ldr	w0, [x25, 13976]
++	mov	x2, x23
++	mov	x1, x19
++	cmp	w0, 2
++	mov	x0, x20
++	beq	.L1208
++	bl	ZSTD_decompressSequences_default.constprop.0
++	ldp	x25, x26, [sp, 64]
++	.cfi_restore 26
++	.cfi_restore 25
++.L1180:
++	add	x19, x19, x0
++	ldp	x21, x22, [sp, 32]
++	ldp	x23, x24, [sp, 48]
++	str	x19, [x20, 29888]
++	ldp	x19, x20, [sp, 16]
++	ldp	x29, x30, [sp], 96
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1206:
++	.cfi_def_cfa_offset 96
++	.cfi_offset 19, -80
++	.cfi_offset 20, -72
++	.cfi_offset 21, -64
++	.cfi_offset 22, -56
++	.cfi_offset 23, -48
++	.cfi_offset 24, -40
++	.cfi_offset 25, -32
++	.cfi_offset 26, -24
++	.cfi_offset 29, -96
++	.cfi_offset 30, -88
++	mov	x0, -70
++	cmp	w5, 0
++	ble	.L1182
++.L1204:
++	add	x19, x19, x0
++	ldp	x21, x22, [sp, 32]
++	ldp	x23, x24, [sp, 48]
++	ldp	x25, x26, [sp, 64]
++	.cfi_remember_state
++	.cfi_restore 26
++	.cfi_restore 25
++	str	x19, [x20, 29888]
++	ldp	x19, x20, [sp, 16]
++	ldp	x29, x30, [sp], 96
++	.cfi_restore 30
++	.cfi_restore 29
++	.cfi_restore 23
++	.cfi_restore 24
++	.cfi_restore 21
++	.cfi_restore 22
++	.cfi_restore 19
++	.cfi_restore 20
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L1205:
++	.cfi_restore_state
++	str	wzr, [x25, 13812]
++	b	.L1185
++	.p2align 2,,3
++.L1208:
++	bl	ZSTD_decompressSequencesSplitLitBuffer_default.constprop.0
++	ldp	x25, x26, [sp, 64]
++	.cfi_remember_state
++	.cfi_restore 26
++	.cfi_restore 25
++	b	.L1180
++	.p2align 2,,3
++.L1207:
++	.cfi_restore_state
++	mov	x2, x23
++	mov	x1, x19
++	mov	x0, x20
++	bl	ZSTD_decompressSequencesLong_default.constprop.0
++	ldp	x25, x26, [sp, 64]
++	.cfi_restore 26
++	.cfi_restore 25
++	b	.L1180
++	.cfi_endproc
++.LFE4543:
++	.size	ZSTD_decompressBlock, .-ZSTD_decompressBlock
++	.set	dec32table.0,dec32table.2
++	.set	dec64table.1,dec64table.3
++	.section	.rodata
++	.align	3
++	.set	.LANCHOR0,. + 0
++	.type	dec64table.3, %object
++	.size	dec64table.3, 32
++dec64table.3:
++	.word	8
++	.word	8
++	.word	8
++	.word	7
++	.word	8
++	.word	9
++	.word	10
++	.word	11
++	.type	dec32table.2, %object
++	.size	dec32table.2, 32
++dec32table.2:
++	.word	0
++	.word	1
++	.word	2
++	.word	1
++	.word	4
++	.word	4
++	.word	4
++	.word	4
++	.type	BIT_mask, %object
++	.size	BIT_mask, 128
++BIT_mask:
++	.word	0
++	.word	1
++	.word	3
++	.word	7
++	.word	15
++	.word	31
++	.word	63
++	.word	127
++	.word	255
++	.word	511
++	.word	1023
++	.word	2047
++	.word	4095
++	.word	8191
++	.word	16383
++	.word	32767
++	.word	65535
++	.word	131071
++	.word	262143
++	.word	524287
++	.word	1048575
++	.word	2097151
++	.word	4194303
++	.word	8388607
++	.word	16777215
++	.word	33554431
++	.word	67108863
++	.word	134217727
++	.word	268435455
++	.word	536870911
++	.word	1073741823
++	.word	2147483647
++	.type	LL_base, %object
++	.size	LL_base, 144
++LL_base:
++	.word	0
++	.word	1
++	.word	2
++	.word	3
++	.word	4
++	.word	5
++	.word	6
++	.word	7
++	.word	8
++	.word	9
++	.word	10
++	.word	11
++	.word	12
++	.word	13
++	.word	14
++	.word	15
++	.word	16
++	.word	18
++	.word	20
++	.word	22
++	.word	24
++	.word	28
++	.word	32
++	.word	40
++	.word	48
++	.word	64
++	.word	128
++	.word	256
++	.word	512
++	.word	1024
++	.word	2048
++	.word	4096
++	.word	8192
++	.word	16384
++	.word	32768
++	.word	65536
++	.type	LL_bits, %object
++	.size	LL_bits, 36
++LL_bits:
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.ascii	"\001\001\001\001\002\002\003\003\004\006\007\b\t\n\013\f\r\016"
++	.ascii	"\017\020"
++	.zero	4
++	.type	LL_defaultDTable, %object
++	.size	LL_defaultDTable, 520
++LL_defaultDTable:
++	.hword	1
++	.byte	1
++	.byte	1
++	.word	6
++	.hword	0
++	.byte	0
++	.byte	4
++	.word	0
++	.hword	16
++	.byte	0
++	.byte	4
++	.word	0
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	1
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	3
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	4
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	6
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	7
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	9
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	10
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	12
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	14
++	.hword	0
++	.byte	1
++	.byte	5
++	.word	16
++	.hword	0
++	.byte	1
++	.byte	5
++	.word	20
++	.hword	0
++	.byte	1
++	.byte	5
++	.word	22
++	.hword	0
++	.byte	2
++	.byte	5
++	.word	28
++	.hword	0
++	.byte	3
++	.byte	5
++	.word	32
++	.hword	0
++	.byte	4
++	.byte	5
++	.word	48
++	.hword	32
++	.byte	6
++	.byte	5
++	.word	64
++	.hword	0
++	.byte	7
++	.byte	5
++	.word	128
++	.hword	0
++	.byte	8
++	.byte	6
++	.word	256
++	.hword	0
++	.byte	10
++	.byte	6
++	.word	1024
++	.hword	0
++	.byte	12
++	.byte	6
++	.word	4096
++	.hword	32
++	.byte	0
++	.byte	4
++	.word	0
++	.hword	0
++	.byte	0
++	.byte	4
++	.word	1
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	2
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	4
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	5
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	7
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	8
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	10
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	11
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	13
++	.hword	32
++	.byte	1
++	.byte	5
++	.word	16
++	.hword	0
++	.byte	1
++	.byte	5
++	.word	18
++	.hword	32
++	.byte	1
++	.byte	5
++	.word	22
++	.hword	0
++	.byte	2
++	.byte	5
++	.word	24
++	.hword	32
++	.byte	3
++	.byte	5
++	.word	32
++	.hword	0
++	.byte	3
++	.byte	5
++	.word	40
++	.hword	0
++	.byte	6
++	.byte	4
++	.word	64
++	.hword	16
++	.byte	6
++	.byte	4
++	.word	64
++	.hword	32
++	.byte	7
++	.byte	5
++	.word	128
++	.hword	0
++	.byte	9
++	.byte	6
++	.word	512
++	.hword	0
++	.byte	11
++	.byte	6
++	.word	2048
++	.hword	48
++	.byte	0
++	.byte	4
++	.word	0
++	.hword	16
++	.byte	0
++	.byte	4
++	.word	1
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	2
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	3
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	5
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	6
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	8
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	9
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	11
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	12
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	15
++	.hword	32
++	.byte	1
++	.byte	5
++	.word	18
++	.hword	32
++	.byte	1
++	.byte	5
++	.word	20
++	.hword	32
++	.byte	2
++	.byte	5
++	.word	24
++	.hword	32
++	.byte	2
++	.byte	5
++	.word	28
++	.hword	32
++	.byte	3
++	.byte	5
++	.word	40
++	.hword	32
++	.byte	4
++	.byte	5
++	.word	48
++	.hword	0
++	.byte	16
++	.byte	6
++	.word	65536
++	.hword	0
++	.byte	15
++	.byte	6
++	.word	32768
++	.hword	0
++	.byte	14
++	.byte	6
++	.word	16384
++	.hword	0
++	.byte	13
++	.byte	6
++	.word	8192
++	.type	OF_base, %object
++	.size	OF_base, 128
++OF_base:
++	.word	0
++	.word	1
++	.word	1
++	.word	5
++	.word	13
++	.word	29
++	.word	61
++	.word	125
++	.word	253
++	.word	509
++	.word	1021
++	.word	2045
++	.word	4093
++	.word	8189
++	.word	16381
++	.word	32765
++	.word	65533
++	.word	131069
++	.word	262141
++	.word	524285
++	.word	1048573
++	.word	2097149
++	.word	4194301
++	.word	8388605
++	.word	16777213
++	.word	33554429
++	.word	67108861
++	.word	134217725
++	.word	268435453
++	.word	536870909
++	.word	1073741821
++	.word	2147483645
++	.type	OF_defaultDTable, %object
++	.size	OF_defaultDTable, 264
++OF_defaultDTable:
++	.hword	1
++	.byte	1
++	.byte	1
++	.word	5
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	0
++	.hword	0
++	.byte	6
++	.byte	4
++	.word	61
++	.hword	0
++	.byte	9
++	.byte	5
++	.word	509
++	.hword	0
++	.byte	15
++	.byte	5
++	.word	32765
++	.hword	0
++	.byte	21
++	.byte	5
++	.word	2097149
++	.hword	0
++	.byte	3
++	.byte	5
++	.word	5
++	.hword	0
++	.byte	7
++	.byte	4
++	.word	125
++	.hword	0
++	.byte	12
++	.byte	5
++	.word	4093
++	.hword	0
++	.byte	18
++	.byte	5
++	.word	262141
++	.hword	0
++	.byte	23
++	.byte	5
++	.word	8388605
++	.hword	0
++	.byte	5
++	.byte	5
++	.word	29
++	.hword	0
++	.byte	8
++	.byte	4
++	.word	253
++	.hword	0
++	.byte	14
++	.byte	5
++	.word	16381
++	.hword	0
++	.byte	20
++	.byte	5
++	.word	1048573
++	.hword	0
++	.byte	2
++	.byte	5
++	.word	1
++	.hword	16
++	.byte	7
++	.byte	4
++	.word	125
++	.hword	0
++	.byte	11
++	.byte	5
++	.word	2045
++	.hword	0
++	.byte	17
++	.byte	5
++	.word	131069
++	.hword	0
++	.byte	22
++	.byte	5
++	.word	4194301
++	.hword	0
++	.byte	4
++	.byte	5
++	.word	13
++	.hword	16
++	.byte	8
++	.byte	4
++	.word	253
++	.hword	0
++	.byte	13
++	.byte	5
++	.word	8189
++	.hword	0
++	.byte	19
++	.byte	5
++	.word	524285
++	.hword	0
++	.byte	1
++	.byte	5
++	.word	1
++	.hword	16
++	.byte	6
++	.byte	4
++	.word	61
++	.hword	0
++	.byte	10
++	.byte	5
++	.word	1021
++	.hword	0
++	.byte	16
++	.byte	5
++	.word	65533
++	.hword	0
++	.byte	28
++	.byte	5
++	.word	268435453
++	.hword	0
++	.byte	27
++	.byte	5
++	.word	134217725
++	.hword	0
++	.byte	26
++	.byte	5
++	.word	67108861
++	.hword	0
++	.byte	25
++	.byte	5
++	.word	33554429
++	.hword	0
++	.byte	24
++	.byte	5
++	.word	16777213
++	.type	OF_bits, %object
++	.size	OF_bits, 32
++OF_bits:
++	.string	""
++	.ascii	"\001\002\003\004\005\006\007\b\t\n\013\f\r\016\017\020\021\022"
++	.ascii	"\023\024\025\026\027\030\031\032\033\034\035\036\037"
++	.type	ML_base, %object
++	.size	ML_base, 212
++ML_base:
++	.word	3
++	.word	4
++	.word	5
++	.word	6
++	.word	7
++	.word	8
++	.word	9
++	.word	10
++	.word	11
++	.word	12
++	.word	13
++	.word	14
++	.word	15
++	.word	16
++	.word	17
++	.word	18
++	.word	19
++	.word	20
++	.word	21
++	.word	22
++	.word	23
++	.word	24
++	.word	25
++	.word	26
++	.word	27
++	.word	28
++	.word	29
++	.word	30
++	.word	31
++	.word	32
++	.word	33
++	.word	34
++	.word	35
++	.word	37
++	.word	39
++	.word	41
++	.word	43
++	.word	47
++	.word	51
++	.word	59
++	.word	67
++	.word	83
++	.word	99
++	.word	131
++	.word	259
++	.word	515
++	.word	1027
++	.word	2051
++	.word	4099
++	.word	8195
++	.word	16387
++	.word	32771
++	.word	65539
++	.zero	4
++	.type	ML_defaultDTable, %object
++	.size	ML_defaultDTable, 520
++ML_defaultDTable:
++	.hword	1
++	.byte	1
++	.byte	1
++	.word	6
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	3
++	.hword	0
++	.byte	0
++	.byte	4
++	.word	4
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	5
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	6
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	8
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	9
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	11
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	13
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	16
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	19
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	22
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	25
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	28
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	31
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	34
++	.hword	0
++	.byte	1
++	.byte	6
++	.word	37
++	.hword	0
++	.byte	1
++	.byte	6
++	.word	41
++	.hword	0
++	.byte	2
++	.byte	6
++	.word	47
++	.hword	0
++	.byte	3
++	.byte	6
++	.word	59
++	.hword	0
++	.byte	4
++	.byte	6
++	.word	83
++	.hword	0
++	.byte	7
++	.byte	6
++	.word	131
++	.hword	0
++	.byte	9
++	.byte	6
++	.word	515
++	.hword	16
++	.byte	0
++	.byte	4
++	.word	4
++	.hword	0
++	.byte	0
++	.byte	4
++	.word	5
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	6
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	7
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	9
++	.hword	0
++	.byte	0
++	.byte	5
++	.word	10
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	12
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	15
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	18
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	21
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	24
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	27
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	30
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	33
++	.hword	0
++	.byte	1
++	.byte	6
++	.word	35
++	.hword	0
++	.byte	1
++	.byte	6
++	.word	39
++	.hword	0
++	.byte	2
++	.byte	6
++	.word	43
++	.hword	0
++	.byte	3
++	.byte	6
++	.word	51
++	.hword	0
++	.byte	4
++	.byte	6
++	.word	67
++	.hword	0
++	.byte	5
++	.byte	6
++	.word	99
++	.hword	0
++	.byte	8
++	.byte	6
++	.word	259
++	.hword	32
++	.byte	0
++	.byte	4
++	.word	4
++	.hword	48
++	.byte	0
++	.byte	4
++	.word	4
++	.hword	16
++	.byte	0
++	.byte	4
++	.word	5
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	7
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	8
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	10
++	.hword	32
++	.byte	0
++	.byte	5
++	.word	11
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	14
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	17
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	20
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	23
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	26
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	29
++	.hword	0
++	.byte	0
++	.byte	6
++	.word	32
++	.hword	0
++	.byte	16
++	.byte	6
++	.word	65539
++	.hword	0
++	.byte	15
++	.byte	6
++	.word	32771
++	.hword	0
++	.byte	14
++	.byte	6
++	.word	16387
++	.hword	0
++	.byte	13
++	.byte	6
++	.word	8195
++	.hword	0
++	.byte	12
++	.byte	6
++	.word	4099
++	.hword	0
++	.byte	11
++	.byte	6
++	.word	2051
++	.hword	0
++	.byte	10
++	.byte	6
++	.word	1027
++	.type	ML_bits, %object
++	.size	ML_bits, 53
++ML_bits:
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.string	""
++	.ascii	"\001\001\001\001\002\002\003\003\004\004\005\007\b\t\n\013\f"
++	.ascii	"\r\016\017\020"
++	.ident	"GCC: (GNU) 11.4.0"
++	.section	.note.GNU-stack,"",@progbits
+diff -Nur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
+--- zstd-1.5.4/lib/libzstd.mk	2023-02-10 08:41:50.000000000 +0800
++++ zstd/lib/libzstd.mk	2025-06-23 16:48:36.885521370 +0800
+@@ -142,12 +142,23 @@
+ 
+ ZSTD_DECOMPRESS_AMD64_ASM_FILES := $(sort $(wildcard $(LIBZSTD)/decompress/*_amd64.S))
+ 
++ARCH := $(shell uname -m)
++ifeq ($(ARCH), aarch64)
++  CPU_PART := $(shell dmidecode -t processor | grep 'Signature' | head -n 1 | sed 's/,//g' | cut -d ' ' -f 9)
++  $(info CPU_PART: $(CPU_PART))
++  ifeq ($(CPU_PART), 0xd02)
++    ZSTD_DECOMPRESS_FILES := $(filter-out $(LIBZSTD)/decompress/zstd_decompress_block.c, $(ZSTD_DECOMPRESS_FILES))
++    ZSTD_DECOMPRESS_AMD64_ASM_FILES += $(sort $(wildcard $(LIBZSTD)/decompress/zstd_decompress_block_aarch64.S))
++  endif
++endif
++
+ ifneq ($(ZSTD_NO_ASM), 0)
+   CPPFLAGS += -DZSTD_DISABLE_ASM
+ else
+   # Unconditionally add the ASM files they are disabled by
+   # macros in the .S file.
+   ZSTD_DECOMPRESS_FILES += $(ZSTD_DECOMPRESS_AMD64_ASM_FILES)
++  $(info PATH: $(ZSTD_DECOMPRESS_FILES))
+ endif
+ 
+ ifneq ($(HUF_FORCE_DECOMPRESS_X1), 0)

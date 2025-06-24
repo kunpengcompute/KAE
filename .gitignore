@@ -1,7 +1,7 @@
 .vscode
 kae_build
 KAEZlib/open_source/zlib-1.2.11
-open_source
+
 # *Test*
 *.so.*
 *.a
