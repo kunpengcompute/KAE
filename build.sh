@@ -20,11 +20,16 @@ CPUPART=""
 
 function build_check_OS_version()
 {
-    local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
+    # local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
+    local KERNEL_VERSION=`uname -r`
     if [[ "$KERNEL_VERSION" == 6.6.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=/usr/"
+    elif [[ "$KERNEL_VERSION" == 5.15.* ]]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
     elif [[ "$KERNEL_VERSION" == 5.10.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
@@ -314,8 +319,8 @@ function build_uadk()
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
 
 	cd ${SRC_PATH}/uadk
-    sh autogen.sh
-    sh conf.sh
+    bash autogen.sh
+    bash conf.sh
     make -j64
     make install
 }
@@ -325,7 +330,7 @@ function uadk_clean()
     cd ${SRC_PATH}/uadk
     make uninstall
     make clean
-    sh cleanup.sh
+    bash cleanup.sh
 }
 
 function build_engine_log()
@@ -503,52 +508,52 @@ function engine_clean_boringssl()
 function build_zlib()
 {
     cd ${SRC_PATH}/KAEZlib
-    sh setup.sh install
+    bash setup.sh install
 }
 
 function zlib_clean()
 {
     cd ${SRC_PATH}/KAEZlib
-    sh setup.sh uninstall
+    bash setup.sh uninstall
     rm -rf /usr/local/kaezip
 }
 
 function build_zstd()
 {
     cd ${SRC_PATH}/KAEZstd
-    sh build.sh install
+    bash build.sh install
 }
 
 function zstd_clean()
 {
     cd ${SRC_PATH}/KAEZstd
-    sh build.sh uninstall
+    bash build.sh uninstall
     rm -rf /usr/local/kaezstd/
 }
 
 function build_lz4()
 {
     cd ${SRC_PATH}/KAELz4
-    sh build.sh install
+    bash build.sh install
 }
 
 function lz4_clean()
 {
     cd ${SRC_PATH}/KAELz4
-    sh build.sh uninstall
+    bash build.sh uninstall
     rm -rf /usr/local/kaelz4/
 }
 
 function build_gzip()
 {
     cd ${SRC_PATH}/KAEGzip
-    sh build.sh install
+    bash build.sh install
 }
 
 function gzip_clean()
 {
     cd ${SRC_PATH}/KAEGzip
-    sh build.sh uninstall
+    bash build.sh uninstall
 }
 
 function help()
