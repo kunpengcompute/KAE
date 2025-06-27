@@ -34,10 +34,12 @@ struct __attribute__((aligned(64))) compress_param {
     unsigned int loop_index;
     unsigned int src_len;
     unsigned int dst_len;
-    unsigned char*src;
-    unsigned char*dst;
+    struct kaelz4_buffer_list src;
+    struct kaelz4_buffer_list dst;
     uint64_t start_time;
     volatile unsigned int done;
+    struct kaelz4_buffer src_buf[128];
+    struct kaelz4_buffer dst_buf[128];
 };
 
 struct compress_ctx {
@@ -56,8 +58,12 @@ struct compress_ctx {
     int compress_or_decompress;
     struct compress_out_buf *out_buf_list;
     struct compress_out_buf *out_buf_tail;
+    void *page_info;
     int thread_id;
     int with_crc;
+    unsigned int src_buf_num;
+    void *sess;
+    uint64_t *all_delays;
 };
 
 

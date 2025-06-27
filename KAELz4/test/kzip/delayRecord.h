@@ -8,8 +8,9 @@
 #ifndef DELAY_RECORD_H
 #define DELAY_RECORD_H
 
-void record_latency(uint64_t latency, size_t sn);
-void get_percent_latencies(double *out_latencies, const int *percentiles, int count, size_t sn);
-double get_average_latency(size_t cnt);
+#define MAX_LATENCY_COUNT 100000000
+void record_latency(uint64_t *all_delays, uint64_t latency, size_t sn);
+void get_percent_latencies(uint64_t *all_delays, double *out_latencies, const int *percentiles, int count, size_t sn);
+double get_average_latency(uint64_t *all_delays, size_t cnt);
 
 #endif

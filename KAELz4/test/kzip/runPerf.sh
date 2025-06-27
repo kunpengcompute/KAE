@@ -1,11 +1,11 @@
 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:/usr/local/kaezstd/lib/:/usr/local/kaezip/lib/:$LD_LIBRARY_PATH
 export KAE_LZ4_WINTYPE=8
 export KAE_LZ4_COMP_TYPE=8
-export KAE_LZ4_ASYNC_THREAD_NUM=12
+# export KAE_LZ4_ASYNC_THREAD_NUM=12 # default is 12
 export KAE_LZ4_ASYNC_DC_THREAD_NUM=10
 
 # 使用 getopts 解析命令行参数
-while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:" opt; do
+while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:" opt; do
   case $opt in
     A)  # 要测试的算法
       Alg="$OPTARG"
@@ -25,7 +25,7 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:" opt; do
     t)
       threadsNum="$OPTARG"
       ;;
-    p)
+    f)
       testFile="$OPTARG"
       ;;
     k)
@@ -34,8 +34,11 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:" opt; do
     r)
       isTestCrc="$OPTARG"
       ;;
+    p)
+      isTestPolling="$OPTARG"
+      ;;
     *)
-      echo "Usage: all params  m:l:n:w:f:o:v:A:h:g:s:c:"
+      echo "Usage: all params  m:l:n:w:f:o:v:A:h:s:c:"
       exit 1
       ;;
   esac
@@ -50,6 +53,7 @@ threadsNum=${threadsNum:=1}
 testFile=${testFile:="../../../scripts/compressTestDataset/calgary"}
 useKAENum=${useKAENum:=2}
 isTestCrc=${isTestCrc:=0}
+isTestPolling=${isTestPolling:=0}
 
 buildParams="kaelz4"
 sh build.sh $buildParams
@@ -85,12 +89,12 @@ rm -rf $testFileOrigin
 rm -rf $testFileComped.meta
 rm -rf $testFileOrigin.meta
 
-echo "taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc"
+echo "taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc -p $isTestPolling"
 echo "taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc"
 
 date
 # gdb --args
-taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
+taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc -p $isTestPolling
 date
 
 # sleep 1

@@ -1,0 +1,148 @@
+diff --git a/uadk/Makefile.am b/uadk/Makefile.am
+index 9b36ae9..2f5cbd5 100644
+--- a/uadk/Makefile.am
++++ b/uadk/Makefile.am
+@@ -41,6 +41,7 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
+ nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
+ 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
+
++nobase_pkginclude_HEADERS += v1/wd_sgl.h
+ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
+
+ uadk_driversdir=$(libdir)/uadk
+diff --git a/uadk/v1/drv/hisi_qm_udrv.c b/uadk/v1/drv/hisi_qm_udrv.c
+index 7b0183b..deb9ff0 100644
+--- a/uadk/v1/drv/hisi_qm_udrv.c
++++ b/uadk/v1/drv/hisi_qm_udrv.c
+@@ -61,6 +61,9 @@ static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+ 	if (!buf)
+ 		return -WD_EINVAL;
+
++    if (wd_get_sge_datalen(sgl, num, &buf_sz) != WD_SUCCESS)
++		return -WD_EINVAL;
++
+ 	hisi_sgl->sge_entries[num - 1].buf = (uintptr_t)br->iova_map(br->usr,
+ 					buf, buf_sz);
+ 	if (!hisi_sgl->sge_entries[num - 1].buf) {
+diff --git a/uadk/v1/libwd.map b/uadk/v1/libwd.map
+index d53201b..a43a884 100644
+--- a/uadk/v1/libwd.map
++++ b/uadk/v1/libwd.map
+@@ -139,6 +139,8 @@ global:
+ 	wcrypto_rng_poll;
+
+ 	wd_sglpool_create;
++    wd_build_sgl;
++    wd_destory_sgl;
+ 	wd_sglpool_destroy;
+ 	wd_alloc_sgl;
+ 	wd_free_sgl;
+diff --git a/uadk/v1/wd_sgl.c b/uadk/v1/wd_sgl.c
+index cb3b8ee..51dbe9c 100644
+--- a/uadk/v1/wd_sgl.c
++++ b/uadk/v1/wd_sgl.c
+@@ -167,6 +167,7 @@ static int sgl_chain_build(struct wd_queue *q, struct wd_sglpool *pool)
+ 				goto alloc_buf_err;
+ 			}
+ 			sgl_sge_init(sgl_blk[i], j, buf);
++            sgl_blk[i]->sge[j].data_len = sp->buf_size;
+ 		}
+
+ 		ret = drv_init_sgl(q, pool, sgl_blk[i]);
+@@ -1029,3 +1030,61 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
+ 	for (i = 0; i < sgl->buf_num; i++)
+ 		memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+ }
++
++struct mix_pool {
++    void *buf_pool;
++    void *usr_pool;
++    wd_map iova_map;
++};
++
++static void *wd_alloc_blk_in_build_sgl(void *pool, size_t size)
++{
++    struct mix_pool *mix_pool = pool;
++    return wd_alloc_blk_sgl(mix_pool->buf_pool, size);
++}
++
++static void *wd_iova_map_in_build_sgl(void *pool, void *va, size_t size)
++{
++    struct mix_pool *mix_pool = pool;
++    return mix_pool->iova_map(mix_pool->usr_pool, va, size);
++}
++
++int wd_build_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl, const struct wd_buf_list *buf_list, wd_map usr_map)
++{
++    int ret = -WD_ENOMEM;
++    struct wd_sglpool *sgl_pool = pool;
++
++    sgl->buf_num = buf_list->buf_num;
++    sgl->sge_num = buf_list->buf_num + 1;
++    sgl->pool = pool;
++    for (int i = 0; i < sgl->buf_num; i++) {
++        sgl->sge[i].flag = 0;
++        sgl->sge[i].buf = buf_list->buf[i].data;
++        sgl->sge[i].data_len = buf_list->buf[i].buf_len;
++        sgl->sge[i].sgl = sgl;
++    }
++
++    sgl->sge[sgl->buf_num - 1].flag |= FLAG_SGE_END;
++
++    struct mix_pool mix_pool;
++    mix_pool.buf_pool = sgl_pool->buf_br.usr;
++    mix_pool.usr_pool = buf_list->usr_data;
++    mix_pool.iova_map = usr_map;
++    sgl_pool->buf_br.iova_map = wd_iova_map_in_build_sgl;
++    sgl_pool->buf_br.alloc = wd_alloc_blk_in_build_sgl;
++    sgl_pool->buf_br.usr = &mix_pool;
++    ret = drv_init_sgl(q, pool, sgl);
++    sgl_pool->buf_br.alloc = wd_alloc_blk_sgl;
++    sgl_pool->buf_br.iova_map = wd_blk_iova_map_sgl;
++    sgl_pool->buf_br.usr = mix_pool.buf_pool;
++    if (ret) {
++        WD_ERR("initialize hardware sgl failed, ret = %d\n", ret);
++    }
++
++	return ret;
++}
++
++int wd_destory_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl)
++{
++    return drv_uninit_sgl(q, pool, sgl);
++}
+diff --git a/uadk/v1/wd_sgl.h b/uadk/v1/wd_sgl.h
+index e2e82f2..a23b665 100644
+--- a/uadk/v1/wd_sgl.h
++++ b/uadk/v1/wd_sgl.h
+@@ -25,6 +25,8 @@
+ extern "C" {
+ #endif
+
++#define SGL_MAX_BUF_NUM 60U
++
+ struct wd_sgl;
+ struct wd_sglpool_setup {
+ 	/* Total number of SGEs with buffer slices */
+@@ -43,7 +45,21 @@ struct wd_sglpool_setup {
+ 	struct wd_mm_br br;
+ };
+
++struct wd_buf {
++    size_t buf_len;
++    void *data;
++};
++
++struct wd_buf_list {
++    unsigned int buf_num;
++    unsigned int rsvd;
++    struct wd_buf *buf;
++    void *usr_data;
++};
++
+ void *wd_sglpool_create(struct wd_queue *q, struct wd_sglpool_setup *setup);
++int wd_build_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl, const struct wd_buf_list *buf_list, wd_map usr_map);
++int wd_destory_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl);
+ void wd_sglpool_destroy(void *pool);
+ struct wd_sgl *wd_alloc_sgl(void *pool, __u32 size);
+ void wd_free_sgl(void *pool, struct wd_sgl *sgl);

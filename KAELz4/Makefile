@@ -110,3 +110,5 @@ uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaelz4.a
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4_log.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4frame.h

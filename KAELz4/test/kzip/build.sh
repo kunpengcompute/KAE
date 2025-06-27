@@ -10,7 +10,7 @@ TestEnv=${TestEnv:=kaelz4}
 echo "build kzip for $TestEnv..."
 case "$TestEnv" in
     kaelz4)
-    gcc -g -o kzip main.c delayRecord.c datagen.c alg/manage.c alg/*/*.c scene_test_functions/*c -lz -lnuma -lrt -L/usr/local/kaelz4/lib -llz4 -DBUILD_ENV=$TestEnv -DBUILD_ENV_KAELZ4=1 -O3 -fstack-protector-all -Wall -Werror
+    gcc -g -o kzip main.c delayRecord.c datagen.c alg/manage.c alg/*/*.c scene_test_functions/*c -lz -lnuma -lrt -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -DBUILD_ENV=$TestEnv -DBUILD_ENV_KAELZ4=1 -O3 -fstack-protector-all -Wall -Werror -lpthread
     ;;
     *)
     ;;

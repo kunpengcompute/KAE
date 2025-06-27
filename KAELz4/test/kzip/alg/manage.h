@@ -27,12 +27,12 @@ typedef struct {
     int (*decompress)(const unsigned char *src, unsigned int *src_len,
                      unsigned char *dst, unsigned int *dst_len);
     void (*cleanup)();
-
+    void (*poll)(void *sess, int budget);
     // 异步接口
-    int (*async_compress)(const unsigned char *src, unsigned char *dst,
+    int (*async_compress)(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                           lz4_async_callback cb, struct kaelz4_result *result);
 
-    int (*async_decompress)(const unsigned char* src, unsigned char *dst,
+    int (*async_decompress)(const struct kaelz4_buffer_list* src, struct kaelz4_buffer_list *dst,
                            lz4_async_callback cb, struct kaelz4_result *result);
 } compression_algorithm_t;
 

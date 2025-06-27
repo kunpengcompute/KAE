@@ -35,41 +35,150 @@ yum install -y make kernel-devel libtool numactl-devel openssl-devel lz4-devel l
 ```
 
 ## 三、接口函数签名和参数说明
+KAELz4异步接口一共支持2种模式，polling模式压缩接口和通用模式压缩接口。
 
-### 回调数据结构体
+
+### 3.1、polling模式异步压缩接口
+#### 3.1.1、相关结构体
 
 ```c
+// 基本回调数据格式
 struct kaelz4_result {
     int status; # 压缩任务状态。详细说明见第四节-错误码说明
-    unsigned int flag; # 保留字段
+    unsigned int rsvd; # 保留字段
     void *user_data; # 用户调用异步接口时传入的自定义数据指针
     size_t src_size; # 压缩任务原始数据总大小
     size_t dst_len; # 传入时表示目标buffer的大小，要求大于compressBound(srcLen)，回调时表示压缩后大小
     uint32_t *ibuf_crc; # 存放输入数据CRC32校验的指针。如果存在，将对输入数据计算CRC32校验
     uint32_t *obuf_crc; # 存放压缩数据CRC32校验的指针。如果存在，将对压缩后的数据计算CRC32校验
 };
+
+// SGL相关数据格式
+struct kaelz4_buffer {
+    size_t buf_len;
+    void *data;
+};
+struct kaelz4_buffer_list {
+    unsigned int buf_num;
+    unsigned int rsvd;
+    struct kaelz4_buffer *buf;
+    void *usr_data;
+};
 ```
 
-### 用户回调函数
+#### 3.1.2、用户自定义函数
 
 ```c
 // 压缩任务完成后，将调用该回调函数。回调压缩的结果
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+
+// 逻辑地址与物理地址转换函数
+typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 ```
 
+#### 3.1.3、初始化session会话
+```
+/**
+ * @brief: frame compress async api
+ * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
+ * @return: void *sess: compression session
+ * /
+void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
+```
+#### 3.1.4、压缩
+```
+/**
+ * @brief: block compress async api
+ * @param: sess [IN] : this compression task session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ * /
+int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
 
-### 异步压缩初始化
+/**
+ * @brief: frame compress async api
+ * @param: sess [IN] : this compression task session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @return: 0 success, other fail
+ * /
+int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+```
+#### 3.1.5、主动polling压缩结果
+```
+/**
+ * @brief: polling compression results by session
+ * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses 
+ * @return: void *sess
+ * /
+void KAELZ4_compress_async_polling_in_session(void *sess);
+```
+#### 3.1.6、清理session会话
+```
+void KAELZ4_destroy_async_compress_session(void *sess);
+```
+#### 3.1.7、polling接口整体使用示例Demo
+```c
+```
+```shell
+```
+
+### 3.2、通用模式异步压缩接口
+
+#### 3.2.1、相关结构体
+```c
+// 基本回调数据格式
+struct kaelz4_result {
+    int status; # 压缩任务状态。详细说明见第四节-错误码说明
+    unsigned int rsvd; # 保留字段
+    void *user_data; # 用户调用异步接口时传入的自定义数据指针
+    size_t src_size; # 压缩任务原始数据总大小
+    size_t dst_len; # 传入时表示目标buffer的大小，要求大于compressBound(srcLen)，回调时表示压缩后大小
+    uint32_t *ibuf_crc; # 存放输入数据CRC32校验的指针。如果存在，将对输入数据计算CRC32校验
+    uint32_t *obuf_crc; # 存放压缩数据CRC32校验的指针。如果存在，将对压缩后的数据计算CRC32校验
+};
+
+// SGL相关数据格式
+struct kaelz4_buffer {
+    size_t buf_len;
+    void *data;
+};
+struct kaelz4_buffer_list {
+    unsigned int buf_num;
+    unsigned int rsvd;
+    struct kaelz4_buffer *buf;
+    void *usr_data;
+};
+```
+
+#### 3.2.2、用户自定义函数
+```c
+// 压缩任务完成后，将调用该回调函数。回调压缩的结果
+typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+
+// 逻辑地址与物理地址转换函数
+typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
+```
+
+#### 3.2.3、异步压缩初始化
 
 ```c
-/*! LZ4_async_compress_init() :
+/*! LZ4_async_compress_init(iova_map_fn usr_map) :
 *  Register software compress function, initialize Task Queues and Threads on the KAE Side.
 *  If not being called before, LZ4_compress_async will not handle any exceptions and simply return failure.
 *  Note: Can not be called before fork();
+* @param: usr_map [IN] : Function for converting virtual addresses to physical addresses
 */
- void LZ4_async_compress_init(void);
+ void LZ4_async_compress_init(iova_map_fn usr_map);
 ```
 
-### block 异步压缩
+#### 3.2.4、block 异步压缩
 
 ```c
 /**
@@ -80,14 +189,14 @@ typedef void (*lz4_async_callback)(struct kaelz4_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
  * @return: 0 success, other fail
  * /
-int LZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result);
+ int LZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
 ```
 
-### frame 异步压缩
+#### 3.2.5、frame 异步压缩
 
 ```c
 /**
- * @brief: fream compress async api
+ * @brief: frame compress async api
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -95,11 +204,11 @@ int LZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, 
  * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  * /
-int LZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+int LZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const LZ4F_preferences_t* preferencesPtr);
 ​
 ```
 
-### 异步压缩结束
+#### 3.2.6、异步压缩结束
 
 ```c
 /*! LZ4_teardown_async_compress() :
@@ -107,32 +216,9 @@ int LZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback call
  */
 LZ4LIB_API void LZ4_teardown_async_compress(void);
 ```
+#### 3.2.7、通用压缩接口整体使用示例Demo
 
-## 四、异常说明
-
-### 错误码枚举:
-
-```c
-#define KAE_LZ4_INVAL_PARA 1 # 内部通用错误 
-#define KAE_LZ4_INIT_FAIL 2 # 初始化资源失败 
-#define KAE_LZ4_COMP_FAIL 3 # 压缩失败 
-#define KAE_LZ4_RELEASE_FAIL 4 # 资源释放失败 
-#define KAE_LZ4_ALLOC_FAIL 5 # 内存资源申请失败 
-#define KAE_LZ4_SET_FAIL 6 # 内部错误
-#define KAE_LZ4_HW_TIMEOUT_FAIL 7 # 硬件超时
-```
-
-### 切软算场景：
-
-限制：用户调用压缩接口时输入数据必须小于64k时才支持切软算
-- 1、支持在KAE驱动异常时自动切软算
-- 2、支持在KAE硬件资源耗尽时自动切软算
-
-## 五、使用示例和kzip工具说明
-
-### 使用示例
-
-以 frame 接口示例：
+以普通 frame格式异步压缩接口示例：
 1、对某一段内存进行压缩，同时设置特定的frame格式。
 2、在收到回调后，使用开源frame解压接口对压缩内容进行解压。
 3、最后比较解压后的内容是否是原始内容。
@@ -264,7 +350,7 @@ static int test_async_frame_with_perferences(int contentChecksumFlag, int blockC
     result.user_data = &amp;mydata;
     result.src_size = src_len;
     result.dst_len = compressed_size;
-    LZ4_async_compress_init();
+    LZ4_async_compress_init(NULL);
     int compression_status = LZ4F_compressFrame_async(inbuf, compressed_data,
                                                       compression_callback, &amp;result, &amp;preferences);
 
@@ -295,21 +381,51 @@ gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_f
 ./kaelz4_frame_async # 输出 Test Success.
 ```
 
+
+## 四、异常说明
+
+### 错误码枚举:
+
+```c
+#define KAE_LZ4_INVAL_PARA 1 # 内部通用错误 
+#define KAE_LZ4_INIT_FAIL 2 # 初始化资源失败 
+#define KAE_LZ4_COMP_FAIL 3 # 压缩失败 
+#define KAE_LZ4_RELEASE_FAIL 4 # 资源释放失败 
+#define KAE_LZ4_ALLOC_FAIL 5 # 内存资源申请失败 
+#define KAE_LZ4_SET_FAIL 6 # 内部错误
+#define KAE_LZ4_HW_TIMEOUT_FAIL 7 # 硬件超时
+```
+
+### 切软算场景：
+
+限制：用户调用压缩接口时输入数据必须小于64k时才支持切软算
+- 1、支持在KAE驱动异常时自动切软算
+- 2、支持在KAE硬件资源耗尽时自动切软算
+- 3、支持polling接口和通用接口切软算
+- 4、不支持SGL模式分段buffer切软算
+
+## 五、kzip工具说明
+
 ### kzip工具说明
 
 #### 前置环境设置
 
-- 开启驱动fast模式
-  
-  ~~~
-  rmmod hisi_zip # 删除驱动，这一步执行后，watch命令就看不到那一组256了
-  
-  #注意是uacc_mode=2,因为是nosva模式；这一步执行后，watch会看到4个256，表示使能正确
-  modprobe hisi_zip perf_mode=1 uacce_mode=2 pf_q_num=256
-  ~~~
-- 设置fast模式下特定有效压缩窗长
+- 开启观察KAE硬件队列
+    ~~~shell
+    # 默认能够观察到4个256，表示当前机器上共支持4*256个KAE硬件驱动压缩队列
+    watch -n 0.2 cat /sys/class/uacce/hisi_zip-*/available_instances
+    ~~~
 
-    ```
+- 开启驱动fast模式
+    ~~~shell
+    # 卸载原驱动
+    rmmod hisi_zip # 执行后，无法观察到KAE硬件队列。
+
+    # 重新以fast模式加载驱动
+    modprobe hisi_zip perf_mode=1 uacce_mode=2 pf_q_num=256 #执行后观察KAE硬件队列会看到4个256，表示使能正确
+    ~~~
+- 设置fast模式下特定有效压缩窗长
+    ```shell
     export KAE_LZ4_WINTYPE=8
     export KAE_LZ4_COMP_TYPE=8
     ```
@@ -319,12 +435,14 @@ gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_f
 进入kzip工具目录
 
 ~~~shell
+cd KAELz4/test/kzip
 # 编译打包kzip工具
 sh build.sh
 ~~~
 
 ~~~shell
-# 查看工具参数说明 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
+# 查看工具参数说明
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
 ./kzip -h
 ~~~
 
@@ -334,14 +452,24 @@ sh runFunc.sh
 ~~~
 
 ~~~shell
-# frame 异步压缩接口对8k分片数据的性能测试
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 12000 -s 8
+# 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
+export KAE_LZ4_ASYNC_THREAD_NUM=1
+sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
+
+# 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
+export KAE_LZ4_ASYNC_THREAD_NUM=1
+sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
+
+# 3、单KAE能力：多线程加压，结果表示满足5G@4K的压缩带宽前提的时延。
+export KAE_LZ4_ASYNC_THREAD_NUM=5 # 可选5或6
+sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
+
+#4、单KAE最大能力：多线程满压，结果表示单KAE能够提供的最大压缩带宽。
+export KAE_LZ4_ASYNC_THREAD_NUM=8
+sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
 ~~~
 
-~~~shell
-# block 异步压缩接口 对8k分片数据的性能测试
-sh runPerf.sh -A kaelz4async_block -m 1 -n 12000 -s 8
-~~~
+更多测试工具使用说明详见 KAELz4/test/kzip/README.md
 
 ## 六、性能优化
 
@@ -369,4 +497,3 @@ sh runPerf.sh -A kaelz4async_block -m 1 -n 12000 -s 8
 目前kzip工具在同步的 lz4 block/frame 接口测试中，需要使用 -m 参数指定进程并发数量进行压测。
 在异步的lz4 block/frame 接口测试中，目前单进程下即可打满带宽，多进程并不会带来更多收益。
 如果要模拟多进程异步压缩场景，可以使用工具的 -i 参数，`inflight_num` ，最小为1，最大1024，表示当前进程同时进行中的KAE异步压缩接口的任务数量（目前的kzip工具策略：超过该值后，必须要等到前面的压缩任务完成，回调函数完成后，才可以调用接口执行新的压缩任务），相当于用户侧压缩流量控制。目前默认256，是比较高的压缩流量。
-

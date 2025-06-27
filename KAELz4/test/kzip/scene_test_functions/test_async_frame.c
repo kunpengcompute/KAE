@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 
 int g_has_done = 0; // 异步回调是否完成。需要初始化为0。
-int g_test_file = 0; // 
+int g_test_file = 0; //
 
 struct my_custom_data {
     void *src;
@@ -160,7 +160,7 @@ static int test_async_frame_with_perferences(int contentChecksumFlag, int blockC
     result.user_data = &mydata;
     result.src_size = src_len;
     result.dst_len = compressed_size;
-    LZ4_async_compress_init();
+    LZ4_async_compress_init(NULL);
     int compression_status = LZ4F_compressFrame_async(inbuf, compressed_data,
                                                       compression_callback, &result, &preferences);
 

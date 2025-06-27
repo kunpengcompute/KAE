@@ -12,6 +12,9 @@
 #include <string.h>
 #include <errno.h>
 #include "kaelz4_log.h"
+#include <unistd.h>
+#include <sys/syscall.h>
+#define gettid() syscall(SYS_gettid)
 
 #define KAE_CONFIG_FILE_NAME "/kaelz4.cnf"
 #define MAX_LEVEL_LEN         10

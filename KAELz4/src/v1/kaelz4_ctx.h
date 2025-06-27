@@ -49,6 +49,7 @@ struct kaelz4_ctx {
     int              comp_type;     // WCRYPTO_DEFLATE / WCRYPTO_INFLATE
     unsigned int     do_comp_len;   // a compress proccess cost len
     int              status;        // enum kaelz4_comp_status
+    int              is_sgl;
 
     struct wcrypto_end_block        end_block;
     KAE_QUEUE_DATA_NODE_S*          q_node;
@@ -56,12 +57,15 @@ struct kaelz4_ctx {
     struct wcrypto_comp_op_data     op_data;
     struct wcrypto_lz77_zstd_format lz4_data;
     void*                           wd_ctx;
+    struct wcrypto_zstd_out         output;
+    wd_map                          usr_map;
+    unsigned char                   sgl[32 + (32 * 60)];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60
     void (*callback)(int status, void *param);
     void* param;
 };
 typedef struct kaelz4_ctx   kaelz4_ctx_t;
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype);
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl);
 void          kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx);

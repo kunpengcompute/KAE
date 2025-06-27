@@ -80,7 +80,7 @@ typedef struct {
 } KAELz4Version;
 
 extern int kaelz4_get_version(KAELz4Version* ver);
-extern int kaelz4_init(LZ4_CCtx* zc);
+extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl);
 extern void kaelz4_reset(LZ4_CCtx* zc);
 extern void kaelz4_release(LZ4_CCtx* zc);
 extern void kaelz4_setstatus(LZ4_CCtx* zc, unsigned int status);
@@ -96,19 +96,41 @@ struct kaelz4_result {
     uint32_t *obuf_crc;
 };
 
+struct kaelz4_buffer {
+    size_t buf_len;
+    void *data;
+};
+
+struct kaelz4_buffer_list {
+    unsigned int buf_num;
+    unsigned int rsvd;
+    struct kaelz4_buffer *buf;
+    void *usr_data;
+};
+
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
 typedef int (*sw_compress_fn)(const char* src, char* dst, int srcSize, int dstCapacity);
 typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, const void* srcBuffer, size_t srcSize,
                                        const void* preferences_ptr);
 typedef int (*sw_decompress_fn)(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
-int KAELZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result);
-int KAELZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback,
-                                struct kaelz4_result *result, const void *preferences_ptr);
+typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
+int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                          lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
 void KAELZ4_teardown_async_compress(void);
-int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
+void KAELZ4_destroy_async_compress_session(void *sess);
+int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                     lz4_async_callback callback, struct kaelz4_result *result);
+void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
+int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                           lz4_async_callback callback, struct kaelz4_result *result,
+                                           const void *preferences_ptr);
+int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
                                sw_decompress_fn sw_decompress);
-int KAELZ4_decompress_async(const void *src, void *dst, lz4_async_callback callback,
-                            struct kaelz4_result *result);
-int KAELZ4F_decompressFrame_async(const void* src, void* dst, lz4_async_callback callback,
-                                  struct kaelz4_result *result, const void *options_ptr);
+int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                            lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                  lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
 #endif

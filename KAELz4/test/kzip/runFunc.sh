@@ -9,10 +9,13 @@ Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame")
 Datasets=("calgary" "itemdata" "dickens" "mozilla" "mr" "nci" "ooffice" "osdb" "reymont" "samba" "sao" "webster" "xml" "x-ray")
 Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
 BlockSize=("0" "4" "8" "16" "60" "64" "68" "128" "512" "1024" "2090" "10244")
+Polling=("1" "0")
 
 current_time=$(date +"%Y-%m-%d_%H-%M-%S")
 LogFile=kaelz4-function.log.$current_time
 testFilePath=../../../scripts/compressTestDataset
+passCnt=0
+failCnt=0
 
 diffFile() {
     local testFile=$1
@@ -28,27 +31,32 @@ diffFile() {
     diffRes=$(diff $testFile $testFileOrigin)
     if [[ -n "$diffRes" ]] ; then
         echo "Error: 解压后数据与原始数据比对不通过！！"
+        failCnt=`expr $failCnt + 1`
     else
         echo "Success: 测试通过 解压数据校验通过"
+        passCnt=`expr $passCnt + 1`
     fi
 }
 
 for da in "${Datasets[@]}"; do
     for alg in "${Algthm[@]}"; do
         for bs in "${BlockSize[@]}"; do
-            echo "Executing:  $da  $alg  $bs kb chunk testing"
-            testFile="$testFilePath/$da"
-            testFileComped="$testFile.compressed"
-            testFileOrigin="$testFile.origin"
-            rm -rf $testFileComped
-            rm -rf $testFileOrigin
-            rm -rf $testFileComped.meta
-            rm -rf $testFileOrigin.meta
-            ./kzip -A $alg -m 2 -f $testFile -o $testFileComped -n 2 -s $bs -i 256  >> $LogFile # 压缩测试
-            ./kzip -d -A $alg -m 1 -f $testFileComped -o $testFileOrigin -n 2 -s $bs -i 256  >> $LogFile # 压缩测试
-            diffFile $testFile $testFileOrigin
+            for polling in "${Polling[@]}"; do
+                echo "Executing:  $da  $alg  $bs kb chunk polling mode: $polling testing"
+                testFile="$testFilePath/$da"
+                testFileComped="$testFile.compressed"
+                testFileOrigin="$testFile.origin"
+                rm -rf $testFileComped
+                rm -rf $testFileOrigin
+                rm -rf $testFileComped.meta
+                rm -rf $testFileOrigin.meta
+                ./kzip -A $alg -m 2 -f $testFile -o $testFileComped -n 2 -s $bs -i 256 -p $polling >> $LogFile # 压缩测试
+                ./kzip -d -A $alg -m 1 -f $testFileComped -o $testFileOrigin -n 2 -s $bs -i 256 >> $LogFile # 压缩测试
+                diffFile $testFile $testFileOrigin
+            done
         done
     done
 done
 
+echo "test pass: $passCnt, failed: $failCnt."
 echo "功能测试结束"

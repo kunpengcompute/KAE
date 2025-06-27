@@ -5,10 +5,13 @@
 
 static int g_has_custom_frameinfo_config = 0; // 是否 自定义 frameinfo 格式
 
-static int lz4_async_frame_compress(const unsigned char *src, unsigned char *dst, lz4_async_callback cb, struct kaelz4_result *result)
+static int lz4_async_frame_compress(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback cb, struct kaelz4_result *result)
 {
     int ret;
     if (g_has_custom_frameinfo_config == 0) {
+        if (sess)
+            return KAELZ4_compress_frame_async_in_session(sess, src, dst, cb, result, NULL);
+
         ret = LZ4F_compressFrame_async(src, dst, cb, result, NULL);
     } else {
         // 初始化LZ4F压缩的参数
@@ -17,13 +20,16 @@ static int lz4_async_frame_compress(const unsigned char *src, unsigned char *dst
         preferences.frameInfo.contentChecksumFlag = LZ4F_contentChecksumEnabled;
         preferences.frameInfo.blockChecksumFlag = LZ4F_blockChecksumEnabled;
         preferences.frameInfo.contentSize = result->src_size;
+        if (sess)
+            return KAELZ4_compress_frame_async_in_session(sess, src, dst, cb, result, &preferences);
+
         ret = LZ4F_compressFrame_async(src, dst, cb, result, &preferences);
     }
     return ret;
 }
 
 // 单个 LZ4 frame 格式文件的解压实现
-static int lz4_async_frame_decompress(const unsigned char *src, unsigned char *dst, lz4_async_callback cb, struct kaelz4_result *result)
+static int lz4_async_frame_decompress(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback cb, struct kaelz4_result *result)
 {
     int ret = LZ4F_decompress_async(src, dst, cb, result, NULL);
     return ret;
@@ -45,6 +51,7 @@ static int lz4_frame_init() {
 compression_algorithm_t lz4_async_frame_algorithm = {
     .name = "kaelz4async_frame",
     .bound = lz4_frame_bound,
+    .poll = KAELZ4_compress_async_polling_in_session,
     .async_compress = lz4_async_frame_compress,
     .async_decompress = lz4_async_frame_decompress,
     .init = lz4_frame_init

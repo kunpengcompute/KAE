@@ -137,6 +137,10 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
 
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
+
+
     cd $KAE_UADK_DIR
     sh autogen.sh
     # sh conf.sh
@@ -305,6 +309,9 @@ function build_uadk()
 
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
+
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
 
 	cd ${SRC_PATH}/uadk
     sh autogen.sh
