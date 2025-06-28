@@ -293,6 +293,7 @@ int main()
 ```
 ```shell
 gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -o kaelz4_polling_test
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ./kaelz4_polling_test # 输出 Test Success.
 ```
 
@@ -561,6 +562,7 @@ int main()
 
 ```shell
 gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_frame_async_test
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ./kaelz4_frame_async_test # 输出 Test Success.
 ```
 
