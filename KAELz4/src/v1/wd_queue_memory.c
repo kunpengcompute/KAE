@@ -75,8 +75,8 @@ void* kaelz4_create_sgl_mempool(struct wd_queue *q)
     setup.align_size = 64;
     setup.sge_num_in_sgl = 1;
     setup.buf_num_in_sgl = setup.sge_num_in_sgl;
-    setup.sgl_num = 4;
-    setup.buf_num = setup.buf_num_in_sgl * setup.sgl_num + setup.sgl_num + 2;
+    setup.sgl_num = MAX_KAE_CTX_DEPTH * 2;   // SGL模式下，每个SGL output需要两段buf分别给seq和lit
+    setup.buf_num = setup.buf_num_in_sgl * setup.sgl_num + setup.sgl_num * 2 + 2;
     void *mempool = wd_sglpool_create(q, &setup);
 
     return mempool;
@@ -85,7 +85,7 @@ void* kaelz4_create_sgl_mempool(struct wd_queue *q)
 void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q)
 {
     unsigned int block_size = COMP_BLOCK_SIZE;
-    unsigned int block_num = COMP_BLOCK_NUM;
+    unsigned int block_num = COMP_BLOCK_NUM * MAX_KAE_CTX_DEPTH;
     struct wd_blkpool_setup setup;
 
     memset(&setup, 0, sizeof(setup));

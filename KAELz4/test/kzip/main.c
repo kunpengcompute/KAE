@@ -143,7 +143,7 @@ void *get_huge_pages(size_t total_size)
     if (addr == MAP_FAILED) {
         fprintf(stderr, "申请内存大页失败。\n");
         fprintf(stderr, "系统可能没有足够的大页可用。\n");
-        fprintf(stderr, "请尝试分配更多大页: sudo sysctl vm.nr_hugepages=1000\n");
+        fprintf(stderr, "请尝试分配更多大页: sudo sysctl vm.nr_hugepages=10000\n");
         exit(EXIT_FAILURE);
     }
 
@@ -434,6 +434,12 @@ static void compress_async_callback(struct kaelz4_result *result)
     }
     struct compress_param *param = (struct compress_param *)result->user_data;
 
+    if (param->ctx->is_lz77_mode) {
+        if (KAELZ4_rebuild_lz77_to_block(&param->src, &param->tuple, &param->dst, result) != 0) {
+            printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+        }
+    }
+
     param->dst_len = result->dst_len;
     if ((param->ctx->algorithm->async_compress != NULL && param->ctx->compress_or_decompress != 0) ||
         ((param->ctx->algorithm->async_decompress != NULL && param->ctx->compress_or_decompress == 0))) {
@@ -447,6 +453,7 @@ static void compress_async_callback(struct kaelz4_result *result)
             record_latency(param->ctx->all_delays, timeonce, param->sn);
         }
     }
+
     param->done = 1;
     return;
 }
@@ -494,6 +501,17 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->all_delays = (uint64_t *)malloc(sizeof(uint64_t) * MAX_LATENCY_COUNT);
     memset(ctx->param_buf, 0, ctx->inflight_num * sizeof(struct compress_param));
     ctx->param_index = 0;
+    ctx->is_lz77_mode = 0;
+
+    if (strcmp(algorithm->name, "kaelz4async_lz77") == 0 && ctx->compress_or_decompress != 0) {
+        if (g_file_chunk_size == 0 || g_file_chunk_size * 1024 > HPAGE_SIZE) {
+            // TBM: 当前chunk_size超过2M kzip不支持lz77模式，因为大页内存不连续
+            ctx->algorithm = get_algorithm("kaelz4async_block");
+            return;
+        }
+        ctx->is_lz77_mode = 1;
+        g_enable_polling_mode = 1;
+    }
 }
 
 static void compress_ctx_destory(struct compress_ctx *ctx)
@@ -811,8 +829,22 @@ static int do_comp_with_split_file(
         param->result.user_data = param;
         param->result.src_size = chunk_len_this_loop;
         param->result.dst_len = output_sz_tmp;
-        ret = do_real_compression(
-            ctx, &param->src, (unsigned int *)&chunk_len_this_loop, &param->dst, (unsigned int *)&output_sz_tmp, &param->result);
+        if (!ctx->is_lz77_mode) {
+            ret = do_real_compression(
+                ctx, &param->src, (unsigned int *)&chunk_len_this_loop, &param->dst, (unsigned int *)&output_sz_tmp, &param->result);
+        } else {
+            param->tuple.buf_num = 1;
+            param->tuple.buf = param->tuple_buf;
+            param->tuple.buf[0].data = ctx->tuple_buf + ctx->tuple_buf_offset;
+            param->tuple.buf[0].buf_len = KAELZ4_compress_get_tuple_buf_len(chunk_len_this_loop);
+            param->tuple.usr_data = ctx->tuple_page_info;
+            ctx->tuple_buf_offset += param->tuple.buf[0].buf_len;
+            if (ctx->tuple_buf_offset > ctx->tuple_buf_len) {
+                printf("ctx->tuple_buf_offset[0x%lx] > ctx->tuple_buf_len[0x%lx]\n", ctx->tuple_buf_offset, ctx->tuple_buf_len);
+                return -1;
+            }
+            ret = do_real_compression(ctx, &param->src, (unsigned int *)&chunk_len_this_loop, &param->tuple, (unsigned int *)&output_sz_tmp, &param->result);
+        }
         if (ret != 0) {
             printf("Error: do_real_compression error. ret = %d \nexit\n", ret);
             return ret;
@@ -829,6 +861,34 @@ static int do_comp_with_split_file(
         *out_offset += output_size_chunk;
     }
     return ret;
+}
+
+static int prepare_tuple_buf(struct compress_ctx *ctx, size_t src_len)
+{
+    size_t tuple_buf_len = KAELZ4_compress_get_tuple_buf_len(g_file_chunk_size * 1024) * (src_len / (g_file_chunk_size * 1024) + 1) * 2;
+    size_t huge_page_num = tuple_buf_len * sizeof(Bytef) / HPAGE_SIZE + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
+    size_t total_size = huge_page_num * HPAGE_SIZE;
+    ctx->tuple_buf = get_huge_pages(total_size);
+    printf("申请的tuple buf大页虚拟地址: %p len: 0x%lx\n", ctx->tuple_buf, total_size);
+
+    if (ctx->tuple_buf == NULL) {
+        return -1;
+    }
+
+    memset(ctx->tuple_buf, 0, total_size);
+
+    struct cache_page_map* cache = init_cache_page_map(ctx->tuple_buf, total_size);
+    if (cache == NULL) {
+        printf("init_cache_page_map failed\n");
+        return -1;
+    }
+    uint64_t phys_addr = get_physical_address_cache_page_map(cache, ctx->tuple_buf);
+
+    printf("tuple buf大页物理地址: 0x%" PRIx64 "\n", phys_addr);
+    ctx->tuple_page_info = cache;
+    ctx->tuple_buf_offset = 0;
+    ctx->tuple_buf_len = tuple_buf_len;
+    return 0;
 }
 
 static int start_work(struct compress_ctx *ctx, const char* in_filename, const char* out_filename, int multi,
@@ -891,6 +951,12 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         return -1;
     }
 
+    if (ctx->is_lz77_mode) {
+        if (prepare_tuple_buf(ctx, src_len) != 0) {
+            return -1;
+        }
+    }
+
     struct timeval start, stop;
     gettimeofday(&start, NULL);
     unsigned long out_offset = 0; // 用于选择 outbuf 填充数据的偏移值。
@@ -899,6 +965,7 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         ctx->loop_index = j;
         if (j > 0) { // 为第1次之后的循环的产物复用空间
             out_offset = output_sz;
+            ctx->tuple_buf_offset = ctx->tuple_buf_len / 2;
         }
         if (g_file_chunk_size != 0) { // 分片逻辑
             ret = do_comp_with_split_file(ctx, inbuf, src_len, outbuf, output_sz, &out_offset);
@@ -947,7 +1014,7 @@ static void *start_work_thread(void *arg)
     int multi = args->multi;
     int window_bits = args->window_bits;
     int level = args->level;
-    if (ctx->compress_or_decompress)
+    if (ctx->compress_or_decompress || g_file_chunk_size == 0)
         start_work(ctx, in_filename, out_filename, multi, window_bits, level);
     else
         start_work_decompress(ctx, in_filename, out_filename, multi, window_bits, level);

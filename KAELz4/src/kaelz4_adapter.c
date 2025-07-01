@@ -304,6 +304,7 @@ static void *compress_thread_func(void *arg)
 
 exit_thread:
     kaelz4_async_deinit();
+    task_queue->stop = 0;
     return NULL;
 }
 
@@ -394,6 +395,7 @@ static void *decompress_thread_func(void *arg)
 exit_thread:
     LZ4F_freeDecompressionContext(dctx);
     kaelz4_async_deinit();
+    task_queue->stop = 0;
     return NULL;
 }
 
@@ -461,13 +463,18 @@ static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index, task_qu
 
 static void kaelz4_task_queue_free(lz4_task_queue *task_queue)
 {
-    pthread_mutex_lock(&task_queue->mutex);
-    task_queue->stop = 1;
-    pthread_cond_signal(&task_queue->cond);
-    pthread_mutex_unlock(&task_queue->mutex);
 
-    if (!task_queue->is_polling)
+    if (!task_queue->is_polling) {
+        pthread_mutex_lock(&task_queue->mutex);
+        task_queue->stop = 1;
+        pthread_cond_signal(&task_queue->cond);
+        pthread_mutex_unlock(&task_queue->mutex);
+        while (task_queue->stop) {
+            pthread_cond_signal(&task_queue->cond);
+        }
+
         pthread_join(task_queue->worker_thread, NULL);
+    }
 
     pthread_mutex_destroy(&task_queue->mutex);
 
@@ -549,18 +556,14 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map)
         return NULL;
 
     sess->usr_map = usr_map;
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
     ret = kaelz4_task_queue_init(&sess->task_queue, 0, NULL);
     if (ret != 0) {
         free(sess);
         return NULL;
     }
-#endif
     ret = kaelz4_async_instances_init(&sess->ctrl, usr_map);
     if (ret != 0) {
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
         kaelz4_task_queue_free(&sess->task_queue);
-#endif
         free(sess);
         return NULL;
     }
@@ -572,9 +575,7 @@ void KAELZ4_destroy_async_compress_session(void *sess)
 {
     if (sess) {
         kaelz4_async_instances_deinit(((kaelz4_session *)sess)->ctrl);
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
         kaelz4_task_queue_free(&((kaelz4_session *)sess)->task_queue);
-#endif
         free(sess);
     }
 }
@@ -695,88 +696,77 @@ static int kaelz4_check_param_valid(const struct kaelz4_buffer_list *src, struct
     }
 
     result->dst_len = dst->buf[0].buf_len;
-    return 0;
+    return KAE_LZ4_SUCC;
 }
 
-int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                     lz4_async_callback callback, struct kaelz4_result *result)
+static int kaelz4_async_do_comp_in_session(kaelz4_session *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                           lz4_async_callback callback, struct kaelz4_result *result,
+                                           enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t* preferences_ptr)
 {
-    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
-        return KAE_LZ4_INVAL_PARA;
-    }
-
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
-    lz4_task_queue *task_queue = &((kaelz4_session *)sess)->task_queue;
-#endif
+    lz4_task_queue *task_queue = &sess->task_queue;
     lz4_async_task_t task = {0};
     task.src = src;
     task.dst = dst;
     task.callback = callback;
     task.result = result;
+    task.data_format = data_format;
 
-    if (result->src_size > SMALL_BLOCK_SIZE) {
-        task.data_format = KAELZ4_ASYNC_BLOCK;
+    if (preferences_ptr != NULL) {
+        task.preferences = *(const LZ4F_preferences_t *)preferences_ptr;
     }
 
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
-    if (task_queue->pi != task_queue->ci && !kaelz4_async_is_thread_do_comp_full(((kaelz4_session *)sess)->ctrl)) {
-        kaelz4_dequeue_process(((kaelz4_session *)sess)->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
+    if (task_queue->pi != task_queue->ci && !kaelz4_async_is_thread_do_comp_full(sess->ctrl)) {
+        kaelz4_dequeue_process(sess->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
     }
 
-    if (task_queue->pi != task_queue->ci || kaelz4_async_is_thread_do_comp_full(((kaelz4_session *)sess)->ctrl)) {
+    if (task_queue->pi != task_queue->ci || kaelz4_async_is_thread_do_comp_full(sess->ctrl)) {
         return kaelz4_enqueue(task_queue, &task);
     } else {
-#endif
-        return kaelz4_compress_async(((kaelz4_session *)sess)->ctrl, task.src, task.dst, task.callback, task.result,
+        return kaelz4_compress_async(sess->ctrl, task.src, task.dst, task.callback, task.result,
                                      task.data_format, &task.preferences);
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
     }
-#endif
+}
+
+
+int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                     lz4_async_callback callback, struct kaelz4_result *result)
+{
+    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+    if (result->src_size <= SMALL_BLOCK_SIZE) {
+        return kaelz4_async_do_comp_in_session(sess, src, dst, callback, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
+    }
+
+    return kaelz4_async_do_comp_in_session(sess, src, dst, callback, result, KAELZ4_ASYNC_BLOCK, NULL);
 }
 
 int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                            lz4_async_callback callback, struct kaelz4_result *result,
                                            const void *preferences_ptr)
 {
-    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
+    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
-    lz4_task_queue *task_queue = &((kaelz4_session *)sess)->task_queue;
-#endif
-    lz4_async_task_t task = {0};
-    task.src = src;
-    task.dst = dst;
-    task.callback = callback;
-    task.result = result;
-    task.data_format = KAELZ4_ASYNC_FRAME;
-    if (preferences_ptr != NULL) {
-        task.preferences = *(const LZ4F_preferences_t *)preferences_ptr;
-    }
-
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
-    if (task_queue->pi != task_queue->ci && !kaelz4_async_is_thread_do_comp_full(((kaelz4_session *)sess)->ctrl)) {
-        kaelz4_dequeue_process(((kaelz4_session *)sess)->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
-    }
-
-    if (task_queue->pi != task_queue->ci || kaelz4_async_is_thread_do_comp_full(((kaelz4_session *)sess)->ctrl)) {
-        return kaelz4_enqueue(task_queue, &task);
-    } else {
-#endif
-        return kaelz4_compress_async(((kaelz4_session *)sess)->ctrl, task.src, task.dst, task.callback, task.result,
-                                     task.data_format, &task.preferences);
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
-    }
-#endif
+    return kaelz4_async_do_comp_in_session(sess, src, dst, callback, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
 }
+
+int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                          lz4_async_callback callback, struct kaelz4_result *result)
+{
+    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    return kaelz4_async_do_comp_in_session(sess, src, dst, callback, result, KAELZ4_ASYNC_LZ77_RAW, NULL);
+}
+
 
 void KAELZ4_compress_async_polling_in_session(void *sess, int budget)
 {
     struct kaelz4_async_ctrl *ctrl = NULL;
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
     lz4_task_queue *task_queue = NULL;
-#endif
     int ret = 1;
     int cnt = 0;
 
@@ -784,17 +774,13 @@ void KAELZ4_compress_async_polling_in_session(void *sess, int budget)
         return;
 
     ctrl = ((kaelz4_session *)sess)->ctrl;
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
     task_queue = &((kaelz4_session *)sess)->task_queue;
-#endif
 
     while (ret > 0 && cnt < budget) {
         ret = kaelz4_async_compress_polling(ctrl, ASYNC_POLLING_DEFAULT_BUDGET);
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
         if (!kaelz4_async_is_thread_do_comp_full(ctrl)) {
             kaelz4_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
         }
-#endif
         cnt += ret;
     }
 }
@@ -802,7 +788,7 @@ void KAELZ4_compress_async_polling_in_session(void *sess, int budget)
 int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback,
                           struct kaelz4_result *result)
 {
-    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
+    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
@@ -816,7 +802,7 @@ int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_bu
 int KAELZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                 lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr)
 {
-    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
+    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
@@ -826,7 +812,7 @@ int KAELZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kae
 int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                             lz4_async_callback callback, struct kaelz4_result *result)
 {
-    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
+    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
@@ -836,9 +822,32 @@ int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_
 int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                   lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr)
 {
-    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != 0)) {
+    if (unlikely(kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
     return kaelz4_async_do_decomp(src, dst, callback, result, KAELZ4_ASYNC_FRAME, options_ptr);
+}
+
+size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len)
+{
+    size_t freg_cnt = (src_len > 0) ? ((src_len - 1) / SMALL_BLOCK_SIZE + 1) : 0;
+
+    return freg_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+}
+
+int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                 struct kaelz4_result *result)
+{
+    if (result->src_size <= SMALL_BLOCK_SIZE) {
+        return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
+    }
+
+    return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_BLOCK, NULL);
+}
+
+int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                 struct kaelz4_result *result, const void *preferences_ptr)
+{
+    return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
 }

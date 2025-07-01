@@ -5,7 +5,7 @@ export KAE_LZ4_COMP_TYPE=8
 
 sh build.sh kaelz4
 
-Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame")
+Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77")
 Datasets=("calgary" "itemdata" "dickens" "mozilla" "mr" "nci" "ooffice" "osdb" "reymont" "samba" "sao" "webster" "xml" "x-ray")
 Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
 BlockSize=("0" "4" "8" "16" "60" "64" "68" "128" "512" "1024" "2090" "10244")

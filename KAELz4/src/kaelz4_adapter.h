@@ -26,7 +26,6 @@ enum {
 #define SMALL_BLOCK_SIZE (64 * 1024)
 #define ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET 3
 #define ASYNC_POLLING_DEFAULT_BUDGET 1
-#define KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE TRUE  // 测试时延时打开次编译宏才能统计准确
 
 typedef struct {
     const struct kaelz4_buffer_list *src;
@@ -65,9 +64,7 @@ typedef struct {
 
 struct kaelz4_async_ctrl;
 typedef struct {
-#if defined(KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE) && (KAELZ4_ASYNC_POLLING_ENQUEUE_ENABLE == TRUE)
     lz4_task_queue task_queue;
-#endif
     iova_map_fn usr_map;
     struct kaelz4_async_ctrl *ctrl;
 } kaelz4_session;
@@ -96,4 +93,7 @@ struct kaelz4_async_ctrl *kaelz4_async_init(volatile int *stop, sw_compress_fn s
 void kaelz4_async_deinit(void);
 int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map);
 void kaelz4_async_instances_deinit(struct kaelz4_async_ctrl *ctrl);
+
+int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                struct kaelz4_result *result, enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 #endif

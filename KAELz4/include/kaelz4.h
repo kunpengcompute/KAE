@@ -71,6 +71,8 @@ typedef struct {
 #define KAE_LZ4_SET_FAIL 6
 #define KAE_LZ4_HW_TIMEOUT_FAIL 7
 
+#define KAE_LZ77_SEQ_DATA_SIZE_PER_64K (128UL * 1024UL)
+
 #define VERSION_STRUCT_LEN 100
 typedef struct {
     char productName[VERSION_STRUCT_LEN];
@@ -133,4 +135,11 @@ int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_
                             lz4_async_callback callback, struct kaelz4_result *result);
 int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                   lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
+size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
+int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                          lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                 struct kaelz4_result *result);
+int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                 struct kaelz4_result *result, const void *preferences_ptr);
 #endif

@@ -29,7 +29,7 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
         return KAE_LZ4_INVAL_PARA;
     }
 
-    if (config->is_sgl) {
+    if (config->q_node->is_sgl) {
         zc->seqStore.litStart = wd_get_first_sge_buf(config->lz4_data.literals_start);
     } else {
         zc->seqStore.litStart = config->lz4_data.literals_start;
@@ -37,7 +37,7 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
     zc->seqStore.lit = zc->seqStore.litStart;
     zc->seqStore.lit += config->lz4_data.lit_num;
 
-    if (config->is_sgl) {
+    if (config->q_node->is_sgl) {
         zc->seqStore.sequencesStart = wd_get_first_sge_buf(config->lz4_data.sequences_start);
     } else {
         zc->seqStore.sequencesStart = config->lz4_data.sequences_start;
@@ -275,14 +275,14 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
     struct kaelz4_result *result = compress_ctx->result;
     result->status = status;
     result->dst_len = compress_ctx->dst_len;
-    if (result->ibuf_crc != NULL && status == KAE_LZ4_SUCC) {
+    if (result->ibuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
         for (int i = 0; i < compress_ctx->src->buf_num; i++) {
             *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src->buf[i].data,
                                             compress_ctx->src->buf[i].buf_len);
         }
     }
 
-    if (result->obuf_crc != NULL && status == KAE_LZ4_SUCC) {
+    if (result->obuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
         *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->dst_len);
     }
 
@@ -295,7 +295,7 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
 }
 
 static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                  void *dest)
+                                  void *dest, struct kaelz4_priv_save_info *save_info)
 {
     unsigned int cur_buf_idx = 0;
     const BYTE* ip = (const BYTE*) source->buf[0].data;
@@ -410,7 +410,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
 // 1、对于非last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal信息更新至ctx中
 // 2、对于last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal生成last seq格式
 static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                           void *dest)
+                                           void *dest, struct kaelz4_priv_save_info *save_info)
 {
     unsigned int cur_buf_idx = 0;
     const BYTE* ip = (const BYTE*) source->buf[0].data;
@@ -451,7 +451,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         mlBase -= 1;
-        litLength += tempLiteralLength + req->compress_ctx->prev_last_lit_len;
+        litLength += tempLiteralLength + save_info->prev_last_lit_len;
         tempLiteralLength = 0;
 
         token = op++;
@@ -468,16 +468,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         // 满足生成first new sequence条件，继承prev subblock的last literal
-        if (req->compress_ctx->prev_last_lit_ptr != NULL) {
-            struct kaelz4_buffer *last_buf = &req->compress_ctx->src->buf[req->compress_ctx->prev_last_lit_buf_index];
-            size_t last_buf_remain = last_buf->data + last_buf->buf_len - req->compress_ctx->prev_last_lit_ptr;
-            kaelz4_wild_copy16_from_buffers(req->compress_ctx->src, &req->compress_ctx->prev_last_lit_buf_index,
-                                            (const BYTE **)&req->compress_ctx->prev_last_lit_ptr, &last_buf_remain,
-                                            op, req->compress_ctx->prev_last_lit_len);
-            op += req->compress_ctx->prev_last_lit_len;
-            litLength -= req->compress_ctx->prev_last_lit_len;
-            req->compress_ctx->prev_last_lit_ptr = NULL;
-            req->compress_ctx->prev_last_lit_len = 0;
+        if (save_info->prev_last_lit_ptr != NULL) {
+            struct kaelz4_buffer *last_buf = &save_info->src->buf[save_info->prev_last_lit_buf_index];
+            size_t last_buf_remain = last_buf->data + last_buf->buf_len - save_info->prev_last_lit_ptr;
+            kaelz4_wild_copy16_from_buffers(save_info->src, &save_info->prev_last_lit_buf_index,
+                                            (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain,
+                                            op, save_info->prev_last_lit_len);
+            op += save_info->prev_last_lit_len;
+            litLength -= save_info->prev_last_lit_len;
+            save_info->prev_last_lit_ptr = NULL;
+            save_info->prev_last_lit_len = 0;
         }
         U32 tmp_len = litLength + mlBase + 4;
         if (likely(tmp_len < ip_buf_remain)) {
@@ -582,16 +582,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
     // 非last subblock，刷新ctx中的prev subblock literal 信息
     if (req->last != 1) {
         // 本分块不满足rebuild new seq：1)subblock完全不可压，全是literal;2)三元组全是matchlen=0。本分块作为literal留给后续分块的first new seq继承，且存在跨多个分块情况
-        if (unlikely(req->compress_ctx->prev_last_lit_ptr != NULL)) {
-            req->compress_ctx->prev_last_lit_len += tempLiteralLength;
+        if (unlikely(save_info->prev_last_lit_ptr != NULL)) {
+            save_info->prev_last_lit_len += tempLiteralLength;
         } else { // 本分块满足rebuild new seq:记录尾部的literal部分信息，留给后续分块的first new seq继承
-            req->compress_ctx->prev_last_lit_ptr = (void *)ip;
-            req->compress_ctx->prev_last_lit_buf_index = req->buf_start_index + cur_buf_idx;
-            req->compress_ctx->prev_last_lit_len = tempLiteralLength;
+            save_info->prev_last_lit_ptr = (void *)ip;
+            save_info->prev_last_lit_buf_index = req->buf_start_index + cur_buf_idx;
+            save_info->prev_last_lit_len = tempLiteralLength;
         }
     } else { // last subblock，生成last seq
         // 继承prev subblock的last literal
-        tempLiteralLength += req->compress_ctx->prev_last_lit_len;
+        tempLiteralLength += save_info->prev_last_lit_len;
 
         token = op++;
         if (tempLiteralLength >= RUN_MASK) {
@@ -606,16 +606,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             *token = (BYTE)(tempLiteralLength << ML_BITS);
         }
 
-        if (req->compress_ctx->prev_last_lit_ptr != NULL) {
-            struct kaelz4_buffer *last_buf = &req->compress_ctx->src->buf[req->compress_ctx->prev_last_lit_buf_index];
-            size_t last_buf_remain = last_buf->data + last_buf->buf_len - req->compress_ctx->prev_last_lit_ptr;
-            kaelz4_wild_copy16_from_buffers(req->compress_ctx->src, &req->compress_ctx->prev_last_lit_buf_index,
-                                            (const BYTE **)&req->compress_ctx->prev_last_lit_ptr, &last_buf_remain,
-                                            op, req->compress_ctx->prev_last_lit_len);
-            op += req->compress_ctx->prev_last_lit_len;
-            tempLiteralLength -= req->compress_ctx->prev_last_lit_len;
-            req->compress_ctx->prev_last_lit_ptr = NULL;
-            req->compress_ctx->prev_last_lit_len = 0;
+        if (save_info->prev_last_lit_ptr != NULL) {
+            struct kaelz4_buffer *last_buf = &save_info->src->buf[save_info->prev_last_lit_buf_index];
+            size_t last_buf_remain = last_buf->data + last_buf->buf_len - save_info->prev_last_lit_ptr;
+            kaelz4_wild_copy16_from_buffers(save_info->src, &save_info->prev_last_lit_buf_index,
+                                            (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain,
+                                            op, save_info->prev_last_lit_len);
+            op += save_info->prev_last_lit_len;
+            tempLiteralLength -= save_info->prev_last_lit_len;
+            save_info->prev_last_lit_ptr = NULL;
+            save_info->prev_last_lit_len = 0;
         }
         wd_copy_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, tempLiteralLength);
         op += tempLiteralLength;
@@ -633,8 +633,16 @@ static void kaelz4_async_compress_cb(int status, void *param)
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
-    if (kaelz4_ctx->is_sgl)
-        wd_destory_sgl(kaelz4_ctx->q_node->kae_wd_queue, kaelz4_ctx->q_node->kae_queue_mem_pool, (void *)kaelz4_ctx->sgl);
+    if (kaelz4_ctx->q_node->is_sgl) {
+        if (kaelz4_ctx->src_sgl != NULL) {
+            wd_destory_sgl(kaelz4_ctx->q_node->kae_wd_queue, kaelz4_ctx->q_node->kae_queue_mem_pool, kaelz4_ctx->src_sgl);
+            kaelz4_ctx->src_sgl = NULL;
+        }
+        if (kaelz4_ctx->dst_sgl_usr != NULL) {
+            wd_destory_sgl(kaelz4_ctx->q_node->kae_wd_queue, kaelz4_ctx->q_node->kae_queue_mem_pool, kaelz4_ctx->dst_sgl_usr);
+            kaelz4_ctx->dst_sgl_usr = NULL;
+        }
+    }
 
     if (status != 0) {
         US_ERR("kaelz4_async_compress_cb status %d !\n", status);
@@ -663,13 +671,26 @@ static void kaelz4_async_compress_cb(int status, void *param)
     req->done = 1;
 }
 
-static void kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list *src)
+static void kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst)
 {
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
 
     op_data->in_len = 0;
-    wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, (void *)kz_ctx->sgl, src,
+    kz_ctx->src_sgl = kz_ctx->src_sgl_buf;
+    wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
                  (wd_map)kz_ctx->usr_map);
+
+    if (dst->buf_num) {
+        kz_ctx->dst_sgl_usr = kz_ctx->dst_sgl_buf;
+        wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
+                     (wd_map)kz_ctx->usr_map);
+        kz_ctx->output.sequence = kz_ctx->dst_sgl_usr;
+        kz_ctx->output.seq_sz = dst->buf[0].buf_len;
+
+    } else {
+        kz_ctx->output.sequence = kz_ctx->dst_sgl_kernel;
+        kz_ctx->output.seq_sz = COMP_BLOCK_SIZE;
+    }
     op_data->in_len += kz_ctx->do_comp_len;
     op_data->avail_out = KAEZIP_STREAM_CHUNK_OUT;
     op_data->flush   = kz_ctx->flush;
@@ -694,7 +715,7 @@ static void kaelz4_fill_flat_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_li
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 }
 
-static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *src, size_t srcSize, void *usr_data)
+static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *src, struct wd_buf_list *dst, size_t srcSize, void *usr_data)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
@@ -715,8 +736,8 @@ static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *sr
     kaelz4_ctx->callback = kaelz4_async_compress_cb;
     kaelz4_ctx->param = usr_data;
 
-    if (kaelz4_ctx->is_sgl)
-        kaelz4_fill_sgl_buffer(kaelz4_ctx, src);
+    if (kaelz4_ctx->q_node->is_sgl)
+        kaelz4_fill_sgl_buffer(kaelz4_ctx, src, dst);
     else
         kaelz4_fill_flat_buffer(kaelz4_ctx, src);
 
@@ -725,6 +746,17 @@ static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *sr
 
 static void kaelz4_find_and_free_kz_ctx(struct kaelz4_async_ctrl *ctrl, kaelz4_ctx_t *kz_ctx)
 {
+    if (kz_ctx->q_node->is_sgl) {
+        if (kz_ctx->src_sgl) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl);
+            kz_ctx->src_sgl = NULL;
+        }
+        if (kz_ctx->dst_sgl_usr) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr);
+            kz_ctx->dst_sgl_usr = NULL;
+        }
+    }
+
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
         if (ctrl->kz_ctx[i] == kz_ctx) {
             kaelz4_free_ctx(ctrl->kz_ctx[i]);
@@ -856,14 +888,14 @@ static int KAELZ4BlockFooterGen(unsigned char *dstPtr, uint32_t compressed_len)
 }
 
 static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                      void *dst_tmp)
+                                      void *dst_tmp, struct kaelz4_priv_save_info *save_info)
 {
     int ret = 0;
     int padding_len = 0;
     void *dst_after_frameheader = dst_tmp;
-    LZ4F_frameInfo_t frameinfo_ptr = req->compress_ctx->preferences.frameInfo;
+    LZ4F_frameInfo_t frameinfo_ptr = save_info->preferences.frameInfo;
 
-    if (req->compress_ctx->src->buf_num != 1) {
+    if (save_info->src->buf_num != 1) {
         frameinfo_ptr.contentChecksumFlag = LZ4F_noContentChecksum;
     }
     // 如果是第一个block块，添加frame头部
@@ -876,7 +908,7 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
 
     dst_tmp += 4;  // 直接往后偏移4个字节(KAELZ4BlockHeaderGen 的返回值), 预留block头的空间
     // 写入真实 block 数据
-    ret = kaelz4_triples_rebuild(req, source, dst_tmp);
+    ret = kaelz4_triples_rebuild(req, source, dst_tmp, save_info);
     if (ret < 0) {
         return ret;
     }
@@ -910,13 +942,27 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
     // 如果是最后一个block块，添加frame尾部
     if (req->last == 1) {
         int contentChecksum = frameinfo_ptr.contentChecksumFlag;
-        int len4 = KAELZ4FooterGen(dst_tmp, (unsigned char *)req->compress_ctx->src->buf[0].data,
-                                   req->compress_ctx->srcSize, contentChecksum);
+        int len4 = KAELZ4FooterGen(dst_tmp, (unsigned char *)save_info->src->buf[0].data,
+                                   save_info->src->buf[0].buf_len, contentChecksum);
         padding_len += len4;
     }
 
     ret += padding_len;  // 计算本次一共生成的数据总量
     return ret;
+}
+
+static int kaelz4_async_lz77_post_handle(struct kaelz4_async_req *req, const struct wd_buf_list *source,
+                                         void *dst_tmp, struct kaelz4_priv_save_info *save_info)
+{
+    struct kaelz4_seq_result *req_result = dst_tmp;
+
+    if (req->special_flag) {
+        req_result->seq_num = 0;
+    } else {
+        req_result->seq_num = req->zc.seqnum;
+    }
+
+    return KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
 }
 
 int kaelz4_async_is_thread_do_comp_full(struct kaelz4_async_ctrl *ctrl)
@@ -1011,7 +1057,7 @@ static int kaelz4_async_sw_compress(struct kaelz4_async_ctrl *ctrl, struct kaelz
     compress_ctx->status = KAE_LZ4_SUCC;
     if (compress_ctx->data_format == KAELZ4_ASYNC_FRAME && ctrl->sw_compress_frame != NULL) {
         ret = ctrl->sw_compress_frame(compress_ctx->dst->buf[0].data, compress_ctx->dstCapacity, compress_ctx->src->buf[0].data,
-                                             compress_ctx->srcSize, &compress_ctx->preferences);
+                                             compress_ctx->srcSize, &compress_ctx->save_info.preferences);
     } else if (compress_ctx->data_format <= KAELZ4_ASYNC_BLOCK && ctrl->sw_compress != NULL) {
         ret = ctrl->sw_compress(compress_ctx->src->buf[0].data, compress_ctx->dst->buf[0].data, compress_ctx->srcSize,
                                        compress_ctx->dstCapacity);
@@ -1040,7 +1086,8 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
 
         if (likely(compress_ctx->status == KAE_LZ4_SUCC)) {
             ret = compress_ctx->kaelz4_post_process_handle(req, &req->src,
-                                                           compress_ctx->dst->buf[0].data + compress_ctx->dst_len);
+                                                           compress_ctx->dst->buf[0].data + compress_ctx->dst_len,
+                                                           &compress_ctx->save_info);
             if (ret < 0) {
                 US_ERR("kaelz4_post_process_handle err. ret=%d\n", ret);
             }
@@ -1173,7 +1220,7 @@ static int kaelz4_send_async_compress(struct kaelz4_async_ctrl *ctrl, struct kae
         return ret;
     }
     size_t compress_size = req->src_size - MFLIMIT;
-    ret = kaelz4_compress_async_impl(&req->zc, &req->src, compress_size, (void *)req);
+    ret = kaelz4_compress_async_impl(&req->zc, &req->src, &req->dst, compress_size, (void *)req);
     if (unlikely(ret != KAE_LZ4_SUCC)) {
         kaelz4_find_and_free_kz_ctx(ctrl, (kaelz4_ctx_t *)req->zc.kaeConfig);
         ctrl->ctx_index = (ctrl->ctx_index + MAX_NUM_IN_COMP - 1) % MAX_NUM_IN_COMP;
@@ -1185,8 +1232,22 @@ static int kaelz4_send_async_compress(struct kaelz4_async_ctrl *ctrl, struct kae
     return ret;
 }
 
-static void kaelz4_fill_hw_req_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *src,
-                                        unsigned int *index, size_t *offset, size_t rem_len)
+static void kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *dst,
+                                            enum kae_lz4_async_data_format data_format)
+{
+    req->dst.buf = req->dst_buffers;
+    req->dst.buf_num = 0;
+    req->dst.usr_data = dst->usr_data;
+    if (data_format == KAELZ4_ASYNC_LZ77_RAW) {
+        req->dst.buf_num = 1;
+        struct kaelz4_seq_result *seq_result = dst->buf[0].data + req->idx * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        req->dst.buf[0].data = seq_result->seq_start;
+        req->dst.buf[0].buf_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num);
+    }
+}
+
+static void kaelz4_fill_hw_req_src_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *src,
+                                            unsigned int *index, size_t *offset, size_t rem_len)
 {
     size_t req_size;
 
@@ -1266,7 +1327,8 @@ static int kaelz4_async_compress_process(struct kaelz4_async_ctrl *ctrl, void *a
         req->done = 0;
         req->compress_ctx = compress_ctx;
         req->next = NULL;
-        kaelz4_fill_hw_req_buf_list(req, compress_ctx->src, &buf_index, &buf_offset, remainingLength);
+        kaelz4_fill_hw_req_src_buf_list(req, compress_ctx->src, &buf_index, &buf_offset, remainingLength);
+        kaelz4_fill_hw_req_dst_buf_list(req, compress_ctx->dst, compress_ctx->data_format);
         remainingLength -= req->src_size;
         // 最后一块实际下发给芯片的长度是 src_size - MFLIMIT
         if (remainingLength == 0) {
@@ -1309,6 +1371,7 @@ const kaelz4_post_process_handle_t g_post_process_handle[KAELZ4_ASYNC_BUTT] = {
     [KAELZ4_ASYNC_SMALL_BLOCK] = kaelz4_triples_rebuild,
     [KAELZ4_ASYNC_BLOCK] = kaelz4_triples_rebuild_64Kblock,
     [KAELZ4_ASYNC_FRAME] = kaelz4_async_frame_padding,
+    [KAELZ4_ASYNC_LZ77_RAW] = kaelz4_async_lz77_post_handle,
 };
 
 int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
@@ -1325,18 +1388,18 @@ int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_bu
     compress_ctx->dstCapacity = result->dst_len;
     compress_ctx->src = src;
     compress_ctx->srcSize = result->src_size;
-    compress_ctx->recv_cnt = 0;
     compress_ctx->callback = callback;
     compress_ctx->result = result;
     compress_ctx->data_format = data_format;
-    compress_ctx->preferences = *ptr;
     compress_ctx->kaelz4_post_process_handle = g_post_process_handle[data_format];
     compress_ctx->dst_len = 0;
     compress_ctx->next = NULL;
     compress_ctx->status = KAE_LZ4_SUCC;
     compress_ctx->req_list = NULL;
-    compress_ctx->prev_last_lit_ptr = NULL;
-    compress_ctx->prev_last_lit_len = 0;
+    compress_ctx->save_info.preferences = *ptr;
+    compress_ctx->save_info.prev_last_lit_ptr = NULL;
+    compress_ctx->save_info.prev_last_lit_len = 0;
+    compress_ctx->save_info.src = src;
 
     if (ctrl->ctx_head) {
         ctrl->tail->next = compress_ctx;
@@ -1366,4 +1429,59 @@ err_callback:
     result->dst_len = 0;
     callback(result);
     return KAE_LZ4_ALLOC_FAIL;
+}
+
+int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
+                                struct kaelz4_result *result, enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
+{
+    size_t remainingLength = result->src_size; // 该值用于保存剩余的待压缩数据长度
+    unsigned int buf_index = 0;
+    size_t buf_offset = 0;
+    size_t dst_len = 0;
+    int idx = 0;
+    struct kaelz4_seq_result *seq_result = tuple_buf->buf[0].data;
+    struct kaelz4_priv_save_info save_info = {0};
+    int ret;
+
+    save_info.src = src;
+    if (ptr)
+        save_info.preferences = *ptr;
+
+    while (remainingLength) {
+        struct kaelz4_async_req req;
+
+        req.special_flag = 0;
+        req.last = 0;
+        req.idx = idx;
+        kaelz4_fill_hw_req_src_buf_list(&req, src, &buf_index, &buf_offset, remainingLength);
+        remainingLength -= req.src_size;
+        // 最后一块实际下发给芯片的长度是 src_size - MFLIMIT
+        if (remainingLength == 0) {
+            req.last = 1;
+        }
+        req.zc.seqStore.sequencesStart = (seqDef *)seq_result->seq_start;
+        req.zc.seqnum = seq_result->seq_num;
+        ret = g_post_process_handle[data_format](&req, &req.src, dst->buf[0].data + dst_len, &save_info);
+        if (ret <= 0) {
+            result->status = KAE_LZ4_COMP_FAIL;
+            return KAE_LZ4_COMP_FAIL;
+        }
+
+        idx++;
+        dst_len += ret;
+        seq_result = (void *)seq_result + KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+    }
+
+    if (result->ibuf_crc != NULL) {
+        for (int i = 0; i < src->buf_num; i++) {
+            *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, src->buf[i].data, src->buf[i].buf_len);
+        }
+    }
+
+    if (result->obuf_crc != NULL) {
+        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, dst->buf[0].data, dst_len);
+    }
+
+    result->dst_len = dst_len;
+    return KAE_LZ4_SUCC;
 }

@@ -30,6 +30,8 @@
 
 #define REQ_BUFFER_MAX 60   // uadk支持最大的sgl buf数量
 
+#define MAX_NUM_IN_COMP 4  // 每个线程最多允许同时进行的压缩任务数
+
 #if !defined(LZ4_memcpy)
 #  if defined(__GNUC__) && (__GNUC__ >= 4)
 #    define LZ4_memcpy(dst, src, size) __builtin_memcpy(dst, src, size)
@@ -49,8 +51,16 @@ typedef union { U16 u16; U32 u32; reg_t uArch; } __attribute__((packed)) LZ4_una
 struct kaelz4_compress_ctx;
 struct kaelz4_async_req;
 
+struct kaelz4_priv_save_info {
+    void *prev_last_lit_ptr; // 用户输入数据>64K需要分块、返回BLOCK格式、现有保序返回切块压缩结果的约束下，记录前一个分块的last literal信息
+    size_t prev_last_lit_len;
+    unsigned int prev_last_lit_buf_index; // 用户输入数据>64K需要分块、返回BLOCK格式、现有保序返回切块压缩结果的约束下，记录前一个分块的last literal信息
+    const struct kaelz4_buffer_list *src;
+    LZ4F_preferences_t preferences;
+};
+
 typedef int (*kaelz4_post_process_handle_t)(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                            void *dest);
+                                            void *dest, struct kaelz4_priv_save_info *save_info);
 
 struct kaelz4_compress_ctx {
     size_t srcSize;
@@ -58,24 +68,27 @@ struct kaelz4_compress_ctx {
     size_t dst_len;
     const struct kaelz4_buffer_list *src;
     struct kaelz4_buffer_list *dst;
-    void *prev_last_lit_ptr; // 用户输入数据>64K需要分块、返回BLOCK格式、现有保序返回切块压缩结果的约束下，记录前一个分块的last literal信息
-    size_t prev_last_lit_len;
-    unsigned int prev_last_lit_buf_index; // 用户输入数据>64K需要分块、返回BLOCK格式、现有保序返回切块压缩结果的约束下，记录前一个分块的last literal信息
-    unsigned int recv_cnt;
+    struct kaelz4_priv_save_info save_info;
     lz4_async_callback callback;
     struct kaelz4_result *result;
     enum kae_lz4_async_data_format data_format;
-    LZ4F_preferences_t preferences;
     kaelz4_post_process_handle_t kaelz4_post_process_handle;
     struct kaelz4_async_req *req_list;
     struct kaelz4_compress_ctx *next;
     int status;
 };
 
+struct kaelz4_seq_result {
+    unsigned int seq_num;
+    unsigned char seq_start[];
+};
+
 struct kaelz4_async_req {
     LZ4_CCtx zc;
     struct wd_buf_list src;
+    struct wd_buf_list dst;
     struct wd_buf buffers[REQ_BUFFER_MAX];
+    struct wd_buf dst_buffers[REQ_BUFFER_MAX];
     size_t src_size;
     U32 idx;
     U32 special_flag;
@@ -86,7 +99,6 @@ struct kaelz4_async_req {
     struct kaelz4_async_req *next;
 };
 
-#define MAX_NUM_IN_COMP 2  // 每个线程最多允许同时进行的压缩任务数
 struct kaelz4_async_ctrl {
     struct kaelz4_compress_ctx *ctx_head;
     struct kaelz4_compress_ctx *tail;
