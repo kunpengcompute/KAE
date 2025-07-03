@@ -52,4 +52,5 @@ void register_lz4_frame_algorithm(void);
 void register_lz4async_block_algorithm(void);
 void register_lz4async_frame_algorithm(void);
 void register_lz4async_lz77_algorithm(void);
+void register_lz4async_lz77_frame_algorithm(void);
 #endif

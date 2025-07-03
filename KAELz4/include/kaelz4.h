@@ -129,7 +129,7 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                           lz4_async_callback callback, struct kaelz4_result *result);
 /**
- * @brief: fream compress async api
+ * @brief: frame compress async api
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -162,7 +162,7 @@ int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, 
 int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                             lz4_async_callback callback, struct kaelz4_result *result);
 /**
- * @brief: fream compress async api
+ * @brief: frame compress async api
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -204,7 +204,7 @@ int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list
  */
 void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
 /**
- * @brief: fream compress async api
+ * @brief: frame compress async api
  * @param: sess : session
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data, only support buf_num == 1 now.

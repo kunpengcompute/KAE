@@ -609,7 +609,8 @@ static inline int kaelz4_enqueue(lz4_task_queue *task_queue, lz4_async_task_t *t
 
 static unsigned int kaelz4_get_queue_id(lz4_task_queue *task_queue, unsigned int num)
 {
-    unsigned int index = 0;
+    static unsigned int index = 0;
+#ifdef KAE_LZ4_FIND_MIN_DEPTH_QUEUE
     unsigned int min = 0xFFFFFFFF;
     for (int i = 0; i < num; i++) {
         unsigned int depth = (task_queue[i].pi + KAELZ4_TASK_QUEUE_DEPTH - task_queue[i].ci) % KAELZ4_TASK_QUEUE_DEPTH;
@@ -621,6 +622,9 @@ static unsigned int kaelz4_get_queue_id(lz4_task_queue *task_queue, unsigned int
             }
         }
     }
+#else  // RR
+    index = (index + 1) % num;
+#endif
     return index;
 }
 

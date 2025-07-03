@@ -11,7 +11,7 @@
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
 
-#define MAX_KAE_CTX_DEPTH 2
+#define MAX_KAE_CTX_DEPTH 64
 
 enum kaelz4_comp_status {
     KAEZIP_COMP_INIT = 0,

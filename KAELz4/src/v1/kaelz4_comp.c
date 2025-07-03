@@ -1296,7 +1296,6 @@ static int kaelz4_async_compress_process(struct kaelz4_async_ctrl *ctrl, void *a
 
     // 转换衔接
     size_t srcSize = compress_ctx->srcSize;
-    size_t dstCapacity = compress_ctx->dstCapacity;
     unsigned int buf_index = 0;
     size_t buf_offset = 0;
 
@@ -1304,11 +1303,9 @@ static int kaelz4_async_compress_process(struct kaelz4_async_ctrl *ctrl, void *a
     size_t remainingLength = srcSize; // 该值用于保存剩余的待压缩数据长度
 
     // 针对ZSTD和LZ4的matchlength转换定义的数据结构
-    US_DEBUG("INPUTSIZE:%ld, dstCapacity:%ld, maxOutputSize:%ld.", compress_ctx->srcSize, dstCapacity, compress_ctx->dstCapacity);
     // 针对ZSTD 128K remaining会覆盖CTX的问题进行的拆分(具体按64K切分，对于末尾的literal，进行src前移，放到下一轮再压)
     int idx = 0;
     while (remainingLength) {
-        US_DEBUG("remainingLength:%ld, hardware:%d\n", remainingLength, HARDWARE_BLOCK_SIZE);
         struct kaelz4_async_req *req = (struct kaelz4_async_req *)kae_malloc(sizeof(struct kaelz4_async_req));
         if (unlikely(req == NULL)) {
             US_ERR("Alloc kaelz4_async_req failed!\n");

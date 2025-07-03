@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <arm_acle.h>
 #include <arm_neon.h>
+#include "kaelz4_ctx.h"
 #include "uadk/v1/wd_sgl.h"
 
 #define TOKEN_NUM_CONTROL 0 // 用于控制生成压缩块中三元组数目，来保证解压速度（对齐实际match length需+3）
@@ -30,7 +31,7 @@
 
 #define REQ_BUFFER_MAX 60   // uadk支持最大的sgl buf数量
 
-#define MAX_NUM_IN_COMP 4  // 每个线程最多允许同时进行的压缩任务数
+#define MAX_NUM_IN_COMP MAX_KAE_CTX_DEPTH  // 每个线程最多允许同时进行的压缩任务数
 
 #if !defined(LZ4_memcpy)
 #  if defined(__GNUC__) && (__GNUC__ >= 4)

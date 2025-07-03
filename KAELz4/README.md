@@ -35,12 +35,13 @@ yum install -y make kernel-devel libtool numactl-devel openssl-devel lz4-devel l
 ```
 
 ## 三、接口函数签名和参数说明
-KAELz4异步接口一共支持3种模式，polling模式压缩接口，自定义后处理模式接口和通用模式压缩接口。
+KAELz4异步接口一共支持2种模式，polling模式压缩接口、非polling模式压缩接口。
+一共支持3种压缩数据格式：block、frame、lz77_raw：其中blcok与frame格式与社区lz4标准block\frame格式兼容；lz77_raw格式需要调用对应的后处理接口进行转换成标准block\frame格式。
+以下章节分别介绍不同polling模式下，不同数据格式的接口组合方式。
 
-
-### 3.1、polling模式异步压缩接口
+### 3.1、polling模式下lz77_raw数据处理成标准lz4数据格式接口说明
+本小节介绍了polling模式下，输出lz77_raw格式数据所需的相关接口，以及将lz77_raw格式数据转换为lz4标准block\frame格式的接口
 #### 3.1.1、相关结构体
-
 ```c
 // 基本回调数据格式
 struct kaelz4_result {
@@ -65,9 +66,7 @@ struct kaelz4_buffer_list {
     void *usr_data;
 };
 ```
-
 #### 3.1.2、用户自定义函数
-
 ```c
 // 压缩任务完成后，将调用该回调函数。回调压缩的结果
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -75,7 +74,6 @@ typedef void (*lz4_async_callback)(struct kaelz4_result *result);
 // 逻辑地址与物理地址转换函数
 typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 ```
-
 #### 3.1.3、初始化session会话
 ```
 /**
@@ -86,264 +84,6 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 ```
 #### 3.1.4、压缩
-```
-/**
- * @brief: block compress async api
- * @param: sess [IN] : this compression task session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
- * @return: 0 success, other fail
- * /
-int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
-
-/**
- * @brief: frame compress async api
- * @param: sess [IN] : this compression task session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
- * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
- * @return: 0 success, other fail
- * /
-int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
-```
-#### 3.1.5、主动polling压缩结果
-```
-/**
- * @brief: polling compression results by session
- * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses 
- * @return: void *sess
- * /
-void KAELZ4_compress_async_polling_in_session(void *sess);
-```
-#### 3.1.6、清理session会话
-```
-void KAELZ4_destroy_async_compress_session(void *sess);
-```
-#### 3.1.7、polling接口整体使用示例Demo
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <lz4.h>
-#include <lz4frame.h>
-#include <unistd.h>
-#include <sys/stat.h>
-
-static int g_has_done = 0; // 异步回调是否完成。需要初始化为0。
-
-struct my_custom_data {
-    void *src;
-    void *dst;
-    void *src_decompd;
-    size_t src_len;
-    size_t dst_len;
-    size_t src_decompd_len;
-};
-
-// 随机生成256KB的数据
-static void generate_random_data(void *data, size_t size) {
-    unsigned char *bytes = (unsigned char *)data;
-    for (size_t i = 0; i < size; i++) {
-        bytes[i] = rand() % 256;  // 随机生成字节
-    }
-}
-
-static void compression_callback2(struct kaelz4_result *result) {
-    if (result->status != 0) {
-        printf("Compression failed with status: %d\n", result->status);
-        return;
-    }
-
-    // 在回调中获取压缩后的数据
-    struct my_custom_data *my_data = (struct my_custom_data *)result->user_data;
-    void *compressed_data = my_data->dst;
-    size_t compressed_size = result->dst_len;
-
-    my_data->dst_len = compressed_size;
-
-    // 使用LZ4解压缩数据
-    size_t tmp_src_len = result->src_size * 10;
-    // 为解压数据分配内存
-    void *dst_buffer = malloc(tmp_src_len);
-    if (!dst_buffer) {
-        printf("Memory allocation failed for decompressed data.\n");
-        return;
-    }
-
-    LZ4F_decompressionContext_t dctx;
-    LZ4F_createDecompressionContext(&dctx, 100);
-    int ret = LZ4F_decompress(dctx, dst_buffer, &tmp_src_len,
-                                            compressed_data, &compressed_size, NULL);
-    if (ret < 0) {
-        printf("Decompression failed with error code: %d\n", ret);
-        free(dst_buffer);
-        return;
-    }
-    my_data->src_decompd = dst_buffer;
-    my_data->src_decompd_len = tmp_src_len;
-
-    if (my_data->src_decompd_len != my_data->src_len) {
-        printf("Test Error: 解压后与原始长度不一样. result->src_size=%ld   原始长度=%ld   压缩后解压长度=%ld \n",
-            result->src_size,
-            my_data->src_len,
-            my_data->src_decompd_len);
-    }
-
-    // 比较解压后的数据和原始数据
-    if (memcmp(my_data->src_decompd, my_data->src, result->src_size) == 0) {
-        printf("Test Success.\n");
-    } else {
-        printf("Test Error:Decompressed data does not match the original data.\n");
-    }
-
-    // 释放解压后的数据
-    free(dst_buffer);
-    g_has_done = 1;
-}
-
-static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
-{
-    g_has_done = 0;
-    size_t src_len = 258 * 1024;  // 256KB
-    void *inbuf = malloc(src_len);
-    if (!inbuf) {
-        printf("Memory allocation failed for input data.\n");
-        return -1;
-    }
-    // 生成随机数据
-    generate_random_data(inbuf, src_len);
-
-    // 为压缩数据分配内存
-    size_t compressed_size = LZ4F_compressBound(src_len, NULL);
-    void *compressed_data = malloc(compressed_size);
-    if (!compressed_data) {
-        printf("Memory allocation failed for compressed data.\n");
-        free(inbuf);
-        return -1;
-    }
-
-    // 初始化LZ4F压缩的参数
-    LZ4F_preferences_t preferences = {0};
-    preferences.frameInfo.blockSizeID = LZ4F_max64KB;  // 设定块大小
-    if (contentChecksumFlag) {
-        preferences.frameInfo.contentChecksumFlag = LZ4F_contentChecksumEnabled;
-    }
-    if (blockChecksumFlag) {
-        preferences.frameInfo.blockChecksumFlag = LZ4F_blockChecksumEnabled;
-    }
-    if (contentSizeFlag) {
-        preferences.frameInfo.contentSize = src_len;
-    }
-
-    void *sess = KAELZ4_create_async_compress_session(NULL);
-
-    // 异步压缩
-    struct kaelz4_result result = {0};
-    struct my_custom_data mydata = {0};
-
-    struct kaelz4_buffer_list src = {0};
-    struct kaelz4_buffer src_buf[128];
-    src.usr_data = &mydata;
-    src.buf_num = 1;
-    src.buf = src_buf;
-    src.buf[0].data = inbuf;
-    src.buf[0].buf_len = src_len;
-
-    struct kaelz4_buffer dst_buf[128];
-    struct kaelz4_buffer_list dst = {0};
-    dst.buf_num = 1;
-    dst.buf = dst_buf;
-    dst.buf[0].data = compressed_data;
-    dst.buf[0].buf_len = compressed_size;
-
-    mydata.src = inbuf;
-    mydata.src_len = src_len;
-    mydata.dst = compressed_data;
-    result.user_data = &mydata;
-    result.src_size = src_len;
-    result.dst_len = compressed_size;
-
-    int compression_status = KAELZ4_compress_frame_async_in_session(sess, &src, &dst,
-                                                      compression_callback2, &result, &preferences);
-
-    if (compression_status != 0) {
-        printf("Compression failed with error code: %d\n", compression_status);
-        free(inbuf);
-        free(compressed_data);
-        return -1;
-    }
-
-    while (g_has_done != 1) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
-        usleep(100);
-    }
-    KAELZ4_destroy_async_compress_session(sess);
-
-    return compression_status;
-}
-int main()
-{
-    return test_frame_polling(0, 0, 0);
-}
-```
-```shell
-gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -o kaelz4_polling_test
-export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
-./kaelz4_polling_test # 输出 Test Success.
-```
-
-### 3.2、自定义时机对硬件lz77数据进行后处理模式
-#### 3.2.1、相关结构体
-```c
-// 基本回调数据格式
-struct kaelz4_result {
-    int status; # 压缩任务状态。详细说明见第四节-错误码说明
-    unsigned int rsvd; # 保留字段
-    void *user_data; # 用户调用异步接口时传入的自定义数据指针
-    size_t src_size; # 压缩任务原始数据总大小
-    size_t dst_len; # 传入时表示目标buffer的大小，要求大于compressBound(srcLen)，回调时表示压缩后大小
-    uint32_t *ibuf_crc; # 存放输入数据CRC32校验的指针。如果存在，将对输入数据计算CRC32校验
-    uint32_t *obuf_crc; # 存放压缩数据CRC32校验的指针。如果存在，将对压缩后的数据计算CRC32校验
-};
-
-// SGL相关数据格式
-struct kaelz4_buffer {
-    size_t buf_len;
-    void *data;
-};
-struct kaelz4_buffer_list {
-    unsigned int buf_num;
-    unsigned int rsvd;
-    struct kaelz4_buffer *buf;
-    void *usr_data;
-};
-```
-
-#### 3.2.2、用户自定义函数
-
-```c
-// 压缩任务完成后，将调用该回调函数。回调压缩的结果
-typedef void (*lz4_async_callback)(struct kaelz4_result *result);
-
-// 逻辑地址与物理地址转换函数
-typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
-```
-
-#### 3.2.3、初始化session会话
-```
-/**
- * @brief: frame compress async api
- * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
- * @return: void *sess: compression session
- * /
-void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
-```
-#### 3.2.4、压缩
 ```
 /**
  * @brief: Get tuple buffer length by src length.
@@ -363,7 +103,7 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
 int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, lz4_async_callback callback, struct kaelz4_result *result);
 
 ```
-#### 3.2.5、主动polling压缩结果
+#### 3.1.5、主动polling压缩结果
 ```
 /**
  * @brief: polling compression results by session
@@ -372,7 +112,7 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
  * /
 void KAELZ4_compress_async_polling_in_session(void *sess);
 ```
-#### 3.2.6、主动对lz77数据进行格式转换
+#### 3.1.6、对lz77_raw数据进行格式转换
 ```
 /**
  * @brief: rebuild lz77 data to block
@@ -395,12 +135,12 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
  */
 int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, struct kaelz4_buffer_list *dst, struct kaelz4_result *result, const void *preferences_ptr);
 ```
-
-#### 3.2.7、清理session会话
+#### 3.1.7、清理session会话
 ```
 void KAELZ4_destroy_async_compress_session(void *sess);
 ```
-#### 3.2.8、lz77格式后处理接口整体使用示例Demo
+#### 3.1.8、整体使用示例Demo
+本demo使用polling模式接口，将测试文件压缩为lz77_raw数据格式，随后转换成标准lz4的block数据格式，最后通过解压转换为原始文件。
 ```c
 #include <stdio.h>
 #include <stdlib.h>
@@ -763,8 +503,268 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 # 建议在KAELz4/test/kzip 目录测试运行 ./kaelz4_lz77_raw_dataformat_test
 ```
 
-### 3.3、通用模式异步压缩接口
+### 3.2、polling模式异步压缩接口
+本小节介绍了polling模式下，将数据压缩为lz4标准的block\frame格式所需的接口
+#### 3.2.1、相关结构体
 
+```c
+// 基本回调数据格式
+struct kaelz4_result {
+    int status; # 压缩任务状态。详细说明见第四节-错误码说明
+    unsigned int rsvd; # 保留字段
+    void *user_data; # 用户调用异步接口时传入的自定义数据指针
+    size_t src_size; # 压缩任务原始数据总大小
+    size_t dst_len; # 传入时表示目标buffer的大小，要求大于compressBound(srcLen)，回调时表示压缩后大小
+    uint32_t *ibuf_crc; # 存放输入数据CRC32校验的指针。如果存在，将对输入数据计算CRC32校验
+    uint32_t *obuf_crc; # 存放压缩数据CRC32校验的指针。如果存在，将对压缩后的数据计算CRC32校验
+};
+
+// SGL相关数据格式
+struct kaelz4_buffer {
+    size_t buf_len;
+    void *data;
+};
+struct kaelz4_buffer_list {
+    unsigned int buf_num;
+    unsigned int rsvd;
+    struct kaelz4_buffer *buf;
+    void *usr_data;
+};
+```
+#### 3.2.2、用户自定义函数
+
+```c
+// 压缩任务完成后，将调用该回调函数。回调压缩的结果
+typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+
+// 逻辑地址与物理地址转换函数
+typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
+```
+#### 3.2.3、初始化session会话
+```
+/**
+ * @brief: frame compress async api
+ * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
+ * @return: void *sess: compression session
+ * /
+void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
+```
+#### 3.2.4、压缩
+```
+/**
+ * @brief: block compress async api
+ * @param: sess [IN] : this compression task session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ * /
+int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
+
+/**
+ * @brief: frame compress async api
+ * @param: sess [IN] : this compression task session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @return: 0 success, other fail
+ * /
+int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+```
+#### 3.2.5、主动polling压缩结果
+```
+/**
+ * @brief: polling compression results by session
+ * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses 
+ * @return: void *sess
+ * /
+void KAELZ4_compress_async_polling_in_session(void *sess);
+```
+#### 3.2.6、清理session会话
+```
+void KAELZ4_destroy_async_compress_session(void *sess);
+```
+#### 3.2.7、polling接口整体使用示例Demo
+本demo使用polling模式接口，通过初始化session上下文，调用frame格式异步压缩接口，
+接着主动polling压缩结果，最后在callback回调函数中取得frame格式的压缩结果，并将压缩结果解压为原始数据。
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <lz4.h>
+#include <lz4frame.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
+static int g_has_done = 0; // 异步回调是否完成。需要初始化为0。
+
+struct my_custom_data {
+    void *src;
+    void *dst;
+    void *src_decompd;
+    size_t src_len;
+    size_t dst_len;
+    size_t src_decompd_len;
+};
+
+// 随机生成256KB的数据
+static void generate_random_data(void *data, size_t size) {
+    unsigned char *bytes = (unsigned char *)data;
+    for (size_t i = 0; i < size; i++) {
+        bytes[i] = rand() % 256;  // 随机生成字节
+    }
+}
+
+static void compression_callback2(struct kaelz4_result *result) {
+    if (result->status != 0) {
+        printf("Compression failed with status: %d\n", result->status);
+        return;
+    }
+
+    // 在回调中获取压缩后的数据
+    struct my_custom_data *my_data = (struct my_custom_data *)result->user_data;
+    void *compressed_data = my_data->dst;
+    size_t compressed_size = result->dst_len;
+
+    my_data->dst_len = compressed_size;
+
+    // 使用LZ4解压缩数据
+    size_t tmp_src_len = result->src_size * 10;
+    // 为解压数据分配内存
+    void *dst_buffer = malloc(tmp_src_len);
+    if (!dst_buffer) {
+        printf("Memory allocation failed for decompressed data.\n");
+        return;
+    }
+
+    LZ4F_decompressionContext_t dctx;
+    LZ4F_createDecompressionContext(&dctx, 100);
+    int ret = LZ4F_decompress(dctx, dst_buffer, &tmp_src_len,
+                                            compressed_data, &compressed_size, NULL);
+    if (ret < 0) {
+        printf("Decompression failed with error code: %d\n", ret);
+        free(dst_buffer);
+        return;
+    }
+    my_data->src_decompd = dst_buffer;
+    my_data->src_decompd_len = tmp_src_len;
+
+    if (my_data->src_decompd_len != my_data->src_len) {
+        printf("Test Error: 解压后与原始长度不一样. result->src_size=%ld   原始长度=%ld   压缩后解压长度=%ld \n",
+            result->src_size,
+            my_data->src_len,
+            my_data->src_decompd_len);
+    }
+
+    // 比较解压后的数据和原始数据
+    if (memcmp(my_data->src_decompd, my_data->src, result->src_size) == 0) {
+        printf("Test Success.\n");
+    } else {
+        printf("Test Error:Decompressed data does not match the original data.\n");
+    }
+
+    // 释放解压后的数据
+    free(dst_buffer);
+    g_has_done = 1;
+}
+
+static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
+{
+    g_has_done = 0;
+    size_t src_len = 256 * 1024;  // 256KB
+    void *inbuf = malloc(src_len);
+    if (!inbuf) {
+        printf("Memory allocation failed for input data.\n");
+        return -1;
+    }
+    // 生成随机数据
+    generate_random_data(inbuf, src_len);
+
+    // 为压缩数据分配内存
+    size_t compressed_size = LZ4F_compressBound(src_len, NULL);
+    void *compressed_data = malloc(compressed_size);
+    if (!compressed_data) {
+        printf("Memory allocation failed for compressed data.\n");
+        free(inbuf);
+        return -1;
+    }
+
+    // 初始化LZ4F压缩的参数
+    LZ4F_preferences_t preferences = {0};
+    preferences.frameInfo.blockSizeID = LZ4F_max64KB;  // 设定块大小
+    if (contentChecksumFlag) {
+        preferences.frameInfo.contentChecksumFlag = LZ4F_contentChecksumEnabled;
+    }
+    if (blockChecksumFlag) {
+        preferences.frameInfo.blockChecksumFlag = LZ4F_blockChecksumEnabled;
+    }
+    if (contentSizeFlag) {
+        preferences.frameInfo.contentSize = src_len;
+    }
+
+    void *sess = KAELZ4_create_async_compress_session(NULL);
+
+    // 异步压缩
+    struct kaelz4_result result = {0};
+    struct my_custom_data mydata = {0};
+
+    struct kaelz4_buffer_list src = {0};
+    struct kaelz4_buffer src_buf[128];
+    src.usr_data = &mydata;
+    src.buf_num = 1;
+    src.buf = src_buf;
+    src.buf[0].data = inbuf;
+    src.buf[0].buf_len = src_len;
+
+    struct kaelz4_buffer dst_buf[128];
+    struct kaelz4_buffer_list dst = {0};
+    dst.buf_num = 1;
+    dst.buf = dst_buf;
+    dst.buf[0].data = compressed_data;
+    dst.buf[0].buf_len = compressed_size;
+
+    mydata.src = inbuf;
+    mydata.src_len = src_len;
+    mydata.dst = compressed_data;
+    result.user_data = &mydata;
+    result.src_size = src_len;
+    result.dst_len = compressed_size;
+
+    int compression_status = KAELZ4_compress_frame_async_in_session(sess, &src, &dst,
+                                                      compression_callback2, &result, &preferences);
+
+    if (compression_status != 0) {
+        printf("Compression failed with error code: %d\n", compression_status);
+        free(inbuf);
+        free(compressed_data);
+        return -1;
+    }
+
+    while (g_has_done != 1) {
+        KAELZ4_compress_async_polling_in_session(sess, 1);
+        usleep(100);
+    }
+    KAELZ4_destroy_async_compress_session(sess);
+
+    return compression_status;
+}
+int main()
+{
+    return test_frame_polling(0, 0, 0);
+}
+```
+```shell
+gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -o kaelz4_polling_test
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
+./kaelz4_polling_test # 输出 Test Success.
+```
+
+### 3.3、非polling模式异步压缩接口
+本小节介绍了非polling模式下，数据通过接口直接被异步压缩处理，最终由callback函数回调压缩结果的相关接口。
 #### 3.3.1、相关结构体
 ```c
 // 基本回调数据格式
@@ -850,9 +850,9 @@ int LZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4
  */
 LZ4LIB_API void LZ4_teardown_async_compress(void);
 ```
-#### 3.3.7、通用压缩接口整体使用示例Demo
+#### 3.3.7、整体使用示例Demo
 
-以普通 frame格式异步压缩接口示例：
+本demo以普通 frame 格式异步压缩接口示例：
 1、对某一段内存进行压缩，同时设置特定的frame格式。
 2、在收到回调后，使用开源frame解压接口对压缩内容进行解压。
 3、最后比较解压后的内容是否是原始内容。
@@ -944,7 +944,7 @@ void compression_callback(struct kaelz4_result *result) {
 static int test_async_frame_with_perferences(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
 {
     g_has_done = 0;
-    size_t src_len = 258 * 1024;  // 256KB
+    size_t src_len = 256 * 1024;  // 256KB
     void *inbuf = malloc(src_len);
     if (!inbuf) {
         printf("Memory allocation failed for input data.\n");
@@ -1063,7 +1063,7 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 
 - 开启观察KAE硬件队列
     ~~~shell
-    # 默认能够观察到4个256，表示当前机器上共支持4*256个KAE硬件驱动压缩队列
+    # 默认2个CPU的设备能够观察到4个256，表示当前机器上共支持4*256个KAE硬件驱动压缩队列。容器化部署场景中，队列数量跟分配给容器的设备相关。
     watch -n 0.2 cat /sys/class/uacce/hisi_zip-*/available_instances
     ~~~
 

@@ -435,8 +435,15 @@ static void compress_async_callback(struct kaelz4_result *result)
     struct compress_param *param = (struct compress_param *)result->user_data;
 
     if (param->ctx->is_lz77_mode) {
-        if (KAELZ4_rebuild_lz77_to_block(&param->src, &param->tuple, &param->dst, result) != 0) {
-            printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+        const char *alg_name = param->ctx->algorithm->name;
+        if(strcmp(alg_name, "kaelz4async_lz77_frame") == 0) {
+            if (KAELZ4_rebuild_lz77_to_frame(&param->src, &param->tuple, &param->dst, result, NULL) != 0) {
+                printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+            }
+        } else {
+            if (KAELZ4_rebuild_lz77_to_block(&param->src, &param->tuple, &param->dst, result) != 0) {
+                printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+            }
         }
     }
 
@@ -503,10 +510,15 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->param_index = 0;
     ctx->is_lz77_mode = 0;
 
-    if (strcmp(algorithm->name, "kaelz4async_lz77") == 0 && ctx->compress_or_decompress != 0) {
+    int is_test_lz77_block = strcmp(algorithm->name, "kaelz4async_lz77") == 0;
+    int is_test_lz77_frame = strcmp(algorithm->name, "kaelz4async_lz77_frame") == 0;
+    if ((is_test_lz77_block || is_test_lz77_frame) && ctx->compress_or_decompress != 0) {
         if (g_file_chunk_size == 0 || g_file_chunk_size * 1024 > HPAGE_SIZE) {
             // TBM: 当前chunk_size超过2M kzip不支持lz77模式，因为大页内存不连续
             ctx->algorithm = get_algorithm("kaelz4async_block");
+            if (is_test_lz77_frame) {
+                ctx->algorithm = get_algorithm("kaelz4async_frame");
+            }
             return;
         }
         ctx->is_lz77_mode = 1;
@@ -1414,7 +1426,7 @@ int main(int argc, char **argv)
     const char *optstring = "dm:l:n:w:f:o:v:A:hg:s:c:i:t:T:F:r:P:p:";
     int ret = 0;
     int o = 0;
-    int multi = 2;
+    int multi = 1;
     int level = 6;
     uLong chunk_len = 1024;
     int loop_times = 1000;

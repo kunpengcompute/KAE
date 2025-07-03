@@ -104,7 +104,7 @@ static void compression_callback2(struct kaelz4_result *result) {
 static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
 {
     g_has_done = 0;
-    size_t src_len = 258 * 1024;  // 256KB
+    size_t src_len = 256 * 1024;  // 256KB
     void *inbuf = malloc(src_len);
     if (!inbuf) {
         printf("Memory allocation failed for input data.\n");

@@ -19,7 +19,7 @@
 
 static int g_has_done = 0; // 异步回调是否完成。需要初始化为0。
 static int g_file_chunk_size = 256;
-
+static int g_test_frame = 0; // 是否测试frame格式。
 struct my_custom_data {
     void *src;
     void *tuple;
@@ -214,9 +214,18 @@ static void compression_callback3(struct kaelz4_result *result) {
     // 在回调中获取压缩后的数据
     struct my_custom_data *my_data = (struct my_custom_data *)result->user_data;
 
-    if (KAELZ4_rebuild_lz77_to_block(&my_data->src_list, &my_data->tuple_list, &my_data->dst_list, result) != 0) {
-        printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+    if (g_test_frame == 1) {
+        LZ4F_preferences_t preferences = {0};
+        preferences.frameInfo.blockSizeID = LZ4F_max64KB;  // 设定块大小
+        if (KAELZ4_rebuild_lz77_to_frame(&my_data->src_list, &my_data->tuple_list, &my_data->dst_list, result, &preferences) != 0) {
+            printf("[user]KAELZ4_rebuild_lz77_to_frame : %d\n", result->status);
+        }
+    } else {
+        if (KAELZ4_rebuild_lz77_to_block(&my_data->src_list, &my_data->tuple_list, &my_data->dst_list, result) != 0) {
+            printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+        }
     }
+
 
     size_t compressed_size = result->dst_len;
     void *compressed_data = my_data->dst_list.buf[0].data;
@@ -232,13 +241,21 @@ static void compression_callback3(struct kaelz4_result *result) {
         return;
     }
 
-    size_t ret =  LZ4_decompress_safe((char *)compressed_data, (char *)dst_buffer, compressed_size, tmp_src_len);
+    size_t ret =  -1;
+    if (g_test_frame == 1) {
+        LZ4F_decompressionContext_t dctx;
+        LZ4F_createDecompressionContext(&dctx, 100);
+        ret = LZ4F_decompress(dctx, dst_buffer, &tmp_src_len,
+                                                compressed_data, &compressed_size, NULL);
+    } else {
+        ret = LZ4_decompress_safe((char *)compressed_data, (char *)dst_buffer, compressed_size, tmp_src_len);
+        tmp_src_len = ret; // 解压后长度
+    }
     if (ret < 0) {
         printf("Decompression failed with error code: %ld\n", ret);
         free(dst_buffer);
         return;
     }
-    tmp_src_len = ret; // 解压后长度
     my_data->src_decompd = dst_buffer;
     my_data->src_decompd_len = tmp_src_len;
 
@@ -251,7 +268,11 @@ static void compression_callback3(struct kaelz4_result *result) {
 
     // 比较解压后的数据和原始数据
     if (memcmp(my_data->src_decompd, my_data->src_list.buf[0].data, result->src_size) == 0) {
-        printf("Test Success.\n");
+        if (g_test_frame == 1) {
+            printf("Test Success for frame.\n");
+        } else {
+            printf("Test Success for block.\n");
+        }
     } else {
         printf("Test Error:Decompressed data does not match the original data.\n");
     }
@@ -346,5 +367,8 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
 }
 int test_async_lz77_raw()
 {
-    return test_lz77_raw_polling(0, 0, 0);
+    int ret = test_lz77_raw_polling(0, 0, 0);
+    g_test_frame = 1;
+    ret = test_lz77_raw_polling(0, 0, 0);
+    return ret;
 }

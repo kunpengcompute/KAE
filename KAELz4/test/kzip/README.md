@@ -31,7 +31,7 @@ kaelz4async_frame: 异步lz4 frame格式压缩
 default:null 默认压缩任务。
 
 - -m 并发进程数量
-使用fork()复制进程进行测试，默认2，一共创建2个进程。异步测试时推荐并发1。
+默认值1，表示仅一个主进程，对应单并发场景。大于1时，使用fork()复制进程进行测试。异步测试时推荐并发1。
 
 - -t 并发线程数量
 默认1，不使用pthread_create()创建更多子线程。大于1时-m参数失效。
@@ -66,10 +66,10 @@ default:null 默认压缩任务。
 
 ## 使用限制
 1、异步接口硬件环境限制：kunpeng 920 7280z
-2、最大性能测试时需要开启fast，详见《KAELz4 异步压缩接口用户使用指南》
+2、最大性能测试时需要开启fast，详见 KAELZ4/README.md 《KAELz4 异步压缩接口用户使用指南》
 3、KAE 加速器与 NUMA 节点存在绑定关系。将进程绑定至特定 NUMA 节点后，该进程即可使用该节点对应的 KAE 硬件加速器。
-4、SGL模式下不支持切软算。
-5、kzip工具通过使用大页内存获取真实的物理地址，测试SGL模式的时候，要先申请大页内存。可参考如下命令：
+4、不支持SGL模式分段buffer切软算。
+5、kzip工具通过使用大页内存获取真实的物理地址，测试SGL模式的时候，要先申请大页内存。推荐参考如下命令：
 ```
 sysctl vm.nr_hugepages=10000
 ```
@@ -81,7 +81,13 @@ sysctl vm.nr_hugepages=10000
 sh runFunc.sh
 ```
 
-polling模式接口测试：
+polling模式lz77_raw格式转换为frame格式压缩接口测试
+```shell
+# 1、单IO时延数据
+sh runPerf.sh -A kaelz4async_lz77_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+```
+
+polling模式frame格式压缩接口测试：
 ```shell
 # 1、单IO时延数据：等价串行流程，结果表示单个IO的压缩时延。
 sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
@@ -89,7 +95,7 @@ sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 
 sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar]
 ```
 
-通用线程池模式接口测试：
+非polling模式frame格式压缩接口测试：
 ```shell
 # 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=1
