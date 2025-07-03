@@ -106,11 +106,11 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
 #### 3.1.5、主动polling压缩结果
 ```
 /**
- * @brief: polling compression results by session
- * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses 
- * @return: void *sess
- * /
-void KAELZ4_compress_async_polling_in_session(void *sess);
+ * @brief: Polling hardware result in session.
+ * @param: sess : session
+ * @param: budget : process packet num per call.
+ */
+void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
 ```
 #### 3.1.6、对lz77_raw数据进行格式转换
 ```
@@ -577,11 +577,11 @@ int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffe
 #### 3.2.5、主动polling压缩结果
 ```
 /**
- * @brief: polling compression results by session
- * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses 
- * @return: void *sess
- * /
-void KAELZ4_compress_async_polling_in_session(void *sess);
+ * @brief: Polling hardware result in session.
+ * @param: sess : session
+ * @param: budget : process packet num per call.
+ */
+void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
 ```
 #### 3.2.6、清理session会话
 ```
