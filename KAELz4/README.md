@@ -372,7 +372,7 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
  * /
 void KAELZ4_compress_async_polling_in_session(void *sess);
 ```
-### 3.2.6、主动对lz77数据进行格式转换
+#### 3.2.6、主动对lz77数据进行格式转换
 ```
 /**
  * @brief: rebuild lz77 data to block
@@ -396,11 +396,11 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
 int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, struct kaelz4_buffer_list *dst, struct kaelz4_result *result, const void *preferences_ptr);
 ```
 
-#### 3.1.7、清理session会话
+#### 3.2.7、清理session会话
 ```
 void KAELZ4_destroy_async_compress_session(void *sess);
 ```
-#### 3.1.8、lz77格式后处理接口整体使用示例Demo
+#### 3.2.8、lz77格式后处理接口整体使用示例Demo
 ```c
 #include <stdio.h>
 #include <stdlib.h>
