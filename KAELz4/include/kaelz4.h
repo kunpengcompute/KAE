@@ -116,30 +116,141 @@ typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, cons
                                        const void* preferences_ptr);
 typedef int (*sw_decompress_fn)(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
 typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
+
+/******************************** multi-thread mode APIs *******************************/
+/**
+ * @brief: block compress async api
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                           lz4_async_callback callback, struct kaelz4_result *result);
+/**
+ * @brief: fream compress async api
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @return: 0 success, other fail
+ */
 int KAELZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                 lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+/**
+ *  Destroy all Task Queues and Threads on the KAE Side.
+ */
 void KAELZ4_teardown_async_compress(void);
+
+/**
+ *  Register software compress function, initialize Task Queues and Threads on the KAE Side.
+ *  If not being called before, LZ4_compress_async will not handle any exceptions and simply return failure.
+ *  Note: Can not be called before fork();
+ */
+int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
+                               sw_decompress_fn sw_decompress);
+/**
+ * @brief: block decompress async api
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ */
+int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                            lz4_async_callback callback, struct kaelz4_result *result);
+/**
+ * @brief: fream compress async api
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: dOptPtr [IN] : decompress Options. NULL is avaliable. if not NULL  dOptPtr  should be struct LZ4F_decompressOptions_t data.
+ * @return: 0 success, other fail
+ */
+int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                  lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
+
+
+/************************************** single-thread polling mode APIs *************************************/
+/**
+ * @brief: Initialize Task Queues and Threads on the KAE Side.
+ * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @return: session, NULL if fail
+ */
 void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
+/**
+ * @brief: Destroy session and hardware ctx.
+ * @param: sess : session
+ */
 void KAELZ4_destroy_async_compress_session(void *sess);
+/**
+ * @brief: block compress async api
+ * @param: sess : session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                      lz4_async_callback callback, struct kaelz4_result *result);
+/**
+ * @brief: Polling hardware result in session.
+ * @param: sess : session
+ * @param: budget : process packet num per call.
+ */
 void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
+/**
+ * @brief: fream compress async api
+ * @param: sess : session
+ * @param: src [IN] : input data
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                            lz4_async_callback callback, struct kaelz4_result *result,
                                            const void *preferences_ptr);
-int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
-                               sw_decompress_fn sw_decompress);
-int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                            lz4_async_callback callback, struct kaelz4_result *result);
-int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                  lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
+/**
+ * @brief: Get tuple buffer length by src length.
+ * @param: src_len : src length
+ */
 size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
+/**
+ * @brief: lz77 compress async api
+ * @param: sess : session
+ * @param: src [IN] : input data, must be sgl
+ * @param: dst [OUT] : tuple buf, lz77 output data, must be sgl, only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                           lz4_async_callback callback, struct kaelz4_result *result);
+/**
+ * @brief: rebuild lz77 data to block
+ * @param: src [IN] : input data
+ * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                  struct kaelz4_result *result);
+/**
+ * @brief: rebuild lz77 data to frame
+ * @param: src [IN] : input data
+ * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
+ * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @return: 0 success, other fail
+ */
 int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                  struct kaelz4_result *result, const void *preferences_ptr);
 #endif

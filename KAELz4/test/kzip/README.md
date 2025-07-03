@@ -71,7 +71,7 @@ default:null 默认压缩任务。
 4、SGL模式下不支持切软算。
 5、kzip工具通过使用大页内存获取真实的物理地址，测试SGL模式的时候，要先申请大页内存。可参考如下命令：
 ```
-sysctl vm.nr_hugepages=1000
+sysctl vm.nr_hugepages=10000
 ```
 
 ## 测试命令
@@ -106,4 +106,10 @@ sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 
 #4、单KAE最大能力：多线程满压，结果表示单KAE能够提供的最大压缩带宽。
 export KAE_LZ4_ASYNC_THREAD_NUM=8
 sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
+```
+
+```
+# 单一场景接口组合使用demo测试
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
+./kzip -T 1
 ```

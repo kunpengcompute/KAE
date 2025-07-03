@@ -59,7 +59,7 @@ static size_t read_inputFile(const char* fileName, void** input)
 //     return count;
 // }
 
-void compression_callback(struct kaelz4_result *result) {
+static void compression_callback(struct kaelz4_result *result) {
     if (result->status != 0) {
         printf("Compression failed with status: %d\n", result->status);
         return;
@@ -154,6 +154,22 @@ static int test_async_frame_with_perferences(int contentChecksumFlag, int blockC
     // 异步压缩
     struct kaelz4_result result = {0};
     struct my_custom_data mydata = {0};
+
+    struct kaelz4_buffer_list src = {0};
+    struct kaelz4_buffer src_buf[128];
+    src.usr_data = &mydata;
+    src.buf_num = 1;
+    src.buf = src_buf;
+    src.buf[0].data = inbuf;
+    src.buf[0].buf_len = src_len;
+
+    struct kaelz4_buffer dst_buf[128];
+    struct kaelz4_buffer_list dst = {0};
+    dst.buf_num = 1;
+    dst.buf = dst_buf;
+    dst.buf[0].data = compressed_data;
+    dst.buf[0].buf_len = compressed_size;
+
     mydata.src = inbuf;
     mydata.src_len = src_len;
     mydata.dst = compressed_data;
@@ -161,7 +177,7 @@ static int test_async_frame_with_perferences(int contentChecksumFlag, int blockC
     result.src_size = src_len;
     result.dst_len = compressed_size;
     LZ4_async_compress_init(NULL);
-    int compression_status = LZ4F_compressFrame_async(inbuf, compressed_data,
+    int compression_status = LZ4F_compressFrame_async(&src, &dst,
                                                       compression_callback, &result, &preferences);
 
     if (compression_status != 0) {

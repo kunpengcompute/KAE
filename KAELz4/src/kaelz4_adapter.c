@@ -417,11 +417,6 @@ static void init_env_config()
             g_task_queues.decompress_queue_num = MAX_TASK_NUM;
         }
     }
-
-    auto_init_cpuset_config(g_taskset_cpus_arr_numa1,
-        &g_taskset_cpus_arr_numa1_count,
-        g_taskset_cpus_arr_numa2,
-        &g_taskset_cpus_arr_numa2_count);
 }
 __attribute__((constructor))
 void async_thread_constructor(void)
@@ -531,6 +526,8 @@ int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, 
     int ret = 0;
     pthread_mutex_lock(&g_task_queue_init_mutex);
     if (g_task_queues.init == 0) {
+        auto_init_cpuset_config(g_taskset_cpus_arr_numa1, &g_taskset_cpus_arr_numa1_count, g_taskset_cpus_arr_numa2,
+                                &g_taskset_cpus_arr_numa2_count);
         g_task_queues.sw_compress = sw_compress;
         g_task_queues.sw_compress_frame = sw_compress_frame;
         g_task_queues.sw_decompress = sw_decompress;
