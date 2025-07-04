@@ -29,8 +29,6 @@
 
 #define HARDWARE_BLOCK_SIZE (64 * 1024) // 硬件支持的最大压缩块大小
 
-#define REQ_BUFFER_MAX 60   // uadk支持最大的sgl buf数量
-
 #define MAX_NUM_IN_COMP MAX_KAE_CTX_DEPTH  // 每个线程最多允许同时进行的压缩任务数
 
 #if !defined(LZ4_memcpy)

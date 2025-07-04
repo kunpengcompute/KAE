@@ -12,6 +12,7 @@
 #include "uadk/v1/wd_comp.h"
 
 #define MAX_KAE_CTX_DEPTH 64
+#define REQ_BUFFER_MAX 60   // uadk支持最大的sgl buf数量
 
 enum kaelz4_comp_status {
     KAEZIP_COMP_INIT = 0,
@@ -61,8 +62,8 @@ struct kaelz4_ctx {
     void*                           wd_ctx;
     struct wcrypto_zstd_out         output;
     wd_map                          usr_map;
-    unsigned char                   src_sgl_buf[32 + (32 * 60)];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60
-    unsigned char                   dst_sgl_buf[32 + (32 * 60)];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60
+    unsigned char                   src_sgl_buf[32 + (32 * (REQ_BUFFER_MAX + 1))];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60 + 1 * sizeof(struct wd_sge) for hisi_sge
+    unsigned char                   dst_sgl_buf[32 + (32 * (REQ_BUFFER_MAX + 1))];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60 + 1 * sizeof(struct wd_sge) for hisi_sge
     void                            *src_sgl;
     void                            *dst_sgl_usr;
     void                            *dst_sgl_kernel;

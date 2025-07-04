@@ -735,7 +735,7 @@ int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list
     if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
-    if (result->src_size <= SMALL_BLOCK_SIZE) {
+    if (result->src_size <= SMALL_BLOCK_SIZE && src->buf_num <= SMALL_BLOCK_MAX_BUF_NUM) {
         return kaelz4_async_do_comp_in_session(sess, src, dst, callback, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
     }
 
@@ -793,7 +793,7 @@ int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_bu
         return KAE_LZ4_INVAL_PARA;
     }
 
-    if (result->src_size <= SMALL_BLOCK_SIZE) {
+    if (result->src_size <= SMALL_BLOCK_SIZE && src->buf_num <= SMALL_BLOCK_MAX_BUF_NUM) {
         return kaelz4_async_do_comp(src, dst, callback, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
     }
 
@@ -840,7 +840,7 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len)
 int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                  struct kaelz4_result *result)
 {
-    if (result->src_size <= SMALL_BLOCK_SIZE) {
+    if (result->src_size <= SMALL_BLOCK_SIZE && src->buf_num <= SMALL_BLOCK_MAX_BUF_NUM) {
         return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
     }
 
