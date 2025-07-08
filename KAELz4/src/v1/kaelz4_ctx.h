@@ -12,7 +12,7 @@
 #include "uadk/v1/wd_comp.h"
 
 #define MAX_KAE_CTX_DEPTH 64
-#define REQ_BUFFER_MAX 60   // uadk支持最大的sgl buf数量
+#define REQ_BUFFER_MAX 255   // uadk支持最大的sgl buf数量
 
 enum kaelz4_comp_status {
     KAEZIP_COMP_INIT = 0,

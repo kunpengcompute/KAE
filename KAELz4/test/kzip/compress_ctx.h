@@ -39,9 +39,9 @@ struct __attribute__((aligned(64))) compress_param {
     struct kaelz4_buffer_list tuple;
     uint64_t start_time;
     volatile unsigned int done;
-    struct kaelz4_buffer src_buf[128];
-    struct kaelz4_buffer dst_buf[128];
-    struct kaelz4_buffer tuple_buf[128];
+    struct kaelz4_buffer src_buf[1024];
+    struct kaelz4_buffer dst_buf[1024];
+    struct kaelz4_buffer tuple_buf[1024];
 };
 
 struct compress_ctx {

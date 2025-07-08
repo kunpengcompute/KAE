@@ -1545,12 +1545,12 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    struct compress_ctx ctx;
-    compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
-    ctx.loop_times = loop_times;
+    struct compress_ctx *ctx = malloc(sizeof(struct compress_ctx));
+    compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
+    ctx->loop_times = loop_times;
 
-    if (!ctx.compress_or_decompress && g_file_chunk_size > 0 && threadNum == 1) { // 如果是分片解压，单独处理
-        ret = start_work_decompress(&ctx, in_filename, out_filename, multi, window_bits, level);
+    if (!ctx->compress_or_decompress && g_file_chunk_size > 0 && threadNum == 1) { // 如果是分片解压，单独处理
+        ret = start_work_decompress(ctx, in_filename, out_filename, multi, window_bits, level);
     } else {
         if (threadNum > 1) {
             pthread_t threads[threadNum];
@@ -1574,15 +1574,16 @@ int main(int argc, char **argv)
                 pthread_join(threads[j], NULL);
             }
         } else {
-           ret = start_work(&ctx, in_filename, out_filename, multi, window_bits, level);
+           ret = start_work(ctx, in_filename, out_filename, multi, window_bits, level);
         }
     }
 
-    if (ctx.sess)
-        KAELZ4_destroy_async_compress_session(ctx.sess);
+    if (ctx->sess)
+        KAELZ4_destroy_async_compress_session(ctx->sess);
     else
         LZ4_teardown_async_compress();
 
-    compress_ctx_destory(&ctx);
+    compress_ctx_destory(ctx);
+    free(ctx);
     return ret;
 }
