@@ -716,10 +716,6 @@ static int kaelz4_async_do_comp_in_session(kaelz4_session *sess, const struct ka
         task.preferences = *(const LZ4F_preferences_t *)preferences_ptr;
     }
 
-    if (task_queue->pi != task_queue->ci && !kaelz4_async_is_thread_do_comp_full(sess->ctrl)) {
-        kaelz4_dequeue_process(sess->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
-    }
-
     if (task_queue->pi != task_queue->ci || kaelz4_async_is_thread_do_comp_full(sess->ctrl)) {
         return kaelz4_enqueue(task_queue, &task);
     } else {
