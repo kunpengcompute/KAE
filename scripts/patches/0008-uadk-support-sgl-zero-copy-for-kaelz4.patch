@@ -78,7 +78,7 @@ index cb3b8ee..51dbe9c 100644
 +    struct wd_sglpool *sgl_pool = pool;
 +
 +    sgl->buf_num = buf_list->buf_num;
-+    sgl->sge_num = buf_list->buf_num + 1;
++    sgl->sge_num = buf_list->buf_num;
 +    sgl->pool = pool;
 +    for (int i = 0; i < sgl->buf_num; i++) {
 +        sgl->sge[i].flag = 0;
