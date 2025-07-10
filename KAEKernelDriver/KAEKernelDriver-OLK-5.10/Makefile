@@ -22,8 +22,6 @@ default:
 		CONFIG_CRYPTO_DEV_HISI_SGL=m \
 		CONFIG_CRYPTO_DEV_HISI_QM=m \
 		CONFIG_CRYPTO_DEV_HISI_ZIP=m \
-		CONFIG_CRYPTO_DEV_HISI_HPRE=m \
-		CONFIG_CRYPTO_DEV_HISI_SEC2=m \
 		CONFIG_CRYPTO_DEV_HISI_TRNG=m
 #copy:
 #	cp -f $(shell pwd)/include_linux/uacce.h $(KSP)/include/linux
@@ -38,15 +36,15 @@ install:
 	fi)
 	-modprobe uacce
 	-modprobe hisi_qm
-	-modprobe hisi_sec2 uacce_mode=1 pf_q_num=256
-	-modprobe hisi_hpre uacce_mode=1 pf_q_num=256
+#	-modprobe hisi_sec2 uacce_mode=1 pf_q_num=256
+#	-modprobe hisi_hpre uacce_mode=1 pf_q_num=256
 	-modprobe hisi_zip  uacce_mode=1 pf_q_num=256
-	-echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
-	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
+#	-echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
+#	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 	dracut -f
 
-TARGET_MODULES := uacce.ko* hisi_qm.ko* hisi_sec2.ko* hisi_hpre.ko* hisi_zip.ko*
+TARGET_MODULES := uacce.ko* hisi_qm.ko* hisi_zip.ko*
 
 delete-modules:
 	@echo "[WARN] This will delete the following files:"
@@ -63,18 +61,18 @@ check:
 
 uninstall:
 	modprobe -r hisi_zip
-	modprobe -r hisi_hpre
-	modprobe -r hisi_sec2
+#	modprobe -r hisi_hpre
+#	modprobe -r hisi_sec2
 	modprobe -r hisi_qm
 	modprobe -r uacce
-	rm -rf /etc/modprobe.d/hisi_sec2.conf
-	rm -rf /etc/modprobe.d/hisi_hpre.conf
+#	rm -rf /etc/modprobe.d/hisi_sec2.conf
+#	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
 	dracut -f
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/uacce.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_qm.ko
-	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_sec2.ko
-	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_hpre.ko
+#	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_sec2.ko
+#	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_hpre.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_zip.ko
 
 nosva:
@@ -86,11 +84,11 @@ nosva:
 	fi)
 	-modprobe uacce
 	-modprobe hisi_qm
-	-modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
-	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
+#	-modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
+#	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
 	-modprobe hisi_zip  uacce_mode=2 pf_q_num=256
-	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
-	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
+#	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
+#	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
 	dracut -f
 clean:
