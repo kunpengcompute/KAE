@@ -374,13 +374,14 @@ void kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx)
     }
 
     struct kaelz4_instance *instance = (struct kaelz4_instance *)kz_ctx->q_node->priv_ctx;
+    KAE_QUEUE_DATA_NODE_S *q_node = kz_ctx->q_node;
 
     instance->kz_ctx[kz_ctx->index] = NULL;
     kaelz4_free_kz_ctx(kz_ctx);
 
     instance->free_num++;
     if (instance->free_num == instance->cur_idx) {
-        kaelz4_free_wd_queue_memory(kz_ctx->q_node, kaelz4_free_instance);
+        kaelz4_free_wd_queue_memory(q_node, kaelz4_free_instance);
         if (instance == g_cur_instance) {
             g_cur_instance = NULL;
         }

@@ -194,14 +194,14 @@ KAE_QUEUE_POOL_HEAD_S* kaelz4_init_queue_pool(int algtype)
     return kae_pool;
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type)
+static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type, int is_sgl)
 {
     int i = 0;
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
 
     if ((pool_head->pool_use_num == 0) && (pool_head->next == NULL)) {
-        return queue_data_node;
+        return NULL;
     }
 
     while (temp_pool != NULL) {
@@ -211,17 +211,17 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
             }
 
             if (KAE_SPIN_TRYLOCK(temp_pool->kae_queue_pool[i].spinlock)) {
-                if (temp_pool->kae_queue_pool[i].node_data == NULL) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
-                if (temp_pool->kae_queue_pool[i].node_data->comp_alg_type != type) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
                 queue_data_node = temp_pool->kae_queue_pool[i].node_data;
+                if (queue_data_node == NULL) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
+                if (queue_data_node->comp_alg_type != type || queue_data_node->is_sgl != is_sgl) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
                 temp_pool->kae_queue_pool[i].node_data = NULL;
                 KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
 
@@ -233,7 +233,7 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
         temp_pool = temp_pool->next;
     }
 
-    return queue_data_node;
+    return NULL;
 }
 
 void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn)
@@ -311,7 +311,7 @@ KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
         return NULL;
     }
 
-    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type);
+    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type, is_sgl);
     if (queue_data_node == NULL) {
         queue_data_node = kaelz4_new_wd_queue_memory(comp_alg_type, comp_type, is_sgl);
     }
