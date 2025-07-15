@@ -256,6 +256,12 @@ function build_rpm()
 
 function build_driver()
 {
+    modprobe -r hisi_zip
+	modprobe -r hisi_hpre
+	modprobe -r hisi_sec2
+	modprobe -r hisi_qm
+	modprobe -r uacce
+
     cd ${KAE_KERNEL_DIR}
     make -j
     make nosva #默认使用nosva模式
