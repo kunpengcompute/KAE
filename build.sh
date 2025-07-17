@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 SRC_PATH=$(pwd)
 KAE_KERNEL_DIR=""
@@ -38,7 +38,7 @@ function build_check_OS_version()
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.4
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
-    else 
+    else
 		echo "[KAE error]:unsupport kernel version $KERNEL_VERSION"
     fi
 }
@@ -65,8 +65,8 @@ function build_all_comp_sva()
 
     # 编译uadk
     cd $KAE_UADK_DIR
-    sh autogen.sh
-    sh conf.sh
+    bash autogen.sh
+    bash conf.sh
     make -j
 
     cp ${KAE_UADK_DIR}/.libs/lib* $KAE_BUILD_LIB
@@ -87,14 +87,14 @@ function build_all_comp_sva()
 
     # 编译zlib
     cd $KAE_ZLIB_DIR
-    sh setup.sh devbuild KAE2
+    bash setup.sh devbuild KAE2
 
     cp $KAE_ZLIB_DIR/lib* $KAE_BUILD_LIB
     cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD_LIB
 
     # 编译zstd
     cd $KAE_ZSTD_DIR
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     cp $KAE_ZSTD_DIR/lib* $KAE_BUILD_LIB
     cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD_LIB
@@ -147,8 +147,8 @@ function build_rpm()
 
 
     cd $KAE_UADK_DIR
-    sh autogen.sh
-    # sh conf.sh
+    bash autogen.sh
+    # bash conf.sh
     # 在 conf.sh中的内容后添加 --prefix 参数，为了使uadk编译生成的pkgconfig/*.pc文件中动态库的路径为RPM包编译时的临时目录，这样Opensslengine编译时才能够找到uadk动态库。
     ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
         --enable-perf=yes \
@@ -198,7 +198,7 @@ function build_rpm()
 
     # 编译 zlib
     cd $KAE_ZLIB_DIR
-    sh setup.sh devbuild KAE2
+    bash setup.sh devbuild KAE2
 
     mkdir -p $KAE_BUILD/kaezip
     mkdir -p $KAE_BUILD/kaezip/include
@@ -217,7 +217,7 @@ function build_rpm()
 
     # 编译 zstd
     cd $KAE_ZSTD_DIR
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     mkdir -p $KAE_BUILD/kaezstd/lib/pkgconfig
     mkdir -p $KAE_BUILD/kaezstd/bin
@@ -242,7 +242,7 @@ function build_rpm()
 
     # 编译 lz4
     cd ${SRC_PATH}/KAELz4
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     mkdir -p $KAE_BUILD/kaelz4/lib
     mkdir -p $KAE_BUILD/kaelz4/bin
@@ -559,40 +559,40 @@ function gzip_clean()
 function help()
 {
 	echo "build KAE"
-	echo "sh build.sh all -- install all component(not include gmssl)"
-    echo "sh build.sh rpmpack -- build rpm pack(not include gmssl)"
+	echo "bash build.sh all -- install all component(not include gmssl)"
+    echo "bash build.sh rpmpack -- build rpm pack(not include gmssl)"
 
-	echo "sh build.sh driver -- install KAE driver"
-	echo "sh build.sh driver clean -- uninstall KAE driver"
+	echo "bash build.sh driver -- install KAE driver"
+	echo "bash build.sh driver clean -- uninstall KAE driver"
 
-	echo "sh build.sh uadk -- install uadk"
-	echo "sh build.sh uadk clean -- uninstall uadk"
+	echo "bash build.sh uadk -- install uadk"
+	echo "bash build.sh uadk clean -- uninstall uadk"
 
-	echo "sh build.sh engine -- install KAE openssl engine"
-	echo "sh build.sh engine clean -- uninstall KAE openssl engine"
+	echo "bash build.sh engine -- install KAE openssl engine"
+	echo "bash build.sh engine clean -- uninstall KAE openssl engine"
 
-    echo "sh build.sh engine3 <openssl3.0 install path>-- install KAE openssl3.0 engine"
-	echo "sh build.sh engine3 clean -- uninstall KAE openssl3.0 engine"
+    echo "bash build.sh engine3 <openssl3.0 install path>-- install KAE openssl3.0 engine"
+	echo "bash build.sh engine3 clean -- uninstall KAE openssl3.0 engine"
 
-    echo "sh build.sh engine_gmssl -- install KAE gmssl engine"
-	echo "sh build.sh engine_gmssl clean -- uninstall KAE gmssl engine"
+    echo "bash build.sh engine_gmssl -- install KAE gmssl engine"
+	echo "bash build.sh engine_gmssl clean -- uninstall KAE gmssl engine"
 
-    echo "sh build.sh engine3_tongsuo -- install KAE tongsuo engine"
-	echo "sh build.sh engine3_tongsuo clean -- uninstall KAE tongsuo engine"
+    echo "bash build.sh engine3_tongsuo -- install KAE tongsuo engine"
+	echo "bash build.sh engine3_tongsuo clean -- uninstall KAE tongsuo engine"
 
-    echo "sh build.sh engine_boringssl -- install KAE boringssl engine"
-	echo "sh build.sh engine_boringssl clean -- uninstall KAE boringssl engine"
+    echo "bash build.sh engine_boringssl -- install KAE boringssl engine"
+	echo "bash build.sh engine_boringssl clean -- uninstall KAE boringssl engine"
 
-	echo "sh build.sh zlib -- install zlib using KAE"
-	echo "sh build.sh zlib clean -- uninstall zlib using KAE"
+	echo "bash build.sh zlib -- install zlib using KAE"
+	echo "bash build.sh zlib clean -- uninstall zlib using KAE"
 
-	echo "sh build.sh zstd -- install zstd using KAE"
-	echo "sh build.sh zstd clean -- uninstall zstd using KAE"
+	echo "bash build.sh zstd -- install zstd using KAE"
+	echo "bash build.sh zstd clean -- uninstall zstd using KAE"
 
-    echo "sh build.sh gzip -- install gzip using KAE"
-	echo "sh build.sh gzip clean -- uninstall gzip using KAE"
+    echo "bash build.sh gzip -- install gzip using KAE"
+	echo "bash build.sh gzip clean -- uninstall gzip using KAE"
 
-	echo "sh build.sh cleanup -- clean up all component"
+	echo "bash build.sh cleanup -- clean up all component"
 }
 
 function check_environment()

@@ -38,9 +38,6 @@ INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
 INCDIR += -I ${WORK_PATH}/../uadk/include
-INCDIR += -I /usr/local/include/uadk/
-INCDIR += -I ${WORK_PATH}/../uadk
-INCDIR += -I ${WORK_PATH}/../
 INCDIR += -I ${WORK_PATH}/src/utils
 INCDIR += -I ${WORK_PATH}/src/v1
 INCDIR += -I ${WORK_PATH}/src/v2
@@ -56,7 +53,7 @@ LIBS := -lwd -lwd_comp -pthread
 LIBS += -lc_nonshared
 
 # The flags
-CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared
+CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -O2 -march=armv8.2-a+crypto
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option

@@ -17,7 +17,7 @@ function Install_warpdrive()
         tar -zxvf libwd-"${BUILDVERSION}".tar.gz
 
         cd warpdrive/
-        sh autogen.sh
+        bash autogen.sh
         ./configure
         make clean && make
         make install

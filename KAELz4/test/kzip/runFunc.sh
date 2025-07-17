@@ -5,11 +5,12 @@ export KAE_LZ4_COMP_TYPE=8
 
 sh build.sh kaelz4
 
-Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77")
+Algthm=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77" "kaezlibasync_deflate")
 Datasets=("calgary" "itemdata" "dickens" "mozilla" "mr" "nci" "ooffice" "osdb" "reymont" "samba" "sao" "webster" "xml" "x-ray")
 Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
-BlockSize=("0" "4" "8" "16" "60" "64" "68" "128" "512" "1024" "2090" "10244")
+BlockSize=("4" "8" "16" "60" "64" "68" "128" "512" "1024" "2090" "8191" "8192" "8193" "10244")
 Polling=("1" "0")
+
 
 current_time=$(date +"%Y-%m-%d_%H-%M-%S")
 LogFile=kaelz4-function.log.$current_time
@@ -50,8 +51,8 @@ for da in "${Datasets[@]}"; do
                 rm -rf $testFileOrigin
                 rm -rf $testFileComped.meta
                 rm -rf $testFileOrigin.meta
-                ./kzip -A $alg -m 2 -f $testFile -o $testFileComped -n 2 -s $bs -i 256 -p $polling >> $LogFile # 压缩测试
-                ./kzip -d -A $alg -m 1 -f $testFileComped -o $testFileOrigin -n 2 -s $bs -i 256 >> $LogFile # 压缩测试
+                ./kzip -A $alg -m 1 -f $testFile -o $testFileComped -n 2 -s $bs -i 256 -p $polling  >> $LogFile # 压缩测试
+                ./kzip -d -A $alg -m 1 -f $testFileComped -o $testFileOrigin -n 2 -s $bs -i 256  >> $LogFile # 压缩测试
                 diffFile $testFile $testFileOrigin
             done
         done

@@ -23,8 +23,7 @@ static int lz4_bound(int src_len) {
 }
 
 // LZ4 初始化
-static int lz4_init() {
-    printf("Initializing LZ4...\n");
+static int lz4_init(struct compress_ctx *ctx) {
     return 0;
 }
 

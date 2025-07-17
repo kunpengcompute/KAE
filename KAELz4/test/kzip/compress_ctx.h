@@ -9,6 +9,7 @@
 struct fragment_metadata {
     unsigned int offset;   // 分片的起始偏移量
     unsigned int len;      // 分片的长度
+    size_t src_chunk_len;
 };
 
 struct compress_out_buf {
@@ -37,6 +38,7 @@ struct __attribute__((aligned(64))) compress_param {
     struct kaelz4_buffer_list src;
     struct kaelz4_buffer_list dst;
     struct kaelz4_buffer_list tuple;
+    struct kaelz4_buffer_list *dst_buf_list;
     uint64_t start_time;
     volatile unsigned int done;
     struct kaelz4_buffer src_buf[1024];
@@ -69,8 +71,11 @@ struct compress_ctx {
     int with_crc;
     unsigned int src_buf_num;
     void *sess;
+    iova_map_fn usr_map;
     uint64_t *all_delays;
+    int is_polling;
     int is_lz77_mode;
+    int is_zlib;
 };
 
 

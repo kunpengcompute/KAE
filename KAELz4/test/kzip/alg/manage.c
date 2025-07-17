@@ -50,4 +50,7 @@ void initialize_algorithms(void) {
     register_lz4async_frame_algorithm();
     register_lz4async_lz77_algorithm();
     register_lz4async_lz77_frame_algorithm();
+    register_zlib_algorithm();
+    register_zlib_deflate_algorithm();
+    register_zlibasync_block_algorithm();
 }

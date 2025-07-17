@@ -20,6 +20,7 @@
 #include <sys/mman.h>
 #include <inttypes.h>
 
+#include "kaezip.h"
 #include "lz4.h"
 #include "alg/manage.h"
 #include "delayRecord.h"
@@ -32,15 +33,16 @@
 #define GB *(1U << 30)
 
 int g_file_chunk_size = 0; // 测试分片大小。 默认 0kb 不分片
-int g_log_level = 1; // 打印日志级别。 0：不统计时延。 1:时延统计
+int g_log_level = 0; // 打印日志级别。 0：不统计时延。 1:时延统计
 int g_cpu_threads_per_core = 1; // 是否开启超线程。 1: 未开启。 2:开启
-int g_enable_huge_pages = 0; // 是否使用内存大页
+int g_enable_huge_pages = 1; // 是否使用内存大页
 int g_enable_polling_mode = 0; // 是否使用单线程polling模式
 
-#define HPAGE_SIZE (2 * 1024 * 1024)  // 2MB大页
+#define HPAGE_SIZE (1024 * 1024 * 1024)  // 1GB大页
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1UL << PAGE_SHIFT)
 #define PFN_MASK ((1UL << 55) - 1)
+#define HW_MAX_SGE_LEN 0x800000UL
 
 struct cache_page_map {
     uint64_t *entries;
@@ -130,20 +132,21 @@ void free_cache_page_map(struct cache_page_map *cache) {
     }
 }
 
+#define MAP_HUGE_1GB    (30 << MAP_HUGE_SHIFT)
 void *get_huge_pages(size_t total_size)
 {
     void *addr = mmap(
         NULL,
         total_size,
         PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_1GB,
         -1, 0
     ); // 申请内存大页
 
     if (addr == MAP_FAILED) {
         fprintf(stderr, "申请内存大页失败。\n");
         fprintf(stderr, "系统可能没有足够的大页可用。\n");
-        fprintf(stderr, "请尝试分配更多大页: sudo sysctl vm.nr_hugepages=10000\n");
+        fprintf(stderr, "请尝试分配更多大页: echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages\n");
         exit(EXIT_FAILURE);
     }
 
@@ -180,7 +183,7 @@ static uLong read_inputFile(struct compress_ctx *ctx, const char* fileName, void
         int huge_page_num = (int)(input_size * sizeof(Bytef) / HPAGE_SIZE) + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
         size_t total_size = huge_page_num * HPAGE_SIZE;
         *input = get_huge_pages(total_size);
-        printf("申请的大页虚拟地址: %p\n", *input);
+        printf("申请的大页虚拟地址: %p len:%ld\n", *input, total_size);
 
         if (*input == NULL) {
             return 0;
@@ -320,6 +323,7 @@ static size_t write_outputFile(const char* outFileName, struct compress_out_buf 
 
         fragments[num].offset = base_offset;
         fragments[num].len = out_buf_node->len; // 假设每个分片固定大小 100
+        fragments[num].src_chunk_len = (size_t)g_file_chunk_size * 1024;
         base_offset += fragments[num].len; // 更新下一个分片的偏移量
         uint32_t tmp_crc = crc32(0, out_buf_node->buf_addr, out_buf_node->len);
         if (out_buf_node->obuf_crc != 0 && out_buf_node->obuf_crc != tmp_crc) {
@@ -408,7 +412,11 @@ static void compress_async_polling(struct compress_param *param)
     }
 
     out_buf->len = param->dst_len;
-    out_buf->buf_addr = param->dst.buf[0].data;
+    if (ctx->is_zlib)
+        out_buf->buf_addr = param->tuple.buf[0].data;
+    else
+        out_buf->buf_addr = param->dst.buf[0].data;
+
     out_buf->src_len = param->src_len;
     out_buf->src = param->src.buf[0].data;
     out_buf->next = NULL;
@@ -429,12 +437,12 @@ static void compress_async_polling(struct compress_param *param)
 static void compress_async_callback(struct kaelz4_result *result)
 {
     // printf("[user]异步 callback 了！！\n");
-    if (result->status != 0) {
+    if (unlikely(result->status != 0)) {
         printf("[user]回调压缩异常 : %d\n", result->status);
     }
     struct compress_param *param = (struct compress_param *)result->user_data;
 
-    if (param->ctx->is_lz77_mode) {
+    if (unlikely(param->ctx->is_lz77_mode)) {
         const char *alg_name = param->ctx->algorithm->name;
         if(strcmp(alg_name, "kaelz4async_lz77_frame") == 0) {
             if (KAELZ4_rebuild_lz77_to_frame(&param->src, &param->tuple, &param->dst, result, NULL) != 0) {
@@ -448,8 +456,8 @@ static void compress_async_callback(struct kaelz4_result *result)
     }
 
     param->dst_len = result->dst_len;
-    if ((param->ctx->algorithm->async_compress != NULL && param->ctx->compress_or_decompress != 0) ||
-        ((param->ctx->algorithm->async_decompress != NULL && param->ctx->compress_or_decompress == 0))) {
+    if ((!param->ctx->is_polling || !param->ctx->is_zlib) && ((param->ctx->algorithm->async_compress != NULL && param->ctx->compress_or_decompress != 0) ||
+        ((param->ctx->algorithm->async_decompress != NULL && param->ctx->compress_or_decompress == 0)))) {
         wmb();
     }
 
@@ -476,7 +484,7 @@ static int do_real_compression(struct compress_ctx *ctx, const struct kaelz4_buf
         }
     } else { // 解压逻辑
         if (ctx->algorithm->async_decompress) {
-            return ctx->algorithm->async_decompress(src, dst, compress_async_callback, param);
+            return ctx->algorithm->async_decompress(ctx->sess, src, dst, compress_async_callback, param);
         } else {
             return ctx->algorithm->decompress(src->buf[0].data, src_len, dst->buf[0].data, dst_len);
         }
@@ -500,8 +508,9 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->inflight_num = inflight_num;
     ctx->with_crc = is_test_crc;
     ctx->src_buf_num = 1;
-    if (g_file_chunk_size && (g_file_chunk_size * 1024) <= HPAGE_SIZE && ctx->algorithm->async_compress != NULL && ctx->compress_or_decompress != 0) {
-        g_enable_huge_pages = 1;
+    ctx->usr_map = NULL;
+    if (g_file_chunk_size && ((size_t)g_file_chunk_size * 1024) <= HPAGE_SIZE && ((ctx->algorithm->async_compress != NULL && ctx->compress_or_decompress != 0)
+      || (ctx->algorithm->async_decompress != NULL && !ctx->compress_or_decompress))) {
         ctx->src_buf_num = 4;
     }
 
@@ -513,7 +522,7 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     int is_test_lz77_block = strcmp(algorithm->name, "kaelz4async_lz77") == 0;
     int is_test_lz77_frame = strcmp(algorithm->name, "kaelz4async_lz77_frame") == 0;
     if ((is_test_lz77_block || is_test_lz77_frame) && ctx->compress_or_decompress != 0) {
-        if (g_file_chunk_size == 0 || g_file_chunk_size * 1024 > HPAGE_SIZE) {
+        if (g_file_chunk_size == 0 || (size_t)g_file_chunk_size * 1024 > HPAGE_SIZE || (size_t)g_file_chunk_size * 1024 >= HW_MAX_SGE_LEN / 2) {
             // TBM: 当前chunk_size超过2M kzip不支持lz77模式，因为大页内存不连续
             ctx->algorithm = get_algorithm("kaelz4async_block");
             if (is_test_lz77_frame) {
@@ -524,6 +533,8 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
         ctx->is_lz77_mode = 1;
         g_enable_polling_mode = 1;
     }
+    ctx->is_polling = g_enable_polling_mode;
+    ctx->is_zlib = strcmp(algorithm->name, "kaezlibasync_deflate") == 0;
 }
 
 static void compress_ctx_destory(struct compress_ctx *ctx)
@@ -623,6 +634,11 @@ static uLong get_src_content(struct compress_ctx *ctx, const char* in_filename, 
         *inbuf = get_compress_input(ctx->chunk_len);
         src_len = ctx->chunk_len;
     }
+
+    if (g_file_chunk_size == 0) {
+        g_file_chunk_size = (src_len / 1024) + 1;
+    }
+
     if (!*inbuf) {
         fprintf(stderr, "inbuf is NULL!\n");
         return -1;
@@ -716,68 +732,73 @@ static int wait_for_all_fork_done()
     return 0;
 }
 
-static int do_comp_and_decomp_with_full_file(
-    struct compress_ctx *ctx, void *inbuf, uLong src_len, void *outbuf, uLong output_sz, unsigned long *out_offset)
+static void comp_and_decomp_fill_buffer_list(struct kaelz4_buffer_list *buf_list, size_t sge_len, size_t rem_len, void *start_addr, size_t offset)
 {
-    struct compress_param *param = NULL;
+    size_t tmp_offset = 0;
+    unsigned int i = 0;
+    unsigned int tmp_size;
 
-    while (ctx->param_buf[ctx->param_index].done != 0) {
-        compress_async_polling(&ctx->param_buf[ctx->param_index]);
+    while (rem_len) {
+        tmp_size = MIN(sge_len, rem_len);
+        buf_list->buf[i].data = start_addr + offset + tmp_offset;
+        if (((offset + tmp_offset) % HPAGE_SIZE) + tmp_size <= HPAGE_SIZE) {
+            buf_list->buf[i].buf_len = tmp_size;
+        } else {
+            buf_list->buf[i].buf_len = HPAGE_SIZE - ((offset + tmp_offset) % HPAGE_SIZE);
+        }
+        tmp_offset += buf_list->buf[i].buf_len;
+        rem_len -= buf_list->buf[i].buf_len;
+        i++;
+        buf_list->buf_num = i;
     }
-    param = &ctx->param_buf[ctx->param_index];
-    ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
-    // 单次接口调用时延
-    if (g_log_level == 1) {
-        param->start_time = get_ns();
-    }
-    param->done = 2;
-    param->ctx = ctx;
-    param->sn = ctx->sn;
-    param->loop_index = ctx->loop_index;
+}
+static void comp_and_decomp_fill_src_buf(struct compress_param *param, size_t src_len, void *start_addr, size_t offset)
+{
+    struct compress_ctx *ctx = param->ctx;
 
-    uLong output_sz_tmp = output_sz;
-    void *dst_start = outbuf + *out_offset;
+    param->src.buf = param->src_buf;
+    param->src.usr_data = ctx->page_info;
+    unsigned int tmp_size = src_len / ctx->src_buf_num;
+    comp_and_decomp_fill_buffer_list(&param->src, tmp_size, src_len, start_addr, offset);
+    param->src_len = src_len;
+    param->result.src_size = src_len;
+}
+
+void comp_and_decomp_fill_dst_buf(struct compress_param *param, size_t dst_len, void *start_addr)
+{
+    struct compress_ctx *ctx = param->ctx;
+
     param->dst.buf_num = 1;
     param->dst.buf = param->dst_buf;
-    param->dst.buf[0].data = dst_start;
-    param->dst.buf[0].buf_len = output_sz_tmp;
-    param->src.buf_num = ctx->src_buf_num;
-    param->src.buf = param->src_buf;
-    unsigned int tmp_size = src_len / param->src.buf_num;
-    for (int i = 0; i < param->src.buf_num - 1; i++) {
-        param->src.buf[i].data = inbuf + tmp_size * i;
-        param->src.buf[i].buf_len = tmp_size;
-    }
-    param->src.buf[param->src.buf_num - 1].data = inbuf + tmp_size * (param->src.buf_num - 1);
-    param->src.buf[param->src.buf_num - 1].buf_len = src_len - tmp_size * (param->src.buf_num - 1);
-    param->src.usr_data = ctx->page_info;
-    param->src_len = src_len;
-    param->ibuf_crc = 0;
-    param->obuf_crc = 0;
-    if (ctx->with_crc == 1) {
-        param->result.ibuf_crc = &param->ibuf_crc;
-        param->result.obuf_crc = &param->obuf_crc;
+    param->dst.buf[0].data = start_addr;
+    param->dst.buf[0].buf_len = dst_len;
+    param->tuple.buf = param->tuple_buf;
+    param->tuple.usr_data = ctx->tuple_page_info;
+    param->result.dst_len = dst_len;
+
+    if ((ctx->is_lz77_mode && ctx->compress_or_decompress) || ctx->is_zlib) {
+        if (ctx->is_lz77_mode) {
+            dst_len = KAELZ4_compress_get_tuple_buf_len(dst_len);
+        }
+        unsigned int tmp_size = MIN(dst_len, HW_MAX_SGE_LEN);   // HW_MAX_SGE_LEN: hisi_zip约束sge len不超过8M
+        comp_and_decomp_fill_buffer_list(&param->tuple, tmp_size, dst_len, ctx->tuple_buf, ctx->tuple_buf_offset);
+        ctx->tuple_buf_offset += dst_len;
+        if (ctx->tuple_buf_offset > ctx->tuple_buf_len) {
+            printf("ctx->tuple_buf_offset[0x%lx] > ctx->tuple_buf_len[0x%lx]\n", ctx->tuple_buf_offset, ctx->tuple_buf_len);
+            exit(-1);
+        }
+        param->dst_buf_list = &param->tuple;
     } else {
-        param->result.ibuf_crc = NULL;
-        param->result.obuf_crc = NULL;
+        param->dst_buf_list = &param->dst;
     }
-    param->result.user_data = param;
-    param->result.src_size = src_len;
-    param->result.dst_len = output_sz_tmp;
-    int ret = do_real_compression(ctx, &param->src, (unsigned int *)&src_len, &param->dst, (unsigned int *)&output_sz_tmp, &param->result);
-    if (ctx->algorithm->async_compress == NULL || (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress == NULL)) {
-        param->result.dst_len = output_sz_tmp;
-        compress_async_callback(&param->result);
-    }
-    ctx->sn++;
-    return ret;
 }
+
 static int do_comp_with_split_file(
     struct compress_ctx *ctx, void *inbuf, uLong src_len, void *outbuf, uLong output_sz, unsigned long *out_offset)
 {
     int ret = 0;
     unsigned int remaining = src_len;
-    int chunk_size = g_file_chunk_size * 1024;
+    size_t chunk_size = (size_t)g_file_chunk_size * 1024;
 
     void *start_buf = inbuf;
     while (remaining > 0) {
@@ -804,31 +825,6 @@ static int do_comp_with_split_file(
         output_size_chunk -= output_size_chunk % 4;
         uLong output_sz_tmp = output_size_chunk;
         void *dst_start = outbuf + *out_offset;  // 使用总内存里面的部分空间
-        param->dst.buf_num = 1;
-        param->dst.buf = param->dst_buf;
-        param->dst.buf[0].data = dst_start;
-        param->dst.buf[0].buf_len = output_sz_tmp;
-        param->src.buf_num = ctx->src_buf_num;
-        param->src.buf = param->src_buf;
-        param->src.usr_data = ctx->page_info;
-        unsigned int tmp_size = chunk_len_this_loop / param->src.buf_num;
-        size_t tmp_offset = 0;
-        for (int i = 0; i < param->src.buf_num; i++) {
-            param->src.buf[i].data = start_buf + tmp_offset;
-            if (((start_buf - inbuf + tmp_offset) % HPAGE_SIZE) + tmp_size <= HPAGE_SIZE) {
-                param->src.buf[i].buf_len = tmp_size;
-            } else {
-                param->src.buf[i].buf_len = HPAGE_SIZE - ((start_buf - inbuf + tmp_offset) % HPAGE_SIZE);
-            }
-            tmp_offset += param->src.buf[i].buf_len;
-        }
-
-        if (tmp_offset < chunk_len_this_loop) {
-            param->src.buf[param->src.buf_num].data = start_buf + tmp_offset;
-            param->src.buf[param->src.buf_num].buf_len = chunk_len_this_loop - tmp_offset;
-            param->src.buf_num++;
-        }
-        param->src_len = chunk_len_this_loop;
         param->ibuf_crc = 0;
         param->obuf_crc = 0;
         if (ctx->with_crc == 1) {
@@ -839,24 +835,10 @@ static int do_comp_with_split_file(
             param->result.obuf_crc = NULL;
         }
         param->result.user_data = param;
-        param->result.src_size = chunk_len_this_loop;
-        param->result.dst_len = output_sz_tmp;
-        if (!ctx->is_lz77_mode) {
-            ret = do_real_compression(
-                ctx, &param->src, (unsigned int *)&chunk_len_this_loop, &param->dst, (unsigned int *)&output_sz_tmp, &param->result);
-        } else {
-            param->tuple.buf_num = 1;
-            param->tuple.buf = param->tuple_buf;
-            param->tuple.buf[0].data = ctx->tuple_buf + ctx->tuple_buf_offset;
-            param->tuple.buf[0].buf_len = KAELZ4_compress_get_tuple_buf_len(chunk_len_this_loop);
-            param->tuple.usr_data = ctx->tuple_page_info;
-            ctx->tuple_buf_offset += param->tuple.buf[0].buf_len;
-            if (ctx->tuple_buf_offset > ctx->tuple_buf_len) {
-                printf("ctx->tuple_buf_offset[0x%lx] > ctx->tuple_buf_len[0x%lx]\n", ctx->tuple_buf_offset, ctx->tuple_buf_len);
-                return -1;
-            }
-            ret = do_real_compression(ctx, &param->src, (unsigned int *)&chunk_len_this_loop, &param->tuple, (unsigned int *)&output_sz_tmp, &param->result);
-        }
+        comp_and_decomp_fill_src_buf(param, chunk_len_this_loop, inbuf, start_buf - inbuf);
+        comp_and_decomp_fill_dst_buf(param, output_sz_tmp, dst_start);
+        ret = do_real_compression(ctx, &param->src, (unsigned int *)&chunk_len_this_loop, param->dst_buf_list,
+                                  (unsigned int *)&output_sz_tmp, &param->result);
         if (ret != 0) {
             printf("Error: do_real_compression error. ret = %d \nexit\n", ret);
             return ret;
@@ -877,7 +859,7 @@ static int do_comp_with_split_file(
 
 static int prepare_tuple_buf(struct compress_ctx *ctx, size_t src_len)
 {
-    size_t tuple_buf_len = KAELZ4_compress_get_tuple_buf_len(g_file_chunk_size * 1024) * (src_len / (g_file_chunk_size * 1024) + 1) * 2;
+    size_t tuple_buf_len = KAELZ4_compress_get_tuple_buf_len((size_t)g_file_chunk_size * 1024) * (src_len / ((size_t)g_file_chunk_size * 1024) + 1) * 4;
     size_t huge_page_num = tuple_buf_len * sizeof(Bytef) / HPAGE_SIZE + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
     size_t total_size = huge_page_num * HPAGE_SIZE;
     ctx->tuple_buf = get_huge_pages(total_size);
@@ -935,15 +917,11 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         }
     }
 
-    iova_map_fn usr_map = NULL;
-    if (ctx->src_buf_num != 1)
-        usr_map = get_physical_address_wrapper;
+    if (ctx->src_buf_num != 1 || ctx->is_zlib)
+        ctx->usr_map = get_physical_address_wrapper;
 
-    if (g_enable_polling_mode) {
-        ctx->sess = KAELZ4_create_async_compress_session(usr_map);
-    } else {
-        LZ4_async_compress_init(usr_map);
-    }
+    if (ctx->algorithm->init)
+        ctx->algorithm->init(ctx);
 
     uLong output_sz;
     if(ctx->compress_or_decompress) { // 压缩空间预估理论上不同算法各有自己的计算规则
@@ -963,7 +941,7 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         return -1;
     }
 
-    if (ctx->is_lz77_mode) {
+    if (ctx->is_lz77_mode || ctx->is_zlib) {
         if (prepare_tuple_buf(ctx, src_len) != 0) {
             return -1;
         }
@@ -981,8 +959,6 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         }
         if (g_file_chunk_size != 0) { // 分片逻辑
             ret = do_comp_with_split_file(ctx, inbuf, src_len, outbuf, output_sz, &out_offset);
-        } else { // 原始文件整体丢入
-            ret = do_comp_and_decomp_with_full_file(ctx, inbuf, src_len, outbuf, output_sz, &out_offset);
         }
         if(ret < 0) {
             printf("Error: 压缩解压失败 ret=%d \n", ret);
@@ -1047,9 +1023,9 @@ static int start_work_decompress(
     struct fragment_metadata *loaded_fragments = NULL;
     unsigned int fragment_count;
     load_metadata_from_file(in_filename, &loaded_fragments, &fragment_count);
-    // // // 打印读取的元数据
+    // 打印读取的元数据
     // for (unsigned int i = 0; i < fragment_count; i++) {
-    //     printf("Fragment %d: Offset = %u, Length = %u\n", i + 1, loaded_fragments[i].offset, loaded_fragments[i].len);
+    //     printf("Fragment %d: Offset = %u, Length = %u chunk_len = 0x%lx\n", i + 1, loaded_fragments[i].offset, loaded_fragments[i].len, loaded_fragments[i].src_chunk_len);
     // }
 
     ctx->src_buf = inbuf;
@@ -1076,11 +1052,17 @@ static int start_work_decompress(
         }
     }
 
-    if (ctx->src_buf_num != 1)
-        LZ4_async_compress_init(get_physical_address_wrapper);
-    else
-        LZ4_async_compress_init(NULL);
+    if (ctx->src_buf_num != 1 || ctx->is_zlib)
+        ctx->usr_map = get_physical_address_wrapper;
 
+    if (ctx->algorithm->init)
+        ctx->algorithm->init(ctx);
+
+    if (ctx->is_zlib) {
+        if (prepare_tuple_buf(ctx, loaded_fragments[0].src_chunk_len * fragment_count) != 0) {
+            return -1;
+        }
+    }
     struct timeval start, stop;
     gettimeofday(&start, NULL);
 
@@ -1089,6 +1071,7 @@ static int start_work_decompress(
     for (j = 0; j < ctx->loop_times; j++) {
         if (j > 0) { // 为第1次之后的循环的产物复用空间
             out_offset = output_sz;
+            ctx->tuple_buf_offset = ctx->tuple_buf_len / 2;
         }
         if (g_file_chunk_size != 0) { // 分片逻辑
             for (int k = 0; k < fragment_count; k++) {
@@ -1111,17 +1094,8 @@ static int start_work_decompress(
                 param->sn = ctx->sn;
                 param->loop_index = j;
 
-                size_t output_size_chunk = MIN(this_src_len * 300, 1*1024*1024*1024); // 预估本次压缩后产物的长度
+                size_t output_size_chunk = loaded_fragments[k].src_chunk_len; // 预估本次压缩后产物的长度
                 void *dst_start = outbuf + out_offset;  // 使用总内存里面的部分空间
-                param->dst.buf_num = 1;
-                param->dst.buf = param->dst_buf;
-                param->dst.buf[0].data = dst_start;
-                param->dst.buf[0].buf_len = output_size_chunk;
-                param->src.buf_num = 1;
-                param->src.buf = param->src_buf;
-                param->src.buf[0].data = inbuf + this_offset;
-                param->src.buf[0].buf_len = this_src_len;
-                param->src_len = this_src_len;
                 param->ibuf_crc = 0;
                 param->obuf_crc = 0;
                 if (ctx->with_crc == 1) {
@@ -1132,11 +1106,10 @@ static int start_work_decompress(
                     param->result.obuf_crc = NULL;
                 }
                 param->result.user_data = param;
-                param->result.src_size = this_src_len;
-                param->result.dst_len = output_size_chunk;
-                ret = do_real_compression(ctx, &param->src, (unsigned int *)&this_src_len,
-                                          &param->dst, (unsigned int *)&output_size_chunk, &param->result);
-
+                comp_and_decomp_fill_src_buf(param, this_src_len, inbuf, this_offset);
+                comp_and_decomp_fill_dst_buf(param, output_size_chunk, dst_start);
+                ret = do_real_compression(ctx, &param->src, (unsigned int *)&this_src_len, param->dst_buf_list,
+                                          (unsigned int *)&output_size_chunk, &param->result);
                 if(ret != 0) {
                     printf("Error: sn %d len=%d;offset=%lx. end=%lx.do_real_compression decomp error. ret = %d \nexit\n ",
                            param->sn, loaded_fragments[k].len, this_offset, this_offset +  loaded_fragments[k].len, ret);
@@ -1150,9 +1123,6 @@ static int start_work_decompress(
                 }
                 ctx->sn++;
 
-                if (ctx->compress_or_decompress == 0 && ctx->algorithm->async_decompress && g_file_chunk_size) {
-                    output_size_chunk = g_file_chunk_size * 1024 * 2;
-                }
                 out_offset += output_size_chunk; // 偏移本次解压实际使用的空间
             }
         }
@@ -1350,7 +1320,11 @@ int round_trip_fuzztest(uint32_t RDGseed)
             ctx.loop_times = 1;
             multi = 1;
         }
-        LZ4_async_compress_init(NULL);
+        ctx.usr_map = NULL;
+
+        if (ctx.algorithm->init)
+            ctx.algorithm->init(&ctx);
+
         if (!ctx.compress_or_decompress && g_file_chunk_size > 0) { // 如果是分片解压，单独处理
             ret = start_work_decompress(&ctx, in_filename, out_filename, multi, window_bits, level);
         } else {
@@ -1549,7 +1523,7 @@ int main(int argc, char **argv)
     compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
     ctx->loop_times = loop_times;
 
-    if (!ctx->compress_or_decompress && g_file_chunk_size > 0 && threadNum == 1) { // 如果是分片解压，单独处理
+    if (!ctx->compress_or_decompress && threadNum == 1) { // 如果是分片解压，单独处理
         ret = start_work_decompress(ctx, in_filename, out_filename, multi, window_bits, level);
     } else {
         if (threadNum > 1) {
@@ -1578,10 +1552,8 @@ int main(int argc, char **argv)
         }
     }
 
-    if (ctx->sess)
-        KAELZ4_destroy_async_compress_session(ctx->sess);
-    else
-        LZ4_teardown_async_compress();
+    if (ctx->algorithm->cleanup)
+        ctx->algorithm->cleanup(ctx);
 
     compress_ctx_destory(ctx);
     free(ctx);

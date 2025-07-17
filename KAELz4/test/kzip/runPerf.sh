@@ -45,7 +45,7 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:" opt; do
 done
 
 Alg=${Alg:=kaezip}
-multiProcess=${multiProcess:=2}
+multiProcess=${multiProcess:=1}
 fileChunk=${fileChunk:=0}
 loppTimes=${loppTimes:=1}
 inflightNum=${inflightNum:=64}
@@ -98,6 +98,7 @@ taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $tes
 date
 
 # sleep 1
+#taskset -c $bindCpu0AndCpu1 gdb --args ./kzip -d -A "kaezlib_deflate" -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
 taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
 date
 if [[ ! -f "$testFile" ]]; then

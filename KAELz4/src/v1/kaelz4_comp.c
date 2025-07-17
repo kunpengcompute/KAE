@@ -633,17 +633,6 @@ static void kaelz4_async_compress_cb(int status, void *param)
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
-    if (kaelz4_ctx->q_node->is_sgl) {
-        if (kaelz4_ctx->src_sgl != NULL) {
-            wd_destory_sgl(kaelz4_ctx->q_node->kae_wd_queue, kaelz4_ctx->q_node->kae_queue_mem_pool, kaelz4_ctx->src_sgl);
-            kaelz4_ctx->src_sgl = NULL;
-        }
-        if (kaelz4_ctx->dst_sgl_usr != NULL) {
-            wd_destory_sgl(kaelz4_ctx->q_node->kae_wd_queue, kaelz4_ctx->q_node->kae_queue_mem_pool, kaelz4_ctx->dst_sgl_usr);
-            kaelz4_ctx->dst_sgl_usr = NULL;
-        }
-    }
-
     if (status != 0) {
         US_ERR("kaelz4_async_compress_cb status %d !\n", status);
         req->compress_ctx->status = KAE_LZ4_COMP_FAIL;

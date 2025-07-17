@@ -1,4 +1,5 @@
 #include "../manage.h"
+#include "../../compress_ctx.h"
 #include <stdio.h>
 #include <lz4.h>
 #include <lz4frame.h>
@@ -29,7 +30,7 @@ static int lz4_async_frame_compress(void *sess, const struct kaelz4_buffer_list 
 }
 
 // 单个 LZ4 frame 格式文件的解压实现
-static int lz4_async_frame_decompress(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback cb, struct kaelz4_result *result)
+static int lz4_async_frame_decompress(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback cb, struct kaelz4_result *result)
 {
     int ret = LZ4F_decompress_async(src, dst, cb, result, NULL);
     return ret;
@@ -42,10 +43,23 @@ static int lz4_frame_bound(int src_len) {
     return LZ4F_compressFrameBound(src_len, NULL);
 }
 // LZ4 frame 初始化
-static int lz4_frame_init() {
-    printf("Initializing LZ4...\n");
+static int lz4_frame_init(struct compress_ctx *ctx) {
+    if (ctx->is_polling && ctx->compress_or_decompress) {
+        ctx->sess = KAELZ4_create_async_compress_session(ctx->usr_map);
+    } else {
+        LZ4_async_compress_init(ctx->usr_map);
+    }
     return 0;
 }
+
+static void lz4_async_frame_cleanup(struct compress_ctx *ctx)
+{
+    if (ctx->sess)
+        KAELZ4_destroy_async_compress_session(ctx->sess);
+    else
+        LZ4_teardown_async_compress();
+}
+
 
 // LZ4 frame 算法实例
 compression_algorithm_t lz4_async_frame_algorithm = {
@@ -54,7 +68,8 @@ compression_algorithm_t lz4_async_frame_algorithm = {
     .poll = KAELZ4_compress_async_polling_in_session,
     .async_compress = lz4_async_frame_compress,
     .async_decompress = lz4_async_frame_decompress,
-    .init = lz4_frame_init
+    .init = lz4_frame_init,
+    .cleanup = lz4_async_frame_cleanup
 };
 
 // 注册 LZ4 frame 算法

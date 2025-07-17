@@ -26,5 +26,6 @@ int kz_inflateInit2_(z_streamp strm, int windowBits, const char *version, int st
 int kz_inflate(z_streamp strm, int flush);
 int kz_inflateEnd(z_streamp strm);
 int kz_inflateReset(z_streamp strm);
+int uadk_get_accel_platform(void);
 
 #endif

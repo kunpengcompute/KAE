@@ -13,10 +13,11 @@
 #include <lz4.h>
 #include <lz4frame.h>
 
+struct compress_ctx;
 typedef struct {
     const char *name;
     // 同步接口
-    int (*init)();
+    int (*init)(struct compress_ctx *ctx);
     int (*bound)(int src_len);
     // 我们约定：由框架统一读取待处理的数据以及大小。统一申请待存储的空间以及大小。
     // 压缩解压算法需要输出正确的处理后产物，输出正确的 dst_len。
@@ -26,13 +27,13 @@ typedef struct {
                    unsigned char *dst, unsigned int *dst_len);
     int (*decompress)(const unsigned char *src, unsigned int *src_len,
                      unsigned char *dst, unsigned int *dst_len);
-    void (*cleanup)();
-    void (*poll)(void *sess, int budget);
+    void (*cleanup)(struct compress_ctx *ctx);
+    void (*poll)(void *sess, int budget); // polling 模式下，根据session查询结果的接口
     // 异步接口
     int (*async_compress)(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                           lz4_async_callback cb, struct kaelz4_result *result);
 
-    int (*async_decompress)(const struct kaelz4_buffer_list* src, struct kaelz4_buffer_list *dst,
+    int (*async_decompress)(void *sess, const struct kaelz4_buffer_list* src, struct kaelz4_buffer_list *dst,
                            lz4_async_callback cb, struct kaelz4_result *result);
 } compression_algorithm_t;
 
@@ -53,4 +54,7 @@ void register_lz4async_block_algorithm(void);
 void register_lz4async_frame_algorithm(void);
 void register_lz4async_lz77_algorithm(void);
 void register_lz4async_lz77_frame_algorithm(void);
+void register_zlib_algorithm(void);
+void register_zlib_deflate_algorithm(void);
+void register_zlibasync_block_algorithm(void);
 #endif

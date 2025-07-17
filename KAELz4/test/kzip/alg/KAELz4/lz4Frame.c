@@ -21,7 +21,7 @@ static int lz4_frame_compress(const unsigned char *src, unsigned int *src_len, u
     }
 
     *dst_len = ret;  // lz4 LZ4_compress_default的返回值才是压缩后的空间大小。
-    return ret > 0 ? 0 : ret; 
+    return ret > 0 ? 0 : ret;
 }
 
 // 单个 LZ4 frame 格式文件的解压实现
@@ -45,8 +45,7 @@ static int lz4_frame_bound(int src_len) {
     return  needlen;
 }
 // LZ4 frame 初始化
-static int lz4_frame_init() {
-    printf("Initializing LZ4...\n");
+static int lz4_frame_init(struct compress_ctx *ctx) {
     return 0;
 }
 

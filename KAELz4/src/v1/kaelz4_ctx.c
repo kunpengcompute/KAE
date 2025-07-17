@@ -8,6 +8,7 @@
 #include "kaelz4_ctx.h"
 #include "kaelz4_utils.h"
 #include "kaelz4_log.h"
+#include "uadk/v1/wd_sgl.h"
 
 static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_deflate_qp = NULL;
 static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_inflate_qp = NULL;
@@ -376,6 +377,16 @@ void kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx)
     struct kaelz4_instance *instance = (struct kaelz4_instance *)kz_ctx->q_node->priv_ctx;
     KAE_QUEUE_DATA_NODE_S *q_node = kz_ctx->q_node;
 
+    if (kz_ctx->q_node->is_sgl) {
+        if (kz_ctx->src_sgl) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl);
+            kz_ctx->src_sgl = NULL;
+        }
+        if (kz_ctx->dst_sgl_usr) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr);
+            kz_ctx->dst_sgl_usr = NULL;
+        }
+    }
     instance->kz_ctx[kz_ctx->index] = NULL;
     kaelz4_free_kz_ctx(kz_ctx);
 

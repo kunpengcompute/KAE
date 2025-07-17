@@ -8,7 +8,7 @@
 #include "kaezip.h"
 #include "wd_comp.h"
 #include "kaezip_adapter.h"
-#include "kaezip_init.h"
+#include "v2/kaezip_init.h"
 #include "kaezip_comp.h"
 #include "kaezip_deflate.h"
 #include "kaezip_inflate.h"
@@ -22,10 +22,10 @@ enum {
 };
 static int g_platform = -1;
 
-static void uadk_get_accel_platform(void)
+int uadk_get_accel_platform(void)
 {
     if (g_platform >= 0) {
-        return;
+        return g_platform;
     }
     //	init log
     kaezip_debug_init_log();
@@ -49,6 +49,7 @@ static void uadk_get_accel_platform(void)
     g_platform = HW_NONE;
 end:
     US_INFO("g_platform is %d, inited!\n", g_platform);
+    return g_platform;
 }
 
 /* -----------------------------------------------DEFLATE----------------------------------------------- */
