@@ -315,7 +315,7 @@ static void kaezip_find_and_free_kz_ctx(struct kaezip_async_ctrl *ctrl, kaezip_c
 
 static void kaezip_do_compress_polling(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req)
 {
-    if (req->special_flag != 0) {
+    if (req->special_flag != 0 || req->kz_ctx == NULL) {
         return;
     }
 
@@ -440,6 +440,50 @@ int kaezip_async_compress_polling(struct kaezip_async_ctrl *ctrl, int budget)
     }
 
     return cnt;
+}
+
+void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype)
+{
+    struct kaezip_compress_ctx *compress_ctx = ctrl->ctx_head;
+    struct kaezip_async_req *req = NULL;
+    int win_size = kaezip_get_win_size();
+    int is_sgl = 1;
+
+    while (compress_ctx != NULL) {
+        req = compress_ctx->req_list;
+        while (req != NULL) {
+            req->compress_ctx->status = KAE_ZLIB_HW_TIMEOUT_FAIL;
+            req->done = 1;
+            req->kz_ctx = NULL;
+            req = req->next;
+        }
+        compress_ctx = compress_ctx->next;
+    }
+
+    while (ctrl->ctx_head) {
+        (void)kaezip_async_compress_polling(ctrl, ctrl->ctx_num);
+    }
+
+    for (int i = 0; i < ctrl->ctx_num; i++) {
+        if (ctrl->kz_ctx[i] != NULL) {
+            is_sgl = ctrl->kz_ctx[i]->q_node->is_sgl;
+            win_size = ctrl->kz_ctx[i]->q_node->win_size;
+            kaezip_free_ctx(ctrl->kz_ctx[i]);
+            ctrl->kz_ctx[i] = NULL;
+        }
+    }
+
+    for (int i = 0; i < ctrl->ctx_num; i++) {
+        if (ctrl->kz_ctx[i] != NULL) {
+            continue;
+        }
+        kaezip_ctx_t *kz_ctx = kaezip_init_v1(win_size, is_sgl, comp_optype);
+        if (kz_ctx == NULL) {
+            return;
+        }
+        ctrl->kz_ctx[i] = kz_ctx;
+        ctrl->kz_ctx[i]->usr_map = ctrl->usr_map;
+    }
 }
 
 static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
@@ -615,6 +659,9 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
                            kaezip_async_callback callback, struct kaezip_result *result,
                            enum kaezip_async_data_format data_format, int comp_optype)
 {
+    if (result->src_size == 0) {
+        goto err_callback;
+    }
     struct kaezip_compress_ctx *compress_ctx = &ctrl->ctx[ctrl->ctx_index];
 
     compress_ctx->dst = dst;
@@ -651,12 +698,12 @@ free_compress_ctx:
     if (ctrl->ctx_head == NULL) {
         ctrl->tail = NULL;
     }
-
+err_callback:
     if (ctrl->is_polling) {
-        return KAE_ZLIB_ALLOC_FAIL;
+        return KAE_ZLIB_INVAL_PARA;
     }
-    result->status = KAE_ZLIB_ALLOC_FAIL;
+    result->status = KAE_ZLIB_INVAL_PARA;
     result->dst_len = 0;
     callback(result);
-    return KAE_ZLIB_ALLOC_FAIL;
+    return KAE_ZLIB_INVAL_PARA;
 }

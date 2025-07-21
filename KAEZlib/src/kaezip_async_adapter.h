@@ -67,7 +67,9 @@ typedef struct {
 } kaezip_session;
 
 typedef void *(*task_queue_process_fn)(void *);
-
+typedef int (*compress_async_fn)(struct kaezip_async_ctrl *ctrl, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
+                                 kaezip_async_callback callback, struct kaezip_result *result,
+                                 enum kaezip_async_data_format data_format, int comp_optype);
 
 void *kaezip_init_v1(int win_size, int is_sgl, int comp_optype);
 
@@ -82,5 +84,5 @@ int kaezip_async_is_thread_do_comp_full(struct kaezip_async_ctrl *ctrl);
 
 int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype);
 void kaezip_async_instances_deinit(struct kaezip_async_ctrl *ctrl);
-
+void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype);
 #endif

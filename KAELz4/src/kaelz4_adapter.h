@@ -71,15 +71,18 @@ typedef struct {
 } kaelz4_session;
 
 typedef void *(*task_queue_process_fn)(void *);
+typedef int (*compress_async_fn)(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                                 lz4_async_callback callback, struct kaelz4_result *result,
+                                 enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 
 int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl);
 void kaelz4_reset_v1(LZ4_CCtx* zc);
 void kaelz4_release_v1(LZ4_CCtx* zc);
 void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
 int  kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize);
-int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const void *src, void *dst,
-                           lz4_async_callback callback, struct kaelz4_result *result,
-                           enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
+int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                          lz4_async_callback callback, struct kaelz4_result *result,
+                          enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget);
 
 int  kaelz4_init_v2(LZ4_CCtx* zc);
@@ -97,4 +100,5 @@ void kaelz4_async_instances_deinit(struct kaelz4_async_ctrl *ctrl);
 
 int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                 struct kaelz4_result *result, enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
+void kaelz4_hw_timeout_handle(struct kaelz4_async_ctrl *ctrl);
 #endif

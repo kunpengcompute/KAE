@@ -225,11 +225,11 @@ static void set_cpu_affinity_for_child(int i)
     }
 }
 
-static void kaelz4_dequeue_process(struct kaelz4_async_ctrl *ctrl, lz4_task_queue *task_queue, int budget)
+static void kaelz4_dequeue_process(struct kaelz4_async_ctrl *ctrl, lz4_task_queue *task_queue, int budget, compress_async_fn compress_func)
 {
     int cnt = 0;
     // 等待任务
-    while (task_queue->pi != task_queue->ci && cnt < budget) {
+    while (task_queue->pi != task_queue->ci && (cnt < budget || budget == 0)) {
 
         // 如果要停止线程
         if (task_queue->stop) {
@@ -251,8 +251,7 @@ static void kaelz4_dequeue_process(struct kaelz4_async_ctrl *ctrl, lz4_task_queu
         // 更新 ci，复用空闲位置
         task_queue->ci++;
         // 执行压缩操作
-        kaelz4_compress_async(ctrl, task.src, task.dst, task.callback, task.result,
-                              task.data_format, &task.preferences);
+        compress_func(ctrl, task.src, task.dst, task.callback, task.result, task.data_format, &task.preferences);
         cnt++;
     }
     return;
@@ -297,7 +296,7 @@ static void *compress_thread_func(void *arg)
         enter_idle = 0;
 
         if (!kaelz4_async_is_thread_do_comp_full(ctrl)) {
-            kaelz4_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
+            kaelz4_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, kaelz4_compress_async);
         }
         ret = kaelz4_async_compress_polling(ctrl, ASYNC_POLLING_DEFAULT_BUDGET);
     }
@@ -577,6 +576,29 @@ void KAELZ4_destroy_async_compress_session(void *sess)
     }
 }
 
+static int kaelz4_task_flush_callback(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
+                               lz4_async_callback callback, struct kaelz4_result *result,
+                               enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
+{
+    result->status = KAE_LZ4_HW_TIMEOUT_FAIL;
+    result->dst_len = 0;
+    callback(result);
+    return KAE_LZ4_HW_TIMEOUT_FAIL;
+}
+
+static void kaelz4_flush_task_queue(struct kaelz4_async_ctrl *ctrl, lz4_task_queue *task_queue)
+{
+    kaelz4_dequeue_process(ctrl, task_queue, 0, kaelz4_task_flush_callback);
+}
+
+void KAELZ4_reset_session(void *sess)
+{
+    if (sess) {
+        kaelz4_hw_timeout_handle(((kaelz4_session *)sess)->ctrl);
+        kaelz4_flush_task_queue(((kaelz4_session *)sess)->ctrl, &((kaelz4_session *)sess)->task_queue);
+    }
+}
+
 void KAELZ4_teardown_async_compress(void)
 {
     pthread_mutex_lock(&g_task_queue_init_mutex);
@@ -776,7 +798,7 @@ void KAELZ4_compress_async_polling_in_session(void *sess, int budget)
     while (ret > 0 && cnt < budget) {
         ret = kaelz4_async_compress_polling(ctrl, ASYNC_POLLING_DEFAULT_BUDGET);
         if (!kaelz4_async_is_thread_do_comp_full(ctrl)) {
-            kaelz4_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
+            kaelz4_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, kaelz4_compress_async);
         }
         cnt += ret;
     }

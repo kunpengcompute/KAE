@@ -187,6 +187,11 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
  */
 void KAELZ4_destroy_async_compress_session(void *sess);
 /**
+ * @brief: reset session and hardware ctx, all compress tasks will be canceled.
+ * @param: sess : session
+ */
+void KAELZ4_reset_session(void *sess);
+/**
  * @brief: block compress async api
  * @param: sess : session
  * @param: src [IN] : input data

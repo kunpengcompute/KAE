@@ -25,7 +25,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "zlib.h"
-
 #define Z_CALL_SOFT 10
 
 #define VERSION_STRUCT_MAXLEN 100
@@ -154,6 +153,11 @@ void KAEZIP_destroy_async_decompress_session(void *sess);
  * @return: 0 success, other fail
  */
 int KAEZIP_decompress_async_in_session(void *sess, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
-                                     kaezip_async_callback callback, struct kaezip_result *result);
+                                       kaezip_async_callback callback, struct kaezip_result *result);
+/**
+ * @brief: reset session and hardware ctx, all compress tasks will be canceled.
+ * @param: sess : session
+ */
+void KAEZIP_reset_session(void *sess);
 #endif
 

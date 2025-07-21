@@ -757,7 +757,7 @@ static void kaelz4_find_and_free_kz_ctx(struct kaelz4_async_ctrl *ctrl, kaelz4_c
 
 static void kaelz4_do_compress_polling(struct kaelz4_async_ctrl *ctrl, struct kaelz4_async_req *req)
 {
-    if (req->special_flag != 0) {
+    if (req->special_flag != 0 || req->zc.kaeConfig == 0) {
         return;
     }
 
@@ -1124,6 +1124,48 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
     }
 
     return cnt;
+}
+
+void kaelz4_hw_timeout_handle(struct kaelz4_async_ctrl *ctrl)
+{
+    struct kaelz4_compress_ctx *compress_ctx = ctrl->ctx_head;
+    struct kaelz4_async_req *req = NULL;
+    int is_sgl = 1;
+
+    while (compress_ctx != NULL) {
+        req = compress_ctx->req_list;
+        while (req != NULL) {
+            req->compress_ctx->status = KAE_LZ4_HW_TIMEOUT_FAIL;
+            req->done = 1;
+            req->zc.kaeConfig = 0;
+            req = req->next;
+        }
+        compress_ctx = compress_ctx->next;
+    }
+
+    while (ctrl->ctx_head) {
+        (void)kaelz4_async_compress_polling(ctrl, ctrl->ctx_num);
+    }
+
+    for (int i = 0; i < ctrl->ctx_num; i++) {
+        if (ctrl->kz_ctx[i] != NULL) {
+            is_sgl = ctrl->kz_ctx[i]->q_node->is_sgl;
+            kaelz4_free_ctx(ctrl->kz_ctx[i]);
+            ctrl->kz_ctx[i] = NULL;
+        }
+    }
+
+    LZ4_CCtx ctx_body;
+    for (int i = 0; i < ctrl->ctx_num; i++) {
+        if (ctrl->kz_ctx[i] != NULL) {
+            continue;
+        }
+        if (kaelz4_init(&ctx_body, is_sgl) != KAE_LZ4_SUCC) {
+            return;
+        }
+        ctrl->kz_ctx[i] = (kaelz4_ctx_t *)ctx_body.kaeConfig;
+        ctrl->kz_ctx[i]->usr_map = ctrl->usr_map;
+    }
 }
 
 static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
