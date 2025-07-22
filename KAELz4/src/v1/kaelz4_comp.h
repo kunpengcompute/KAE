@@ -56,6 +56,9 @@ struct kaelz4_priv_save_info {
     unsigned int prev_last_lit_buf_index; // 用户输入数据>64K需要分块、返回BLOCK格式、现有保序返回切块压缩结果的约束下，记录前一个分块的last literal信息
     const struct kaelz4_buffer_list *src;
     LZ4F_preferences_t preferences;
+    int *status;
+    size_t dstCapacity;
+    size_t dst_len;
 };
 
 typedef int (*kaelz4_post_process_handle_t)(struct kaelz4_async_req *req, const struct wd_buf_list *source,
@@ -63,8 +66,6 @@ typedef int (*kaelz4_post_process_handle_t)(struct kaelz4_async_req *req, const 
 
 struct kaelz4_compress_ctx {
     size_t srcSize;
-    size_t dstCapacity;
-    size_t dst_len;
     const struct kaelz4_buffer_list *src;
     struct kaelz4_buffer_list *dst;
     struct kaelz4_priv_save_info save_info;

@@ -5,7 +5,7 @@ export KAE_LZ4_COMP_TYPE=8
 export KAE_LZ4_ASYNC_DC_THREAD_NUM=10
 
 # 使用 getopts 解析命令行参数
-while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:" opt; do
+while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:e:" opt; do
   case $opt in
     A)  # 要测试的算法
       Alg="$OPTARG"
@@ -37,6 +37,9 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:" opt; do
     p)
       isTestPolling="$OPTARG"
       ;;
+    e)
+      sess_nums="$OPTARG"
+      ;;
     *)
       echo "Usage: all params  m:l:n:w:f:o:v:A:h:s:c:"
       exit 1
@@ -54,6 +57,7 @@ testFile=${testFile:="../../../scripts/compressTestDataset/calgary"}
 useKAENum=${useKAENum:=2}
 isTestCrc=${isTestCrc:=0}
 isTestPolling=${isTestPolling:=0}
+sess_nums=${sess_nums:=1}
 
 buildParams="kaelz4"
 sh build.sh $buildParams
@@ -94,12 +98,12 @@ echo "taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFil
 
 date
 # gdb --args
-taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc -p $isTestPolling
+taskset -c $bindCpu0AndCpu1 ./kzip -A $Alg -m $multiProcess -f $testFile -o $testFileComped -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc -p $isTestPolling -e $sess_nums
 date
 
 # sleep 1
 #taskset -c $bindCpu0AndCpu1 gdb --args ./kzip -d -A "kaezlib_deflate" -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
-taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc
+taskset -c $bindCpu0AndCpu1 ./kzip -d -A $Alg -m $multiProcess -f $testFileComped -o $testFileOrigin -c $cpuConfigStr -n $loppTimes -s $fileChunk -i $inflightNum -t $threadsNum -r $isTestCrc -p $isTestPolling -e $sess_nums
 date
 if [[ ! -f "$testFile" ]]; then
     echo "Error: 压缩异常!未成功压缩文件"

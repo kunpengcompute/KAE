@@ -135,7 +135,7 @@ static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct
         result->dst_len += dst->buf[i].buf_len;
     }
 
-    if (unlikely(src->buf_num > REQ_BUFFER_MAX || dst->buf_num > REQ_BUFFER_MAX)) {
+    if (unlikely(src->buf_num > REQ_BUFFER_MAX || src->buf_num <= 0 || dst->buf_num > REQ_BUFFER_MAX || dst->buf_num <= 0)) {
         return KAE_ZLIB_INVAL_PARA;
     }
 

@@ -30,6 +30,36 @@
 
 void kaezip_wd_free_queue(struct wd_queue* queue);
 
+#define ALL_NUMA_NODES 4
+static int g_numa_used_config_nodes[ALL_NUMA_NODES];
+static int g_numa_used_config_count = 0;
+
+/**
+ * 解析环境变量 KAE_ZIP_QUEUE_NODES_MASK 的 mask值。
+ * 解析方法：十进制转换为2进制，根据每一位的值，确认是否使用对应NUMA。
+ * 举例说明：
+ * export KAE_ZIP_QUEUE_NODES_MASK=15   // 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
+ * export KAE_ZIP_QUEUE_NODES_MASK=12   // 十进制12 → 二进制 0011 → 使用NUMA 2,3
+ * export KAE_ZIP_QUEUE_NODES_MASK=3    // 十进制 3 → 二进制 0011 → 使用NUMA 0,1
+ */
+static void parse_numa_env_mask(int mask) {
+    g_numa_used_config_count = 0;
+    for (int i = 0; i < ALL_NUMA_NODES; ++i) {
+        if (mask & (1 << i)) {
+            g_numa_used_config_nodes[g_numa_used_config_count++] = i;
+        }
+    }
+}
+static int get_numa_mask(int mask) {
+    if (g_numa_used_config_count == 0) {
+        parse_numa_env_mask(mask);
+    }
+    static int numa_id = 0;
+    int nid = g_numa_used_config_nodes[numa_id++ % g_numa_used_config_count];
+    US_DEBUG("wd_queue use numa %d in this sess.\n", nid);
+    return 1 << nid;
+}
+
 struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_sgl)
 {
     struct wd_queue* queue = (struct wd_queue *)kae_malloc(sizeof(struct wd_queue));
@@ -58,6 +88,13 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_
 
     if (is_sgl)
         queue->capa.priv.is_single_thread = 1;
+
+    char *queue_nodes = getenv("KAE_ZIP_QUEUE_NODES_MASK");
+    if (queue_nodes != NULL) {
+        int queue_nodes_all = atoi(queue_nodes);
+        int numa_mask = get_numa_mask(queue_nodes_all);
+        queue->node_mask = numa_mask;
+    }
 
     struct wcrypto_paras *priv = (struct wcrypto_paras *)&(queue->capa.priv);
     priv->direction = comp_optype;

@@ -386,9 +386,14 @@ static void compress_async_polling(struct compress_param *param)
     struct compress_ctx *ctx = param->ctx;
 
     while (unlikely(param->done != 1)) {
-        if (ctx->sess && ctx->algorithm->poll)
-            ctx->algorithm->poll(ctx->sess, 1);
-        else {
+        if ((ctx->sess || ctx->sess_count > 1) && ctx->algorithm->poll) {
+            if(ctx->sess_count > 1) {
+                    int idx = param->sn % ctx->sess_count;
+                    ctx->algorithm->poll(ctx->sess_array[idx], 1);
+            } else {
+                ctx->algorithm->poll(ctx->sess, 1);
+            }
+        } else {
             ctx->param_index = (ctx->param_index + 1) % ctx->inflight_num;
             param = &ctx->param_buf[ctx->param_index];
         }
@@ -473,17 +478,30 @@ static void compress_async_callback(struct kaelz4_result *result)
     return;
 }
 
+static int get_session_index(struct compress_ctx *ctx) {
+    int idx = ctx->sn % ctx->sess_count;
+    return idx;
+}
+
 static int do_real_compression(struct compress_ctx *ctx, const struct kaelz4_buffer_list *src, unsigned int *src_len,
                         struct kaelz4_buffer_list *dst, unsigned int *dst_len, void *param)
 {
     if (ctx->compress_or_decompress) { // 压缩流程。
         if (ctx->algorithm->async_compress) {
+            if(ctx->sess_count > 1) {
+                int idx = get_session_index(ctx);
+                return ctx->algorithm->async_compress(ctx->sess_array[idx], src, dst, compress_async_callback, param);
+            }
             return ctx->algorithm->async_compress(ctx->sess, src, dst, compress_async_callback, param);
         } else {
             return ctx->algorithm->compress(src->buf[0].data, src_len, dst->buf[0].data, dst_len);
         }
     } else { // 解压逻辑
         if (ctx->algorithm->async_decompress) {
+            if(ctx->sess_count > 1) {
+                int idx = get_session_index(ctx);
+                return ctx->algorithm->async_decompress(ctx->sess_array[idx], src, dst, compress_async_callback, param);
+            }
             return ctx->algorithm->async_decompress(ctx->sess, src, dst, compress_async_callback, param);
         } else {
             return ctx->algorithm->decompress(src->buf[0].data, src_len, dst->buf[0].data, dst_len);
@@ -493,7 +511,7 @@ static int do_real_compression(struct compress_ctx *ctx, const struct kaelz4_buf
 }
 
 static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompress, unsigned int inflight_num,
-                       unsigned int chunk_len, compression_algorithm_t *algorithm, int is_test_crc)
+                       unsigned int chunk_len, compression_algorithm_t *algorithm, int is_test_crc, int sess_nums)
 {
     ctx->algorithm = algorithm;
     ctx->chunk_len = chunk_len;
@@ -511,7 +529,12 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->usr_map = NULL;
     if (g_file_chunk_size && ((size_t)g_file_chunk_size * 1024) <= HPAGE_SIZE && ((ctx->algorithm->async_compress != NULL && ctx->compress_or_decompress != 0)
       || (ctx->algorithm->async_decompress != NULL && !ctx->compress_or_decompress))) {
+        // 此处src_buf_num可修改为其他值，用于测试多个链表节点的功能和性能。
         ctx->src_buf_num = 4;
+        // 分片为4k的模式下，使用单个buf节点性能最优，比4个节点的情况性能提升约4%。
+        if(g_file_chunk_size == 4) {
+            ctx->src_buf_num = 1;
+        }
     }
 
     ctx->all_delays = (uint64_t *)malloc(sizeof(uint64_t) * MAX_LATENCY_COUNT);
@@ -535,6 +558,9 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     }
     ctx->is_polling = g_enable_polling_mode;
     ctx->is_zlib = strcmp(algorithm->name, "kaezlibasync_deflate") == 0;
+
+    ctx->sess_count = sess_nums;
+    ctx->sess_array = calloc(ctx->sess_count, sizeof(void *));
 }
 
 static void compress_ctx_destory(struct compress_ctx *ctx)
@@ -1314,7 +1340,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
             return -1;
         }
         struct compress_ctx ctx;
-        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, 0);
+        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, 0, 1);
         ctx.loop_times = loop_times;
         if (!ctx.compress_or_decompress) {
             ctx.loop_times = 1;
@@ -1333,7 +1359,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
                 int j;
                 for (j = 0; j < threadNum; j++) {
                     struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
-                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, 0);
+                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, 0, 1);
                     args->ctx.thread_id = j;
                     args->ctx.loop_times = loop_times;
                     args->in_filename = in_filename;
@@ -1388,6 +1414,7 @@ static void usage(void)
     printf("  -P: use Huge Pages to save uncompress data \n");
     printf("  -p: use polling mode to wait for async operation done\n");
     printf("  -r: take crc32 checksum when data is callback.default: 0 \n");
+    printf("  -e: use how many sessions to test compression at same time.default: 1 \n");
     printf("  example: ./kzip -A kaelz4 -m 2 -f ./kzip -o ./kzip.compressd -n 1000\n");
     printf("           ./kzip -A kaelz4 -d -m 2  -f ./kzip.compressd -o ./kzip.origin  -n 1000\n");
 }
@@ -1397,7 +1424,7 @@ int main(int argc, char **argv)
     initialize_algorithms();
     init_env_config();
 
-    const char *optstring = "dm:l:n:w:f:o:v:A:hg:s:c:i:t:T:F:r:P:p:";
+    const char *optstring = "dm:l:n:w:f:o:v:A:hg:s:c:i:t:T:F:r:P:p:e:";
     int ret = 0;
     int o = 0;
     int multi = 1;
@@ -1417,6 +1444,7 @@ int main(int argc, char **argv)
     int fuzztest = 0;
     uint32_t RDGseed = 0; // 随机数据生成种子
     int is_test_crc = 0; // 是否每次都带上crc32校验值
+    int sess_nums = 1; // 本次压缩任务创建的sess数量。默认1个session。大于1时需要使用数组存储创建的sessions，所有任务按策略使用。
 
     while ((o = getopt(argc, argv, optstring)) != -1) {
         if(optstring == NULL) continue;
@@ -1429,6 +1457,9 @@ int main(int argc, char **argv)
                 break;
             case 'd':
                 compress = 0;
+                break;
+            case 'e':
+                sess_nums = atoi(optarg);
                 break;
             case 'F':
                 fuzztest = 1;
@@ -1520,7 +1551,7 @@ int main(int argc, char **argv)
     }
 
     struct compress_ctx *ctx = malloc(sizeof(struct compress_ctx));
-    compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
+    compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums);
     ctx->loop_times = loop_times;
 
     if (!ctx->compress_or_decompress && threadNum == 1) { // 如果是分片解压，单独处理
@@ -1531,7 +1562,7 @@ int main(int argc, char **argv)
             int j;
             for (j = 0; j < threadNum; j++) {
                 struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
-                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc);
+                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums);
                 args->ctx.thread_id = j;
                 args->ctx.loop_times = loop_times;
                 args->in_filename = in_filename;

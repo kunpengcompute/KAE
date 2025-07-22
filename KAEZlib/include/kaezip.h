@@ -43,6 +43,7 @@ typedef struct {
 #define KAE_ZLIB_ALLOC_FAIL 5
 #define KAE_ZLIB_SET_FAIL 6
 #define KAE_ZLIB_HW_TIMEOUT_FAIL 7
+#define KAE_ZLIB_DST_BUF_OVERFLOW 8
 
 struct kaezip_result {
     int status;

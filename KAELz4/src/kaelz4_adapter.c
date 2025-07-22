@@ -714,7 +714,7 @@ static int kaelz4_check_param_valid(const struct kaelz4_buffer_list *src, struct
     }
 
     // now only support dst->buf_bum == 1
-    if (unlikely(dst->buf_num != 1 || dst->buf[0].data == NULL || dst->buf[0].buf_len == 0)) {
+    if (unlikely(dst->buf_num != 1 || dst->buf[0].data == NULL || dst->buf[0].buf_len == 0 || src->buf_num <= 0)) {
         return KAE_LZ4_INVAL_PARA;
     }
 

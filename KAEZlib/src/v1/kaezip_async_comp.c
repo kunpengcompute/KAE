@@ -223,6 +223,17 @@ static void kaezip_async_compress_cb(int status, void *param)
     kaezip_ctx_t* kz_ctx = req->kz_ctx;
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
 
+    if (status != WCRYPTO_STATUS_NULL && status != WCRYPTO_NEGTIVE_COMP_ERR) {
+        if (status == WD_IN_EPARA) {
+            req->compress_ctx->status = KAE_ZLIB_DST_BUF_OVERFLOW;
+        } else {
+            req->compress_ctx->status = KAE_ZLIB_COMP_FAIL;
+        }
+        US_ERR("kaezip_async_compress_cb status %d !\n", status);
+        req->done = 1;
+        return;
+    }
+
     kaezip_set_comp_status(kz_ctx);
     if (kz_ctx->status == KAEZIP_COMP_VERIFY_ERR) {
         US_ERR("kaezip_async_compress_cb status %d !\n", status);
@@ -315,7 +326,7 @@ static void kaezip_find_and_free_kz_ctx(struct kaezip_async_ctrl *ctrl, kaezip_c
 
 static void kaezip_do_compress_polling(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req)
 {
-    if (req->special_flag != 0 || req->kz_ctx == NULL) {
+    if (req->kz_ctx == NULL) {
         return;
     }
 
@@ -423,10 +434,7 @@ int kaezip_async_compress_polling(struct kaezip_async_ctrl *ctrl, int budget)
                    req->idx, req->src_size, compress_ctx->dstCapacity, req->last, ret, compress_ctx->status);
         }
 
-        if (!req->special_flag) {
-            ctrl->cur_num_in_comp--;
-        }
-
+        ctrl->cur_num_in_comp--;
         ctrl->ctx_head = compress_ctx->next;
         kaezip_compress_async_callback(compress_ctx, compress_ctx->status);
         compress_ctx = ctrl->ctx_head;
@@ -509,13 +517,7 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
             }
 
             (void)kaezip_async_compress_polling(ctrl, 1);
-            // 如果本线程已经idle，则使用之前已经申请到的kz_ctx
-            if (ctrl->cur_num_in_comp == 0 && ctrl->kz_ctx[0] != NULL) {
-                ctrl->ctx_index = 0;
-                kz_ctx = ctrl->kz_ctx[ctrl->ctx_index];
-            } else {
-                kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype);
-            }
+            kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype);
         }
         ctrl->kz_ctx[ctrl->ctx_index] = kz_ctx;
         ctrl->kz_ctx[ctrl->ctx_index]->usr_map = ctrl->usr_map;
@@ -536,8 +538,6 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
         kz_ctx = ctrl->kz_ctx[ctrl->ctx_index];
     }
 
-    ctrl->ctx_index = (ctrl->ctx_index + 1) % MAX_NUM_IN_COMP;
-    ctrl->cur_num_in_comp++;
     return kz_ctx;
 }
 
@@ -554,8 +554,6 @@ static int kaezip_send_async_compress(struct kaezip_async_ctrl *ctrl, struct kae
     int ret = kaezip_compress_async_impl(req->kz_ctx, &req->src, &req->dst, compress_size, dst_len, (void *)req);
     if (unlikely(ret != KAE_ZLIB_SUCC)) {
         kaezip_find_and_free_kz_ctx(ctrl, req->kz_ctx);
-        ctrl->ctx_index = (ctrl->ctx_index + MAX_NUM_IN_COMP - 1) % MAX_NUM_IN_COMP;
-        ctrl->cur_num_in_comp--;
         req->kz_ctx = NULL;
         US_ERR("Send compress cmd to kae hw failed! status %d\n", ret);
         return ret;
@@ -601,7 +599,7 @@ static void kaezip_fill_hw_req_src_buf_list(struct kaezip_async_req *req, const 
     }
 }
 
-static int kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *arg, int comp_optype)
+static void kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *arg, int comp_optype)
 {
     struct kaezip_compress_ctx *compress_ctx = arg;
 
@@ -609,36 +607,31 @@ static int kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *a
     size_t srcSize = compress_ctx->srcSize;
     size_t remainingLength = srcSize; // 该值用于保存剩余的待压缩数据长度
 
-    // 针对zlib的matchlength转换定义的数据结构
-    int idx = 0;
-    while (remainingLength) {
-        struct kaezip_async_req *req = &compress_ctx->req;
-        req->idx = idx;
-        req->special_flag = 0;
-        req->last = 0;
-        req->done = 0;
-        req->compress_ctx = compress_ctx;
-        req->next = NULL;
-        kaezip_fill_hw_req_src_buf_list(req, compress_ctx->src);
-        kaezip_fill_hw_req_dst_buf_list(req, compress_ctx->dst);
-        remainingLength -= req->src_size;
-        // 最后一块实际下发给芯片的长度是 src_size - MFLIMIT
-        if (remainingLength == 0) {
-            req->last = 1;
-        }
-
-        int ret = KAE_ZLIB_SUCC;
-        ret = kaezip_send_async_compress(ctrl, req, comp_optype);
-        compress_ctx->req_list = req;
-        idx++;
-        if (ret != KAE_ZLIB_SUCC) {
-            req->compress_ctx->status = KAE_ZLIB_COMP_FAIL;
-            req->special_flag = 1;
-            req->done = 1;
-        }
+    struct kaezip_async_req *req = &compress_ctx->req;
+    req->done = 0;
+    req->last = 1;
+    req->compress_ctx = compress_ctx;
+    req->next = NULL;
+    req->idx = 0;
+    compress_ctx->req_list = req;
+    if (unlikely(remainingLength == 0)) {
+        req->kz_ctx = NULL;
+        req->compress_ctx->status = KAE_ZLIB_COMP_FAIL;
+        req->done = 1;
+        return;
     }
 
-    return KAE_ZLIB_SUCC;
+    // 针对zlib的matchlength转换定义的数据结构
+    kaezip_fill_hw_req_src_buf_list(req, compress_ctx->src);
+    kaezip_fill_hw_req_dst_buf_list(req, compress_ctx->dst);
+
+    int ret = KAE_ZLIB_SUCC;
+    ret = kaezip_send_async_compress(ctrl, req, comp_optype);
+    if (ret != KAE_ZLIB_SUCC) {
+        req->compress_ctx->status = KAE_ZLIB_COMP_FAIL;
+        req->done = 1;
+    }
+    return;
 }
 
 static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct wd_buf_list *source,
@@ -659,9 +652,6 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
                            kaezip_async_callback callback, struct kaezip_result *result,
                            enum kaezip_async_data_format data_format, int comp_optype)
 {
-    if (result->src_size == 0) {
-        goto err_callback;
-    }
     struct kaezip_compress_ctx *compress_ctx = &ctrl->ctx[ctrl->ctx_index];
 
     compress_ctx->dst = dst;
@@ -687,23 +677,9 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
     }
     ctrl->tail = compress_ctx;
 
-    if (unlikely(kaezip_async_compress_process(ctrl, compress_ctx, comp_optype) != KAE_ZLIB_SUCC)) {
-        goto free_compress_ctx;
-    }
+    kaezip_async_compress_process(ctrl, compress_ctx, comp_optype);
 
+    ctrl->ctx_index = (ctrl->ctx_index + 1) % MAX_NUM_IN_COMP;
+    ctrl->cur_num_in_comp++;
     return KAE_ZLIB_SUCC;
-
-free_compress_ctx:
-    ctrl->ctx_head = compress_ctx->next;
-    if (ctrl->ctx_head == NULL) {
-        ctrl->tail = NULL;
-    }
-err_callback:
-    if (ctrl->is_polling) {
-        return KAE_ZLIB_INVAL_PARA;
-    }
-    result->status = KAE_ZLIB_INVAL_PARA;
-    result->dst_len = 0;
-    callback(result);
-    return KAE_ZLIB_INVAL_PARA;
 }

@@ -40,7 +40,7 @@ static int lz4_frame_bound(int src_len) {
     // if (g_has_custom_frameinfo_config == 1) {
     //     return LZ4F_compressFrameBound(src_len, NULL) * 1.2;
     // }
-    return LZ4F_compressFrameBound(src_len, NULL);
+    return LZ4F_compressFrameBound(src_len, NULL) * 1.2;
 }
 // LZ4 frame 初始化
 static int lz4_frame_init(struct compress_ctx *ctx) {

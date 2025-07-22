@@ -45,17 +45,38 @@ static int zlib_bound(int src_len) {
 }
 // Zlib 初始化
 static int zlib_async_deflate_init(struct compress_ctx *ctx) {
-    if(ctx->compress_or_decompress == 1) {
-        ctx->sess = KAEZIP_create_async_compress_session(ctx->usr_map);
+    if(ctx->sess_count > 1) {
+        for (int i = 0; i < ctx->sess_count; ++i) {
+            if(ctx->compress_or_decompress == 1) {
+                ctx->sess_array[i] = KAEZIP_create_async_compress_session(ctx->usr_map);
+            } else {
+                ctx->sess_array[i] = KAEZIP_create_async_decompress_session(ctx->usr_map);
+            }
+            if (!ctx->sess_array[i]) {
+                fprintf(stderr, "Failed to create session %d\n", i);
+            }
+        }
     } else {
-        ctx->sess = KAEZIP_create_async_decompress_session(ctx->usr_map);
+        if(ctx->compress_or_decompress == 1) {
+            ctx->sess = KAEZIP_create_async_compress_session(ctx->usr_map);
+        } else {
+            ctx->sess = KAEZIP_create_async_decompress_session(ctx->usr_map);
+        }
     }
     return 0;
 }
 
 static void zlib_async_deflate_cleanup(struct compress_ctx *ctx)
 {
-    KAEZIP_destroy_async_compress_session(ctx->sess);
+    if(ctx->sess_count > 1) {
+        for (int i = 0; i < ctx->sess_count; ++i) {
+            if (ctx->sess_array[i]) {
+                KAEZIP_destroy_async_compress_session(ctx->sess_array[i]);
+            }
+        }
+    } else {
+        KAEZIP_destroy_async_compress_session(ctx->sess);
+    }
 }
 
 // Zlib 算法实例

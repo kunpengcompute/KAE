@@ -53,7 +53,6 @@ struct kaezip_async_req {
     size_t src_size;
     size_t dst_len;
     U32 idx;
-    U32 special_flag;
     U16 last;
     U16 buf_start_index;
     U32 done;

@@ -274,7 +274,7 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
 {
     struct kaelz4_result *result = compress_ctx->result;
     result->status = status;
-    result->dst_len = compress_ctx->dst_len;
+    result->dst_len = compress_ctx->save_info.dst_len;
     if (result->ibuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
         for (int i = 0; i < compress_ctx->src->buf_num; i++) {
             *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src->buf[i].data,
@@ -283,7 +283,7 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
     }
 
     if (result->obuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
-        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->dst_len);
+        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->save_info.dst_len);
     }
 
     if (unlikely(status != KAE_LZ4_SUCC)) {
@@ -311,6 +311,11 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         seqSum = 0;
     } else {
         seqSum = req->zc.seqnum;
+    }
+
+    if (req->src_size + req->src_size / 255 + 16 >= save_info->dstCapacity - save_info->dst_len) {
+        *save_info->status = KAE_LZ4_DST_BUF_OVERFLOW;
+        return 0;
     }
 
     size_t total_src_bytes = req->src_size;
@@ -427,6 +432,10 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         seqSum = 0;
     } else {
         seqSum = req->zc.seqnum;
+    }
+    if (req->src_size + save_info->prev_last_lit_len + (req->src_size + save_info->prev_last_lit_len) / 255 + 16 >= save_info->dstCapacity - save_info->dst_len) {
+        *save_info->status = KAE_LZ4_DST_BUF_OVERFLOW;
+        return 0;
     }
 
     size_t total_src_bytes = req->src_size;
@@ -633,9 +642,13 @@ static void kaelz4_async_compress_cb(int status, void *param)
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
-    if (status != 0) {
+    if (status != WCRYPTO_STATUS_NULL) {
+        if (status == WD_IN_EPARA) {
+            req->compress_ctx->status = KAE_LZ4_DST_BUF_OVERFLOW;
+        } else {
+            req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+        }
         US_ERR("kaelz4_async_compress_cb status %d !\n", status);
-        req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
         req->done = 1;
         return;
     }
@@ -884,6 +897,12 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
     void *dst_after_frameheader = dst_tmp;
     LZ4F_frameInfo_t frameinfo_ptr = save_info->preferences.frameInfo;
 
+    // frame模式下35为对padding大小的评估
+    if (req->src_size + req->src_size / 255 + 16 + 35 >= save_info->dstCapacity - save_info->dst_len) {
+        *save_info->status = KAE_LZ4_DST_BUF_OVERFLOW;
+        return 0;
+    }
+
     if (save_info->src->buf_num != 1) {
         frameinfo_ptr.contentChecksumFlag = LZ4F_noContentChecksum;
     }
@@ -1043,13 +1062,14 @@ void kaelz4_async_instances_deinit(struct kaelz4_async_ctrl *ctrl)
 static int kaelz4_async_sw_compress(struct kaelz4_async_ctrl *ctrl, struct kaelz4_compress_ctx *compress_ctx)
 {
     int ret = -1;
-    compress_ctx->status = KAE_LZ4_SUCC;
     if (compress_ctx->data_format == KAELZ4_ASYNC_FRAME && ctrl->sw_compress_frame != NULL) {
-        ret = ctrl->sw_compress_frame(compress_ctx->dst->buf[0].data, compress_ctx->dstCapacity, compress_ctx->src->buf[0].data,
-                                             compress_ctx->srcSize, &compress_ctx->save_info.preferences);
+        compress_ctx->status = KAE_LZ4_SUCC;
+        ret = ctrl->sw_compress_frame(compress_ctx->dst->buf[0].data, compress_ctx->save_info.dstCapacity, compress_ctx->src->buf[0].data,
+                                      compress_ctx->srcSize, &compress_ctx->save_info.preferences);
     } else if (compress_ctx->data_format <= KAELZ4_ASYNC_BLOCK && ctrl->sw_compress != NULL) {
+        compress_ctx->status = KAE_LZ4_SUCC;
         ret = ctrl->sw_compress(compress_ctx->src->buf[0].data, compress_ctx->dst->buf[0].data, compress_ctx->srcSize,
-                                       compress_ctx->dstCapacity);
+                                compress_ctx->save_info.dstCapacity);
     }
     ret = (ret == 0) ? KAE_LZ4_SW_RETURN_0_FAIL : ret;
     return ret;
@@ -1075,7 +1095,7 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
 
         if (likely(compress_ctx->status == KAE_LZ4_SUCC)) {
             ret = compress_ctx->kaelz4_post_process_handle(req, &req->src,
-                                                           compress_ctx->dst->buf[0].data + compress_ctx->dst_len,
+                                                           compress_ctx->dst->buf[0].data + compress_ctx->save_info.dst_len,
                                                            &compress_ctx->save_info);
             if (ret < 0) {
                 US_ERR("kaelz4_post_process_handle err. ret=%d\n", ret);
@@ -1090,16 +1110,16 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
         }
 
         if (ret >= 0 && compress_ctx->status == KAE_LZ4_SUCC) {
-            compress_ctx->dst_len += ret;
+            compress_ctx->save_info.dst_len += ret;
             compress_ctx->status = KAE_LZ4_SUCC;
         } else {
-            compress_ctx->dst_len = 0;
+            compress_ctx->save_info.dst_len = 0;
             if (compress_ctx->status == KAE_LZ4_SUCC) {
                 compress_ctx->status = KAE_LZ4_COMP_FAIL;
             }
 
             US_ERR("kae post process fail! req index %d src size 0x%lx dst size 0x%lx last %d ret = %d status %d\n",
-                   req->idx, req->src_size, compress_ctx->dstCapacity, req->last, ret, compress_ctx->status);
+                   req->idx, req->src_size, compress_ctx->save_info.dstCapacity, req->last, ret, compress_ctx->status);
         }
 
         if (!req->special_flag) {
@@ -1273,8 +1293,18 @@ static void kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const 
         req->dst.buf_num = 1;
         struct kaelz4_seq_result *seq_result = dst->buf[0].data + req->idx * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
         req->dst.buf[0].data = seq_result->seq_start;
-        req->dst.buf[0].buf_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num);
+        if (req->dst.buf[0].data >= dst->buf[0].data + dst->buf[0].buf_len) {
+            req->dst.buf[0].buf_len = 0;
+            return;
+        }
+
+        if (dst->buf[0].buf_len >= (req->idx + 1) * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) {
+            req->dst.buf[0].buf_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num);
+        } else {
+            req->dst.buf[0].buf_len = dst->buf[0].data + dst->buf[0].buf_len - req->dst.buf[0].data;
+        }
     }
+    return;
 }
 
 static void kaelz4_fill_hw_req_src_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *src,
@@ -1413,16 +1443,17 @@ int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_bu
     }
 
     compress_ctx->dst = dst;
-    compress_ctx->dstCapacity = result->dst_len;
+    compress_ctx->save_info.dstCapacity = result->dst_len;
     compress_ctx->src = src;
     compress_ctx->srcSize = result->src_size;
     compress_ctx->callback = callback;
     compress_ctx->result = result;
     compress_ctx->data_format = data_format;
     compress_ctx->kaelz4_post_process_handle = g_post_process_handle[data_format];
-    compress_ctx->dst_len = 0;
+    compress_ctx->save_info.dst_len = 0;
     compress_ctx->next = NULL;
     compress_ctx->status = KAE_LZ4_SUCC;
+    compress_ctx->save_info.status = &compress_ctx->status;
     compress_ctx->req_list = NULL;
     compress_ctx->save_info.preferences = *ptr;
     compress_ctx->save_info.prev_last_lit_ptr = NULL;
@@ -1465,13 +1496,15 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
     size_t remainingLength = result->src_size; // 该值用于保存剩余的待压缩数据长度
     unsigned int buf_index = 0;
     size_t buf_offset = 0;
-    size_t dst_len = 0;
     int idx = 0;
     struct kaelz4_seq_result *seq_result = tuple_buf->buf[0].data;
     struct kaelz4_priv_save_info save_info = {0};
     int ret;
 
     save_info.src = src;
+    save_info.dstCapacity = dst->buf[0].buf_len;
+    save_info.dst_len = 0;
+    save_info.status = &result->status;
     if (ptr)
         save_info.preferences = *ptr;
 
@@ -1489,14 +1522,14 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
         }
         req.zc.seqStore.sequencesStart = (seqDef *)seq_result->seq_start;
         req.zc.seqnum = seq_result->seq_num;
-        ret = g_post_process_handle[data_format](&req, &req.src, dst->buf[0].data + dst_len, &save_info);
-        if (ret <= 0) {
+        ret = g_post_process_handle[data_format](&req, &req.src, dst->buf[0].data + save_info.dst_len, &save_info);
+        if (ret < 0 || result->status != KAE_LZ4_SUCC) {
             result->status = KAE_LZ4_COMP_FAIL;
             return KAE_LZ4_COMP_FAIL;
         }
 
         idx++;
-        dst_len += ret;
+        save_info.dst_len += ret;
         seq_result = (void *)seq_result + KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
     }
 
@@ -1507,9 +1540,9 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
     }
 
     if (result->obuf_crc != NULL) {
-        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, dst->buf[0].data, dst_len);
+        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, dst->buf[0].data, save_info.dst_len);
     }
 
-    result->dst_len = dst_len;
+    result->dst_len = save_info.dst_len;
     return KAE_LZ4_SUCC;
 }

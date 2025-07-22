@@ -119,8 +119,9 @@ export KAE_LZ4_ASYNC_THREAD_NUM=8
 sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
 ```
 
+
 zlib下deflate_raw格式异步压缩接口测试：
-```
+```shell
 # 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
 sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 
@@ -131,8 +132,25 @@ sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 
 sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 8 -p 1 -f [path to calgary.tar] 
 ```
 
+zlib下deflate_raw格式单个进程同时使用多个KAE的测试：
+```shell
+# 设置环境变量，以使用多个KAE。
+# 注意：跨numa使用KAE会影响性能。达到最优性能推荐当前进程使用自身所处CPU节点对应的numa上的KAE。
+# 以下测试命令将进程绑定到numa0上，并同时使用numa0和numa1对应的KAE。
+export KAE_ZIP_QUEUE_NODES_MASK=3  # 使用NUMA 0,1
+# 双KAE压缩解压能力测试
+sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -k 1 -i 64 -p 1 -e 2 -f [path to calgary.tar] 
+
+# 环境变量 KAE_ZIP_QUEUE_NODES_MASK 的使用说明：
+# export KAE_ZIP_QUEUE_NODES_MASK=15  # 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
+# export KAE_ZIP_QUEUE_NODES_MASK=12  # 十进制12 → 二进制 0011 → 使用NUMA 2,3
+# export KAE_ZIP_QUEUE_NODES_MASK=11  # 十进制11 → 二进制 1011 → 使用NUMA 0,1,3
+# export KAE_ZIP_QUEUE_NODES_MASK=7  # 十进制7 → 二进制 0111 → 使用NUMA 0,1,2
+# export KAE_ZIP_QUEUE_NODES_MASK=5  # 十进制5 → 二进制 0101 → 使用NUMA 0,3
+```
+
 ```
 # 单一场景接口组合使用demo测试
-export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/kaezip/lib/:/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
 ./kzip -T 1
 ```

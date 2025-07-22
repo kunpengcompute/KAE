@@ -137,7 +137,16 @@ int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct ka
 ```
 #### 3.1.7、清理session会话
 ```
+/**
+ * @brief: Destroy session and hardware ctx.
+ * @param: sess : session
+ */
 void KAELZ4_destroy_async_compress_session(void *sess);
+/**
+ * @brief: reset session and hardware ctx, all compress tasks will be canceled.
+ * @param: sess : session
+ */
+void KAELZ4_reset_session(void *sess);
 ```
 #### 3.1.8、整体使用示例Demo
 本demo使用polling模式接口，将测试文件压缩为lz77_raw数据格式，随后转换成标准lz4的block数据格式，最后通过解压转换为原始文件。
@@ -585,7 +594,16 @@ void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
 ```
 #### 3.2.6、清理session会话
 ```
+/**
+ * @brief: Destroy session and hardware ctx.
+ * @param: sess : session
+ */
 void KAELZ4_destroy_async_compress_session(void *sess);
+/**
+ * @brief: reset session and hardware ctx, all compress tasks will be canceled.
+ * @param: sess : session
+ */
+void KAELZ4_reset_session(void *sess);
 ```
 #### 3.2.7、polling接口整体使用示例Demo
 本demo使用polling模式接口，通过初始化session上下文，调用frame格式异步压缩接口，

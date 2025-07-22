@@ -228,15 +228,6 @@ static void compression_callback4(struct kaelz4_result *result) {
         }
     }
 
-    if (memcmp(my_data->src_decompd, src->buf[0].data, src->buf[0].buf_len) == 0) {
-        printf("buf[0] Test Success.\n");
-    }
-    if (memcmp(my_data->src_decompd + src->buf[0].buf_len, src->buf[1].data, src->buf[1].buf_len) == 0) {
-        printf("buf[1] Test Success.\n");
-    } else {
-        printf("buf[1] Test Error.\n");
-    }
-
     // 比较解压后的数据和原始数据
     if (memcmp(my_data->src_decompd, source, result->src_size) == 0) {
         printf("Test Success.\n");
@@ -298,7 +289,7 @@ static int test_async_frame_and_sgl(int contentChecksumFlag, int blockChecksumFl
 
     struct kaelz4_buffer_list src = {0};
     struct kaelz4_buffer src_buf[128];
-    src.buf_num = 1;
+    src.buf_num = 1; // change buf_num to 1, 2, 3... to test different SGLs
     src.buf = src_buf;
     unsigned int tmp_size = src_len / src.buf_num;
     for (int i = 0; i < src.buf_num - 1; i++) {

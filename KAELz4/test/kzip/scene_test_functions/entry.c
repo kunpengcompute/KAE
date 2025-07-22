@@ -10,6 +10,8 @@ void test_async_polling_interface();
 void test_async_SGL_data();
 void test_async_lz77_raw();
 void test_async_zlib_deflate_raw();
+void test_async_err_dst_buf_less_deflate();
+void test_async_err_dst_buf_less_lz77_raw();
 
 typedef struct {
     const char *test_name;
@@ -26,6 +28,8 @@ test_case_t test_cases[] = {
     {"异步SGL模式测试", test_async_SGL_data},
     {"异步polling模式 lz77_raw数据后处理接口测试", test_async_lz77_raw},
     {"异步zlib接口 deflate_raw数据测试", test_async_zlib_deflate_raw},
+    {"异步zlib接口dest空间不足时重试测试", test_async_err_dst_buf_less_deflate},
+    {"异步lz4 接口lz77_raw 格式dest空间不足时重试测试", test_async_err_dst_buf_less_lz77_raw},
 };
 
 #define NUM_TESTS (sizeof(test_cases) / sizeof(test_case_t))

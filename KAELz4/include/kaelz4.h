@@ -70,6 +70,7 @@ typedef struct {
 #define KAE_LZ4_ALLOC_FAIL 5
 #define KAE_LZ4_SET_FAIL 6
 #define KAE_LZ4_HW_TIMEOUT_FAIL 7
+#define KAE_LZ4_DST_BUF_OVERFLOW 8
 
 #define KAE_LZ77_SEQ_DATA_SIZE_PER_64K (128UL * 1024UL)
 

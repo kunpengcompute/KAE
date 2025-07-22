@@ -71,6 +71,8 @@ struct compress_ctx {
     int with_crc;
     unsigned int src_buf_num;
     void *sess;
+    void **sess_array;       // sess指针数组
+    int sess_count;          // sess指针数量，默认1
     iova_map_fn usr_map;
     uint64_t *all_delays;
     int is_polling;
