@@ -451,7 +451,7 @@ static void compress_async_callback(struct kaelz4_result *result)
         const char *alg_name = param->ctx->algorithm->name;
         if(strcmp(alg_name, "kaelz4async_lz77_frame") == 0) {
             if (KAELZ4_rebuild_lz77_to_frame(&param->src, &param->tuple, &param->dst, result, NULL) != 0) {
-                printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
+                printf("[user]KAELZ4_rebuild_lz77_to_frame : %d\n", result->status);
             }
         } else {
             if (KAELZ4_rebuild_lz77_to_block(&param->src, &param->tuple, &param->dst, result) != 0) {
@@ -527,15 +527,6 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->with_crc = is_test_crc;
     ctx->src_buf_num = 1;
     ctx->usr_map = NULL;
-    if (g_file_chunk_size && ((size_t)g_file_chunk_size * 1024) <= HPAGE_SIZE && ((ctx->algorithm->async_compress != NULL && ctx->compress_or_decompress != 0)
-      || (ctx->algorithm->async_decompress != NULL && !ctx->compress_or_decompress))) {
-        // 此处src_buf_num可修改为其他值，用于测试多个链表节点的功能和性能。
-        ctx->src_buf_num = 4;
-        // 分片为4k的模式下，使用单个buf节点性能最优，比4个节点的情况性能提升约4%。
-        if(g_file_chunk_size == 4) {
-            ctx->src_buf_num = 1;
-        }
-    }
 
     ctx->all_delays = (uint64_t *)malloc(sizeof(uint64_t) * MAX_LATENCY_COUNT);
     memset(ctx->param_buf, 0, ctx->inflight_num * sizeof(struct compress_param));
@@ -545,8 +536,9 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     int is_test_lz77_block = strcmp(algorithm->name, "kaelz4async_lz77") == 0;
     int is_test_lz77_frame = strcmp(algorithm->name, "kaelz4async_lz77_frame") == 0;
     if ((is_test_lz77_block || is_test_lz77_frame) && ctx->compress_or_decompress != 0) {
-        if (g_file_chunk_size == 0 || (size_t)g_file_chunk_size * 1024 > HPAGE_SIZE || (size_t)g_file_chunk_size * 1024 >= HW_MAX_SGE_LEN / 2) {
+        if (g_file_chunk_size == 0 || (size_t)g_file_chunk_size * 1024 > HPAGE_SIZE || (size_t)g_file_chunk_size * 1024 >= HW_MAX_SGE_LEN / 4) {
             // TBM: 当前chunk_size超过2M kzip不支持lz77模式，因为大页内存不连续
+            // 对于原始输入内容较大的 silesia.tar文件，需要严格限制2M，否则连续空间分配会失败。对于较小的数据集chunk_size可超过2M。
             ctx->algorithm = get_algorithm("kaelz4async_block");
             if (is_test_lz77_frame) {
                 ctx->algorithm = get_algorithm("kaelz4async_frame");
@@ -670,6 +662,22 @@ static uLong get_src_content(struct compress_ctx *ctx, const char* in_filename, 
         return -1;
     }
     return src_len;
+}
+static void check_and_reset_src_buf_num(struct compress_ctx *ctx) {
+    int is_asyc_compress = ctx->algorithm->async_compress != NULL && ctx->compress_or_decompress != 0;
+    int is_asyc_decompress = ctx->algorithm->async_decompress != NULL && !ctx->compress_or_decompress;
+    int has_async_test = is_asyc_compress || is_asyc_decompress;
+    if (((size_t)g_file_chunk_size * 1024) <= HPAGE_SIZE && has_async_test) {
+        // 分片为4k的模式下，使用单个buf节点性能最优，比4个节点的情况性能提升约4%。
+        if(g_file_chunk_size == 4) {
+            ctx->src_buf_num = 1;
+        } else if ((size_t)(g_file_chunk_size*1024) > HW_MAX_SGE_LEN) { // 如果分片大小超过8M，那么不能一次性传下去
+            ctx->src_buf_num = g_file_chunk_size*1024 / HW_MAX_SGE_LEN + 1; // 分片输入较大时，对分片进行8M的切分组装sgl。
+        } else {
+            // 此处src_buf_num可修改为其他值，用于测试将一段src组装为多个链表sge节点的功能和性能。
+            ctx->src_buf_num = 4;
+        }
+    }
 }
 
 #define PRINT_DELAY_DATA_LEN 6
@@ -804,7 +812,7 @@ void comp_and_decomp_fill_dst_buf(struct compress_param *param, size_t dst_len, 
 
     if ((ctx->is_lz77_mode && ctx->compress_or_decompress) || ctx->is_zlib) {
         if (ctx->is_lz77_mode) {
-            dst_len = KAELZ4_compress_get_tuple_buf_len(dst_len);
+            dst_len = KAELZ4_compress_get_tuple_buf_len(param->src_len);
         }
         unsigned int tmp_size = MIN(dst_len, HW_MAX_SGE_LEN);   // HW_MAX_SGE_LEN: hisi_zip约束sge len不超过8M
         comp_and_decomp_fill_buffer_list(&param->tuple, tmp_size, dst_len, ctx->tuple_buf, ctx->tuple_buf_offset);
@@ -916,6 +924,7 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
 {
     void *inbuf = NULL;
     uLong src_len = get_src_content(ctx, in_filename, &inbuf);
+    check_and_reset_src_buf_num(ctx);
     // fprintf(stdout, "input_size is %luB\n", src_len);
     ctx->src_buf = inbuf;
     ctx->src_len = src_len;
@@ -1010,6 +1019,9 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         int huge_page_num = (int)(src_len * sizeof(Bytef) / HPAGE_SIZE) + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
         size_t total_size = huge_page_num * HPAGE_SIZE;
         release_huge_pages(inbuf, total_size);
+        if(ctx->tuple_buf != NULL) {
+            release_huge_pages(ctx->tuple_buf, ctx->tuple_buf_len);
+        }
     } else {
         free(inbuf);
     }
@@ -1044,6 +1056,7 @@ static int start_work_decompress(
 {
     void *inbuf = NULL;
     uLong src_len = get_src_content(ctx, in_filename, &inbuf);
+    check_and_reset_src_buf_num(ctx);
 
     // 从文件读取元数据
     struct fragment_metadata *loaded_fragments = NULL;
@@ -1093,7 +1106,6 @@ static int start_work_decompress(
     gettimeofday(&start, NULL);
 
     size_t out_offset = 0; // 总内存中的偏移，每一小块儿使用不同的偏移。
-    // 解压仅1次
     for (j = 0; j < ctx->loop_times; j++) {
         if (j > 0) { // 为第1次之后的循环的产物复用空间
             out_offset = output_sz;
@@ -1172,6 +1184,9 @@ static int start_work_decompress(
         int huge_page_num = (int)(src_len * sizeof(Bytef) / HPAGE_SIZE) + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
         size_t total_size = huge_page_num * HPAGE_SIZE;
         release_huge_pages(inbuf, total_size);
+        if(ctx->tuple_buf != NULL) {
+            release_huge_pages(ctx->tuple_buf, ctx->tuple_buf_len);
+        }
     } else {
         free(inbuf);
     }
@@ -1202,7 +1217,6 @@ static void auto_get_parent_cpu_affinity(int *arr, int *count)
         perror("sched_getaffinity");
         return;
     }
-    // 打印父进程的亲和性
     for (int i = 0; i < CPU_SETSIZE; i++) {
         if (CPU_ISSET(i, &parent_affinity)) {
             arr[(*count)++] = i;
