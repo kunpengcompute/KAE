@@ -12,7 +12,12 @@
 
 void *kaezip_init_v1(int win_size, int is_sgl, int comp_type)
 {
-    kaezip_ctx_t *kaezip_ctx = kaezip_get_ctx(WCRYPTO_RAW_DEFLATE, comp_type, win_size, is_sgl);
+    kaezip_ctx_t *kaezip_ctx = NULL;
+    if (comp_type == WCRYPTO_DEFLATE) {
+        kaezip_ctx = kaezip_get_ctx(WCRYPTO_GZIP, comp_type, win_size, is_sgl);
+    } else {
+        kaezip_ctx = kaezip_get_ctx(WCRYPTO_RAW_DEFLATE, comp_type, win_size, is_sgl);
+    }
     if (!kaezip_ctx) {
         US_ERR("kaezlib failed to get kaezip ctx!");
         return NULL;
