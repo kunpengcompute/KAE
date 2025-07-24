@@ -199,7 +199,7 @@ static void kaezip_compress_async_callback(struct kaezip_compress_ctx *compress_
     struct kaezip_result *result = compress_ctx->result;
     result->status = status;
     result->dst_len = compress_ctx->dst_len;
-    if (result->ibuf_crc != NULL && status == KAE_ZLIB_SUCC) {
+    if (result->ibuf_crc != NULL && status == KAE_ZLIB_SUCC && compress_ctx->ibuf_checksum_flag != 1) {
         for (int i = 0; i < compress_ctx->src->buf_num; i++) {
             *result->ibuf_crc = KAEZIPCRC32(*result->ibuf_crc, compress_ctx->src->buf[i].data,
                                             compress_ctx->src->buf[i].buf_len);
@@ -634,6 +634,48 @@ static void kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *
     return;
 }
 
+static uint32_t extract_checksum(struct kaezip_async_req *req, unsigned int output_len)
+{
+    if (req == NULL || output_len < 8) {
+        return 0;
+    }
+
+    struct kaezip_buffer_list *dst = req->compress_ctx->dst;
+    size_t start_pos = output_len - 8;
+    size_t current_pos = 0;
+    size_t bytes_copied = 0;
+    unsigned char result[4]; // CRC32 checksum
+
+    for (int i = 0; i < dst->buf_num && bytes_copied < 4; i++) {
+        // skip the buf without checksum data
+        if (current_pos + dst->buf[i].buf_len <= start_pos) {
+            current_pos += dst->buf[i].buf_len;
+            continue;
+        }
+        // get the valid starting position of the current buffer
+        size_t offset_in_buf = start_pos - current_pos;
+        // get bytes can be copied in current buf
+        size_t bytes_available = dst->buf[i].buf_len - offset_in_buf;
+        size_t bytes_needed = 4 - bytes_copied;
+        size_t bytes_to_copy = (bytes_available < bytes_needed) ? 
+                              bytes_available : bytes_needed;
+        // read crc32 data from dst buf
+        for (size_t j = 0; j < bytes_to_copy; j++) {
+            result[bytes_copied++] = ((unsigned char *)dst->buf[i].data)[offset_in_buf + j];
+        }
+        current_pos += dst->buf[i].buf_len;
+    }
+    if (bytes_copied != 4) {
+        return 0;
+    }
+    // convert the 4 bytes to CRC32 checksum
+    uint32_t checksum = ((uint32_t)result[3] << 24) |
+                        ((uint32_t)result[2] << 16) |
+                        ((uint32_t)result[1] << 8)  |
+                         (uint32_t)result[0];
+    return checksum;
+}
+
 static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct wd_buf_list *source,
                                          void *dst_tmp, struct kaezip_priv_save_info *save_info)
 {
@@ -641,6 +683,15 @@ static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct
 
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
     unsigned int output_len = op_data->produced;
+    if (req->kz_ctx[0].comp_type == WCRYPTO_DEFLATE) {
+        // extract checksum from dst buffer
+        if (req->compress_ctx->result->ibuf_crc != NULL) {
+            *req->compress_ctx->result->ibuf_crc = extract_checksum(req, output_len);
+            req->compress_ctx->ibuf_checksum_flag = 1;
+        }
+        // remove checksum (4 Bytes) and isize (4 Bytes) in dst buffer
+        output_len -= 8;
+    }
     return output_len;
 }
 
@@ -669,6 +720,7 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
     compress_ctx->save_info.prev_last_lit_ptr = NULL;
     compress_ctx->save_info.prev_last_lit_len = 0;
     compress_ctx->save_info.src = src;
+    compress_ctx->ibuf_checksum_flag = 0;
 
     if (ctrl->ctx_head) {
         ctrl->tail->next = compress_ctx;

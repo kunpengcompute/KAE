@@ -75,6 +75,7 @@ struct kaezip_compress_ctx {
     struct kaezip_async_req req;
     struct kaezip_compress_ctx *next;
     int status;
+    int ibuf_checksum_flag;  // identify the checksum of inbuf is calculated or not
 };
 
 struct kaezip_seq_result {

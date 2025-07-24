@@ -16,7 +16,7 @@ static int lz4async_block_decompress(void *sess, const struct kaelz4_buffer_list
 }
 
 static int lz4_bound(int src_len) {
-    return LZ4F_compressFrameBound(src_len, NULL);
+    return LZ4F_compressFrameBound(src_len, NULL) * 1.2;
 }
 // LZ4 初始化
 static int lz4_async_block_init(struct compress_ctx *ctx) {
