@@ -350,6 +350,9 @@ sh build.sh cleanup       一键式卸载
   
   解决办法：920申请license安装；920新型号更新免license版本BIOS
 
+## 声明
+- 此代码仓计划参与OpenSSL/Tongsuo/BoringSSL/Lz4/Zlib/Gzip/Zstd软件开源，仅作OpenSSL/Tongsuo/BoringSSLLz4/Zlib/Gzip/Zstd性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，不保证能杜绝所有安全风险，安全风险请使用者自己评估和保障。
+
 ## 参与贡献
 ```
 如果您想为本仓库贡献代码，请向本仓库任意maintainer发送邮件

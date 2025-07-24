@@ -119,3 +119,7 @@ For further assistance and more QAs, contact Huawei Support at:
 ## Copyright
 
 Copyright © 2018 Huawei Corporation. All rights reserved.
+
+
+## Statement
+This code repository plans to participate in the open-sourcing of the Zlib software, solely for the purpose of improving Zlib performance. The coding style adheres to that of the native open-source software, inheriting its security design without compromising the original design, coding style, or approach. We do not guarantee that all security risks can be eliminated; users are advised to assess and ensure their own security risks.
