@@ -376,19 +376,19 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
      return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
  }
  
-@@ -980,6 +1023,303 @@ LZ4_FORCE_INLINE int LZ4_compress_generi
+@@ -980,6 +1023,294 @@ LZ4_FORCE_INLINE int LZ4_compress_generi
  
      if (inputSize<LZ4_minLength) goto _last_literals;        /* Input too small, no compression (all literals) */
  
 +    //=======================================================================================
 +#ifdef CONF_KAELZ4
 +    if ((dictDirective == noDict) && (outputDirective == notLimited)) {
-+        US_DEBUG("dictDirective = NO DICT.");
++        // US_DEBUG("dictDirective = NO DICT.");
 +        // 1.kae上下文初始化函数调用
 +        LZ4_CCtx ctxBody;
 +        ctxBody.kaeInited = 0;
 +        ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
-+        ctxBody.kaeConfig = NULL;
++        ctxBody.kaeConfig = 0;
 +
 +        ctxBody.seqStore.llCode = NULL;
 +        ctxBody.seqStore.mlCode = NULL;
@@ -397,7 +397,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +        ctxBody.seqStore.litStart = NULL;
 +        ctxBody.seqStore.sequencesStart = NULL;
 +        ctxBody.seqStore.sequences = NULL;
-+        
++
 +        ctxBody.compressionLevel = 8;
 +        ctxBody.kaeLevel = 8;
 +        ctxBody.seqnum = 0;
@@ -410,7 +410,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +            ctxBody.kaeInited = 0;
 +            goto _softVersion;       // 初始化异常则切换软算版本，保证压缩继续进行
 +        }
-+        US_DEBUG("ctxBody.kaeInited: %d.\n", ctxBody.kaeInited);
++        // US_DEBUG("ctxBody.kaeInited: %d.\n", ctxBody.kaeInited);
 +
 +        // 2.调用kae硬化压缩接口，进行硬化压缩, 返回的是三元组和literal，将返回的三元组和literal按照lz4压缩块的格式进行重新组织
 +        seqDef* sequencespoint = ctxBody.seqStore.sequencesStart;
@@ -428,7 +428,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +        size_t hardwareBlockSize = 65536; // 硬件卸载支持的最大literal为32k, 这里按lz4最大查找的64K来设定
 +
 +        // 针对ZSTD和LZ4的matchlength转换定义的数据结构
-+        US_DEBUG("INPUTSIZE:%d, dstCapacity:%d, maxOutputSize:%d.", inputSize, dstCapacity, maxOutputSize);
++        // US_DEBUG("INPUTSIZE:%d, dstCapacity:%d, maxOutputSize:%d.", inputSize, dstCapacity, maxOutputSize);
 +        BYTE* templit = (BYTE*)malloc(inputSize * sizeof(BYTE));  // 用于暂存mlbase为3的还原字段
 +        if (templit == NULL) {      // 内存开辟失败，本次压缩异常返回
 +            return 0;
@@ -451,8 +451,8 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +
 +        // 针对ZSTD 128K remaining会覆盖CTX的问题进行的拆分(具体按64K切分，对于末尾的literal，进行src前移，放到下一轮再压)
 +        while (remainingLength) {
-+            US_DEBUG("remainingLength:%d, hardware:%d\n", remainingLength, hardwareBlockSize);
-+            if (remainingLength > hardwareBlockSize) {
++            // US_DEBUG("remainingLength:%d, hardware:%d\n", remainingLength, hardwareBlockSize);
++            if (remainingLength >= hardwareBlockSize + MFLIMIT) {
 +                srcSize = hardwareBlockSize;
 +                // part1.基于KAE接口进行硬化压缩
 +                result  = kaelz4_compress(&ctxBody, src, srcSize);
@@ -472,41 +472,41 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +            offset_hist[0] = 1; offset_hist[1] = 4; offset_hist[2] = 8;
 +            
 +            while (sequenceCount < ctxBody.seqnum) {
-+                US_DEBUG("sequenceCount:%d, ctxBody.seqnum:%d.", sequenceCount, ctxBody.seqnum);
++                // US_DEBUG("sequenceCount:%d, ctxBody.seqnum:%d.", sequenceCount, ctxBody.seqnum);
 +                sequenceCount++; // sequence计数
-+                offBase = sequencespoint->offBase;
++                offBase = sequencespoint->offBase + 1;
 +                litLength = sequencespoint->litLength;
 +                mlBase = sequencespoint->mlBase;
-+                US_DEBUG("%d:Before trans: offBase %d-litLength %d-mlbase %d-remainingLength %d\n", i++, offBase, litLength, mlBase, remainingLength);
++                // US_DEBUG("%d:Before trans: offBase %d-litLength %d-mlbase %d-remainingLength %d\n", i++, offBase, litLength, mlBase, remainingLength);
 +
 +                /* 1.从repcode还原出raw offset，根据的zstd的table的逻辑，具体查看mannual文档 */
-+                size_t realoffset;
-+                if (offBase <= 3) {
-+                    idx = offBase - 1;
-+                    if (litLength == 0) {
-+                        idx++;
-+                    }
-+                    if (idx == 0) {
-+                        realoffset = offset_hist[0];
-+                    } else {
-+                        realoffset = idx < 3 ? offset_hist[idx] : offset_hist[0] - 1;
-+                        if (idx > 1) {
-+                            offset_hist[2] = offset_hist[1];
-+                        }
-+                        offset_hist[1] = offset_hist[0];
-+                        offset_hist[0] = realoffset;
-+                    }
-+                } else {
-+                    realoffset = offBase - 3;
-+                    offset_hist[2] = offset_hist[1];
-+                    offset_hist[1] = offset_hist[0];
-+                    offset_hist[0] = realoffset;
-+                }
-+                offBase = realoffset; // 真正的offset
++                //size_t realoffset;
++                //if (offBase <= 3) {
++                //    idx = offBase - 1;
++                //    if (litLength == 0) {
++                //        idx++;
++                //    }
++                //    if (idx == 0) {
++                //        realoffset = offset_hist[0];
++                //    } else {
++                //        realoffset = idx < 3 ? offset_hist[idx] : offset_hist[0] - 1;
++                //        if (idx > 1) {
++                //            offset_hist[2] = offset_hist[1];
++                //        }
++                //        offset_hist[1] = offset_hist[0];
++                //        offset_hist[0] = realoffset;
++                //    }
++                //} else {
++                //    realoffset = offBase - 3;
++                //    offset_hist[2] = offset_hist[1];
++                //    offset_hist[1] = offset_hist[0];
++                //    offset_hist[0] = realoffset;
++                //}
++                // offBase = realoffset; // 真正的offset
 +
 +                /* 2.基于mlBase是否为0（即3），对offset和literal length进行校正 */
 +                if (mlBase <= TOKEN_NUM_CONTROL) {
-+                    US_DEBUG("litLength:%d, tempLiteralLength:%d", litLength, tempLiteralLength);
++                    // US_DEBUG("litLength:%d, tempLiteralLength:%d", litLength, tempLiteralLength);
 +                    // 针对zstd硬算返回match length为3的情况，为保证存量可解，准备还原为纯literal形式的sequence
 +                    translit = ip + litLength - offBase; // 定位到3match所在位置
 +                    // 就是说并不是补-offset就能找到，事实上找不到，得用src！！！
@@ -520,9 +520,9 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                    LZ4_wildCopy8(temp_point, translit, temp_point + mlBase + 3);
 +                    temp_point += mlBase + 3;
 +                    tempLiteralLength += mlBase + 3;
-+                    US_DEBUG("%d:3match After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
++                    // US_DEBUG("%d:3match After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
 +                    sequencespoint++;
-+                    // 追踪 
++                    // 追踪
 +                    ip += litLength + mlBase + 3;
 +
 +                    continue; // 存完即可开启下一轮，因为无需组织token了
@@ -534,7 +534,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                    // 追踪
 +                    ip += litLength - tempLiteralLength + mlBase + 4;
 +                }
-+                US_DEBUG("%d:After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
++                // US_DEBUG("%d:After trans: offBase %d-litLength %d-mlbase %d\n", i++, offBase, litLength, mlBase);
 +
 +                sequencespoint++;
 +                // 特殊场景判断，倒数第二个sequence的mlBase小于12Bytes，则解压会异常(暂未触发)
@@ -595,7 +595,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +            } else {           // 这个分支就是每轮正常的最后一个无三元组的literal字段处理
 +                lastRun = (U32)(ctxBody.seqStore.lit - litpoint);
 +            }
-+            US_DEBUG("Deal with last literal: %d， remaining-length:%d.\n", lastRun, remainingLength);
++            // US_DEBUG("Deal with last literal: %d， remaining-length:%d.\n", lastRun, remainingLength);
 +            /* 对每个子块，最后会余下暂存数组中的字符和最后literal的字符，对于这两部分，需要拼起来放到下一个子块的literal前:
 +			   (1) 对于非最后一个子块，则将最后的literal先暂存到暂存数组，并更新tempLiteralLength即可
 +			   (2) 对最后一个子块，就按原先最后的处理逻辑来处理 */
@@ -603,16 +603,12 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                LZ4_wildCopy8(temp_point, litpoint, temp_point + lastRun);
 +                temp_point += lastRun;
 +                tempLiteralLength += lastRun;
-+                US_DEBUG("Remaining for next subblock, tempLiteralLength:%d.", tempLiteralLength);
++                // US_DEBUG("Remaining for next subblock, tempLiteralLength:%d.", tempLiteralLength);
 +                // 更新参数
 +                src += hardwareBlockSize; // 因为前面是关于本128K的三元组处理完了，tempLiteralLength是三元组剩的，而这个128k的最后的literal还没处理
 +                remainingLength -= hardwareBlockSize; // 要和src对齐
-+
-+                if (remainingLength < hardwareBlockSize) {
-+                    srcSize = remainingLength;
-+                } else {
-+                    srcSize = hardwareBlockSize;
-+                }
++  
++                srcSize = remainingLength;             
 +                ip = src;
 +                if (remainingLength <= MFLIMIT) {
 +                    specialFlag = 1;
@@ -620,12 +616,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                }
 +            } else { // 场景2：最后一个子块，则需要按原流程处理暂存数组和literal
 +                lastRun += tempLiteralLength; // 把暂存的补进来
-+                int saveChar = 0;
-+                if (remainingLength >= MFLIMIT) {
-+                    saveChar = MFLIMIT;                 // 把预留的12个原始字符纳入统计
-+                } else {
-+                    saveChar = remainingLength;
-+                }
++                int saveChar = MFLIMIT;                 // 把预留的12个原始字符纳入统计
 +                lastRun += saveChar;
 +
 +                // 更新参数
@@ -641,7 +632,7 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                } else {
 +                    *op++ = (BYTE)(lastRun<<ML_BITS);
 +                }
-+                US_DEBUG("last literal length: %d.\n", lastRun);
++                // US_DEBUG("last literal length: %d.\n", lastRun);
 +
 +                LZ4_memcpy(op, templit, tempLiteralLength); // 把暂存数组中的字符拷过来
 +                op += tempLiteralLength;
@@ -656,15 +647,15 @@ diff -uprN lzbench-master/lz4/lz4.c lzbench-master-KAELz4/lz4/lz4.c
 +                remainingLength = 0;
 +            }
 +            int tempresult = (int)(((char*)op) - ((char*)dst));
-+            US_DEBUG("subblock compress over, compressed block size:%d\n", tempresult);
-+    
++            // US_DEBUG("subblock compress over, compressed block size:%d\n", tempresult);
++
 +            ctxBody.seqStore.lit = ctxBody.seqStore.litStart;
 +            ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart;
 +        }
 +        // 返回值计算和打印回显
 +        result = (int)(((char*)op) - ((char*)dst));
 +        assert(result > 0);
-+        US_DEBUG("LZ4_compress_generic: compressed %ld bytes into %ld bytes\n", inputSize, result);
++        // US_DEBUG("LZ4_compress_generic: compressed %ld bytes into %ld bytes\n", inputSize, result);
 +        // 压缩硬件资源释放
 +        ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
 +        ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
