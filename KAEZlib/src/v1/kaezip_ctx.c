@@ -40,6 +40,43 @@ static void kaezip_get_buffer_remain_data(kaezip_ctx_t *kz_ctx);
 static void kaezip_get_comp_output_data(kaezip_ctx_t *kz_ctx);
 static void kaezip_get_decomp_output_data(kaezip_ctx_t *kz_ctx);
 
+__attribute__((constructor))
+static void kaezip_register_fork_handlers(void) {
+    pthread_atfork(kaezip_prepare_fork, kaezip_parent_fork, kaezip_child_fork);
+}
+
+static void kaezip_prepare_fork(void) {
+    // 获取所有互斥锁以确保一致状态
+    pthread_mutex_lock(&g_kaezip_deflate_pool_init_mutex);
+    pthread_mutex_lock(&g_kaezip_inflate_pool_init_mutex);
+    if (g_kaezip_deflate_qp) {
+        kaezip_queue_pool_destroy(g_kaezip_deflate_qp, kaezip_free_ctx);
+        g_kaezip_deflate_qp = NULL;
+    }
+    
+    if (g_kaezip_inflate_qp) {
+        kaezip_queue_pool_destroy(g_kaezip_inflate_qp, kaezip_free_ctx);
+        g_kaezip_inflate_qp = NULL;
+    }
+}
+
+static void kaezip_parent_fork(void) {
+    // 释放互斥锁
+
+    pthread_mutex_unlock(&g_kaezip_inflate_pool_init_mutex);
+    pthread_mutex_unlock(&g_kaezip_deflate_pool_init_mutex);
+}
+
+static void kaezip_child_fork(void) {
+    // 重新初始化互斥锁（因为子进程继承的锁状态可能无效）
+    pthread_mutex_init(&g_kaezip_deflate_pool_init_mutex, NULL);
+    pthread_mutex_init(&g_kaezip_inflate_pool_init_mutex, NULL);
+    
+    // 释放锁（在父进程中已锁定，但在子进程中需要释放）
+    pthread_mutex_unlock(&g_kaezip_inflate_pool_init_mutex);
+    pthread_mutex_unlock(&g_kaezip_deflate_pool_init_mutex);
+}
+
 
 static void __attribute((constructor)) kaezip_getmode_from_env(void)
 {
