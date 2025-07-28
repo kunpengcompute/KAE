@@ -357,6 +357,28 @@ function build_engine()
     # build_engine_log
 }
 
+function build_engine_asm()
+{
+    openssl_install_path=$1
+    if [ "$1" = "" ];then
+        openssl_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    openssl_install_path=${openssl_install_path%/}
+
+    enable_asm="--enable-kae-asm"
+    if ! lscpu | grep -q sm4; then
+        enable_asm=""
+    fi
+
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+    ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae $enable_asm --with-openssl_install_dir=$openssl_install_path CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
+    make -j
+    make install
+    # build_engine_log
+}
+
 function engine_clean()
 {
     cd ${SRC_PATH}/KAEOpensslEngine
@@ -396,6 +418,46 @@ function build_engine_openssl3()
     fi
 
     ./configure --libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=$openssl3_install_path  #/usr/local/ssl3 
+    make -j
+    make install
+    # build_engine_log
+}
+
+function build_engine_openssl3_asm()
+{
+    openssl3_install_path=$1
+    if [ "$1" = "" ];then
+        openssl3_install_path=$(which openssl | awk -F'/bin' '{print $1}')
+    fi
+    openssl3_install_path=${openssl3_install_path%/}
+
+    enable_asm="--enable-kae-asm"
+    if ! lscpu | grep -q sm4; then
+        enable_asm=""
+    fi
+    
+    cd ${SRC_PATH}/KAEOpensslEngine
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    autoreconf -i
+
+    if [ ! -f "$openssl3_install_path/include/openssl/opensslv.h" ]; then  
+        echo "openssl3 install path is wrong, $openssl3_install_path/include/openssl/opensslv.h is not exist."  
+        exit 1  
+    else  
+        if $openssl3_install_path/bin/openssl version | grep -q "OpenSSL 3."; then    
+            echo "OpenSSL version is 3.x."    
+        elif $openssl3_install_path/bin/openssl version | grep -q "OpenSSL 1."; then    
+            $openssl3_install_path/bin/openssl version  
+            echo "OpenSSL version is 1.x, please use openssl3.0 install path"    
+            exit 1
+        else 
+            $openssl3_install_path/bin/openssl version 
+            echo "OpenSSL version is not support"   
+            exit 1
+        fi
+    fi
+
+    ./configure --libdir=/usr/local/lib/engines-3.0 --enable-kae $enable_asm --enable-engine --with-openssl_install_dir=$openssl3_install_path  #/usr/local/ssl3 
     make -j
     make install
     # build_engine_log
@@ -671,12 +733,26 @@ main() {
             else  
                 build_engine $2
             fi  
-            ;;  
+            ;;
+        "engine_asm")  
+            if [ "$2" = "clean" ]; then  
+                engine_clean
+            else  
+                build_engine_asm $2
+            fi  
+            ;; 
         "engine3")
             if [ "$2" = "clean" ]; then
                 engine_clean_openssl3
             else
                 build_engine_openssl3 $2
+            fi
+            ;;
+        "engine3_asm")
+            if [ "$2" = "clean" ]; then
+                engine_clean_openssl3
+            else
+                build_engine_openssl3_asm $2
             fi
             ;;
         "engine_gmssl")  

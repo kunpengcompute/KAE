@@ -36,7 +36,9 @@
 #include "../../async/async_event.h"
 #include "../../async/async_task_queue.h"
 
-#define INPUT_CACHE_SIZE (256 * 1024)
+#ifdef KAE_ASM
+#include "asm/ce_sm4.h"
+#endif
 
 struct cipher_info {
 	int nid;
@@ -687,6 +689,32 @@ static EVP_CIPHER *sec_ciphers_set_cipher_method(cipher_info_t cipherinfo)
 	}
 }
 
+#ifdef KAE_ASM
+static EVP_CIPHER *sec_ciphers_set_ce_sm4_cipher_method(cipher_info_t cipherinfo)
+{
+	int ret = 1;
+	EVP_CIPHER *cipher = EVP_CIPHER_meth_new(cipherinfo.nid, cipherinfo.blocksize, cipherinfo.keylen);
+
+	if (cipher == NULL)
+		return NULL;
+	ret &= EVP_CIPHER_meth_set_iv_length(cipher, cipherinfo.ivlen);
+	ret &= EVP_CIPHER_meth_set_flags(cipher, cipherinfo.flags);
+	ret &= EVP_CIPHER_meth_set_init(cipher, sm4_init_key);
+	ret &= EVP_CIPHER_meth_set_do_cipher(cipher, ossl_do_sm4_cipher_armv8);
+	ret &= EVP_CIPHER_meth_set_set_asn1_params(cipher, EVP_CIPHER_set_asn1_iv);
+	ret &= EVP_CIPHER_meth_set_get_asn1_params(cipher, EVP_CIPHER_get_asn1_iv);
+	ret &= EVP_CIPHER_meth_set_cleanup(cipher, NULL);
+	ret &= EVP_CIPHER_meth_set_impl_ctx_size(cipher, sizeof(EVP_SM4_KEY));
+	if (ret == 0) {
+		US_WARN("Failed to set cipher methods for nid %d\n", cipherinfo.nid);
+		return NULL;
+	} else {
+		return cipher;
+	}
+	
+}
+#endif
+
 static EVP_CIPHER * sec_cipher_create_ciphers(int index)
 {
 	EVP_CIPHER *cipher = NULL;
@@ -714,6 +742,8 @@ static EVP_CIPHER * sec_cipher_create_ciphers(int index)
 		case NID_aes_128_cfb128:
 		case NID_aes_192_cfb128:
 		case NID_aes_256_cfb128:
+			cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[index]);
+			break;
 #ifdef KAE_GMSSL
 		case NID_sms4_ctr:
 		case NID_sms4_cbc: 
@@ -730,8 +760,14 @@ static EVP_CIPHER * sec_cipher_create_ciphers(int index)
 		case NID_sm4_ofb128:
 		case NID_sm4_cfb128:
 		case NID_sm4_ctr:
+#ifdef KAE_ASM
+			cipher = sec_ciphers_set_ce_sm4_cipher_method(g_sec_ciphers_info[index]);
+			break;
+#else
 			cipher = sec_ciphers_set_cipher_method(g_sec_ciphers_info[index]);
 			break;
+#endif
+
 #endif
 		default:
 			break;
