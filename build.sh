@@ -256,11 +256,11 @@ function build_rpm()
 
 function build_driver()
 {
-    modprobe -r hisi_zip
-	modprobe -r hisi_hpre
-	modprobe -r hisi_sec2
-	modprobe -r hisi_qm
-	modprobe -r uacce
+    lsmod | grep -q "^hisi_zip"  && modprobe -r hisi_zip
+	lsmod | grep -q "^hisi_hpre" && modprobe -r hisi_hpre
+	lsmod | grep -q "^hisi_sec2" && modprobe -r hisi_sec2
+	lsmod | grep -q "^hisi_qm"   && modprobe -r hisi_qm
+	lsmod | grep -q "^uacce"     && modprobe -r uacce
 
     cd ${KAE_KERNEL_DIR}
     make -j
