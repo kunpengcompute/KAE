@@ -1,5 +1,6 @@
 VERSION = 2:0:4
 ACLOCAL_AMFLAGS = -I m4
+AUTOMAKE_OPTIONS = subdir-objects
 
 DEPSHEADDIR = $(CURDIR)/../../kae_build/head/
 WD_CFLAGS = -I$(DEPSHEADDIR)
@@ -90,6 +91,12 @@ kae_la_SOURCES+=v1/alg/ciphers/sec_ciphers.c \
 
 if !WD_KAE_GMSSL
 kae_la_SOURCES+=v1/alg/pkey/hpre_sm2.c
+endif
+
+if WD_ASM
+kae_la_CFLAGS += -DKAE_ASM
+kae_la_SOURCES+=v1/alg/ciphers/asm/ce_sm4.c\
+		v1/alg/ciphers/asm/sm4-armv8.S
 endif
 
 endif #WD_KAE

@@ -17,6 +17,7 @@ AC_ARG_ENABLE([kae], [AS_HELP_STRING([--enable-kae], [Enable kae support])], [en
 AC_ARG_ENABLE([kae-gmssl], [AS_HELP_STRING([--enable-kae-gmssl], [Enable kae gmssl support])], [enable_kae_gmssl="yes"], [enable_kae_gmssl="no"])
 AC_ARG_ENABLE([kae-tongsuo], [AS_HELP_STRING([--enable-kae-tongsuo], [Enable kae tongsuo support])], [enable_kae_tongsuo="yes"], [enable_kae_tongsuo="no"])
 AC_ARG_ENABLE([kae-boringssl], [AS_HELP_STRING([--enable-kae-boringssl], [Enable kae boringssl support])], [enable_kae_boringssl="yes"], [enable_kae_boringssl="no"])
+AC_ARG_ENABLE([kae-asm], [AS_HELP_STRING([--enable-kae-asm], [Enable asm support])], [enable_kae_asm="yes"], [enable_kae_asm="no"])
 AC_ARG_ENABLE(engine, AS_HELP_STRING([--enable-engine],[Enable engine in OpenSSL 3.0]))
 
 # 设置条件变量
@@ -25,6 +26,7 @@ AM_CONDITIONAL([WD_KAE_GMSSL], [test "$enable_kae_gmssl" = "yes"])
 AM_CONDITIONAL([WD_KAE_TONGSUO], [test "$enable_kae_tongsuo" = "yes"])
 AM_CONDITIONAL([WD_KAE_BORINGSSL], [test "$enable_kae_boringssl" = "yes"])
 AM_CONDITIONAL([WD_ENGINE], [test "$enable_engine" = "yes"])
+AM_CONDITIONAL([WD_ASM], [test "$enable_kae_asm" = "yes"])
 
 # 通过命令传入openssl的安装路径，不然就用默认的
 AC_ARG_WITH(openssl_install_dir,
