@@ -256,6 +256,8 @@ function build_rpm()
 
 function build_driver()
 {
+    lsmod | grep -q "^hisi_migration"  && modprobe -r hisi_migration
+    lsmod | grep -q "^hisi_acc_vfio_pci"  && modprobe -r hisi_acc_vfio_pci
     lsmod | grep -q "^hisi_zip"  && modprobe -r hisi_zip
 	lsmod | grep -q "^hisi_hpre" && modprobe -r hisi_hpre
 	lsmod | grep -q "^hisi_sec2" && modprobe -r hisi_sec2
