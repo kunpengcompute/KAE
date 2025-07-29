@@ -23,7 +23,8 @@ default:
 		CONFIG_CRYPTO_DEV_HISI_ZIP=m \
 		CONFIG_CRYPTO_DEV_HISI_HPRE=m \
 		CONFIG_CRYPTO_DEV_HISI_SEC2=m \
-		CONFIG_CRYPTO_DEV_HISI_TRNG=m
+		CONFIG_CRYPTO_DEV_HISI_TRNG=m \
+		CONFIG_HISI_ACC_VFIO_PCI=m
 #copy:
 #	cp -f $(shell pwd)/include_linux/uacce.h $(KSP)/include/linux
 #	cp -f $(shell pwd)/include_uapi_linux/uacce.h $(KSP)/include/uapi/linux
@@ -40,6 +41,7 @@ install:
 	-modprobe hisi_sec2 uacce_mode=1 pf_q_num=256
 	-modprobe hisi_hpre uacce_mode=1 pf_q_num=256
 	-modprobe hisi_zip  uacce_mode=1 pf_q_num=256
+	-modprobe hisi_acc_vfio_pci
 	-echo "options hisi_sec2 uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
 	-echo "options hisi_hpre uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=1 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
@@ -60,6 +62,7 @@ check:
 	done
 
 uninstall:
+	modprobe -r hisi_acc_vfio_pci
 	modprobe -r hisi_zip
 	modprobe -r hisi_hpre
 	modprobe -r hisi_sec2
@@ -70,6 +73,7 @@ uninstall:
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_sec2.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_hpre.ko
 	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_zip.ko
+	rm -rf /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/extra/hisi_acc_vfio_pci.ko
 	rm -rf /etc/modprobe.d/hisi_sec2.conf
 	rm -rf /etc/modprobe.d/hisi_hpre.conf
 	rm -rf /etc/modprobe.d/hisi_zip.conf
@@ -86,6 +90,7 @@ nosva:
 	-modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
 	-modprobe hisi_hpre uacce_mode=2 pf_q_num=256
 	-modprobe hisi_zip  uacce_mode=2 pf_q_num=256
+	-modprobe hisi_acc_vfio_pci
 	-echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
 	-echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
 	-echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
