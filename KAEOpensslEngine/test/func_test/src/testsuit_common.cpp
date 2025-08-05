@@ -361,6 +361,10 @@ int evp_sign(EVP_PKEY *key, unsigned char *encData, size_t *enclen, unsigned cha
     EVP_PKEY_CTX *ectx;
     ectx = EVP_PKEY_CTX_new(key, eng);
     EVP_PKEY_sign_init(ectx);
+    if (EVP_PKEY_sign(ectx, NULL, enclen, srcStr, strlen((const char *)srcStr)) != 1) {
+        printf("Failed to get signature length, len=%d", enclen);
+        return ret;
+    }
     ret = EVP_PKEY_sign(ectx, encData, enclen, srcStr, strlen((const char *)srcStr));
     EVP_PKEY_CTX_free(ectx);
     if (ret < 0) {
