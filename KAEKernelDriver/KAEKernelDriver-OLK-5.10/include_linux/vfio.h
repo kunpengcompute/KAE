@@ -13,7 +13,11 @@
 #include <linux/mm.h>
 #include <linux/workqueue.h>
 #include <linux/poll.h>
-#include <uapi/linux/vfio.h>
+#include "../include_uapi_linux/vfio.h"
+
+#ifndef KABI_EXTEND
+#define KABI_EXTEND(_new)			_new;
+#endif
 
 struct vfio_device {
 	struct device *dev;
