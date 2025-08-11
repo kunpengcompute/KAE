@@ -265,8 +265,14 @@ function build_driver()
 	lsmod | grep -q "^uacce"     && modprobe -r uacce
 
     cd ${KAE_KERNEL_DIR}
-    make -j
-    make nosva #默认使用nosva模式
+    
+    if [ "$1" = "migration" ]; then 
+        make ENABLE_MIGRATION=y -j
+        make nosva ENABLE_MIGRATION=y
+    else
+        make -j 
+        make nosva #默认使用nosva模式
+    fi
     # make install
     chmod 666 /dev/hisi_*
 }
@@ -276,14 +282,22 @@ function build_driver_sva()
     cd ${KAE_KERNEL_DIR}
     make -j
     # make nosva #默认使用nosva模式
-    make install
+    if [ "$1" = "migration" ]; then 
+        make install ENABLE_MIGRATION=y
+    else 
+        make install #默认使用nosva模式
+    fi
     chmod 666 /dev/hisi_*
 }
 
 function driver_clean()
 {
     cd ${KAE_KERNEL_DIR}
-    make uninstall
+    if [ "$1" = "migration" ]; then 
+        make uninstall ENABLE_MIGRATION=y
+    else 
+        make uninstall #默认使用nosva模式
+    fi
     make clean
 }
 
@@ -629,6 +643,9 @@ function help()
 	echo "sh build.sh driver -- install KAE driver"
 	echo "sh build.sh driver clean -- uninstall KAE driver"
 
+    echo "sh build.sh driver_migration -- install KAE driver, with migration driver"
+	echo "sh build.sh driver_migration clean -- uninstall KAE driver, with migration driver"
+
 	echo "sh build.sh uadk -- install uadk"
 	echo "sh build.sh uadk clean -- uninstall uadk"
 
@@ -720,6 +737,19 @@ main() {
                 driver_delete
             else  
                 build_driver
+            fi  
+            ;;
+        "driver_migration")  
+            if [ "$2" = "clean" ]; then  
+                driver_clean migration
+            elif [ "$2" = "sva" ]; then  
+                build_driver_sva migration
+            elif [ "$2" = "check" ]; then  
+                driver_check
+            elif [ "$2" = "delete" ]; then  
+                driver_delete
+            else  
+                build_driver migration
             fi  
             ;;  
         "uadk")  
