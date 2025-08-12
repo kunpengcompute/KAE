@@ -952,7 +952,7 @@ static int start_work(struct compress_ctx *ctx, const char* in_filename, const c
         }
     }
 
-    if (g_enable_huge_pages || ctx->is_lz77_mode != 1 || ctx->is_zlib)
+    if (g_enable_huge_pages || ctx->is_lz77_mode || ctx->is_zlib)
         ctx->usr_map = get_physical_address_wrapper;
 
     if (ctx->algorithm->init)
