@@ -104,4 +104,5 @@ struct thread_compress_args {
 #define wmb() __sync_synchronize() /* write fence */
 #define mb() __sync_synchronize() /* rw fence */
 #endif
+uint32_t crc32c_sw(uint32_t crc, const uint8_t *data, size_t len);
 #endif
