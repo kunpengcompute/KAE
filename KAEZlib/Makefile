@@ -41,6 +41,7 @@ INCDIR += -I ${WORK_PATH}/../uadk/include
 INCDIR += -I ${WORK_PATH}/src/utils
 INCDIR += -I ${WORK_PATH}/src/v1
 INCDIR += -I ${WORK_PATH}/src/v2
+INCDIR += -I ${WORK_PATH}/../kae_build/head/
 
 # Include Libs.
 LIBDIR += -L/usr/lib64
@@ -69,7 +70,12 @@ OBJS    = $(foreach x,$(SRCEXTS), \
 
 .PHONY : all objs clean cleanall rebuild
 
-all : $(TARGET)
+all : $(TARGET) symlinks
+
+symlinks : $(TARGET)
+	@echo Creating symbolic links
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK)
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK).0
 
 # Rules for creating the dependency files (.d).
 %.d : %.c
@@ -88,6 +94,7 @@ rebuild: clean all
 
 clean :
 	@-$(RM) *.d *.a *.so *.symbol $(TARGET)
+	@-$(RM) $(SOFTLINK) $(SOFTLINK).0
 	@-$(RM)
 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;
 	@echo all clean

@@ -1,0 +1,24 @@
+Source: kae
+Section: libs
+Priority: optional
+Standards-Version: 1.0.0
+Maintainer: Huawei Technologies
+Build-Depends: autoconf,
+               automake,
+               libtool,
+               m4,
+               pkg-config,
+               dh-autoreconf,
+               libnuma-dev
+
+Package: kae-driver
+Architecture: arm64
+Depends: ${shlibs:Depends}
+Description: KAE Driver Package
+ Huawei Kunpeng Accelerator Engine kernel modules and libraries.
+
+Package: kae-zip
+Architecture: arm64
+Depends: ${shlibs:Depends}
+Description: KAE Zip Libraries
+ Huawei Kunpeng Accelerator Engine for Zip compression.

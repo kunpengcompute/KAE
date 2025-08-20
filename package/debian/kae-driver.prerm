@@ -1,0 +1,3 @@
+modprobe -r hisi_zip || true
+modprobe -r hisi_qm || true
+modprobe -r uacce || true

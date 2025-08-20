@@ -338,6 +338,17 @@ sh build.sh lz4 clean 压缩库lz4卸载
 sh build.sh cleanup 一键式卸载
 ```
 
+### 2.4.3 DEB包安装
+
+当前分支代码支持在Debian OS(内核版本 5.15)上以deb包形式完成安装。
+
+deb包构建的相关文件位于`package/debian`目录下。
+
+deb包构建命令：
+`bash build.sh debpack`
+
+执行成功后，会生成`output`目录，相关构建产物位于该目录下。
+
 # 三、常见问题
 
 ## 3.1 安装问题
