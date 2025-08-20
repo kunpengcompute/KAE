@@ -1,0 +1,64 @@
+#!/usr/bin/make -f
+
+KERNEL_VER := $(shell uname -r)
+PROJECT_ROOT := $(CURDIR)/..
+
+%:
+	dh $@ --without usrlocal
+
+override_dh_auto_configure:
+	# CPU check
+	implementer=$$(grep "CPU implementer" /proc/cpuinfo | awk 'NR==1{print $$4}'); \
+	part=$$(grep "CPU part" /proc/cpuinfo | awk 'NR==1{print $$4}'); \
+	if [ "$${implementer}-$${part}" != "0x48-0xd01" ] && [ "$${implementer}-$${part}" != "0x48-0xd02" ]; then \
+		echo "Error: Only supported on Kunpeng CPUs"; \
+		exit 1; \
+	fi
+
+override_dh_auto_build:
+	cd $(PROJECT_ROOT) && bash build.sh deb
+
+override_dh_auto_install:
+	# driver path
+	install -d debian/tmp/lib/modules/$(KERNEL_VER)/extra/
+	install -d debian/tmp/etc/modprobe.d/
+
+	# uadk path
+	install -d debian/tmp/usr/local/lib/
+	install -d debian/tmp/usr/include/uadk/
+	install -d debian/tmp/usr/include/uadk/drv/
+
+	# zlib path
+	install -d debian/tmp/usr/local/kaezip/lib/
+	install -d debian/tmp/usr/local/kaezip/include/
+	install -d debian/tmp/usr/local/kaezip/share/man/man3/
+
+	# lz4 path
+	install -d debian/tmp/usr/local/kaelz4/lib/
+	install -d debian/tmp/usr/local/kaelz4/include/
+	install -d debian/tmp/usr/local/kaelz4/bin/
+	install -d debian/tmp/usr/local/kaelz4/share/man/man1/
+
+	# install driver
+	install -b -m755 $(PROJECT_ROOT)/kae_build/driver/*.ko   debian/tmp/lib/modules/$(KERNEL_VER)/extra/
+	install -b -m755 $(PROJECT_ROOT)/kae_build/driver/*.conf debian/tmp/etc/modprobe.d/
+
+	# install uadk
+	chrpath -d $(PROJECT_ROOT)/kae_build/uadk/lib/*
+	install -b -m755 $(PROJECT_ROOT)/kae_build/uadk/include/*.h      debian/tmp/usr/include/uadk/
+	install -b -m755 $(PROJECT_ROOT)/kae_build/uadk/include/drv/*.h  debian/tmp/usr/include/uadk/drv/
+	cp -a $(PROJECT_ROOT)/kae_build/uadk/lib/*  debian/tmp/usr/local/lib/
+
+	# install zlib library
+	cp -a $(PROJECT_ROOT)/kae_build/kaezip/lib/*     debian/tmp/usr/local/kaezip/lib/
+	cp -a $(PROJECT_ROOT)/kae_build/kaezip/include/* debian/tmp/usr/local/kaezip/include/
+	cp -a $(PROJECT_ROOT)/kae_build/kaezip/share/*   debian/tmp/usr/local/kaezip/share/
+
+	# install lz4 library
+	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/lib/*     debian/tmp/usr/local/kaelz4/lib/
+	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/bin/*     debian/tmp/usr/local/kaelz4/bin/
+	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/include/* debian/tmp/usr/local/kaelz4/include/
+	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/share/*   debian/tmp/usr/local/kaelz4/share/
+
+override_dh_usrlocal:
+	@echo "skip dh_usrlocal checking"

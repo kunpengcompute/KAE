@@ -1,0 +1,21 @@
+# driver
+lib/modules/*/extra/*.ko
+
+# conf
+etc/modprobe.d/*.conf
+
+# uadk library
+usr/local/lib/libwd.*
+usr/local/lib/libwd_comp.*
+usr/local/lib/libwd_crypto.*
+usr/local/lib/libhisi_hpre.*
+usr/local/lib/libhisi_sec.*
+usr/local/lib/libhisi_zip.*
+usr/local/lib/libhisi_dae.*
+usr/local/lib/libisa_ce.*
+usr/local/lib/libisa_sve.*
+usr/local/lib/libwd_dae.*
+
+# uadk header file
+usr/include/uadk/*.h
+usr/include/uadk/drv/*.h

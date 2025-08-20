@@ -1,0 +1,10 @@
+# Zlib
+usr/local/kaezip/lib/*
+usr/local/kaezip/include/*.h
+usr/local/kaezip/share/man/man3/*
+
+# LZ4
+usr/local/kaelz4/lib/*
+usr/local/kaelz4/bin/*
+usr/local/kaelz4/include/*.h
+usr/local/kaelz4/share/man/man1/*

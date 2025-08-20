@@ -1,0 +1,13 @@
+#!/bin/bash
+case "$1" in
+    configure)
+        # 加载内核模块
+        depmod -a
+        modprobe uacce
+        modprobe hisi_qm
+        modprobe hisi_zip  uacce_mode=2 pf_q_num=256
+        # 创建配置文件
+        echo "options hisi_zip uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
+        /sbin/ldconfig
+        ;;
+esac

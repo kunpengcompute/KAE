@@ -263,6 +263,123 @@ function build_rpm()
     cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/programs/lz4.1 $KAE_BUILD/kaelz4/share/man/man1
 }
 
+function build_deb()
+{
+    if [ -d $KAE_BUILD ]; then
+            rm -rf $KAE_BUILD/*
+    else
+            mkdir $KAE_BUILD
+    fi
+    mkdir -p $KAE_BUILD_LIB
+    mkdir -p $KAE_BUILD_HEAD
+
+    local KERNEL_VERSION_BY_BUILDENV=`uname -r`
+
+    # 编译 driver
+    cd ${KAE_KERNEL_DIR}
+    make -j
+
+    mkdir -p $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/hisi_qm.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/uacce/uacce.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/hisilicon/zip/hisi_zip.ko $KAE_BUILD/driver
+    cp ${KAE_KERNEL_DIR}/conf/hisi_zip.conf $KAE_BUILD/driver
+
+    # 编译 uadk
+    cd ${SRC_PATH}
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0001-uadk-add-ctr-mode.patch # uadk没支持ctr模式，engine层已经软件层面适配，可以定制化使能
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0003-fix-uadk-openssl3-bug.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0005-add-uadk-ecc-and-comp-header-for-kae.patch
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0006-fix-uadk-lz77-data-error.patch
+
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
+
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
+
+
+    cd $KAE_UADK_DIR
+    bash autogen.sh
+    # bash conf.sh
+    # 在 conf.sh中的内容后添加 --prefix 参数，为了使uadk编译生成的pkgconfig/*.pc文件中动态库的路径为RPM包编译时的临时目录，这样Opensslengine编译时才能够找到uadk动态库。
+    ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
+        --enable-perf=yes \
+        --host aarch64-linux-gnu \
+        --target aarch64-linux-gnu \
+        --includedir=/usr/local/include/ \
+        --disable-static --enable-shared \
+        --prefix=$KAE_BUILD/uadk/
+    make -j
+
+    mkdir -p $KAE_BUILD/uadk/lib
+    mkdir -p $KAE_BUILD/uadk/include
+    mkdir -p $KAE_BUILD/uadk/include/v1
+    mkdir -p $KAE_BUILD/uadk/include/drv
+    mkdir -p $KAE_BUILD/uadk/pkgconfig
+
+    cp -a ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/uadk/lib
+    cp -r $KAE_UADK_DIR/include/*.h              $KAE_BUILD/uadk/include
+    cp -r $KAE_UADK_DIR/v1/*.h                   $KAE_BUILD/uadk/include/v1
+    cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD/uadk/include/drv
+    cp -r $KAE_UADK_DIR/lib/*.pc                 $KAE_BUILD/uadk/pkgconfig
+
+    mkdir -p $KAE_BUILD_HEAD/uadk
+    mkdir -p $KAE_BUILD_HEAD/uadk/v1
+    mkdir -p $KAE_BUILD_HEAD/uadk/drv
+
+    cp -r $KAE_UADK_DIR/include/*.h              $KAE_BUILD_HEAD/uadk
+    cp -r $KAE_UADK_DIR/v1/*.h                   $KAE_BUILD_HEAD/uadk/v1
+    cp -r $KAE_UADK_DIR/include/drv/*.h          $KAE_BUILD_HEAD/uadk/drv
+
+    mkdir -p $KAE_BUILD/lib
+    cp -a ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/lib
+
+    # 编译 zlib
+    cd $KAE_ZLIB_DIR
+    bash setup.sh devbuild KAE2
+
+    mkdir -p $KAE_BUILD/kaezip
+    mkdir -p $KAE_BUILD/kaezip/include
+    mkdir -p $KAE_BUILD/kaezip/lib
+    mkdir -p $KAE_BUILD/kaezip/lib/pkgconfig
+    mkdir -p $KAE_BUILD/kaezip/share/man/man3
+
+    cp -a $KAE_ZLIB_DIR/lib* $KAE_BUILD/kaezip/lib
+    cp -a $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD/kaezip/lib
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.pc $KAE_BUILD/kaezip/lib/pkgconfig
+    cp $KAE_ZLIB_DIR/include/*.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zconf.h $KAE_BUILD/kaezip/include
+    cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/zlib.3 $KAE_BUILD/kaezip/share/man/man3
+
+    # 编译 lz4
+    cd ${SRC_PATH}/KAELz4
+    bash build.sh devbuild
+
+    mkdir -p $KAE_BUILD/kaelz4/lib
+    mkdir -p $KAE_BUILD/kaelz4/bin
+    mkdir -p $KAE_BUILD/kaelz4/include
+    mkdir -p $KAE_BUILD/kaelz4/share/man/man1
+
+    cp -a $KAE_LZ4_DIR/lib* $KAE_BUILD/kaelz4/lib
+    cp -a $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/liblz4.so* $KAE_BUILD/kaelz4/lib
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/liblz4.a $KAE_BUILD/kaelz4/lib
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/programs/lz4 $KAE_BUILD/kaelz4/bin
+
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/lib/*.h $KAE_BUILD/kaelz4/include
+    cp $KAE_LZ4_DIR/include/*.h $KAE_BUILD/kaelz4/include
+    cp $KAE_LZ4_DIR/src/utils/kaelz4_log.h $KAE_BUILD/kaelz4/include
+
+    cp $KAE_LZ4_DIR/open_source/lz4-1.9.4/programs/lz4.1 $KAE_BUILD/kaelz4/share/man/man1
+}
+
 function build_driver()
 {
     cd ${KAE_KERNEL_DIR}
@@ -561,6 +678,7 @@ function help()
 	echo "build KAE"
 	echo "bash build.sh all -- install all component(not include gmssl)"
     echo "bash build.sh rpmpack -- build rpm pack(not include gmssl)"
+    echo "bash build.sh debpack -- build deb pack(include driver, uadk, zlib and lz4)"
 
 	echo "bash build.sh driver -- install KAE driver"
 	echo "bash build.sh driver clean -- uninstall KAE driver"
@@ -748,6 +866,21 @@ main() {
             rpmbuild -bb $KAE_SPEC_FILE  
             cp /root/rpmbuild/RPMS/aarch64/kae* $KAE_BUILD  
             ;;  
+        "deb")
+            set +e
+            clear_all_components
+            set -e
+            build_deb
+            ;;
+        "debpack")
+            rm -rf $KAE_BUILD ${SRC_PATH}/output/
+            cd ${SRC_PATH}/package/
+            dpkg-buildpackage -us -uc
+            cd ${SRC_PATH}
+            mkdir -p ${SRC_PATH}/output/
+            mv *.deb ${SRC_PATH}/output/
+            mv kae_*.dsc kae_*.tar.gz kae_*.buildinfo kae_*.changes ${SRC_PATH}/output/
+            ;;
         "cleanup")  
             echo "Cleanup all"  
             clear_all_components  

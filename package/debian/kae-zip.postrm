@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+rm -rf /usr/local/kaezip                > /dev/null 2>&1 || true
+rm -f /var/log/kaezip.log*              > /dev/null 2>&1 || true
+implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
+part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+if [ "${implementer}-${part}" != "0x48-0xd01" ]; then
+    rm -rf /usr/local/kaelz4  > /dev/null 2>&1 || true
+    rm -f /var/log/kaelz4.log*   > /dev/null 2>&1 || true
+fi
+/sbin/ldconfig

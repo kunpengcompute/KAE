@@ -1,0 +1,14 @@
+echo "Preprocessing before installing the driver"
+modprobe -r hisi_zip > /dev/null 2>&1 || true
+modprobe -r hisi_qm > /dev/null 2>&1 || true
+modprobe -r uacce > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_comp.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
