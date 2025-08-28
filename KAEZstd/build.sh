@@ -11,8 +11,10 @@ function Target_zstd()
 {
     cd "${SRC_PATH}"/open_source
     rm -rf zstd
-    tar -zxvf zstd-1.5.2.tar.gz
-    patch -p0 < kaezstd_1_5_2.patch
+    tar -zxvf zstd-1.5.4.tar.gz
+    patch -p0 < kaezstd_1_5_4.patch
+    patch -p0 < zstd_decompress.patch
+    mv zstd-1.5.4 zstd
     cd "${SRC_PATH}"/open_source/zstd/
 }
 
