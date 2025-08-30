@@ -10,7 +10,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-#include "../vfio.h"
+#include <linux/vfio.h>
 #include <linux/vfio_pci_core.h>
 #include <linux/anon_inodes.h>
 
