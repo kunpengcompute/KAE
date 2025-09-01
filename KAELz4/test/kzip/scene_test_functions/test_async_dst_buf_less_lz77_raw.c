@@ -333,7 +333,7 @@ static int retry_compression(struct my_custom_data *my_data)
     }
 
     while (g_has_done == 0) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
+        KAELZ4_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAELZ4_destroy_async_compress_session(sess);
@@ -415,7 +415,7 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
     }
 
     while (g_has_done == 0) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
+        KAELZ4_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAELZ4_destroy_async_compress_session(sess);

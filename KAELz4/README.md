@@ -110,7 +110,7 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
  * @param: sess : session
  * @param: budget : process packet num per call.
  */
-void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
+void KAELZ4_async_polling_in_session(void *sess, int budget);
 ```
 #### 3.1.6、对lz77_raw数据进行格式转换
 ```
@@ -487,7 +487,7 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
     }
 
     while (g_has_done != 1) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
+        KAELZ4_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAELZ4_destroy_async_compress_session(sess);
@@ -590,7 +590,7 @@ int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffe
  * @param: sess : session
  * @param: budget : process packet num per call.
  */
-void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
+void KAELZ4_async_polling_in_session(void *sess, int budget);
 ```
 #### 3.2.6、清理session会话
 ```
@@ -763,7 +763,7 @@ static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, in
     }
 
     while (g_has_done != 1) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
+        KAELZ4_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAELZ4_destroy_async_compress_session(sess);

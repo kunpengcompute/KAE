@@ -20,7 +20,7 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 |---------------------------------------|--------------------------|
 | `KAEZIP_create_async_compress_session`| 创建异步压缩任务session       |
 | `KAEZIP_compress_async_in_session`        | 提交异步压缩任务        |
-| `KAEZIP_compress_async_polling_in_session`          | polling查询异步压缩/解压任务的结果        |
+| `KAEZIP_async_polling_in_session`          | polling查询异步压缩/解压任务的结果        |
 | `KAEZIP_destroy_async_compress_session` | 销毁压缩任务session     |
 | `KAEZIP_create_async_decompress_session`| 创建异步解压任务session        |
 | `KAEZIP_decompress_async_in_session`        | 提交异步解压任务        |
@@ -59,7 +59,7 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
  * @param: sess : session
  * @param: budget : process packet num per call.
  */
- void KAEZIP_compress_async_polling_in_session(void *sess, int budget);
+ void KAEZIP_async_polling_in_session(void *sess, int budget);
 
 
 /**
@@ -367,7 +367,7 @@ static int decompressAsync(struct my_custom_data *mydata)
         return -1;
     }
     while (g_has_done != 1) {
-        KAEZIP_compress_async_polling_in_session(desess, 1);
+        KAEZIP_async_polling_in_session(desess, 1);
         usleep(100);
     }
     KAEZIP_destroy_async_decompress_session(desess);
@@ -479,7 +479,7 @@ static int test_main()
     }
 
     while (g_has_done != 1) {
-        KAEZIP_compress_async_polling_in_session(sess, 1);
+        KAEZIP_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAEZIP_destroy_async_compress_session(sess);

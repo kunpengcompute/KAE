@@ -40,7 +40,7 @@ static void lz4_async_block_cleanup(struct compress_ctx *ctx)
 compression_algorithm_t lz4async_lz77_frame_algorithm = {
     .name = "kaelz4async_lz77_frame",
     .async_compress = lz4async_block_compress,
-    .poll = KAELZ4_compress_async_polling_in_session,
+    .poll = KAELZ4_async_polling_in_session,
     .bound = lz4_bound,
     .async_decompress = lz4async_block_decompress,
     .init = lz4_async_block_init,

@@ -211,7 +211,7 @@ void lz4_prepre_out_buf(struct compress_ctx *ctx, struct compress_out_buf *out_b
 
 void lz4_async_polling(struct compress_session *sess, int budget)
 {
-    KAELZ4_compress_async_polling_in_session(sess->kae_sess, budget);
+    KAELZ4_async_polling_in_session(sess->kae_sess, budget);
 }
 
 // LZ4 算法实例

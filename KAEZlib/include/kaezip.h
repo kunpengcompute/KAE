@@ -116,7 +116,7 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
  * @param: sess : session
  * @param: budget : process packet num per call.
  */
- void KAEZIP_compress_async_polling_in_session(void *sess, int budget);
+ void KAEZIP_async_polling_in_session(void *sess, int budget);
 
 /**
  * @brief: Initialize Task Queues and Threads on the KAE Side.

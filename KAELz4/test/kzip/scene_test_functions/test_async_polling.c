@@ -179,7 +179,7 @@ static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, in
     }
 
     while (g_has_done != 1) {
-        KAELZ4_compress_async_polling_in_session(sess, 1);
+        KAELZ4_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAELZ4_destroy_async_compress_session(sess);

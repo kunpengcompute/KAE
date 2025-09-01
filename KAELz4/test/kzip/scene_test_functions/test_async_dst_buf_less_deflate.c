@@ -264,7 +264,7 @@ static int decompressAsync(struct my_custom_data *mydata)
         return -1;
     }
     while (g_has_done != 1) {
-        KAEZIP_compress_async_polling_in_session(desess, 1);
+        KAEZIP_async_polling_in_session(desess, 1);
         usleep(100);
     }
     KAEZIP_destroy_async_decompress_session(desess);
@@ -374,7 +374,7 @@ static int retry_compression(struct my_custom_data *my_data)
         return -1;
     }
     while (g_has_done != 1) {
-        KAEZIP_compress_async_polling_in_session(sess, 1);
+        KAEZIP_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAEZIP_destroy_async_compress_session(sess);
@@ -429,7 +429,7 @@ static int test_main()
     }
 
     while (g_has_done != 1) {
-        KAEZIP_compress_async_polling_in_session(sess, 1);
+        KAEZIP_async_polling_in_session(sess, 1);
         usleep(100);
     }
     KAEZIP_destroy_async_compress_session(sess);

@@ -782,7 +782,7 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
 }
 
 
-void KAELZ4_compress_async_polling_in_session(void *sess, int budget)
+void KAELZ4_async_polling_in_session(void *sess, int budget)
 {
     struct kaelz4_async_ctrl *ctrl = NULL;
     lz4_task_queue *task_queue = NULL;

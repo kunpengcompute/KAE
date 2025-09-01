@@ -201,7 +201,7 @@ void zlib_prepre_out_buf(struct compress_ctx *ctx, struct compress_out_buf *out_
 
 static void zlib_polling(struct compress_session *sess, int budget)
 {
-    KAEZIP_compress_async_polling_in_session(sess->kae_sess, budget);
+    KAEZIP_async_polling_in_session(sess->kae_sess, budget);
 }
 
 // Zlib 算法实例
