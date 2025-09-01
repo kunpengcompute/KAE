@@ -83,7 +83,7 @@ static void zlib_async_deflate_cleanup(struct compress_ctx *ctx)
 compression_algorithm_t zlibasync_block_algorithm = {
     .name = "kaezlibasync_deflate",
     .async_compress = zlibasync_deflate_compress,
-    .poll = KAEZIP_compress_async_polling_in_session,
+    .poll = KAEZIP_async_polling_in_session,
     .bound = zlib_bound,
     .async_decompress = zlibasync_deflate_decompress,
     .decompress = zlib_decompress,

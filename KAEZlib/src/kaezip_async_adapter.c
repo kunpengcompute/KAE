@@ -188,7 +188,7 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
     return kaezip_async_do_comp_in_session(sess, src, dst, callback, result, KAEZIP_ASYNC_BLOCK, WCRYPTO_DEFLATE);
 }
 
-void KAEZIP_compress_async_polling_in_session(void *sess, int budget)
+void KAEZIP_async_polling_in_session(void *sess, int budget)
 {
     struct kaezip_async_ctrl *ctrl = NULL;
     kaezip_task_queue *task_queue = NULL;

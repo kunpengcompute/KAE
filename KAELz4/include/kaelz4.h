@@ -208,7 +208,7 @@ int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list
  * @param: sess : session
  * @param: budget : process packet num per call.
  */
-void KAELZ4_compress_async_polling_in_session(void *sess, int budget);
+void KAELZ4_async_polling_in_session(void *sess, int budget);
 /**
  * @brief: frame compress async api
  * @param: sess : session
