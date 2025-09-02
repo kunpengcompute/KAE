@@ -54,6 +54,12 @@ function Dev_Build_kaelz4()
 
 function Install_kaesnappy()
 {
+    Target_snappy
+    cd "${SRC_PATH}"
+	make clean && make
+    make install
+    echo "install kaelz4"
+    
     if [ -d "${SRC_PATH}"/open_source/snappy-1.1.10/ ]; then
         cd "${SRC_PATH}"/open_source/snappy-1.1.10/
         echo "build and intsall snappy."
@@ -103,7 +109,7 @@ function Operate()
             Build_kaesnappy "$2"
             ;;
         install)
-            Build_kaesnappy "$2"
+            # Build_kaesnappy "$2"
             Install_kaesnappy
             ;;
         uninstall)
