@@ -7,72 +7,83 @@ set -e
 SRC_PATH=$(pwd)
 BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
 
-function Target_lz4()
+function Target_snappy()
 {
     cd "${SRC_PATH}"/open_source
-    rm -rf lz4-1.9.4
-    tar -zxvf lz4-1.9.4.tar.gz
-    patch -p0 < kaelz4_1_9_4.patch
-    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.h "${SRC_PATH}"/src/utils
-    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.c "${SRC_PATH}"/src/utils
-    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/lz4.h "${SRC_PATH}"/src/utils
-    cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/lz4frame.h "${SRC_PATH}"/src/utils
-    cd "${SRC_PATH}"/open_source/lz4-1.9.4/
+    rm -rf snappy-1.1.10
+    tar -zxvf snappy-1.1.10.tar.gz
+    patch -p0 --forward < kaesnappy_1_1_10.patch
+    cd ./snappy-1.1.10
 }
 
-function Build_kaelz4()
+function Build_kaesnappy()
 {
-    Target_lz4
+    Target_snappy
     cd "${SRC_PATH}"
 	make clean && make
     make install
     echo "install kaelz4"
 
     cd -
-    make -j KAELZ4PATH=${SRC_PATH}
-    echo "build lz4 success"
+    rm -rf build
+    mkdir build && cd build
+    cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=ON
+    make -j
+    echo "build snappy success"
 }
 
 function Dev_Build_kaelz4()
 {
-    Target_lz4
+    Target_snappy
     cd "${SRC_PATH}"
-	make clean
-    make
+	make clean && make
+    make install
     echo "install kaelz4"
 
     cd -
-    make -j KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAELZ4PATH=${SRC_PATH}
-    echo "build lz4 success"
+    rm -rf build
+    mkdir build && cd build
+    cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=ON
+    make -j
+    echo "build snappy success"
 }
 
-function Install_kaelz4()
+function Install_kaesnappy()
 {
-    if [ -d "${SRC_PATH}"/open_source/lz4-1.9.4/ ]; then
-        cd "${SRC_PATH}"/open_source/lz4-1.9.4/
-        echo "build and intsall lz4."
-        make
-		make PREFIX=/usr/local/kaelz4/ install
+    if [ -d "${SRC_PATH}"/open_source/snappy-1.1.10/ ]; then
+        cd "${SRC_PATH}"/open_source/snappy-1.1.10/
+        echo "build and intsall snappy."
+        rm -rf build
+        mkdir build && cd build
+        cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local/kaesnappy \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DBUILD_SHARED_LIBS=ON
+        make -j
+        make install
     fi
-    echo "install lz4 success"
+    echo "install snappy success"
 }
 
-function Uninstall_kaelz4()
+function Uninstall_kaesnappy()
 {
-    local lz4_path=
-    if [ -d "${SRC_PATH}"/open_source/lz4-1.9.4/ ]; then
+    local snappy_path=
+    if [ -d "${SRC_PATH}"/open_source/snappy-1.1.10/ ]; then
 	set +e
-        lz4_path=$(ls /usr/local/kaelz4/lib | grep liblz4-1.9.4.so)
+        snappy_path=$(ls /usr/local/kaesnappy/lib | grep libsnappy.so.1.1.10)
         set -e
-	if [ -n "${lz4_path}" ]; then
-            cd "${SRC_PATH}"/open_source/lz4-1.9.4/
-            make PREFIX=/usr/local/kaelz4/ uninstall && make clean
-            rm -rf "${SRC_PATH}"/open_source/lz4-1.9.4
+	if [ -n "${snappy_path}" ]; then
+            rm -rf "${SRC_PATH}"/open_source/snappy-1.1.10
         fi
     fi
 
-    local kaelz4_path=$(ls /usr/local/kaelz4/lib | grep libkaelz4.so.${BUILDVERSION})
-    if [ -n "${kaelz4_path}" ]; then
+    local kaesnappy_path=$(ls /usr/local/kaesnappy/lib | grep libkaelz4.so.${BUILDVERSION})
+    if [ -n "${kaesnappy_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"
             make uninstall && make clean
@@ -86,17 +97,17 @@ function Operate()
     cd "${SRC_PATH}"/open_source
     case "$1" in
         devbuild)
-            Dev_Build_kaelz4 "$2"
+            Dev_Build_kaesnappy "$2"
             ;;
         build)
-            Build_kaelz4 "$2"
+            Build_kaesnappy "$2"
             ;;
         install)
-            Build_kaelz4 "$2"
-            Install_kaelz4
+            Build_kaesnappy "$2"
+            Install_kaesnappy
             ;;
         uninstall)
-            Uninstall_kaelz4
+            Uninstall_kaesnappy
             ;;
     esac
 }

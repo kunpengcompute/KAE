@@ -13,7 +13,7 @@
 #==============================================================================
 
 WORK_PATH := .
-ENGINE_INSTALL_PATH := /usr/local/kaelz4
+ENGINE_INSTALL_PATH := /usr/local/kaesnappy
 
 CC=gcc
 
@@ -37,7 +37,8 @@ SRCEXTS   := .c # C program
 # Include
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/src/utils
-INCDIR += -I $(WORK_PATH)/open_source/lz4-1.9.4/lib
+INCDIR += -I $(WORK_PATH)/src/v1
+INCDIR += -I $(WORK_PATH)/open_source/snappy-1.1.10/
 INCDIR += -I ${WORK_PATH}/../uadk/include/
 INCDIR += -I ${WORK_PATH}/../kae_build/head/
 
@@ -66,7 +67,12 @@ OBJS    = $(foreach x,$(SRCEXTS), \
 
 .PHONY : all objs clean cleanall rebuild
 
-all : $(TARGET) libkaelz4.a
+all : $(TARGET) libkaelz4.a symlinks
+
+symlinks : $(TARGET)
+	@echo Creating symbolic links
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK)
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK).0
 
 # Rules for creating the dependency files (.d).
 %.d : %.c
@@ -90,6 +96,7 @@ rebuild: clean all
 
 clean :
 	@-$(RM) *.d *.a *.so *.symbol $(TARGET)
+	@-$(RM) $(SOFTLINK) $(SOFTLINK).0
 	@-$(RM)
 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;
 	@echo all clean
@@ -110,3 +117,5 @@ uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaelz4.a
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4_log.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4frame.h

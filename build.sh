@@ -673,6 +673,19 @@ function gzip_clean()
     bash build.sh uninstall
 }
 
+function build_snappy()
+{
+    cd ${SRC_PATH}/KAESnappy
+    bash build.sh install
+}
+
+function snappy_clean()
+{
+    cd ${SRC_PATH}/KAESnappy
+    bash build.sh uninstall
+    rm -rf /usr/local/kaesnappy/
+}
+
 function help()
 {
 	echo "build KAE"
@@ -710,6 +723,9 @@ function help()
     echo "bash build.sh gzip -- install gzip using KAE"
 	echo "bash build.sh gzip clean -- uninstall gzip using KAE"
 
+    echo "bash build.sh snappy -- install snappy using KAE"
+	echo "bash build.sh snappy clean -- uninstall snappy using KAE"
+
 	echo "bash build.sh cleanup -- clean up all component"
 }
 
@@ -745,7 +761,8 @@ function clear_all_components()
     engine_clean || true  
     zlib_clean   || true  
     gzip_clean   || true
- 
+    snappy_clean   || true
+
     if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
         echo "this cpu not support kaezstd and kaelz4."
     else
@@ -843,6 +860,17 @@ main() {
                     lz4_clean
                 else  
                     build_lz4
+                fi  
+            fi  
+            ;;  
+        "snappy")  
+            if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+                echo "This CPU does not support snappy."  
+            else  
+                if [ "$2" = "clean" ]; then  
+                    snappy_clean
+                else  
+                    build_snappy
                 fi  
             fi  
             ;;  
