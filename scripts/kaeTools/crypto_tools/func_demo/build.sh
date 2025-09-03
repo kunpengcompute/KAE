@@ -17,6 +17,7 @@ function build_googletest()
 
 function main()
 {
+    mkdir ../gtest-download
     cd ${gtest_download}
     if [ ! -d ${gtest_download}/googletest-release-1.11.0 ]
     then

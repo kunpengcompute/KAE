@@ -1,0 +1,16 @@
+openssl_conf=openssl_def
+[openssl_def]
+engines=engine_section
+[engine_section]
+kae=kae_section
+[kae_section]
+engine_id=kae
+#openssl版本为1.1.1x
+dynamic_path=/usr/local/lib/engines-1.1/kae.so
+#openssl版本为3.0.x设置为如下路径
+#dynamic_path=/usr/local/lib/engines-3.0/kae.so
+KAE_CMD_ENABLE_ASYNC=1
+KAE_CMD_ENABLE_SM3=1
+KAE_CMD_ENABLE_SM4=1
+default_algorithms=ALL
+init=1
