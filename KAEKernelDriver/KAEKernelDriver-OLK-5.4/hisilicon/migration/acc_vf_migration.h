@@ -6,7 +6,7 @@
 
 #include <linux/mdev.h>
 #include <linux/pci.h>
-#include "../../include_linux/vfio.h"
+#include <linux/vfio.h>
 
 #include "../hisi_acc_qm.h"
 
