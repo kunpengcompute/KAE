@@ -389,7 +389,7 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	struct hisi_qm *pf_qm = hisi_acc_vdev->pf_qm;
 	struct device *dev = &vf_qm->pdev->dev;
 	u32 que_iso_state;
-	int ret;
+	int qp_num, ret;
 
 	if (migf->total_length < QM_MATCH_SIZE || hisi_acc_vdev->match_done)
 		return 0;
@@ -406,18 +406,18 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	}
 
 	/* VF qp num check */
-	ret = qm_get_vft(vf_qm, &vf_qm->qp_base);
-	if (ret <= 0) {
+	qp_num = qm_get_vft(vf_qm, &vf_qm->qp_base);
+	if (qp_num <= 0) {
 		dev_err(dev, "failed to get vft qp nums\n");
-		return ret;
+		return -EINVAL;
 	}
 
-	if (ret != vf_data->qp_num) {
+	if (qp_num != vf_data->qp_num) {
 		dev_err(dev, "failed to match VF qp num\n");
 		return -EINVAL;
 	}
 
-	vf_qm->qp_num = ret;
+	vf_qm->qp_num = qp_num;
 
 	/* VF isolation state check */
 	ret = qm_read_regs(pf_qm, QM_QUE_ISO_CFG_V, &que_iso_state, 1);
@@ -430,7 +430,13 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 		dev_err(dev, "failed to match isolation state\n");
 		return -EINVAL;
 	}
+    ret = qm_write_regs(vf_qm, QM_VF_STATE, &vf_data->vf_qm_state, 1);
+	if (ret) {
+		dev_err(dev, "failed to write QM_VF_STATE\n");
+		return ret;
+	}
 
+	hisi_acc_vdev->vf_qm_state = vf_data->vf_qm_state;
 	hisi_acc_vdev->match_done = true;
 	return 0;
 }
@@ -502,13 +508,6 @@ static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 		hisi_acc_vdev->vf_qm_state = QM_NOT_READY;
 		return 0;
 	}
-
-	ret = qm_write_regs(qm, QM_VF_STATE, &vf_data->vf_qm_state, 1);
-	if (ret) {
-		dev_err(dev, "failed to write QM_VF_STATE\n");
-		return ret;
-	}
-	hisi_acc_vdev->vf_qm_state = vf_data->vf_qm_state;
 
 	qm->eqe_dma = vf_data->eqe_dma;
 	qm->aeqe_dma = vf_data->aeqe_dma;
@@ -1183,7 +1182,7 @@ static void hisi_acc_vf_pci_aer_reset_done(struct pci_dev *pdev)
 {
 	struct hisi_acc_vf_core_device *hisi_acc_vdev = hisi_acc_drvdata(pdev);
 
-	if (hisi_acc_vdev->core_device.vdev.mig_ops)
+	if (!hisi_acc_vdev->core_device.vdev.mig_ops)
 		return;
 
 	mutex_lock(&hisi_acc_vdev->state_mutex);

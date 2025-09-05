@@ -20,7 +20,7 @@ CPUPART=""
 
 function build_check_OS_version()
 {
-    local KERNEL_VERSION=`rpm -q --qf '%{VERSION}\n' kernel-devel | head -n 1`
+    local KERNEL_VERSION=`uname -r`
     if [[ "$KERNEL_VERSION" == 6.6.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
