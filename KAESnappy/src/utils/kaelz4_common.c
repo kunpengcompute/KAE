@@ -55,7 +55,7 @@ static ARCH_TYPE KaeLz4Detect(void)
         return CPU_HISILICOM_V2;
     } else if ((vendor == 0x48) && (partId == 0xD03)) {
         return CPU_HISILICOM_V3;
-    } else if (partId == 0xD22) {
+    } else if (partId == 0xD22 || partId == 0xD06) {
         return CPU_HISILICOM_V4;
     }
     return CPU_UNKNOW;

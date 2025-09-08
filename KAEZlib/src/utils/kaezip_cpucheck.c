@@ -25,7 +25,7 @@ static ARCH_TYPE KaeZlibDetect(void)
         g_arch = CPU_HISILICOM_V2;
     } else if ((vendor == 0x48) && (partId == 0xD03)) {
         g_arch = CPU_HISILICOM_V3;
-    } else if (partId == 0xD22) {
+    } else if (partId == 0xD22 || partId == 0xD06) {
         g_arch = CPU_HISILICOM_V4;
     }
     return g_arch;
