@@ -67,7 +67,7 @@ HIDDEN_API void CONSTRUCTOR KaeZstdInit(void)
         return;
     }
 
-    if (KaeZstdDetect() == CPU_HISILICOM_V1 || KaeLz4Detect() == CPU_UNKNOW) {
+    if (KaeZstdDetect() == CPU_HISILICOM_V1 || KaeZstdDetect() == CPU_UNKNOW) {
         fprintf(stderr, "KAEzstd only support in V2+, please check CPU ID.\n");
         abort();
     }
