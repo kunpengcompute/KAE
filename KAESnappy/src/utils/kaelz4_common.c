@@ -67,8 +67,8 @@ HIDDEN_API void CONSTRUCTOR KaeLz4Init(void)
         return;
     }
 
-    if (KaeLz4Detect() != CPU_HISILICOM_V2) {
-        fprintf(stderr, "KAElz4 only support in V2, please check CPU ID.\n");
+    if (KaeLz4Detect() == CPU_HISILICOM_V1 || KaeLz4Detect() == CPU_UNKNOW) {
+        fprintf(stderr, "KAElz4 only support in V2+, please check CPU ID.\n");
         abort();
     }
     g_kaelz4Initialized = 1;
