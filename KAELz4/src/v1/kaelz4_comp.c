@@ -760,19 +760,27 @@ static void kaelz4_async_compress_cb(int status, void *param)
     req->done = 1;
 }
 
-static void kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst)
+static int kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst)
 {
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
 
     op_data->in_len = 0;
     kz_ctx->src_sgl = kz_ctx->src_sgl_buf;
-    wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
+    int ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
                  (wd_map)kz_ctx->usr_map);
+    if (ret != WD_SUCCESS) {
+        kz_ctx->src_sgl = NULL;
+        return KAE_LZ4_INVAL_PARA;
+    }
 
     if (dst->buf_num) {
         kz_ctx->dst_sgl_usr = kz_ctx->dst_sgl_buf;
-        wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
+        ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
                      (wd_map)kz_ctx->usr_map);
+        if (ret != WD_SUCCESS) {
+            kz_ctx->dst_sgl_usr = NULL;
+            return KAE_LZ4_DST_BUF_OVERFLOW;
+        }
         kz_ctx->output.sequence = kz_ctx->dst_sgl_usr;
         kz_ctx->output.seq_sz = dst->buf[0].buf_len;
 
@@ -785,6 +793,7 @@ static void kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_lis
     op_data->flush   = kz_ctx->flush;
     op_data->alg_type = kz_ctx->comp_alg_type;
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
+    return KAE_LZ4_SUCC;
 }
 
 static void kaelz4_fill_flat_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list *src)
@@ -806,6 +815,7 @@ static void kaelz4_fill_flat_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_li
 
 static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *src, struct wd_buf_list *dst, size_t srcSize, void *usr_data)
 {
+    int ret = KAE_LZ4_SUCC;
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
@@ -825,12 +835,21 @@ static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *sr
     kaelz4_ctx->callback = kaelz4_async_compress_cb;
     kaelz4_ctx->param = usr_data;
 
-    if (kaelz4_ctx->q_node->is_sgl)
-        kaelz4_fill_sgl_buffer(kaelz4_ctx, src, dst);
-    else
+    if (kaelz4_ctx->q_node->is_sgl) {
+        ret = kaelz4_fill_sgl_buffer(kaelz4_ctx, src, dst);
+        if (ret != 0) {
+            US_ERR("compress fill sgl fail ret:%d\n", ret);
+            return ret;
+        }
+    } else {
         kaelz4_fill_flat_buffer(kaelz4_ctx, src);
-
-    return wcrypto_do_comp(kaelz4_ctx->wd_ctx, &kaelz4_ctx->op_data, kaelz4_ctx);   // async
+    }
+    ret = wcrypto_do_comp(kaelz4_ctx->wd_ctx, &kaelz4_ctx->op_data, kaelz4_ctx);
+    if (ret != WD_SUCCESS) {   // async
+        US_ERR("compress async fail ret:%d\n", ret);
+        return KAE_LZ4_HW_TIMEOUT_FAIL;
+    }
+    return KAE_LZ4_SUCC;
 }
 
 static void kaelz4_find_and_free_kz_ctx(struct kaelz4_async_ctrl *ctrl, kaelz4_ctx_t *kz_ctx)
@@ -1360,7 +1379,9 @@ static int kaelz4_send_async_compress(struct kaelz4_async_ctrl *ctrl, struct kae
     size_t compress_size = req->src_size - MFLIMIT;
     ret = kaelz4_compress_async_impl(&req->zc, &req->src, &req->dst, compress_size, (void *)req);
     if (unlikely(ret != KAE_LZ4_SUCC)) {
-        kaelz4_find_and_free_kz_ctx(ctrl, (kaelz4_ctx_t *)req->zc.kaeConfig);
+        if (ret == KAE_LZ4_HW_TIMEOUT_FAIL) {
+            kaelz4_find_and_free_kz_ctx(ctrl, (kaelz4_ctx_t *)req->zc.kaeConfig);
+        }
         ctrl->ctx_index = (ctrl->ctx_index + MAX_NUM_IN_COMP - 1) % MAX_NUM_IN_COMP;
         ctrl->cur_num_in_comp--;
         req->zc.kaeConfig = 0;
@@ -1370,7 +1391,7 @@ static int kaelz4_send_async_compress(struct kaelz4_async_ctrl *ctrl, struct kae
     return ret;
 }
 
-static void kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *dst,
+static int kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *dst,
                                             enum kae_lz4_async_data_format data_format)
 {
     req->dst.buf = req->dst_buffers;
@@ -1382,7 +1403,7 @@ static void kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const 
         req->dst.buf[0].data = seq_result->seq_start;
         if (req->dst.buf[0].data >= dst->buf[0].data + dst->buf[0].buf_len) {
             req->dst.buf[0].buf_len = 0;
-            return;
+            return KAE_LZ4_DST_BUF_OVERFLOW;
         }
 
         if (dst->buf[0].buf_len >= (req->idx + 1) * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) {
@@ -1391,7 +1412,7 @@ static void kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const 
             req->dst.buf[0].buf_len = dst->buf[0].data + dst->buf[0].buf_len - req->dst.buf[0].data;
         }
     }
-    return;
+    return KAE_LZ4_SUCC;
 }
 
 static void kaelz4_fill_hw_req_src_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *src,
@@ -1473,15 +1494,14 @@ static int kaelz4_async_compress_process(struct kaelz4_async_ctrl *ctrl, void *a
         req->compress_ctx = compress_ctx;
         req->next = NULL;
         kaelz4_fill_hw_req_src_buf_list(req, compress_ctx->src, &buf_index, &buf_offset, remainingLength);
-        kaelz4_fill_hw_req_dst_buf_list(req, compress_ctx->dst, compress_ctx->data_format);
+        int ret = kaelz4_fill_hw_req_dst_buf_list(req, compress_ctx->dst, compress_ctx->data_format);
         remainingLength -= req->src_size;
         // 最后一块实际下发给芯片的长度是 src_size - MFLIMIT
         if (remainingLength == 0) {
             req->last = 1;
         }
 
-        int ret = KAE_LZ4_SUCC;
-        if (!req->special_flag) {
+        if (ret == KAE_LZ4_SUCC && !req->special_flag) {
             ret = kaelz4_send_async_compress(ctrl, req);
         } else {
             // 小于12B处理，无需硬件压缩
@@ -1496,7 +1516,7 @@ static int kaelz4_async_compress_process(struct kaelz4_async_ctrl *ctrl, void *a
         idx++;
         tail = req;
         if (ret != KAE_LZ4_SUCC) {
-            req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+            req->compress_ctx->status = ret;
             req->special_flag = 1;
             req->done = 1;
         }

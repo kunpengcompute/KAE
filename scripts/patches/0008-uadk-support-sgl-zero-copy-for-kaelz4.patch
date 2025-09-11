@@ -322,7 +322,7 @@ index cb3b8ee..fc1f329 100644
  		}
  
  		ret = drv_init_sgl(q, pool, sgl_blk[i]);
-@@ -1029,3 +1006,67 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
+@@ -1029,3 +1006,76 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
  	for (i = 0; i < sgl->buf_num; i++)
  		memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
  }
@@ -342,6 +342,13 @@ index cb3b8ee..fc1f329 100644
 +        return mix_pool->sgl->priv;
 +
 +    return wd_alloc_blk_sgl(mix_pool->buf_pool, size);
++}
++
++static void wd_free_blk_in_build_sgl(void *pool, void *blk)
++{
++    struct mix_pool *mix_pool = pool;
++
++    return wd_free_blk(mix_pool->buf_pool, blk);
 +}
 +
 +static void *wd_iova_map_in_build_sgl(void *pool, void *va, size_t size)
@@ -374,9 +381,11 @@ index cb3b8ee..fc1f329 100644
 +    mix_pool.sgl = sgl;
 +    sgl_pool->buf_br.iova_map = wd_iova_map_in_build_sgl;
 +    sgl_pool->buf_br.alloc = wd_alloc_blk_in_build_sgl;
++    sgl_pool->buf_br.free = wd_free_blk_in_build_sgl;
 +    sgl_pool->buf_br.usr = &mix_pool;
 +    ret = drv_init_sgl(q, pool, sgl);
 +    sgl_pool->buf_br.alloc = wd_alloc_blk_sgl;
++    sgl_pool->buf_br.free = wd_free_blk;
 +    sgl_pool->buf_br.iova_map = wd_blk_iova_map_sgl;
 +    sgl_pool->buf_br.usr = mix_pool.buf_pool;
 +    if (ret) {
