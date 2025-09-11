@@ -7,10 +7,10 @@
 
 #include <stdio.h>
 #include "wd_queue_memory.h"
-#include "kaelz4_log.h"
+#include "kaesnappy_log.h"
 #include "uadk/v1/wd_bmm.h"
 #include "uadk/v1/wd_comp.h"
-#include "kaelz4_ctx.h"
+#include "kaesnappy_ctx.h"
 
 void kaelz4_wd_free_queue(struct wd_queue* queue);
 struct wd_queue* kaelz4_wd_new_queue(int comp_alg_type, int comp_optype);
