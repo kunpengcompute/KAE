@@ -20,12 +20,12 @@
  *
  *****************************************************************************/
 
-#ifndef __KAELZ4_QUEUE_MEMORY_H
-#define __KAELZ4_QUEUE_MEMORY_H
+#ifndef __KAESNAPPY_QUEUE_MEMORY_H
+#define __KAESNAPPY_QUEUE_MEMORY_H
 
 #include <semaphore.h>
 #include "uadk/v1/wd.h"
-#include "kaelz4_utils.h"
+#include "kaesnappy_utils.h"
 
 #define KAE_QUEUE_POOL_MAX_SIZE     (512)
 #define CHECK_QUEUE_TIME_SECONDS    (60)  // seconds
