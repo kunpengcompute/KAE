@@ -11,8 +11,8 @@
 
 #include "kaesnappy_common.h"
 
-int  kaelz4_init_v1(LZ4_CCtx* zc);
-void kaelz4_reset_v1(LZ4_CCtx* zc);
-void kaelz4_release_v1(LZ4_CCtx* zc);
+int  kaelz4_init_v1(SNAPPY_CCtx* zc);
+void kaelz4_reset_v1(SNAPPY_CCtx* zc);
+void kaelz4_release_v1(SNAPPY_CCtx* zc);
 
 #endif

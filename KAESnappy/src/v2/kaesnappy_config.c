@@ -46,7 +46,7 @@ static inline int kaelz4_unlock()
    return pthread_mutex_unlock(&kz_lz4_mutex);
 }
 
-inline KaeLz4Config* kaelz4_get_config(LZ4_CCtx* zc)
+inline KaeLz4Config* kaelz4_get_config(SNAPPY_CCtx* zc)
 {
     KaeLz4Config* config = (KaeLz4Config*)(zc->kaeConfig);
 
@@ -57,7 +57,7 @@ inline KaeLz4Config* kaelz4_get_config(LZ4_CCtx* zc)
     }
 }
 
-inline void kaelz4_set_config(LZ4_CCtx* zc, KaeLz4Config* config)
+inline void kaelz4_set_config(SNAPPY_CCtx* zc, KaeLz4Config* config)
 {
     if (zc != NULL) {
         zc->kaeConfig = (uintptr_t)config;
@@ -153,7 +153,7 @@ static int kaelz4_create_session(KaeLz4Config *config, int lz4_level)
     config->sess = wd_comp_alloc_sess(&(config->setup));
     if (!(config->sess)) {
         US_ERR("failed to alloc comp sess!\n");
-        return KAE_LZ4_ALLOC_FAIL;
+        return KAE_SNAPPY_ALLOC_FAIL;
     }
     config->req.dst = malloc(REQ_DSTBUFF_LEN);
     config->req.dst_len = REQ_DSTBUFF_LEN;
@@ -184,7 +184,7 @@ static int kaelz4_alg_init2(void)
     ctx_set_num = calloc(KAELZ4_CTX_SET_NUM, sizeof(*ctx_set_num));
     if (!ctx_set_num) {
 	WD_ERR("failed to alloc ctx_set_size!\n");
-	return KAE_LZ4_ALLOC_FAIL;
+	return KAE_SNAPPY_ALLOC_FAIL;
     }
 
     cparams.op_type_num = KAELZ4_CTX_SET_NUM;
@@ -192,7 +192,7 @@ static int kaelz4_alg_init2(void)
     cparams.bmp = numa_allocate_nodemask();
     if (!cparams.bmp) {
 	WD_ERR("failed to create nodemask!\n");
-	ret = KAE_LZ4_INIT_FAIL;
+	ret = KAE_SNAPPY_INIT_FAIL;
 	goto out_freectx;
     }
 
@@ -201,7 +201,7 @@ static int kaelz4_alg_init2(void)
 
     struct uacce_dev *dev = wd_get_accel_dev("lz77_zstd");//获取支持某种算法的最亲和的设备
     if (dev == NULL) {
-        ret = KAE_LZ4_INIT_FAIL;
+        ret = KAE_SNAPPY_INIT_FAIL;
         goto out_freebmp;
     }
     numa_bitmask_setbit(cparams.bmp, dev->numa_id);
@@ -213,7 +213,7 @@ static int kaelz4_alg_init2(void)
     ret = wd_comp_init2_("lz77_zstd", 0, 1, &cparams);
     if (ret && ret != -WD_EEXIST) {
         WD_ERR("failed to init wd_comp_init2_ ret is :%d!\n", ret);
-	ret = KAE_LZ4_INIT_FAIL;
+	ret = KAE_SNAPPY_INIT_FAIL;
 	goto out_freedev;
     }
     atexit(lz4_uadk_uninit);  // 注册退出处理函数
@@ -229,7 +229,7 @@ out_freectx:
     return ret;
 }
 
-int kaelz4_init_v2(LZ4_CCtx* zc)
+int kaelz4_init_v2(SNAPPY_CCtx* zc)
 {
     int ret;
     KaeLz4Config *config = NULL;
@@ -238,7 +238,7 @@ int kaelz4_init_v2(LZ4_CCtx* zc)
     config = (KaeLz4Config*)malloc(sizeof(KaeLz4Config));
     if (config == NULL) {
         US_ERR("failed to alloc config!\n");
-        return KAE_LZ4_INIT_FAIL;
+        return KAE_SNAPPY_INIT_FAIL;
     }
     memset(config, 0, sizeof(KaeLz4Config));
     kaelz4_options_init(config);
@@ -265,10 +265,10 @@ int kaelz4_init_v2(LZ4_CCtx* zc)
 free_config:
     free(config);
     kaelz4_unlock();
-    return KAE_LZ4_INIT_FAIL;
+    return KAE_SNAPPY_INIT_FAIL;
 }
 
-void kaelz4_release_v2(LZ4_CCtx* zc)
+void kaelz4_release_v2(SNAPPY_CCtx* zc)
 {
     KaeLz4Config *config = NULL;
     if (zc == NULL) {

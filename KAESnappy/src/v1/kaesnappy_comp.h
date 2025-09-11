@@ -57,9 +57,9 @@ struct kaelz4_compress_ctx {
     size_t prev_last_lit_len;
     unsigned int recv_cnt;
     int status;
-    lz4_async_callback callback;
-    struct kaelz4_result *result;
-    enum kae_lz4_async_data_format data_format;
+    snappy_async_callback callback;
+    struct kaesnappy_result *result;
+    enum kae_snappy_async_data_format data_format;
     int preferences;
     kaelz4_post_process_handle_t kaelz4_post_process_handle;
     struct kaelz4_async_req *req_list;
@@ -67,7 +67,7 @@ struct kaelz4_compress_ctx {
 };
 
 struct kaelz4_async_req {
-    LZ4_CCtx zc;
+    SNAPPY_CCtx zc;
     const void* src;
     size_t src_size;
     U32 idx;
@@ -90,8 +90,8 @@ struct kaelz4_async_ctrl {
     volatile int *stop_flag;
 };
 
-void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
-int  kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize);
+void kaelz4_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status);
+int  kaelz4_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 
 // part1.frame模式的header & footer描述
 #define KAELZ4_MAGIC_NUMBER    0x184D2204U

@@ -22,7 +22,7 @@ typedef struct Comp4Tuple_S {
     seqDef* sequencesStart;     /* sequences address start */
     unsigned int litlen;        /* literal lens */
     unsigned int seqnum;        /* sequences lens */
-    LZ4_longLengthType_e longLengthType;  /* litlen overflow flag */
+    SNAPPY_longLengthType_e longLengthType;  /* litlen overflow flag */
     unsigned int longLengthPos; /* litlen overflow position */
     char* additional_p;         /* addition data ptr */
     /*
@@ -64,7 +64,7 @@ typedef struct KaeLz4Config_S {
 #define REQ_WINDOW_SIZE 2
 #define REQ_COMPRESS_LEVEL 8
 
-KaeLz4Config* kaelz4_get_config(LZ4_CCtx* zc);
-void kaelz4_set_config(LZ4_CCtx* zc, KaeLz4Config* config);
+KaeLz4Config* kaelz4_get_config(SNAPPY_CCtx* zc);
+void kaelz4_set_config(SNAPPY_CCtx* zc, KaeLz4Config* config);
 
 #endif

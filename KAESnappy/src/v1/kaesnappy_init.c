@@ -9,20 +9,20 @@
 #include "kaesnappy_init.h"
 #include "kaesnappy_log.h"
 
-int kaelz4_init_v1(LZ4_CCtx* zc)
+int kaelz4_init_v1(SNAPPY_CCtx* zc)
 {
     kaelz4_ctx_t* kaelz4_ctx = kaelz4_get_ctx(WCRYPTO_LZ77_ONLY, WCRYPTO_DEFLATE);
     if (!kaelz4_ctx) {
         US_ERR("kaelz4 failed to get kaezip ctx!");
-        return KAE_LZ4_INIT_FAIL;
+        return KAE_SNAPPY_INIT_FAIL;
     }
     zc->kaeConfig = (uintptr_t)kaelz4_ctx;
 
     US_INFO("kaelz4 deflate init success, kaelz4_ctx %p!", kaelz4_ctx);
-    return KAE_LZ4_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
-void kaelz4_reset_v1(LZ4_CCtx* zc)
+void kaelz4_reset_v1(SNAPPY_CCtx* zc)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx) {
@@ -32,7 +32,7 @@ void kaelz4_reset_v1(LZ4_CCtx* zc)
     }
 }
 
-void kaelz4_release_v1(LZ4_CCtx* zc)
+void kaelz4_release_v1(SNAPPY_CCtx* zc)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx) {

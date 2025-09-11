@@ -19,18 +19,18 @@
 #include "kaesnappy_config.h"
 #include "kaesnappy_log.h"
 
-void kaelz4_setstatus_v2(LZ4_CCtx* zc, unsigned int status)
+void kaelz4_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status)
 {
     KaeLz4Config *config;
     config = kaelz4_get_config(zc);
     config->tuple.bstatus = status;
 }
 
-static int kaelz4_data_parsing(LZ4_CCtx* zc, KaeLz4Config* config)
+static int kaelz4_data_parsing(SNAPPY_CCtx* zc, KaeLz4Config* config)
 {
     if (config->tuple.litStart == NULL || config->tuple.sequencesStart == NULL) {
         US_ERR("config parameter invalid\n");
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
 
     memcpy(zc->seqStore.litStart, config->tuple.litStart, config->tuple.litlen);
@@ -40,7 +40,7 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, KaeLz4Config* config)
         config->tuple.seqnum*sizeof(seqDef));
     zc->seqStore.sequences += config->tuple.seqnum;
 
-    if (config->tuple.longLengthType != LZ4_llt_none) {
+    if (config->tuple.longLengthType != SNAPPY_llt_none) {
         zc->seqStore.longLengthType = config->tuple.longLengthType;
         zc->seqStore.longLengthPos = config->tuple.longLengthPos;
     }
@@ -48,7 +48,7 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, KaeLz4Config* config)
     return 0;
 }
 
-int kaelz4_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize)
+int kaelz4_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
 {
     KaeLz4Config *config = NULL;
     int ret;
@@ -56,7 +56,7 @@ int kaelz4_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize)
     US_INFO("KAE lz4 compress, srcSize is %lu", srcSize);
     if (zc == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
 
     config = kaelz4_get_config(zc);

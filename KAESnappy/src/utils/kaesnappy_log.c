@@ -13,20 +13,20 @@
 #include <errno.h>
 #include "kaesnappy_log.h"
 
-#define KAE_CONFIG_FILE_NAME "/kaelz4.cnf"
+#define KAE_CONFIG_FILE_NAME "/kaesnappy.cnf"
 #define MAX_LEVEL_LEN         10
 #define MAX_CONFIG_LEN        512
 
-static const char *g_kaelz4_conf_env = "KAELZ4_CONF_ENV";
+static const char *g_kaesnappy_conf_env = "KAESNAPPY_CONF_ENV";
 
-FILE *g_kaelz4_debug_log_file = (FILE *)NULL;
-pthread_mutex_t g_kaelz4_debug_file_mutex = PTHREAD_MUTEX_INITIALIZER;
-int g_kaelz4_debug_file_ref_count = 0;
-int g_kaelz4_log_init_times = 0;
-int g_kaelz4_log_level = 0;
-__thread int g_kaelz4_threadid = 0;
+FILE *g_kaesnappy_debug_log_file = (FILE *)NULL;
+pthread_mutex_t g_kaesnappy_debug_file_mutex = PTHREAD_MUTEX_INITIALIZER;
+int g_kaesnappy_debug_file_ref_count = 0;
+int g_kaesnappy_log_init_times = 0;
+int g_kaesnappy_log_level = 0;
+__thread int g_kaesnappy_threadid = 0;
 
-const char *g_kaelz4_log_level_string[] = {
+const char *g_kaesnappy_log_level_string[] = {
     "none",
     "error",
     "warning",
@@ -34,7 +34,7 @@ const char *g_kaelz4_log_level_string[] = {
     "debug",
 };
 
-int kaelz4_drv_findsection(FILE *stream, const char *v_pszSection)
+int kaesnappy_drv_findsection(FILE *stream, const char *v_pszSection)
 {
     char line[256]; // array length:256
     char *pos = NULL;
@@ -61,7 +61,7 @@ int kaelz4_drv_findsection(FILE *stream, const char *v_pszSection)
     return -1;
 }
 
-void kaelz4_drv_get_value(char *pos, char *v_pszValue)
+void kaesnappy_drv_get_value(char *pos, char *v_pszValue)
 {
     while (*pos != '\0') {
         if (*pos == ' ') {
@@ -78,7 +78,7 @@ void kaelz4_drv_get_value(char *pos, char *v_pszValue)
     }
 }
 
-int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
+int kaesnappy_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
 {
     char line[256]; // array length:256
     char *pos = NULL;
@@ -92,7 +92,7 @@ int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
             pos = strstr(line, "=");
             if (pos != NULL) {
                 pos++;
-                kaelz4_drv_get_value(pos, v_pszValue);
+                kaesnappy_drv_get_value(pos, v_pszValue);
                 return 0;
             }
         }
@@ -105,7 +105,7 @@ int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
     return -1;
 }
 
-int kaelz4_drv_get_item(const char *config_file, const char *v_pszSection, 
+int kaesnappy_drv_get_item(const char *config_file, const char *v_pszSection, 
                      const char *v_pszItem, char *v_pszValue)
 {
     FILE *stream;
@@ -116,8 +116,8 @@ int kaelz4_drv_get_item(const char *config_file, const char *v_pszSection,
         return -1;
     }
 
-    if (kaelz4_drv_findsection(stream, v_pszSection) == 0) {
-        retvalue = kaelz4_drv_find_item(stream, v_pszItem, v_pszValue);
+    if (kaesnappy_drv_findsection(stream, v_pszSection) == 0) {
+        retvalue = kaesnappy_drv_find_item(stream, v_pszItem, v_pszValue);
     }
 
     fclose(stream);
@@ -132,7 +132,7 @@ static char *kae_getenv(const char *name)
 
 static void kae_set_conf_debuglevel()
 {
-    char *conf_path = kae_getenv(g_kaelz4_conf_env);
+    char *conf_path = kae_getenv(g_kaesnappy_conf_env);
     unsigned int i = 0;
     const char *filename = KAE_CONFIG_FILE_NAME;
     char *file_path = (char *)NULL;
@@ -149,14 +149,14 @@ static void kae_set_conf_debuglevel()
     memset(file_path, 0, sizeof(conf_path) + sizeof(filename) + 1);
     strcat(file_path, conf_path);
     strcat(file_path, filename);
-    int ret = kaelz4_drv_get_item(file_path, "LogSection", "debug_level", debuglev);
+    int ret = kaesnappy_drv_get_item(file_path, "LogSection", "debug_level", debuglev);
     if (ret != 0) {
         goto err;
     }
 
-    for (i = 0; i < sizeof(g_kaelz4_log_level_string) / sizeof(g_kaelz4_log_level_string[0]); i++) {
-        if (strncmp(g_kaelz4_log_level_string[i], debuglev, strlen(debuglev) - 1) == 0) {
-            g_kaelz4_log_level = i;
+    for (i = 0; i < sizeof(g_kaesnappy_log_level_string) / sizeof(g_kaesnappy_log_level_string[0]); i++) {
+        if (strncmp(g_kaesnappy_log_level_string[i], debuglev, strlen(debuglev) - 1) == 0) {
+            g_kaesnappy_log_level = i;
             free(file_path);
             free(debuglev);
             return;
@@ -164,7 +164,7 @@ static void kae_set_conf_debuglevel()
     }
 
 err:
-    g_kaelz4_log_level = KAE_NONE;
+    g_kaesnappy_log_level = KAE_NONE;
     if (debuglev != NULL) {
         free(debuglev);
         debuglev = (char *)NULL;
@@ -177,39 +177,39 @@ err:
     return;
 }
 
-void kaelz4_debug_init_log()
+void kaesnappy_debug_init_log()
 {
-    pthread_mutex_lock(&g_kaelz4_debug_file_mutex);
-    g_kaelz4_threadid = gettid();
+    pthread_mutex_lock(&g_kaesnappy_debug_file_mutex);
+    g_kaesnappy_threadid = gettid();
     kae_set_conf_debuglevel();
-    if (!g_kaelz4_debug_file_ref_count && g_kaelz4_log_level != KAE_NONE) {
-        g_kaelz4_debug_log_file = fopen(KAELZ4_DEBUG_FILE_PATH, "a+");
-        if (g_kaelz4_debug_log_file == NULL) {
-            g_kaelz4_debug_log_file = stderr;
-            fprintf(stderr, "unable to open %s, %s\n", KAELZ4_DEBUG_FILE_PATH, strerror(errno));
+    if (!g_kaesnappy_debug_file_ref_count && g_kaesnappy_log_level != KAE_NONE) {
+        g_kaesnappy_debug_log_file = fopen(KAESNAPPY_DEBUG_FILE_PATH, "a+");
+        if (g_kaesnappy_debug_log_file == NULL) {
+            g_kaesnappy_debug_log_file = stderr;
+            fprintf(stderr, "unable to open %s, %s\n", KAESNAPPY_DEBUG_FILE_PATH, strerror(errno));
         } else {
-            g_kaelz4_debug_file_ref_count++;
+            g_kaesnappy_debug_file_ref_count++;
         }
     }
-    g_kaelz4_log_init_times++;
-    pthread_mutex_unlock(&g_kaelz4_debug_file_mutex);
+    g_kaesnappy_log_init_times++;
+    pthread_mutex_unlock(&g_kaesnappy_debug_file_mutex);
 }
 
-void kaelz4_debug_close_log()
+void kaesnappy_debug_close_log()
 {
-    pthread_mutex_lock(&g_kaelz4_debug_file_mutex);
-    g_kaelz4_log_init_times--;
-    if (g_kaelz4_debug_file_ref_count && (g_kaelz4_log_init_times == 0)) {
-        if (g_kaelz4_debug_log_file != NULL) {
-            fclose(g_kaelz4_debug_log_file);
-            g_kaelz4_debug_file_ref_count--;
-            g_kaelz4_debug_log_file = stderr;
+    pthread_mutex_lock(&g_kaesnappy_debug_file_mutex);
+    g_kaesnappy_log_init_times--;
+    if (g_kaesnappy_debug_file_ref_count && (g_kaesnappy_log_init_times == 0)) {
+        if (g_kaesnappy_debug_log_file != NULL) {
+            fclose(g_kaesnappy_debug_log_file);
+            g_kaesnappy_debug_file_ref_count--;
+            g_kaesnappy_debug_log_file = stderr;
         }
     }
-    pthread_mutex_unlock(&g_kaelz4_debug_file_mutex);
+    pthread_mutex_unlock(&g_kaesnappy_debug_file_mutex);
 }
 
-void kaelz4_save_log(FILE *src)
+void kaesnappy_save_log(FILE *src)
 {
     int size = 0;
     char buf[1024] = {0}; // buf length:1024
@@ -218,7 +218,7 @@ void kaelz4_save_log(FILE *src)
         return;
     }
 
-    FILE *dst = fopen(KAELZ4_DEBUG_FILE_PATH_OLD, "w");
+    FILE *dst = fopen(KAESNAPPY_DEBUG_FILE_PATH_OLD, "w");
     if (dst == NULL) {
         return;
     }

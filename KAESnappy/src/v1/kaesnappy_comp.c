@@ -13,7 +13,7 @@
 
 __thread struct kaelz4_async_ctrl g_async_ctrl = {0};
 
-void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status)
+void kaelz4_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx) {
@@ -22,11 +22,11 @@ void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status)
     }
 }
 
-static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
+static int kaelz4_data_parsing(SNAPPY_CCtx* zc, kaelz4_ctx_t* config)
 {
     if (!config->lz4_data.literals_start || !config->lz4_data.sequences_start) {
         US_ERR("lz4 literals or sequences start is NULL!\n");
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
 
     zc->seqStore.litStart = config->lz4_data.literals_start;
@@ -36,15 +36,15 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
     zc->seqStore.sequencesStart = config->lz4_data.sequences_start;
     zc->seqStore.sequences = zc->seqStore.sequencesStart;
     zc->seqStore.sequences += config->lz4_data.seq_num;
-    return KAE_LZ4_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
-int kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize)
+int kaelz4_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
 
     US_INFO("kaelz4 compress srcSize : %lu", srcSize);
@@ -264,18 +264,18 @@ static uint32_t KAELZ4CRC32(uint32_t crc, const char *data, uint64_t len)
 
 static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_ctx, int status)
 {
-    struct kaelz4_result *result = compress_ctx->result;
+    struct kaesnappy_result *result = compress_ctx->result;
     result->status = status;
     result->dst_len = compress_ctx->dst_len;
-    if (result->ibuf_crc != NULL && status == KAE_LZ4_SUCC) {
+    if (result->ibuf_crc != NULL && status == KAE_SNAPPY_SUCC) {
         *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src, compress_ctx->srcSize);
     }
 
-    if (result->obuf_crc != NULL && status == KAE_LZ4_SUCC) {
+    if (result->obuf_crc != NULL && status == KAE_SNAPPY_SUCC) {
         *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst, compress_ctx->dst_len);
     }
 
-    if (unlikely(status != KAE_LZ4_SUCC)) {
+    if (unlikely(status != KAE_SNAPPY_SUCC)) {
         US_ERR("kae async compress fail! ret = %d\n", status);
     }
 
@@ -623,13 +623,13 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
 static void kaelz4_async_compress_cb(int status, void *param)
 {
     struct kaelz4_async_req* req = param;
-    LZ4_CCtx* zc = &req->zc;
+    SNAPPY_CCtx* zc = &req->zc;
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
     if (status != 0) {
         US_ERR("kaelz4_async_compress_cb status %d !\n", status);
-        req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+        req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
         req->done = 1;
         return;
     }
@@ -646,20 +646,20 @@ static void kaelz4_async_compress_cb(int status, void *param)
     kaelz4_get_output_data(kaelz4_ctx);
     int ret = kaelz4_data_parsing(zc, kaelz4_ctx);
 
-    if (ret != KAE_LZ4_SUCC) {
-        req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+    if (ret != KAE_SNAPPY_SUCC) {
+        req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
         req->done = 1;
         return;
     }
     req->done = 1;
 }
 
-static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const void* src, size_t srcSize, void *usr_data)
+static int kaelz4_compress_async_impl(SNAPPY_CCtx* zc, const void* src, size_t srcSize, void *usr_data)
 {
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
 
     US_INFO("kaelz4 compress srcSize : %lu", srcSize);
@@ -705,7 +705,7 @@ static void kaelz4_do_compress_polling(struct kaelz4_async_req *req)
     if (unlikely(ret < 0)) {
         US_ERR("poll fail! ret = %d\n", ret);
         kaelz4_find_and_free_kz_ctx(kaelz4_ctx);
-        req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+        req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
         req->done = 1;
     }
     return;
@@ -725,11 +725,11 @@ void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compre
 static int kaelz4_async_sw_compress(struct kaelz4_compress_ctx *compress_ctx)
 {
     int ret = -1;
-    compress_ctx->status = KAE_LZ4_SUCC;
-    if (compress_ctx->data_format == KAELZ4_ASYNC_FRAME && g_async_ctrl.sw_compress_frame != NULL) {
+    compress_ctx->status = KAE_SNAPPY_SUCC;
+    if (compress_ctx->data_format == KAESNAPPY_ASYNC_FRAME && g_async_ctrl.sw_compress_frame != NULL) {
         ret = g_async_ctrl.sw_compress_frame(compress_ctx->dst, compress_ctx->dstCapacity, compress_ctx->src,
                                              compress_ctx->srcSize, &compress_ctx->preferences);
-    } else if (compress_ctx->data_format <= KAELZ4_ASYNC_BLOCK && g_async_ctrl.sw_compress != NULL) {
+    } else if (compress_ctx->data_format <= KAESNAPPY_ASYNC_BLOCK && g_async_ctrl.sw_compress != NULL) {
         ret = g_async_ctrl.sw_compress(compress_ctx->src, compress_ctx->dst, compress_ctx->srcSize,
                                        compress_ctx->dstCapacity);
     }
@@ -750,31 +750,31 @@ int kaelz4_async_compress_polling(int budget)
     while (req && cnt < budget) {
         kaelz4_do_compress_polling(req);
         if (!req->done) {
-            return KAE_LZ4_PROCESS_HW_BUSY;
+            return KAE_SNAPPY_PROCESS_HW_BUSY;
         }
 
         int ret = -1;
 
-        if (likely(compress_ctx->status == KAE_LZ4_SUCC)) {
+        if (likely(compress_ctx->status == KAE_SNAPPY_SUCC)) {
             ret = compress_ctx->kaelz4_post_process_handle(req, req->src, compress_ctx->dst + compress_ctx->dst_len);
             if (ret < 0) {
                 US_ERR("kaelz4_post_process_handle err. ret=%d\n", ret);
             }
         }
 
-        if (unlikely(ret < 0 && req->idx == 0 && req->last != 0 && req->compress_ctx->status != KAE_LZ4_HW_TIMEOUT_FAIL)) {
+        if (unlikely(ret < 0 && req->idx == 0 && req->last != 0 && req->compress_ctx->status != KAE_SNAPPY_HW_TIMEOUT_FAIL)) {
             US_WARN("KAELz4 async compress switch to soft");
             // 异常切软算处理
             ret = kaelz4_async_sw_compress(compress_ctx);
         }
 
-        if (ret >= 0 && compress_ctx->status == KAE_LZ4_SUCC) {
+        if (ret >= 0 && compress_ctx->status == KAE_SNAPPY_SUCC) {
             compress_ctx->dst_len += ret;
-            compress_ctx->status = KAE_LZ4_SUCC;
+            compress_ctx->status = KAE_SNAPPY_SUCC;
         } else {
             compress_ctx->dst_len = 0;
-            if (compress_ctx->status == KAE_LZ4_SUCC) {
-                compress_ctx->status = KAE_LZ4_COMP_FAIL;
+            if (compress_ctx->status == KAE_SNAPPY_SUCC) {
+                compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
             }
 
             US_ERR("kae post process fail! req index %d src size 0x%lx dst size 0x%lx last %d ret = %d status %d\n",
@@ -807,7 +807,7 @@ int kaelz4_async_compress_polling(int budget)
 
 static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
 
-static void kaelz4_ctx_body_init(LZ4_CCtx *ctx_body)
+static void kaelz4_ctx_body_init(SNAPPY_CCtx *ctx_body)
 {
     ctx_body->kaeInited = 0;
     ctx_body->kaeFrameMode = 1; // 相当于每个都强刷
@@ -826,14 +826,14 @@ static void kaelz4_ctx_body_init(LZ4_CCtx *ctx_body)
     ctx_body->seqnum = 0;
 }
 
-static int kaelz4_async_init_ctx(LZ4_CCtx *ctx_body)
+static int kaelz4_async_init_ctx(SNAPPY_CCtx *ctx_body)
 {
     int enter_polling = 0;
 
     kaelz4_ctx_body_init(ctx_body);
 
     if (unlikely(g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index] == NULL)) {
-        while (kaelz4_init(ctx_body) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
+        while (kaesnappy_init(ctx_body) != KAE_SNAPPY_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             struct timespec timeout;
             if (enter_polling == 0) {
                 get_time_out_spec(&timeout, &polling_timeout_10us);
@@ -842,7 +842,7 @@ static int kaelz4_async_init_ctx(LZ4_CCtx *ctx_body)
 
             // 如果发生超时则提前退出，到polling阶段再处理切软算
             if (unlikely(*g_async_ctrl.stop_flag != 0 || check_time_out(&timeout))) {
-                return KAE_LZ4_INIT_FAIL;
+                return KAE_SNAPPY_INIT_FAIL;
             }
 
             (void)kaelz4_async_compress_polling(1);
@@ -858,12 +858,12 @@ static int kaelz4_async_init_ctx(LZ4_CCtx *ctx_body)
             (void)kaelz4_async_compress_polling(1);
             // 此分支不需要超时判断，kaelz4_async_compress_polling本身具有超时机制，如果硬件超时，会主动释放资源
             if (unlikely(*g_async_ctrl.stop_flag != 0)) {
-                return KAE_LZ4_INIT_FAIL;
+                return KAE_SNAPPY_INIT_FAIL;
             }
 
             if (g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index] == NULL) {
                 // polling 过程可能发生超时，kz资源可能已经释放
-                return KAE_LZ4_INIT_FAIL;
+                return KAE_SNAPPY_INIT_FAIL;
             }
         }
         kaelz4_init_ctx(g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index]);
@@ -873,7 +873,7 @@ static int kaelz4_async_init_ctx(LZ4_CCtx *ctx_body)
     g_async_ctrl.ctx_index = (g_async_ctrl.ctx_index + 1) % MAX_NUM_IN_COMP;
     g_async_ctrl.cur_num_in_comp++;
     ctx_body->kaeInited = 1;
-    return KAE_LZ4_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
 void kaelz4_ctx_clear(void)
@@ -891,13 +891,13 @@ static int kaelz4_send_async_compress(struct kaelz4_async_req *req)
     int ret;
     // 1.kae上下文初始化函数调用
     ret = kaelz4_async_init_ctx(&req->zc);
-    if (unlikely(ret != KAE_LZ4_SUCC)) {
+    if (unlikely(ret != KAE_SNAPPY_SUCC)) {
         US_ERR("Get kae hw ctx failed!\n");
         return ret;
     }
     size_t compress_size = req->src_size - MFLIMIT;
     ret = kaelz4_compress_async_impl(&req->zc, req->src, compress_size, (void *)req);
-    if (unlikely(ret != KAE_LZ4_SUCC)) {
+    if (unlikely(ret != KAE_SNAPPY_SUCC)) {
         kaelz4_find_and_free_kz_ctx((kaelz4_ctx_t *)req->zc.kaeConfig);
         g_async_ctrl.ctx_index = (g_async_ctrl.ctx_index + MAX_NUM_IN_COMP - 1) % MAX_NUM_IN_COMP;
         g_async_ctrl.cur_num_in_comp--;
@@ -929,13 +929,13 @@ static int kaelz4_async_compress_process(void *arg)
         struct kaelz4_async_req *req = (struct kaelz4_async_req *)kae_malloc(sizeof(struct kaelz4_async_req));
         if (unlikely(req == NULL)) {
             US_ERR("Alloc kaelz4_async_req failed!\n");
-            compress_ctx->status = KAE_LZ4_ALLOC_FAIL;
+            compress_ctx->status = KAE_SNAPPY_ALLOC_FAIL;
             if (compress_ctx->req_list) {
                 tail->last = 1;
                 // 有已经下发的req命令，这里不能返回失败，要统一走回收流程
-                return KAE_LZ4_SUCC;
+                return KAE_SNAPPY_SUCC;
             } else {
-                return KAE_LZ4_ALLOC_FAIL;
+                return KAE_SNAPPY_ALLOC_FAIL;
             }
         }
         req->src = src;
@@ -959,7 +959,7 @@ static int kaelz4_async_compress_process(void *arg)
             remainingLength = 0;
         }
 
-        int ret = KAE_LZ4_SUCC;
+        int ret = KAE_SNAPPY_SUCC;
         if (!req->special_flag) {
             ret = kaelz4_send_async_compress(req);
         } else {
@@ -974,8 +974,8 @@ static int kaelz4_async_compress_process(void *arg)
         }
         idx++;
         tail = req;
-        if (ret != KAE_LZ4_SUCC) {
-            req->compress_ctx->status = KAE_LZ4_COMP_FAIL;
+        if (ret != KAE_SNAPPY_SUCC) {
+            req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
             req->special_flag = 1;
             req->done = 1;
         }
@@ -983,7 +983,7 @@ static int kaelz4_async_compress_process(void *arg)
         src += req->src_size;
     }
 
-    return KAE_LZ4_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
 static void kaelz4_flush_compress(void)
@@ -1010,14 +1010,14 @@ void kaelz4_async_deinit(void)
     kaelz4_free_all_qps();
 }
 
-const kaelz4_post_process_handle_t g_post_process_handle[KAELZ4_ASYNC_BUTT] = {
-    [KAELZ4_ASYNC_SMALL_BLOCK] = kaelz4_triples_rebuild,
-    [KAELZ4_ASYNC_BLOCK] = kaelz4_triples_rebuild_64Kblock,
+const kaelz4_post_process_handle_t g_post_process_handle[KAESNAPPY_ASYNC_BUTT] = {
+    [KAESNAPPY_ASYNC_SMALL_BLOCK] = kaelz4_triples_rebuild,
+    [KAESNAPPY_ASYNC_BLOCK] = kaelz4_triples_rebuild_64Kblock,
 };
 
 void kaelz4_compress_async(const void *src, void *dst,
-                          lz4_async_callback callback, struct kaelz4_result *result,
-                          enum kae_lz4_async_data_format data_format, const int *ptr)
+                          snappy_async_callback callback, struct kaesnappy_result *result,
+                          enum kae_snappy_async_data_format data_format, const int *ptr)
 {
     struct kaelz4_compress_ctx *compress_ctx = (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
     if (unlikely(compress_ctx == NULL)) {
@@ -1037,7 +1037,7 @@ void kaelz4_compress_async(const void *src, void *dst,
     compress_ctx->kaelz4_post_process_handle = g_post_process_handle[data_format];
     compress_ctx->dst_len = 0;
     compress_ctx->next = NULL;
-    compress_ctx->status = KAE_LZ4_SUCC;
+    compress_ctx->status = KAE_SNAPPY_SUCC;
     compress_ctx->req_list = NULL;
     compress_ctx->prev_last_lit_ptr = NULL;
     compress_ctx->prev_last_lit_len = 0;
@@ -1049,7 +1049,7 @@ void kaelz4_compress_async(const void *src, void *dst,
     }
     g_async_ctrl.tail = compress_ctx;
 
-    if (unlikely(kaelz4_async_compress_process(compress_ctx) != KAE_LZ4_SUCC)) {
+    if (unlikely(kaelz4_async_compress_process(compress_ctx) != KAE_SNAPPY_SUCC)) {
         goto free_compress_ctx;
     }
 
@@ -1063,7 +1063,7 @@ free_compress_ctx:
     }
 
 err_callback:
-    result->status = KAE_LZ4_ALLOC_FAIL;
+    result->status = KAE_SNAPPY_ALLOC_FAIL;
     result->dst_len = 0;
     callback(result);
     return;

@@ -18,7 +18,7 @@ typedef enum ARCH_TYPE {
     CPU_HISILICOM_V4, /* for the future */
     CPU_UNKNOW,
 } ARCH_TYPE;
-static int g_kaelz4Initialized = 0;
+static int g_kaesnappyInitialized = 0;
 
 static inline void versionCpy(char str1[], const char str2[])
 {
@@ -30,19 +30,19 @@ static inline void versionCpy(char str1[], const char str2[])
     str1[i] = '\0';
 }
 
-int kaelz4_get_version(KAELz4Version* ver)
+int kaesnappy_get_version(KAESnappyVersion* ver)
 {
     if (ver == NULL) {
-        return KAE_LZ4_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
     versionCpy(ver->productVersion, "23.0.RC2");
-    versionCpy(ver->componentName, "KAELz4");
+    versionCpy(ver->componentName, "KAESnappy");
     versionCpy(ver->componentVersion, "2.0.4");
-    return KAE_LZ4_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
-static ARCH_TYPE KaeLz4Detect(void)
+static ARCH_TYPE KaeSnappyDetect(void)
 {
     unsigned long long cpuId;
     __asm__ volatile("mrs %0, MIDR_EL1":"=r"(cpuId));
@@ -61,15 +61,15 @@ static ARCH_TYPE KaeLz4Detect(void)
     return CPU_UNKNOW;
 }
 
-HIDDEN_API void CONSTRUCTOR KaeLz4Init(void)
+HIDDEN_API void CONSTRUCTOR KaeSnappyInit(void)
 {
-    if (g_kaelz4Initialized != 0) {
+    if (g_kaesnappyInitialized != 0) {
         return;
     }
 
-    if (KaeLz4Detect() != CPU_HISILICOM_V2) {
-        fprintf(stderr, "KAElz4 only support in V2, please check CPU ID.\n");
+    if (KaeSnappyDetect() != CPU_HISILICOM_V2) {
+        fprintf(stderr, "KAEsnappy only support in V2, please check CPU ID.\n");
         abort();
     }
-    g_kaelz4Initialized = 1;
+    g_kaesnappyInitialized = 1;
 }

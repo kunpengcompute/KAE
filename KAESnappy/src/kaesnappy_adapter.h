@@ -28,9 +28,9 @@ enum {
 typedef struct {
     const void *src;
     void *dst;
-    lz4_async_callback callback;
-    struct kaelz4_result *result;
-    enum kae_lz4_async_data_format data_format;
+    snappy_async_callback callback;
+    struct kaesnappy_result *result;
+    enum kae_snappy_async_data_format data_format;
     int preferences;
 } lz4_async_task_t;
 
@@ -54,20 +54,20 @@ typedef struct {
     volatile int init;
 } lz4_task_queues;
 
-int  kaelz4_init_v1(LZ4_CCtx* zc);
-void kaelz4_reset_v1(LZ4_CCtx* zc);
-void kaelz4_release_v1(LZ4_CCtx* zc);
-void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
-int  kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize);
+int  kaelz4_init_v1(SNAPPY_CCtx* zc);
+void kaelz4_reset_v1(SNAPPY_CCtx* zc);
+void kaelz4_release_v1(SNAPPY_CCtx* zc);
+void kaelz4_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status);
+int  kaelz4_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 void kaelz4_compress_async(const void *src, void *dst,
-                           lz4_async_callback callback, struct kaelz4_result *result,
-                           enum kae_lz4_async_data_format data_format, const int *ptr);
+                           snappy_async_callback callback, struct kaesnappy_result *result,
+                           enum kae_snappy_async_data_format data_format, const int *ptr);
 int kaelz4_async_compress_polling(int budget);
 
-int  kaelz4_init_v2(LZ4_CCtx* zc);
-void kaelz4_release_v2(LZ4_CCtx* zc);
-void kaelz4_setstatus_v2(LZ4_CCtx* zc, unsigned int status);
-int  kaelz4_compress_v2(LZ4_CCtx* zc, const void* src, size_t srcSize);
+int  kaelz4_init_v2(SNAPPY_CCtx* zc);
+void kaelz4_release_v2(SNAPPY_CCtx* zc);
+void kaelz4_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status);
+int  kaelz4_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 
 int wd_get_available_dev_num(const char* alogrithm);
 int kaelz4_async_is_thread_do_comp_full();
