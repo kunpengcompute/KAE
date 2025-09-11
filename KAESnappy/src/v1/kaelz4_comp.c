@@ -711,163 +711,6 @@ static void kaelz4_do_compress_polling(struct kaelz4_async_req *req)
     return;
 }
 
-static void KAELZ4F_writeLE32 (void* dst, uint32_t value32)
-{
-    BYTE* const dstPtr = (BYTE*)dst;
-    dstPtr[0] = (BYTE)value32;
-    dstPtr[1] = (BYTE)(value32 >> 8);
-    dstPtr[2] = (BYTE)(value32 >> 16);
-    dstPtr[3] = (BYTE)(value32 >> 24);
-}
-
-static void KAELZ4F_writeLE64 (void* dst, uint64_t value64)
-{
-    BYTE* const dstPtr = (BYTE*)dst;
-    dstPtr[0] = (BYTE)value64;
-    dstPtr[1] = (BYTE)(value64 >> 8);
-    dstPtr[2] = (BYTE)(value64 >> 16);
-    dstPtr[3] = (BYTE)(value64 >> 24);
-    dstPtr[4] = (BYTE)(value64 >> 32);
-    dstPtr[5] = (BYTE)(value64 >> 40);
-    dstPtr[6] = (BYTE)(value64 >> 48);
-    dstPtr[7] = (BYTE)(value64 >> 56);
-}
-
-static int KAELZ4HeaderGen(unsigned char *dstPtr, LZ4F_frameInfo_t *frameinfo_ptr)
-{
-    uint32_t src_len = frameinfo_ptr->contentSize;
-    uint8_t flag = 0;
-    if (frameinfo_ptr->blockChecksumFlag == LZ4F_blockChecksumEnabled) {
-        flag |= KAELZ4_BLOCK_CHECKSUM_FLAG;
-    }
-    if (frameinfo_ptr->contentChecksumFlag == LZ4F_contentChecksumEnabled) {
-        flag |= KAELZ4_CONTENT_CHECKSUM_FLAG;
-    }
-    if (src_len) {
-        flag |= KAELZ4_CONTENT_SIZE_FLAG;
-    }
-    int dst_len = 0;
-    // MAGIC NUMBER
-    KAELZ4F_writeLE32(dstPtr, KAELZ4_MAGIC_NUMBER);
-    dstPtr += 4;
-    dst_len += 4;
-    unsigned char *headerStart = dstPtr;
-    // FLG
-    *dstPtr++ = (BYTE)(((KAELZ4_VERSION & 0x03) << 6)
-        | ((KAELZ4_BLOCK_INDEPENDENCE_FLAG & 0x01) << 5)
-        | (KAELZ4_DICTIONARY_ID_FLAG & 0x01)
-        | flag);
-    dst_len++;
-    // BD
-    *dstPtr++ = (BYTE)((KAELZ4_MAX_BLK_SIZE & 0x07) << 4);
-    dst_len++;
-    // CONTENT SIZE
-    if (src_len) {
-        KAELZ4F_writeLE64(dstPtr, src_len);
-        dstPtr += 8;
-        dst_len += 8;
-    }
-    // HEADER CRC
-    *dstPtr = (unsigned char)((XXH32(headerStart, (size_t)(dstPtr - headerStart), 0) >> 8) & 0xFF);
-    dstPtr++;
-    dst_len++;
-    return dst_len;
-}
-
-static int KAELZ4FooterGen(unsigned char* dstPtr, unsigned char *srcPtr, uint32_t src_len, uint8_t checksumEnabled)
-{
-    int dst_len = 4;
-    // ENDMARK
-    KAELZ4F_writeLE32(dstPtr, 0);
-    dstPtr += 4;
-    // CHECKSUM(可选)
-    if (checksumEnabled) {
-        uint32_t xxh = XXH32(srcPtr, src_len, 0);
-        KAELZ4F_writeLE32(dstPtr, xxh);
-        dstPtr += 4;
-        dst_len += 4;
-    }
-    return dst_len;
-}
-
-static int KAELZ4BlockHeaderGen(unsigned char *dstPtr, uint32_t compressed_len,
-                                uint8_t stored_block_flag)
-{
-    int dst_len = 4;
-    if (stored_block_flag) { // 场景1. 压缩异常或负压
-        KAELZ4F_writeLE32(dstPtr, compressed_len | KAELZ4_STOREDBLOCK_FLAG);
-    } else {
-        KAELZ4F_writeLE32(dstPtr, compressed_len);
-    }
-    dstPtr += 4;
-    return dst_len;
-}
-
-static int KAELZ4BlockFooterGen(unsigned char *dstPtr, uint32_t compressed_len)
-{
-    int dst_len = 0;
-    uint32_t xxh = XXH32(dstPtr-compressed_len, compressed_len, 0);
-    KAELZ4F_writeLE32(dstPtr, xxh);
-    dstPtr += 4;
-    dst_len += 4;
-    return dst_len;
-}
-
-static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const void *source, void *dst_tmp)
-{
-    int ret = 0;
-    int padding_len = 0;
-    void *dst_after_frameheader = dst_tmp;
-    LZ4F_frameInfo_t frameinfo_ptr = req->compress_ctx->preferences.frameInfo;
-    // 如果是第一个block块，添加frame头部
-    if (req->idx == 0) {
-        int len1 = KAELZ4HeaderGen(dst_tmp, &frameinfo_ptr);
-        padding_len += len1;
-        dst_after_frameheader += len1;  // 记录此时的位置
-        dst_tmp += len1;                // 真实dst空间直接进行偏移
-    }
-
-    dst_tmp += 4;  // 直接往后偏移4个字节(KAELZ4BlockHeaderGen 的返回值), 预留block头的空间
-    // 写入真实 block 数据
-    ret = kaelz4_triples_rebuild(req, source, dst_tmp);
-    if (ret < 0) {
-        return ret;
-    }
-    uint8_t stored_block_flag = 0;
-    if (ret > req->src_size) { // 负压
-        LZ4_memcpy(dst_tmp, source, req->src_size);
-        ret = req->src_size;
-        stored_block_flag = 1;
-    }
-
-    int bloc_checksum_enabled = 0;
-    if (frameinfo_ptr.blockChecksumFlag == LZ4F_blockChecksumEnabled) {
-        bloc_checksum_enabled = 1;
-    }
-    // 使用 block 数据块的真实长度ret，在真实block数据之前写入4字节的block头
-    int len2 = KAELZ4BlockHeaderGen(dst_after_frameheader, ret, stored_block_flag);
-    padding_len += len2;  // 最终总数据量增加
-    dst_tmp += ret;
-
-    if (bloc_checksum_enabled == 1) {
-        // block 数据尾。如果配置有block checksum，那么就填充它，否则不填充。一般是4字节
-        int len3 = KAELZ4BlockFooterGen(dst_tmp, ret);
-        padding_len += len3;
-        dst_tmp += len3;
-    }
-
-    // 如果是最后一个block块，添加frame尾部
-    if (req->last == 1) {
-        int contentChecksum = frameinfo_ptr.contentChecksumFlag;
-        int len4 = KAELZ4FooterGen(dst_tmp, (unsigned char *)req->compress_ctx->src, req->compress_ctx->srcSize,
-                                   contentChecksum);
-        padding_len += len4;
-    }
-
-    ret += padding_len;  // 计算本次一共生成的数据总量
-    return ret;
-}
-
 int kaelz4_async_is_thread_do_comp_full(void)
 {
     return g_async_ctrl.cur_num_in_comp < MAX_NUM_IN_COMP ? 0 : 1;
@@ -876,7 +719,6 @@ int kaelz4_async_is_thread_do_comp_full(void)
 void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame)
 {
     g_async_ctrl.stop_flag = stop;
-    g_async_ctrl.sw_compress = sw_compress;
     g_async_ctrl.sw_compress_frame = sw_compress_frame;
 }
 
@@ -1171,12 +1013,11 @@ void kaelz4_async_deinit(void)
 const kaelz4_post_process_handle_t g_post_process_handle[KAELZ4_ASYNC_BUTT] = {
     [KAELZ4_ASYNC_SMALL_BLOCK] = kaelz4_triples_rebuild,
     [KAELZ4_ASYNC_BLOCK] = kaelz4_triples_rebuild_64Kblock,
-    [KAELZ4_ASYNC_FRAME] = kaelz4_async_frame_padding,
 };
 
 void kaelz4_compress_async(const void *src, void *dst,
                           lz4_async_callback callback, struct kaelz4_result *result,
-                          enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
+                          enum kae_lz4_async_data_format data_format, const int *ptr)
 {
     struct kaelz4_compress_ctx *compress_ctx = (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
     if (unlikely(compress_ctx == NULL)) {

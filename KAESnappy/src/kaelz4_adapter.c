@@ -465,7 +465,7 @@ static unsigned int kaelz4_get_queue_id(void)
 }
 static int kaelz4_async_do_comp(const void *src, void *dst,
                                 lz4_async_callback callback, struct kaelz4_result *result,
-                                enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t* preferences_ptr)
+                                enum kae_lz4_async_data_format data_format, const int* preferences_ptr)
 {
     // 初始化队列容量
     if (unlikely(g_task_queues.init == 0)) {
@@ -503,12 +503,3 @@ int KAELZ4_compress_async(const void *src, void *dst, lz4_async_callback callbac
     return kaelz4_async_do_comp(src, dst, callback, result, KAELZ4_ASYNC_BLOCK, NULL);
 }
 
-int KAELZ4F_compressFrame_async(const void* src, void* dst, lz4_async_callback callback,
-                                struct kaelz4_result *result, const void *preferences_ptr)
-{
-    if (unlikely(src == NULL || dst == NULL || callback == NULL || result == NULL || result->src_size == 0)) {
-        return KAE_LZ4_INVAL_PARA;
-    }
-
-    return kaelz4_async_do_comp(src, dst, callback, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
-}

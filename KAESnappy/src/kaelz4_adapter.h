@@ -32,7 +32,7 @@ typedef struct {
     lz4_async_callback callback;
     struct kaelz4_result *result;
     enum kae_lz4_async_data_format data_format;
-    LZ4F_preferences_t preferences;
+    int preferences;
 } lz4_async_task_t;
 
 typedef struct {
@@ -62,7 +62,7 @@ void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
 int  kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize);
 void kaelz4_compress_async(const void *src, void *dst,
                            lz4_async_callback callback, struct kaelz4_result *result,
-                           enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
+                           enum kae_lz4_async_data_format data_format, const int *ptr);
 int kaelz4_async_compress_polling(int budget);
 
 int  kaelz4_init_v2(LZ4_CCtx* zc);

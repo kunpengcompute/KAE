@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <arm_acle.h>
 #include <arm_neon.h>
-#include <lz4frame.h>
+
 
 #define TOKEN_NUM_CONTROL 0 // 用于控制生成压缩块中三元组数目，来保证解压速度（对齐实际match length需+3）
 #define ML_BITS  4
@@ -60,7 +60,7 @@ struct kaelz4_compress_ctx {
     lz4_async_callback callback;
     struct kaelz4_result *result;
     enum kae_lz4_async_data_format data_format;
-    LZ4F_preferences_t preferences;
+    int preferences;
     kaelz4_post_process_handle_t kaelz4_post_process_handle;
     struct kaelz4_async_req *req_list;
     struct kaelz4_compress_ctx *next;

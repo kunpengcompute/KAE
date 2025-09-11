@@ -101,8 +101,6 @@ typedef int (*sw_compress_fn)(const char* src, char* dst, int srcSize, int dstCa
 typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, const void* srcBuffer, size_t srcSize,
                                        const void* preferences_ptr);
 int KAELZ4_compress_async(const void *src, void *dst, lz4_async_callback callback, struct kaelz4_result *result);
-int KAELZ4F_compressFrame_async(const void *src, void *dst, lz4_async_callback callback,
-                                struct kaelz4_result *result, const void *preferences_ptr);
 void KAELZ4_teardown_async_compress(void);
 int KAELZ4_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame);
 #endif
