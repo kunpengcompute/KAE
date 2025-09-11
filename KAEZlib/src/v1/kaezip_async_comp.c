@@ -335,25 +335,34 @@ static void kaezip_async_compress_cb(int status, void *param)
     req->done = 1;
 }
 
-static void kaezip_fill_sgl_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst)
+static int kaezip_fill_sgl_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst)
 {
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
 
     op_data->in_len = 0;
     kz_ctx->src_sgl = kz_ctx->src_sgl_buf;
-    wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
+    int ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
                  (wd_map)kz_ctx->usr_map);
+    if (ret != WD_SUCCESS) {
+        kz_ctx->src_sgl = NULL;
+        return KAE_ZLIB_INVAL_PARA;
+    }
 
     if (dst->buf_num) {
         kz_ctx->dst_sgl_usr = kz_ctx->dst_sgl_buf;
-        wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
+        ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
                      (wd_map)kz_ctx->usr_map);
+        if (ret != WD_SUCCESS) {
+            kz_ctx->dst_sgl_usr = NULL;
+            return KAE_ZLIB_DST_BUF_OVERFLOW;
+        }
     }
     op_data->in_len += kz_ctx->do_comp_len;
     op_data->avail_out = kz_ctx->avail_out;
     op_data->flush   = kz_ctx->flush;
     op_data->alg_type = kz_ctx->comp_alg_type;
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
+    return KAE_ZLIB_SUCC;
 }
 
 static void kaezip_fill_flat_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_list *src)
@@ -375,6 +384,7 @@ static void kaezip_fill_flat_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_li
 
 static int kaezip_compress_async_impl(kaezip_ctx_t* kz_ctx, const struct wd_buf_list *src, struct wd_buf_list *dst, size_t srcSize, size_t dst_len, void *usr_data)
 {
+    int ret = KAE_ZLIB_SUCC;
     if (kz_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_ZLIB_INVAL_PARA;
@@ -392,12 +402,22 @@ static int kaezip_compress_async_impl(kaezip_ctx_t* kz_ctx, const struct wd_buf_
     kz_ctx->callback = kaezip_async_compress_cb;
     kz_ctx->param = usr_data;
 
-    if (kz_ctx->q_node->is_sgl)
-        kaezip_fill_sgl_buffer(kz_ctx, src, dst);
-    else
+    if (kz_ctx->q_node->is_sgl) {
+        ret = kaezip_fill_sgl_buffer(kz_ctx, src, dst);
+        if (ret != KAE_ZLIB_SUCC) {
+            US_ERR("compress fill sgl fail! ret:%d\n", ret);
+            return ret;
+        }
+    } else {
         kaezip_fill_flat_buffer(kz_ctx, src);
+    }
 
-    return wcrypto_do_comp(kz_ctx->wd_ctx, &kz_ctx->op_data, kz_ctx);   // async
+    ret = wcrypto_do_comp(kz_ctx->wd_ctx, &kz_ctx->op_data, kz_ctx);   // async
+    if (ret != WD_SUCCESS) {
+        US_ERR("compress do comp fail! ret:%d\n", ret);
+        return KAE_ZLIB_HW_TIMEOUT_FAIL;
+    }
+    return KAE_ZLIB_SUCC;
 }
 
 static void kaezip_find_and_free_kz_ctx(struct kaezip_async_ctrl *ctrl, kaezip_ctx_t *kz_ctx)
@@ -640,7 +660,9 @@ static int kaezip_send_async_compress(struct kaezip_async_ctrl *ctrl, struct kae
     size_t dst_len = req->dst_len;
     int ret = kaezip_compress_async_impl(req->kz_ctx, &req->src, &req->dst, compress_size, dst_len, (void *)req);
     if (unlikely(ret != KAE_ZLIB_SUCC)) {
-        kaezip_find_and_free_kz_ctx(ctrl, req->kz_ctx);
+        if (ret == KAE_ZLIB_HW_TIMEOUT_FAIL) {
+            kaezip_find_and_free_kz_ctx(ctrl, req->kz_ctx);
+        }
         req->kz_ctx = NULL;
         US_ERR("Send compress cmd to kae hw failed! status %d\n", ret);
         return ret;
