@@ -46,7 +46,7 @@ typedef struct Info_S {
     struct wd_ctx_config ctx_config;
 } Info;
 
-typedef struct KaeLz4Config_S {
+typedef struct KaeSnappyConfig_S {
     Info info;
     Options opts;
 
@@ -55,16 +55,16 @@ typedef struct KaeLz4Config_S {
     struct wd_comp_req req;
 
     Comp4Tuple tuple;
-} KaeLz4Config;
+} KaeSnappyConfig;
 
-#define KAELZ4_DEFAULT_CTX_NUM		1
-#define KAELZ4_DEFAULT_THREAD_NUM	1
+#define KAESNAPPY_DEFAULT_CTX_NUM		1
+#define KAESNAPPY_DEFAULT_THREAD_NUM	1
 #define REQ_SRCBUFF_LEN (128 * 1024)
 #define REQ_DSTBUFF_LEN (128 * 1024 * 10)
 #define REQ_WINDOW_SIZE 2
 #define REQ_COMPRESS_LEVEL 8
 
-KaeLz4Config* kaelz4_get_config(SNAPPY_CCtx* zc);
-void kaelz4_set_config(SNAPPY_CCtx* zc, KaeLz4Config* config);
+KaeSnappyConfig* kaesnappy_get_config(SNAPPY_CCtx* zc);
+void kaesnappy_set_config(SNAPPY_CCtx* zc, KaeSnappyConfig* config);
 
 #endif

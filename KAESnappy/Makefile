@@ -17,10 +17,10 @@ ENGINE_INSTALL_PATH := /usr/local/kaesnappy
 
 CC=gcc
 
-LIBNAME := libkaelz4.so
+LIBNAME := libkaesnappy.so
 VERSION = 2.0.4
 TARGET = ${LIBNAME}.${VERSION}
-SOFTLINK = libkaelz4.so
+SOFTLINK = libkaesnappy.so
 
 ifndef SILENCE
 	SILENCE = @
@@ -67,7 +67,7 @@ OBJS    = $(foreach x,$(SRCEXTS), \
 
 .PHONY : all objs clean cleanall rebuild
 
-all : $(TARGET) libkaelz4.a symlinks
+all : $(TARGET) libkaesnappy.a symlinks
 
 symlinks : $(TARGET)
 	@echo Creating symbolic links
@@ -84,7 +84,7 @@ objs : $(OBJS)
 	@echo compiling $(notdir $<)
 	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
-libkaelz4.a: $(OBJS)
+libkaesnappy.a: $(OBJS)
 	@echo compling static library
 	@ar rcs $@ $^
 
@@ -104,7 +104,7 @@ clean :
 install :
 	mkdir -p $(ENGINE_INSTALL_PATH)/include
 	mkdir -p $(ENGINE_INSTALL_PATH)/lib
-	install -m 755 libkaelz4.a $(ENGINE_INSTALL_PATH)/lib
+	install -m 755 libkaesnappy.a $(ENGINE_INSTALL_PATH)/lib
 	install -m 755 $(TARGET) $(ENGINE_INSTALL_PATH)/lib
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
@@ -114,8 +114,8 @@ uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)
-	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaelz4.a
+	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaesnappy.a
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaesnappy.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaesnappy_log.h
-	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4.h
-	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4frame.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/snappy.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/snappy-c.h

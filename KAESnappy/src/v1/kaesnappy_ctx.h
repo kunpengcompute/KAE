@@ -1,5 +1,5 @@
 /*****************************************************************************
- * @file kaelz4_ctx.h
+ * @file kaesnappy_ctx.h
  *
  * This file provides kaezip ctx control and driver compress funtion;
  *
@@ -11,7 +11,7 @@
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
 
-enum kaelz4_comp_status {
+enum kaesnappy_comp_status {
     KAEZIP_COMP_INIT = 0,
     KAEZIP_COMP_DOING,
     KAEZIP_COMP_CRC_UNCHECK,
@@ -20,7 +20,7 @@ enum kaelz4_comp_status {
     KAEZIP_COMP_VERIFY_ERR,
 };
 
-enum kaelz4_decomp_status {
+enum kaesnappy_decomp_status {
     KAEZIP_DECOMP_INIT = 0,
     KAEZIP_DECOMP_DOING,
     KAEZIP_DECOMP_END_BUT_DATAREMAIN,
@@ -35,7 +35,7 @@ struct wcrypto_end_block {
     unsigned int     b_set;
 };
 
-struct kaelz4_ctx {
+struct kaesnappy_ctx {
     void            *in;
     unsigned int    in_len;
     void            *out;
@@ -48,30 +48,30 @@ struct kaelz4_ctx {
     int              comp_alg_type; // WCRYPTO_LZ77_ZSTD
     int              comp_type;     // WCRYPTO_DEFLATE / WCRYPTO_INFLATE
     unsigned int     do_comp_len;   // a compress proccess cost len
-    int              status;        // enum kaelz4_comp_status
+    int              status;        // enum kaesnappy_comp_status
 
     struct wcrypto_end_block        end_block;
     KAE_QUEUE_DATA_NODE_S*          q_node;
     struct wcrypto_comp_ctx_setup   setup;
     struct wcrypto_comp_op_data     op_data;
-    struct wcrypto_lz77_zstd_format lz4_data;
+    struct wcrypto_lz77_zstd_format snappy_data;
     void*                           wd_ctx;
     void (*callback)(int status, void *param);
     void* param;
 };
-typedef struct kaelz4_ctx   kaelz4_ctx_t;
+typedef struct kaesnappy_ctx   kaesnappy_ctx_t;
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype);
-void          kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx);
-void          kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx);
-void          kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx);
+kaesnappy_ctx_t* kaesnappy_get_ctx(int alg_comp_type, int comp_optype);
+void          kaesnappy_put_ctx(kaesnappy_ctx_t* kz_ctx);
+void          kaesnappy_init_ctx(kaesnappy_ctx_t* kz_ctx);
+void          kaesnappy_free_ctx(kaesnappy_ctx_t* kz_ctx);
 
-void          kaelz4_set_input_data(kaelz4_ctx_t *kz_ctx);
-void          kaelz4_get_output_data(kaelz4_ctx_t *kz_ctx);
+void          kaesnappy_set_input_data(kaesnappy_ctx_t *kz_ctx);
+void          kaesnappy_get_output_data(kaesnappy_ctx_t *kz_ctx);
 
-int           kaelz4_get_remain_data(kaelz4_ctx_t *kz_ctx);
-int           kaelz4_driver_do_comp(kaelz4_ctx_t *kaelz4_ctx);
-void          kaelz4_free_all_qps(void);
+int           kaesnappy_get_remain_data(kaesnappy_ctx_t *kz_ctx);
+int           kaesnappy_driver_do_comp(kaesnappy_ctx_t *kaesnappy_ctx);
+void          kaesnappy_free_all_qps(void);
 
 #endif
 

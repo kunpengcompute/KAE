@@ -5,76 +5,76 @@
  * @Date: 2024-02-26
  * @LastEditTime: 2024-03-28
  */
-#include <lz4_accelerater.h>
+#include <snappy_accelerater.h>
 #include "kaesnappy_ctx.h"
 #include "kaesnappy_comp.h"
 #include "kaesnappy_log.h"
 #include <xxhash.h>
 
-__thread struct kaelz4_async_ctrl g_async_ctrl = {0};
+__thread struct kaesnappy_async_ctrl g_async_ctrl = {0};
 
-void kaelz4_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status)
+void kaesnappy_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status)
 {
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
-    if (kaelz4_ctx) {
-        kaelz4_ctx->lz4_data.blk_type = status;
-        US_DEBUG("kaelz4 set status %u", status);
+    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;
+    if (kaesnappy_ctx) {
+        kaesnappy_ctx->snappy_data.blk_type = status;
+        US_DEBUG("kaesnappy set status %u", status);
     }
 }
 
-static int kaelz4_data_parsing(SNAPPY_CCtx* zc, kaelz4_ctx_t* config)
+static int kaesnappy_data_parsing(SNAPPY_CCtx* zc, kaesnappy_ctx_t* config)
 {
-    if (!config->lz4_data.literals_start || !config->lz4_data.sequences_start) {
-        US_ERR("lz4 literals or sequences start is NULL!\n");
+    if (!config->snappy_data.literals_start || !config->snappy_data.sequences_start) {
+        US_ERR("snappy literals or sequences start is NULL!\n");
         return KAE_SNAPPY_INVAL_PARA;
     }
 
-    zc->seqStore.litStart = config->lz4_data.literals_start;
+    zc->seqStore.litStart = config->snappy_data.literals_start;
     zc->seqStore.lit = zc->seqStore.litStart;
-    zc->seqStore.lit += config->lz4_data.lit_num;
+    zc->seqStore.lit += config->snappy_data.lit_num;
 
-    zc->seqStore.sequencesStart = config->lz4_data.sequences_start;
+    zc->seqStore.sequencesStart = config->snappy_data.sequences_start;
     zc->seqStore.sequences = zc->seqStore.sequencesStart;
-    zc->seqStore.sequences += config->lz4_data.seq_num;
+    zc->seqStore.sequences += config->snappy_data.seq_num;
     return KAE_SNAPPY_SUCC;
 }
 
-int kaelz4_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
+int kaesnappy_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
 {
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
-    if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
+    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;
+    if (kaesnappy_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_SNAPPY_INVAL_PARA;
     }
 
-    US_INFO("kaelz4 compress srcSize : %lu", srcSize);
-    kaelz4_ctx->in           = (void*)src;
-    kaelz4_ctx->in_len       = srcSize;
-    kaelz4_ctx->out          = NULL;
-    kaelz4_ctx->consumed     = 0;
-    kaelz4_ctx->produced     = 0;
-    kaelz4_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
+    US_INFO("kaesnappy compress srcSize : %lu", srcSize);
+    kaesnappy_ctx->in           = (void*)src;
+    kaesnappy_ctx->in_len       = srcSize;
+    kaesnappy_ctx->out          = NULL;
+    kaesnappy_ctx->consumed     = 0;
+    kaesnappy_ctx->produced     = 0;
+    kaesnappy_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
+    kaesnappy_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
             (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
-    kaelz4_ctx->do_comp_len = kaelz4_ctx->in_len;
+    kaesnappy_ctx->do_comp_len = kaesnappy_ctx->in_len;
 
-    kaelz4_set_input_data(kaelz4_ctx);
-    struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
+    kaesnappy_set_input_data(kaesnappy_ctx);
+    struct wcrypto_comp_op_data *op_data = &kaesnappy_ctx->op_data;
 
-    int ret = wcrypto_do_comp(kaelz4_ctx->wd_ctx, op_data, NULL);   // sync
+    int ret = wcrypto_do_comp(kaesnappy_ctx->wd_ctx, op_data, NULL);   // sync
     if (unlikely(ret < 0)) {
-        US_ERR("lz4 wcrypto_do_comp fail! ret = %d\n", ret);
+        US_ERR("snappy wcrypto_do_comp fail! ret = %d\n", ret);
         return ret;
     } else {
-        struct wcrypto_lz77_zstd_format* lz4_data = &kaelz4_ctx->lz4_data;
-        zc->seqnum = lz4_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
+        struct wcrypto_lz77_zstd_format* snappy_data = &kaesnappy_ctx->snappy_data;
+        zc->seqnum = snappy_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
     }
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
         op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;
     }
-    kaelz4_get_output_data(kaelz4_ctx);
-    ret = kaelz4_data_parsing(zc, kaelz4_ctx);
+    kaesnappy_get_output_data(kaesnappy_ctx);
+    ret = kaesnappy_data_parsing(zc, kaesnappy_ctx);
 
     return ret;
 }
@@ -214,7 +214,7 @@ static inline void Slow_CRC32(uint64_t* l, uint8_t** p)
 }
 
 // CRC32 API接口函数
-static uint32_t KAELZ4CRC32(uint32_t crc, const char *data, uint64_t len)
+static uint32_t KAESNAPPYCRC32(uint32_t crc, const char *data, uint64_t len)
 {
     if (data == NULL) {
         return crc;
@@ -262,17 +262,17 @@ static uint32_t KAELZ4CRC32(uint32_t crc, const char *data, uint64_t len)
     return crcResult ^ 0xffffffffu;
 }
 
-static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_ctx, int status)
+static void kaesnappy_compress_async_callback(struct kaesnappy_compress_ctx *compress_ctx, int status)
 {
     struct kaesnappy_result *result = compress_ctx->result;
     result->status = status;
     result->dst_len = compress_ctx->dst_len;
     if (result->ibuf_crc != NULL && status == KAE_SNAPPY_SUCC) {
-        *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src, compress_ctx->srcSize);
+        *result->ibuf_crc = KAESNAPPYCRC32(*result->ibuf_crc, compress_ctx->src, compress_ctx->srcSize);
     }
 
     if (result->obuf_crc != NULL && status == KAE_SNAPPY_SUCC) {
-        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst, compress_ctx->dst_len);
+        *result->obuf_crc = KAESNAPPYCRC32(*result->obuf_crc, compress_ctx->dst, compress_ctx->dst_len);
     }
 
     if (unlikely(status != KAE_SNAPPY_SUCC)) {
@@ -283,15 +283,15 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
     free(compress_ctx);
 }
 
-static void LZ4_write16(void* memPtr, U16 value) { ((LZ4_unalign*)memPtr)->u16 = value; }
+static void SNAPPY_write16(void* memPtr, U16 value) { ((SNAPPY_unalign*)memPtr)->u16 = value; }
 
-static unsigned LZ4_isLittleEndian(void)
+static unsigned SNAPPY_isLittleEndian(void)
 {
     const union { U32 u; BYTE c[4]; } one = { 1 };   /* don't use static : performance detrimental */
     return one.c[0];
 }
 
-static inline void LZ4_wildCopy8(void* dstPtr, const void* srcPtr, void* dstEnd)
+static inline void SNAPPY_wildCopy8(void* dstPtr, const void* srcPtr, void* dstEnd)
 {
     BYTE* d = (BYTE*)dstPtr;
     const BYTE* s = (const BYTE*)srcPtr;
@@ -300,7 +300,7 @@ static inline void LZ4_wildCopy8(void* dstPtr, const void* srcPtr, void* dstEnd)
     do { KZL_MEMCPY_8(d,s,8); d+=8; s+=8; } while (d<e);
 }
 
-static inline void LZ4_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd)
+static inline void SNAPPY_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd)
 {
     BYTE* d = (BYTE*)dstPtr;
     const BYTE* s = (const BYTE*)srcPtr;
@@ -310,10 +310,10 @@ static inline void LZ4_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd
 }
 
 
-static inline void LZ4_writeLE16(void* memPtr, U16 value)
+static inline void SNAPPY_writeLE16(void* memPtr, U16 value)
 {
-    if (LZ4_isLittleEndian()) {
-        LZ4_write16(memPtr, value);
+    if (SNAPPY_isLittleEndian()) {
+        SNAPPY_write16(memPtr, value);
     } else {
         BYTE* p = (BYTE*)memPtr;
         p[0] = (BYTE) value;
@@ -322,7 +322,7 @@ static inline void LZ4_writeLE16(void* memPtr, U16 value)
 }
 
 
-static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *source, void *dest)
+static int kaesnappy_triples_rebuild(struct kaesnappy_async_req *req, const void *source, void *dest)
 {
     const BYTE* ip = (const BYTE*) source;
     BYTE* op = (BYTE*) dest;
@@ -375,16 +375,16 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
             *token = (BYTE)(litLength << ML_BITS);
         }
 
-        LZ4_wildCopy16(op, ip, op + litLength);
+        SNAPPY_wildCopy16(op, ip, op + litLength);
         op += litLength;
         ip += litLength + mlBase + 3;
         tempLiteralLength = 0;
 
-        LZ4_writeLE16(op, (U16)(offBase));
+        SNAPPY_writeLE16(op, (U16)(offBase));
         op += 2;
         if (unlikely(offBase > 65535)) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
             US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
+            return KAE_SNAPPY_REBUILD_FAIL;
         }
 
         matchCode = mlBase - 1;
@@ -415,7 +415,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
     } else {
         *token = (BYTE)(tempLiteralLength << ML_BITS);
     }
-    LZ4_memcpy(op, ip, tempLiteralLength);
+    SNAPPY_memcpy(op, ip, tempLiteralLength);
     op += tempLiteralLength;
 
     int result = (int)(((char*)op) - ((char*)dest));
@@ -427,7 +427,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const void *sour
 // 约束：分块原始数据内存连续
 // 1、对于非last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal信息更新至ctx中
 // 2、对于last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal生成last seq格式
-static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const void *source, void *dest)
+static int kaesnappy_triples_rebuild_64Kblock(struct kaesnappy_async_req *req, const void *source, void *dest)
 {
     const BYTE* ip = (const BYTE*) source;
     BYTE* op = (BYTE*) dest;
@@ -486,23 +486,23 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
 
         // 满足生成first new sequence条件，继承prev subblock的last literal
         if (req->compress_ctx->prev_last_lit_ptr != NULL) {
-            LZ4_wildCopy16(op, req->compress_ctx->prev_last_lit_ptr, op + req->compress_ctx->prev_last_lit_len);
+            SNAPPY_wildCopy16(op, req->compress_ctx->prev_last_lit_ptr, op + req->compress_ctx->prev_last_lit_len);
             op += req->compress_ctx->prev_last_lit_len;
             litLength -= req->compress_ctx->prev_last_lit_len;
             req->compress_ctx->prev_last_lit_ptr = NULL;
             req->compress_ctx->prev_last_lit_len = 0;
         }
 
-        LZ4_wildCopy16(op, ip, op + litLength);
+        SNAPPY_wildCopy16(op, ip, op + litLength);
         op += litLength;
         ip += litLength + mlBase + 3;
         tempLiteralLength = 0;
 
-        LZ4_writeLE16(op, (U16)(offBase));
+        SNAPPY_writeLE16(op, (U16)(offBase));
         op += 2;
         if (unlikely(offBase > 65535)) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
             US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
+            return KAE_SNAPPY_REBUILD_FAIL;
         }
 
         matchCode = mlBase - 1;
@@ -549,16 +549,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
             *token = (BYTE)(litLength << ML_BITS);
         }
 
-        LZ4_wildCopy16(op, ip, op + litLength);
+        SNAPPY_wildCopy16(op, ip, op + litLength);
         op += litLength;
         ip += litLength + mlBase + 3;
         tempLiteralLength = 0;
 
-        LZ4_writeLE16(op, (U16)(offBase));
+        SNAPPY_writeLE16(op, (U16)(offBase));
         op += 2;
         if (unlikely(offBase > 65535)) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
             US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
+            return KAE_SNAPPY_REBUILD_FAIL;
         }
 
         matchCode = mlBase - 1;
@@ -604,14 +604,14 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
         }
 
         if (req->compress_ctx->prev_last_lit_ptr != NULL) {
-            LZ4_wildCopy16(op, req->compress_ctx->prev_last_lit_ptr, op + req->compress_ctx->prev_last_lit_len);
+            SNAPPY_wildCopy16(op, req->compress_ctx->prev_last_lit_ptr, op + req->compress_ctx->prev_last_lit_len);
             op += req->compress_ctx->prev_last_lit_len;
             tempLiteralLength -= req->compress_ctx->prev_last_lit_len;
             req->compress_ctx->prev_last_lit_ptr = NULL;
             req->compress_ctx->prev_last_lit_len = 0;
         }
 
-        LZ4_memcpy(op, ip, tempLiteralLength);
+        SNAPPY_memcpy(op, ip, tempLiteralLength);
         op += tempLiteralLength;
     }
 
@@ -620,31 +620,31 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const v
     return result;
 }
 
-static void kaelz4_async_compress_cb(int status, void *param)
+static void kaesnappy_async_compress_cb(int status, void *param)
 {
-    struct kaelz4_async_req* req = param;
+    struct kaesnappy_async_req* req = param;
     SNAPPY_CCtx* zc = &req->zc;
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
-    struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
+    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;
+    struct wcrypto_comp_op_data *op_data = &kaesnappy_ctx->op_data;
 
     if (status != 0) {
-        US_ERR("kaelz4_async_compress_cb status %d !\n", status);
+        US_ERR("kaesnappy_async_compress_cb status %d !\n", status);
         req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
         req->done = 1;
         return;
     }
 
-    struct wcrypto_lz77_zstd_format* lz4_data = &kaelz4_ctx->lz4_data;
-    zc->seqnum = lz4_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
+    struct wcrypto_lz77_zstd_format* snappy_data = &kaesnappy_ctx->snappy_data;
+    zc->seqnum = snappy_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
     US_DEBUG("frameMode = %u, flush = %d, lit_num = %u, seq_num = %u, lit_length_overflow_cnt = %u, lit_length_overflow_pos = %u\n",
-        zc->kaeFrameMode, kaelz4_ctx->flush,
-        lz4_data->lit_num, lz4_data->seq_num, lz4_data->lit_length_overflow_cnt, lz4_data->lit_length_overflow_pos);
+        zc->kaeFrameMode, kaesnappy_ctx->flush,
+        snappy_data->lit_num, snappy_data->seq_num, snappy_data->lit_length_overflow_cnt, snappy_data->lit_length_overflow_pos);
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
         op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;
     }
-    kaelz4_get_output_data(kaelz4_ctx);
-    int ret = kaelz4_data_parsing(zc, kaelz4_ctx);
+    kaesnappy_get_output_data(kaesnappy_ctx);
+    int ret = kaesnappy_data_parsing(zc, kaesnappy_ctx);
 
     if (ret != KAE_SNAPPY_SUCC) {
         req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
@@ -654,75 +654,75 @@ static void kaelz4_async_compress_cb(int status, void *param)
     req->done = 1;
 }
 
-static int kaelz4_compress_async_impl(SNAPPY_CCtx* zc, const void* src, size_t srcSize, void *usr_data)
+static int kaesnappy_compress_async_impl(SNAPPY_CCtx* zc, const void* src, size_t srcSize, void *usr_data)
 {
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
-    if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
+    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;
+    if (kaesnappy_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_SNAPPY_INVAL_PARA;
     }
 
-    US_INFO("kaelz4 compress srcSize : %lu", srcSize);
-    kaelz4_ctx->in           = (void*)src;
-    kaelz4_ctx->in_len       = srcSize;
-    kaelz4_ctx->out          = NULL;
-    kaelz4_ctx->consumed     = 0;
-    kaelz4_ctx->produced     = 0;
-    kaelz4_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
+    US_INFO("kaesnappy compress srcSize : %lu", srcSize);
+    kaesnappy_ctx->in           = (void*)src;
+    kaesnappy_ctx->in_len       = srcSize;
+    kaesnappy_ctx->out          = NULL;
+    kaesnappy_ctx->consumed     = 0;
+    kaesnappy_ctx->produced     = 0;
+    kaesnappy_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
+    kaesnappy_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
             (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
-    kaelz4_ctx->do_comp_len = kaelz4_ctx->in_len;
-    kaelz4_ctx->callback = kaelz4_async_compress_cb;
-    kaelz4_ctx->param = usr_data;
+    kaesnappy_ctx->do_comp_len = kaesnappy_ctx->in_len;
+    kaesnappy_ctx->callback = kaesnappy_async_compress_cb;
+    kaesnappy_ctx->param = usr_data;
 
-    kaelz4_set_input_data(kaelz4_ctx);
-    struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
+    kaesnappy_set_input_data(kaesnappy_ctx);
+    struct wcrypto_comp_op_data *op_data = &kaesnappy_ctx->op_data;
 
-    return wcrypto_do_comp(kaelz4_ctx->wd_ctx, op_data, kaelz4_ctx);   // async
+    return wcrypto_do_comp(kaesnappy_ctx->wd_ctx, op_data, kaesnappy_ctx);   // async
 }
 
-static void kaelz4_find_and_free_kz_ctx(kaelz4_ctx_t *kz_ctx)
+static void kaesnappy_find_and_free_kz_ctx(kaesnappy_ctx_t *kz_ctx)
 {
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
         if (g_async_ctrl.kz_ctx[i] == kz_ctx) {
-            kaelz4_free_ctx(g_async_ctrl.kz_ctx[i]);
+            kaesnappy_free_ctx(g_async_ctrl.kz_ctx[i]);
             g_async_ctrl.kz_ctx[i] = NULL;
         }
     }
 }
 
 
-static void kaelz4_do_compress_polling(struct kaelz4_async_req *req)
+static void kaesnappy_do_compress_polling(struct kaesnappy_async_req *req)
 {
     if (req->special_flag != 0) {
         return;
     }
 
-    kaelz4_ctx_t *kaelz4_ctx = (kaelz4_ctx_t *)req->zc.kaeConfig;
-    struct wd_queue *q = kaelz4_ctx->q_node->kae_wd_queue;
+    kaesnappy_ctx_t *kaesnappy_ctx = (kaesnappy_ctx_t *)req->zc.kaeConfig;
+    struct wd_queue *q = kaesnappy_ctx->q_node->kae_wd_queue;
 
     int ret = wcrypto_comp_poll(q, 1);
     if (unlikely(ret < 0)) {
         US_ERR("poll fail! ret = %d\n", ret);
-        kaelz4_find_and_free_kz_ctx(kaelz4_ctx);
+        kaesnappy_find_and_free_kz_ctx(kaesnappy_ctx);
         req->compress_ctx->status = KAE_SNAPPY_COMP_FAIL;
         req->done = 1;
     }
     return;
 }
 
-int kaelz4_async_is_thread_do_comp_full(void)
+int kaesnappy_async_is_thread_do_comp_full(void)
 {
     return g_async_ctrl.cur_num_in_comp < MAX_NUM_IN_COMP ? 0 : 1;
 }
 
-void kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame)
+void kaesnappy_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame)
 {
     g_async_ctrl.stop_flag = stop;
     g_async_ctrl.sw_compress_frame = sw_compress_frame;
 }
 
-static int kaelz4_async_sw_compress(struct kaelz4_compress_ctx *compress_ctx)
+static int kaesnappy_async_sw_compress(struct kaesnappy_compress_ctx *compress_ctx)
 {
     int ret = -1;
     compress_ctx->status = KAE_SNAPPY_SUCC;
@@ -733,22 +733,22 @@ static int kaelz4_async_sw_compress(struct kaelz4_compress_ctx *compress_ctx)
         ret = g_async_ctrl.sw_compress(compress_ctx->src, compress_ctx->dst, compress_ctx->srcSize,
                                        compress_ctx->dstCapacity);
     }
-    ret = (ret == 0) ? KAE_LZ4_SW_RETURN_0_FAIL : ret;
+    ret = (ret == 0) ? KAE_SNAPPY_SW_RETURN_0_FAIL : ret;
     return ret;
 }
 
-int kaelz4_async_compress_polling(int budget)
+int kaesnappy_async_compress_polling(int budget)
 {
     int cnt = 0;
-    struct kaelz4_compress_ctx *compress_ctx = g_async_ctrl.ctx_head;
+    struct kaesnappy_compress_ctx *compress_ctx = g_async_ctrl.ctx_head;
 
     if (compress_ctx == NULL) {
         return 0;
     }
-    struct kaelz4_async_req *req = compress_ctx->req_list;
+    struct kaesnappy_async_req *req = compress_ctx->req_list;
     US_DEBUG("do polling. budget = %d", budget);
     while (req && cnt < budget) {
-        kaelz4_do_compress_polling(req);
+        kaesnappy_do_compress_polling(req);
         if (!req->done) {
             return KAE_SNAPPY_PROCESS_HW_BUSY;
         }
@@ -756,16 +756,16 @@ int kaelz4_async_compress_polling(int budget)
         int ret = -1;
 
         if (likely(compress_ctx->status == KAE_SNAPPY_SUCC)) {
-            ret = compress_ctx->kaelz4_post_process_handle(req, req->src, compress_ctx->dst + compress_ctx->dst_len);
+            ret = compress_ctx->kaesnappy_post_process_handle(req, req->src, compress_ctx->dst + compress_ctx->dst_len);
             if (ret < 0) {
-                US_ERR("kaelz4_post_process_handle err. ret=%d\n", ret);
+                US_ERR("kaesnappy_post_process_handle err. ret=%d\n", ret);
             }
         }
 
         if (unlikely(ret < 0 && req->idx == 0 && req->last != 0 && req->compress_ctx->status != KAE_SNAPPY_HW_TIMEOUT_FAIL)) {
-            US_WARN("KAELz4 async compress switch to soft");
+            US_WARN("KAESnappy async compress switch to soft");
             // 异常切软算处理
-            ret = kaelz4_async_sw_compress(compress_ctx);
+            ret = kaesnappy_async_sw_compress(compress_ctx);
         }
 
         if (ret >= 0 && compress_ctx->status == KAE_SNAPPY_SUCC) {
@@ -787,7 +787,7 @@ int kaelz4_async_compress_polling(int budget)
 
         if (req->last) {
             g_async_ctrl.ctx_head = compress_ctx->next;
-            kaelz4_compress_async_callback(compress_ctx, compress_ctx->status);
+            kaesnappy_compress_async_callback(compress_ctx, compress_ctx->status);
             compress_ctx = g_async_ctrl.ctx_head;
         } else {
             compress_ctx->req_list = compress_ctx->req_list->next;
@@ -807,7 +807,7 @@ int kaelz4_async_compress_polling(int budget)
 
 static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
 
-static void kaelz4_ctx_body_init(SNAPPY_CCtx *ctx_body)
+static void kaesnappy_ctx_body_init(SNAPPY_CCtx *ctx_body)
 {
     ctx_body->kaeInited = 0;
     ctx_body->kaeFrameMode = 1; // 相当于每个都强刷
@@ -826,11 +826,11 @@ static void kaelz4_ctx_body_init(SNAPPY_CCtx *ctx_body)
     ctx_body->seqnum = 0;
 }
 
-static int kaelz4_async_init_ctx(SNAPPY_CCtx *ctx_body)
+static int kaesnappy_async_init_ctx(SNAPPY_CCtx *ctx_body)
 {
     int enter_polling = 0;
 
-    kaelz4_ctx_body_init(ctx_body);
+    kaesnappy_ctx_body_init(ctx_body);
 
     if (unlikely(g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index] == NULL)) {
         while (kaesnappy_init(ctx_body) != KAE_SNAPPY_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
@@ -845,18 +845,18 @@ static int kaelz4_async_init_ctx(SNAPPY_CCtx *ctx_body)
                 return KAE_SNAPPY_INIT_FAIL;
             }
 
-            (void)kaelz4_async_compress_polling(1);
+            (void)kaesnappy_async_compress_polling(1);
             // 如果本线程已经idle，则使用之前已经申请到的kz_ctx
             if (g_async_ctrl.cur_num_in_comp == 0 && g_async_ctrl.kz_ctx[0] != NULL) {
                 g_async_ctrl.ctx_index = 0;
                 ctx_body->kaeConfig = (uintptr_t)g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index];
             }
         }
-        g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index] = (kaelz4_ctx_t *)ctx_body->kaeConfig;
+        g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index] = (kaesnappy_ctx_t *)ctx_body->kaeConfig;
     } else {
-        while (kaelz4_async_is_thread_do_comp_full()) {
-            (void)kaelz4_async_compress_polling(1);
-            // 此分支不需要超时判断，kaelz4_async_compress_polling本身具有超时机制，如果硬件超时，会主动释放资源
+        while (kaesnappy_async_is_thread_do_comp_full()) {
+            (void)kaesnappy_async_compress_polling(1);
+            // 此分支不需要超时判断，kaesnappy_async_compress_polling本身具有超时机制，如果硬件超时，会主动释放资源
             if (unlikely(*g_async_ctrl.stop_flag != 0)) {
                 return KAE_SNAPPY_INIT_FAIL;
             }
@@ -866,7 +866,7 @@ static int kaelz4_async_init_ctx(SNAPPY_CCtx *ctx_body)
                 return KAE_SNAPPY_INIT_FAIL;
             }
         }
-        kaelz4_init_ctx(g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index]);
+        kaesnappy_init_ctx(g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index]);
         ctx_body->kaeConfig = (uintptr_t)g_async_ctrl.kz_ctx[g_async_ctrl.ctx_index];
     }
 
@@ -876,29 +876,29 @@ static int kaelz4_async_init_ctx(SNAPPY_CCtx *ctx_body)
     return KAE_SNAPPY_SUCC;
 }
 
-void kaelz4_ctx_clear(void)
+void kaesnappy_ctx_clear(void)
 {
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
         if (g_async_ctrl.kz_ctx[i] != NULL) {
-            kaelz4_free_ctx(g_async_ctrl.kz_ctx[i]);
+            kaesnappy_free_ctx(g_async_ctrl.kz_ctx[i]);
             g_async_ctrl.kz_ctx[i] = NULL;
         }
     }
 }
 
-static int kaelz4_send_async_compress(struct kaelz4_async_req *req)
+static int kaesnappy_send_async_compress(struct kaesnappy_async_req *req)
 {
     int ret;
     // 1.kae上下文初始化函数调用
-    ret = kaelz4_async_init_ctx(&req->zc);
+    ret = kaesnappy_async_init_ctx(&req->zc);
     if (unlikely(ret != KAE_SNAPPY_SUCC)) {
         US_ERR("Get kae hw ctx failed!\n");
         return ret;
     }
     size_t compress_size = req->src_size - MFLIMIT;
-    ret = kaelz4_compress_async_impl(&req->zc, req->src, compress_size, (void *)req);
+    ret = kaesnappy_compress_async_impl(&req->zc, req->src, compress_size, (void *)req);
     if (unlikely(ret != KAE_SNAPPY_SUCC)) {
-        kaelz4_find_and_free_kz_ctx((kaelz4_ctx_t *)req->zc.kaeConfig);
+        kaesnappy_find_and_free_kz_ctx((kaesnappy_ctx_t *)req->zc.kaeConfig);
         g_async_ctrl.ctx_index = (g_async_ctrl.ctx_index + MAX_NUM_IN_COMP - 1) % MAX_NUM_IN_COMP;
         g_async_ctrl.cur_num_in_comp--;
         req->zc.kaeConfig = 0;
@@ -908,10 +908,10 @@ static int kaelz4_send_async_compress(struct kaelz4_async_req *req)
     return ret;
 }
 
-static int kaelz4_async_compress_process(void *arg)
+static int kaesnappy_async_compress_process(void *arg)
 {
-    struct kaelz4_compress_ctx *compress_ctx = arg;
-    struct kaelz4_async_req *tail = NULL;
+    struct kaesnappy_compress_ctx *compress_ctx = arg;
+    struct kaesnappy_async_req *tail = NULL;
 
     // 转换衔接
     size_t srcSize = compress_ctx->srcSize;
@@ -920,15 +920,15 @@ static int kaelz4_async_compress_process(void *arg)
 
     size_t remainingLength = srcSize; // 该值用于保存剩余的待压缩数据长度
 
-    // 针对ZSTD和LZ4的matchlength转换定义的数据结构
+    // 针对ZSTD的Snappy的matchlength转换定义的数据结构
     US_DEBUG("INPUTSIZE:%ld, dstCapacity:%ld, maxOutputSize:%ld.", compress_ctx->srcSize, dstCapacity, compress_ctx->dstCapacity);
     // 针对ZSTD 128K remaining会覆盖CTX的问题进行的拆分(具体按64K切分，对于末尾的literal，进行src前移，放到下一轮再压)
     int idx = 0;
     while (remainingLength) {
         US_DEBUG("remainingLength:%ld, hardware:%d\n", remainingLength, HARDWARE_BLOCK_SIZE);
-        struct kaelz4_async_req *req = (struct kaelz4_async_req *)kae_malloc(sizeof(struct kaelz4_async_req));
+        struct kaesnappy_async_req *req = (struct kaesnappy_async_req *)kae_malloc(sizeof(struct kaesnappy_async_req));
         if (unlikely(req == NULL)) {
-            US_ERR("Alloc kaelz4_async_req failed!\n");
+            US_ERR("Alloc kaesnappy_async_req failed!\n");
             compress_ctx->status = KAE_SNAPPY_ALLOC_FAIL;
             if (compress_ctx->req_list) {
                 tail->last = 1;
@@ -961,7 +961,7 @@ static int kaelz4_async_compress_process(void *arg)
 
         int ret = KAE_SNAPPY_SUCC;
         if (!req->special_flag) {
-            ret = kaelz4_send_async_compress(req);
+            ret = kaesnappy_send_async_compress(req);
         } else {
             // 小于12B处理，无需硬件压缩
             req->done = 1;
@@ -986,12 +986,12 @@ static int kaelz4_async_compress_process(void *arg)
     return KAE_SNAPPY_SUCC;
 }
 
-static void kaelz4_flush_compress(void)
+static void kaesnappy_flush_compress(void)
 {
-    struct kaelz4_compress_ctx *compress_ctx = g_async_ctrl.ctx_head;
+    struct kaesnappy_compress_ctx *compress_ctx = g_async_ctrl.ctx_head;
 
     while (compress_ctx != NULL) {
-        struct kaelz4_async_req *req = compress_ctx->req_list;
+        struct kaesnappy_async_req *req = compress_ctx->req_list;
         while (req != NULL) {
             compress_ctx->req_list = compress_ctx->req_list->next;
             free(req);
@@ -1003,23 +1003,23 @@ static void kaelz4_flush_compress(void)
     }
 }
 
-void kaelz4_async_deinit(void)
+void kaesnappy_async_deinit(void)
 {
-    kaelz4_flush_compress();
-    kaelz4_ctx_clear();
-    kaelz4_free_all_qps();
+    kaesnappy_flush_compress();
+    kaesnappy_ctx_clear();
+    kaesnappy_free_all_qps();
 }
 
-const kaelz4_post_process_handle_t g_post_process_handle[KAESNAPPY_ASYNC_BUTT] = {
-    [KAESNAPPY_ASYNC_SMALL_BLOCK] = kaelz4_triples_rebuild,
-    [KAESNAPPY_ASYNC_BLOCK] = kaelz4_triples_rebuild_64Kblock,
+const kaesnappy_post_process_handle_t g_post_process_handle[KAESNAPPY_ASYNC_BUTT] = {
+    [KAESNAPPY_ASYNC_SMALL_BLOCK] = kaesnappy_triples_rebuild,
+    [KAESNAPPY_ASYNC_BLOCK] = kaesnappy_triples_rebuild_64Kblock,
 };
 
-void kaelz4_compress_async(const void *src, void *dst,
+void kaesnappy_compress_async(const void *src, void *dst,
                           snappy_async_callback callback, struct kaesnappy_result *result,
                           enum kae_snappy_async_data_format data_format, const int *ptr)
 {
-    struct kaelz4_compress_ctx *compress_ctx = (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
+    struct kaesnappy_compress_ctx *compress_ctx = (struct kaesnappy_compress_ctx *)kae_malloc(sizeof(struct kaesnappy_compress_ctx));
     if (unlikely(compress_ctx == NULL)) {
         US_ERR("Alloc compress_ctx failed!\n");
         goto err_callback;
@@ -1034,7 +1034,7 @@ void kaelz4_compress_async(const void *src, void *dst,
     compress_ctx->result = result;
     compress_ctx->data_format = data_format;
     compress_ctx->preferences = *ptr;
-    compress_ctx->kaelz4_post_process_handle = g_post_process_handle[data_format];
+    compress_ctx->kaesnappy_post_process_handle = g_post_process_handle[data_format];
     compress_ctx->dst_len = 0;
     compress_ctx->next = NULL;
     compress_ctx->status = KAE_SNAPPY_SUCC;
@@ -1049,7 +1049,7 @@ void kaelz4_compress_async(const void *src, void *dst,
     }
     g_async_ctrl.tail = compress_ctx;
 
-    if (unlikely(kaelz4_async_compress_process(compress_ctx) != KAE_SNAPPY_SUCC)) {
+    if (unlikely(kaesnappy_async_compress_process(compress_ctx) != KAE_SNAPPY_SUCC)) {
         goto free_compress_ctx;
     }
 

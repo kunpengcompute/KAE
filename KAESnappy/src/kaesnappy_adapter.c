@@ -15,7 +15,7 @@
 #include "kaesnappy_log.h"
 #include "uadk/wd.h"
 
-lz4_task_queues g_task_queues = {0};
+snappy_task_queues g_task_queues = {0};
 pthread_mutex_t g_task_queue_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_task_queue_mutex[MAX_TASK_NUM] = { PTHREAD_MUTEX_INITIALIZER };
 static struct timespec polling_timeout = { 1, 0 };  // 1秒超时
@@ -47,7 +47,7 @@ static void uadk_get_accel_platform(void)
     //  hardware don't support, use zstd original interface
     g_platform = HW_NONE;
 end:
-     US_INFO("kaelz4 v%d inited!\n", g_platform);
+     US_INFO("kaesnappy v%d inited!\n", g_platform);
 }
 
 int kaesnappy_init(SNAPPY_CCtx* zc)
@@ -60,10 +60,10 @@ int kaesnappy_init(SNAPPY_CCtx* zc)
     case HW_NONE:
         break;
     case HW_V1:
-        ret = kaelz4_init_v1(zc);
+        ret = kaesnappy_init_v1(zc);
         break;
     case HW_V2:
-        ret = kaelz4_init_v2(zc);
+        ret = kaesnappy_init_v2(zc);
         break;
     default:
         break;
@@ -81,7 +81,7 @@ void kaesnappy_reset(SNAPPY_CCtx* zc)
     case HW_NONE:
         break;
     case HW_V1:
-        kaelz4_reset_v1(zc);
+        kaesnappy_reset_v1(zc);
         break;
     case HW_V2:
         break;
@@ -100,15 +100,15 @@ void kaesnappy_release(SNAPPY_CCtx* zc)
     case HW_NONE:
         break;
     case HW_V1:
-        kaelz4_release_v1(zc);
+        kaesnappy_release_v1(zc);
         break;
     case HW_V2:
-        kaelz4_release_v2(zc);
+        kaesnappy_release_v2(zc);
         break;
     default:
         break;
     }
-    US_INFO("kaelz4_released");
+    US_INFO("kaesnappy_released");
 }
 
 void kaesnappy_setstatus(SNAPPY_CCtx* zc, unsigned int status)
@@ -120,15 +120,15 @@ void kaesnappy_setstatus(SNAPPY_CCtx* zc, unsigned int status)
     case HW_NONE:
         break;
     case HW_V1:
-        kaelz4_setstatus_v1(zc, status);
+        kaesnappy_setstatus_v1(zc, status);
         break;
     case HW_V2:
-        kaelz4_setstatus_v2(zc, status);
+        kaesnappy_setstatus_v2(zc, status);
         break;
     default:
         break;
     }
-    US_INFO("kaelz4_set blk_type %d\n", status);
+    US_INFO("kaesnappy_set blk_type %d\n", status);
 }
 
 int kaesnappy_compress(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
@@ -141,10 +141,10 @@ int kaesnappy_compress(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
     case HW_NONE:
         break;
     case HW_V1:
-        ret = kaelz4_compress_v1(zc, src, srcSize);
+        ret = kaesnappy_compress_v1(zc, src, srcSize);
         break;
     case HW_V2:
-        ret = kaelz4_compress_v2(zc, src, srcSize);
+        ret = kaesnappy_compress_v2(zc, src, srcSize);
         break;
     default:
         break;
@@ -224,9 +224,9 @@ static void set_cpu_affinity_for_child(int i)
     }
 }
 
-static void kaelz4_dequeue_process(lz4_task_queue *task_queue, int budget)
+static void kaesnappy_dequeue_process(snappy_task_queue *task_queue, int budget)
 {
-    US_DEBUG("do kaelz4_dequeue_process. budget: %d", budget);
+    US_DEBUG("do kaesnappy_dequeue_process. budget: %d", budget);
     int cnt = 0;
     // 等待任务
     while (task_queue->pi != task_queue->ci && cnt < budget) {
@@ -235,19 +235,19 @@ static void kaelz4_dequeue_process(lz4_task_queue *task_queue, int budget)
         if (task_queue->stop) {
             break;
         }
-        if (kaelz4_async_is_thread_do_comp_full() == 1) {
+        if (kaesnappy_async_is_thread_do_comp_full() == 1) {
             break;
         }
 
         // 获取任务
         size_t ci = task_queue->ci;
-        lz4_async_task_t task;
+        snappy_async_task_t task;
 
         task = task_queue->tasks[ci];
         // 更新 ci，复用空闲位置
-        task_queue->ci = (task_queue->ci + 1) % KAELZ4_TASK_QUEUE_DEPTH;
+        task_queue->ci = (task_queue->ci + 1) % KAEsnappy_TASK_QUEUE_DEPTH;
         // 执行压缩操作
-        kaelz4_compress_async(task.src, task.dst, task.callback, task.result,
+        kaesnappy_compress_async(task.src, task.dst, task.callback, task.result,
                               task.data_format, &task.preferences);
         cnt++;
     }
@@ -256,14 +256,14 @@ static void kaelz4_dequeue_process(lz4_task_queue *task_queue, int budget)
 
 static void *compress_thread_func(void *arg)
 {
-    lz4_task_queue *task_queue = arg;
+    snappy_task_queue *task_queue = arg;
     struct timespec timeout;
     int ret = 0;
     int enter_idle = 0;
 
     set_cpu_affinity_for_child(task_queue->index);
 
-    kaelz4_async_init(&task_queue->stop, g_task_queues.sw_compress, g_task_queues.sw_compress_frame);
+    kaesnappy_async_init(&task_queue->stop, g_task_queues.sw_compress, g_task_queues.sw_compress_frame);
 
     while (1) {
         // 等待任务
@@ -278,7 +278,7 @@ static void *compress_thread_func(void *arg)
             }
 
             if (unlikely(check_time_out(&timeout))) {
-                kaelz4_ctx_clear();
+                kaesnappy_ctx_clear();
                 sem_wait(&task_queue->sem);
             }
         }
@@ -289,21 +289,21 @@ static void *compress_thread_func(void *arg)
 
         enter_idle = 0;
 
-        if (!kaelz4_async_is_thread_do_comp_full()) {
-            kaelz4_dequeue_process(task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
+        if (!kaesnappy_async_is_thread_do_comp_full()) {
+            kaesnappy_dequeue_process(task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET);
         }
-        ret = kaelz4_async_compress_polling(ASYNC_POLLING_DEFAULT_BUDGET);
+        ret = kaesnappy_async_compress_polling(ASYNC_POLLING_DEFAULT_BUDGET);
     }
 
 exit_thread:
-    kaelz4_async_deinit();
+    kaesnappy_async_deinit();
     return NULL;
 }
 
 static void init_env_config()
 {
 
-    char *task_queue_num = getenv("KAE_LZ4_ASYNC_THREAD_NUM");
+    char *task_queue_num = getenv("KAE_SNAPPY_ASYNC_THREAD_NUM");
     if (task_queue_num != NULL) {
         g_task_queues.num = atoi(task_queue_num);
         if (g_task_queues.num > MAX_TASK_NUM) {
@@ -322,9 +322,9 @@ void async_thread_constructor(void)
     init_env_config();
 }
 
-static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index)
+static int kaesnappy_task_queue_init(snappy_task_queue *task_queue, int index)
 {
-    task_queue->tasks = malloc(KAELZ4_TASK_QUEUE_DEPTH * sizeof(lz4_async_task_t));
+    task_queue->tasks = malloc(KAEsnappy_TASK_QUEUE_DEPTH * sizeof(snappy_async_task_t));
     if (task_queue->tasks == NULL) {
         return KAE_SNAPPY_ALLOC_FAIL;
     }
@@ -343,7 +343,7 @@ static int kaelz4_task_queue_init(lz4_task_queue *task_queue, int index)
     return KAE_SNAPPY_SUCC;
 }
 
-static void kaelz4_task_queue_free(lz4_task_queue *task_queue)
+static void kaesnappy_task_queue_free(snappy_task_queue *task_queue)
 {
     pthread_mutex_lock(task_queue->mutex);
     task_queue->stop = 1;
@@ -355,7 +355,7 @@ static void kaelz4_task_queue_free(lz4_task_queue *task_queue)
     pthread_mutex_unlock(task_queue->mutex);
 }
 
-static int kaelz4_task_queues_init(int task_queue_num)
+static int kaesnappy_task_queues_init(int task_queue_num)
 {
     int i;
 
@@ -368,7 +368,7 @@ static int kaelz4_task_queues_init(int task_queue_num)
     }
 
     for (i = 0; i < g_task_queues.num; i++) {
-        if (kaelz4_task_queue_init(&g_task_queues.task_queue[i], i) != 0)
+        if (kaesnappy_task_queue_init(&g_task_queues.task_queue[i], i) != 0)
             goto task_queue_free;
     }
 
@@ -376,7 +376,7 @@ static int kaelz4_task_queues_init(int task_queue_num)
 
 task_queue_free:
     while (i--) {
-        kaelz4_task_queue_free(&g_task_queues.task_queue[i]);
+        kaesnappy_task_queue_free(&g_task_queues.task_queue[i]);
     }
     return KAE_SNAPPY_INIT_FAIL;
 }
@@ -388,7 +388,7 @@ int KAESNAPPY_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_
     if (g_task_queues.init == 0) {
         g_task_queues.sw_compress = sw_compress;
         g_task_queues.sw_compress_frame = sw_compress_frame;
-        ret = kaelz4_task_queues_init(KAELZ4_TASK_THREAD_NUM);
+        ret = kaesnappy_task_queues_init(KAESNAPPY_TASK_THREAD_NUM);
         if (ret != 0) {
             g_task_queues.init = 0;
             pthread_mutex_unlock(&g_task_queue_init_mutex);
@@ -410,18 +410,18 @@ void KAESNAPPY_teardown_async_compress(void)
 
     g_task_queues.init = 0;
     for (int i = 0; i < g_task_queues.num; i++) {
-        kaelz4_task_queue_free(&g_task_queues.task_queue[i]);
+        kaesnappy_task_queue_free(&g_task_queues.task_queue[i]);
     }
     pthread_mutex_unlock(&g_task_queue_init_mutex);
     return;
 }
 
-static inline int kaelz4_enqueue(lz4_task_queue *task_queue, lz4_async_task_t *task)
+static inline int kaesnappy_enqueue(snappy_task_queue *task_queue, snappy_async_task_t *task)
 {
     unsigned int cnt = 0;
 
     pthread_mutex_lock(task_queue->mutex);
-    while ((task_queue->pi + 1) % KAELZ4_TASK_QUEUE_DEPTH == task_queue->ci) {
+    while ((task_queue->pi + 1) % KAEsnappy_TASK_QUEUE_DEPTH == task_queue->ci) {
         pthread_mutex_unlock(task_queue->mutex);
         if (cnt > ENQUEUE_TIME_OUT_US) {
             return KAE_SNAPPY_ALLOC_FAIL;
@@ -440,19 +440,19 @@ static inline int kaelz4_enqueue(lz4_task_queue *task_queue, lz4_async_task_t *t
     size_t task_index = task_queue->pi;
     task_queue->tasks[task_index] = *task;
     wmb();
-    task_queue->pi = (task_queue->pi + 1) % KAELZ4_TASK_QUEUE_DEPTH;
+    task_queue->pi = (task_queue->pi + 1) % KAEsnappy_TASK_QUEUE_DEPTH;
 
     sem_post(&task_queue->sem);
     pthread_mutex_unlock(task_queue->mutex);
     return 0;
 }
 
-static unsigned int kaelz4_get_queue_id(void)
+static unsigned int kaesnappy_get_queue_id(void)
 {
     unsigned int index = 0;
     unsigned int min = 0xFFFFFFFF;
     for (int i = 0; i < g_task_queues.num; i++) {
-        unsigned int depth = (g_task_queues.task_queue[i].pi + KAELZ4_TASK_QUEUE_DEPTH - g_task_queues.task_queue[i].ci) % KAELZ4_TASK_QUEUE_DEPTH;
+        unsigned int depth = (g_task_queues.task_queue[i].pi + KAEsnappy_TASK_QUEUE_DEPTH - g_task_queues.task_queue[i].ci) % KAEsnappy_TASK_QUEUE_DEPTH;
         if (min > depth) {
             min = depth;
             index = i;
@@ -463,7 +463,7 @@ static unsigned int kaelz4_get_queue_id(void)
     }
     return index;
 }
-static int kaelz4_async_do_comp(const void *src, void *dst,
+static int kaesnappy_async_do_comp(const void *src, void *dst,
                                 snappy_async_callback callback, struct kaesnappy_result *result,
                                 enum kae_snappy_async_data_format data_format, const int* preferences_ptr)
 {
@@ -475,8 +475,8 @@ static int kaelz4_async_do_comp(const void *src, void *dst,
     }
 
     // 添加任务到队列
-    unsigned int index = kaelz4_get_queue_id();
-    lz4_async_task_t task = {0};
+    unsigned int index = kaesnappy_get_queue_id();
+    snappy_async_task_t task = {0};
     task.src = src;
     task.dst = dst;
     task.callback = callback;
@@ -486,7 +486,7 @@ static int kaelz4_async_do_comp(const void *src, void *dst,
         task.preferences = *preferences_ptr;
     }
 
-    return kaelz4_enqueue(&g_task_queues.task_queue[index], &task);
+    return kaesnappy_enqueue(&g_task_queues.task_queue[index], &task);
 }
 
 int KAESNAPPY_compress_async(const void *src, void *dst, snappy_async_callback callback,
@@ -497,9 +497,9 @@ int KAESNAPPY_compress_async(const void *src, void *dst, snappy_async_callback c
     }
 
     if (result->src_size <= SMALL_BLOCK_SIZE) {
-        return kaelz4_async_do_comp(src, dst, callback, result, KAESNAPPY_ASYNC_SMALL_BLOCK, NULL);
+        return kaesnappy_async_do_comp(src, dst, callback, result, KAESNAPPY_ASYNC_SMALL_BLOCK, NULL);
     }
 
-    return kaelz4_async_do_comp(src, dst, callback, result, KAESNAPPY_ASYNC_BLOCK, NULL);
+    return kaesnappy_async_do_comp(src, dst, callback, result, KAESNAPPY_ASYNC_BLOCK, NULL);
 }
 

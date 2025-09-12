@@ -9,67 +9,67 @@
 #include "kaesnappy_utils.h"
 #include "kaesnappy_log.h"
 
-static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_deflate_qp = NULL;
-static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_inflate_qp = NULL;
-static pthread_mutex_t g_kaelz4_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t g_kaelz4_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static KAE_QUEUE_POOL_HEAD_S* g_kaesnappy_deflate_qp = NULL;
+static KAE_QUEUE_POOL_HEAD_S* g_kaesnappy_inflate_qp = NULL;
+static pthread_mutex_t g_kaesnappy_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_kaesnappy_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype);
-static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
-static int kaelz4_create_wd_ctx(kaelz4_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
-static int kaelz4_driver_do_comp_impl(kaelz4_ctx_t *kz_ctx);
+static KAE_QUEUE_POOL_HEAD_S* kaesnappy_get_qp(int algtype);
+static kaesnappy_ctx_t* kaesnappy_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
+static int kaesnappy_create_wd_ctx(kaesnappy_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
+static int kaesnappy_driver_do_comp_impl(kaesnappy_ctx_t *kz_ctx);
 
-static void kaelz4_free_kz_ctx(void* kz_ctx)
+static void kaesnappy_free_kz_ctx(void* kz_ctx)
 {
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t *)kz_ctx;
-    if (kaelz4_ctx == NULL) {
+    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t *)kz_ctx;
+    if (kaesnappy_ctx == NULL) {
         return;
     }
 
-    if (kaelz4_ctx->op_data.in && kaelz4_ctx->setup.br.usr) {
-        kaelz4_ctx->setup.br.free(kaelz4_ctx->setup.br.usr, (void *)kaelz4_ctx->op_data.in);
-        kaelz4_ctx->op_data.in = NULL;
+    if (kaesnappy_ctx->op_data.in && kaesnappy_ctx->setup.br.usr) {
+        kaesnappy_ctx->setup.br.free(kaesnappy_ctx->setup.br.usr, (void *)kaesnappy_ctx->op_data.in);
+        kaesnappy_ctx->op_data.in = NULL;
     }
 
-    if (kaelz4_ctx->op_data.out && kaelz4_ctx->setup.br.usr) {
-        kaelz4_ctx->setup.br.free(kaelz4_ctx->setup.br.usr, (void *)kaelz4_ctx->op_data.out);
-        kaelz4_ctx->op_data.out = NULL;
+    if (kaesnappy_ctx->op_data.out && kaesnappy_ctx->setup.br.usr) {
+        kaesnappy_ctx->setup.br.free(kaesnappy_ctx->setup.br.usr, (void *)kaesnappy_ctx->op_data.out);
+        kaesnappy_ctx->op_data.out = NULL;
     }
 
-    if (kaelz4_ctx->wd_ctx != NULL) {
-        wcrypto_del_comp_ctx(kaelz4_ctx->wd_ctx);
-        kaelz4_ctx->wd_ctx = NULL;
+    if (kaesnappy_ctx->wd_ctx != NULL) {
+        wcrypto_del_comp_ctx(kaesnappy_ctx->wd_ctx);
+        kaesnappy_ctx->wd_ctx = NULL;
     }
 
-    kae_free(kaelz4_ctx);
+    kae_free(kaesnappy_ctx);
 
     return;
 }
 
-static int kaelz4_get_comp_lv()
+static int kaesnappy_get_comp_lv()
 {
-    char *lz4_str = getenv("KAE_LZ4_COMP_TYPE");
-    if (lz4_str == NULL) {
-        US_DEBUG("KAE_LZ4_COMP_TYPE is NULL, use default lv 8\n");
+    char *snappy_str = getenv("KAE_SNAPPY_COMP_TYPE");
+    if (snappy_str == NULL) {
+        US_DEBUG("KAE_SNAPPY_COMP_TYPE is NULL, use default lv 8\n");
         return 8;
     }
-    int lz4_val = atoi(lz4_str);
-    if (lz4_val != 8 && lz4_val != 9) {
-        US_DEBUG("KAE_LZ4_COMP_TYPE value out of range ：%d ,use default lv 8", lz4_val);
+    int snappy_val = atoi(snappy_str);
+    if (snappy_val != 8 && snappy_val != 9) {
+        US_DEBUG("KAE_SNAPPY_COMP_TYPE value out of range ：%d ,use default lv 8", snappy_val);
         return 8;
     }
-    US_DEBUG("KAE_LZ4_COMP_TYPE value is ：%d ", lz4_val);
-    return lz4_val;
+    US_DEBUG("KAE_SNAPPY_COMP_TYPE value is ：%d ", snappy_val);
+    return snappy_val;
 }
 
-static int kaelz4_get_win_size()
+static int kaesnappy_get_win_size()
 {
-    char *lz4_str = getenv("KAE_LZ4_WINTYPE");
-    if (lz4_str == NULL) {
-        US_DEBUG("KAE_LZ4_WINTYPE is NULL, use default winsize 32\n");
+    char *snappy_str = getenv("KAE_SNAPPY_WINTYPE");
+    if (snappy_str == NULL) {
+        US_DEBUG("KAE_SNAPPY_WINTYPE is NULL, use default winsize 32\n");
         return WCRYPTO_COMP_WS_16K;
     }
-    int winsize = atoi(lz4_str);
+    int winsize = atoi(snappy_str);
 
     int wintype = 0;
 
@@ -91,18 +91,18 @@ static int kaelz4_get_win_size()
 		break;
 	default:
 		wintype = WCRYPTO_COMP_WS_32K;
-        US_DEBUG("KAE_LZ4_WINTYPE value out of range ：%d ,use default winsize 32", winsize);
+        US_DEBUG("KAE_SNAPPY_WINTYPE value out of range ：%d ,use default winsize 32", winsize);
         break;
 	}
 
-    US_DEBUG("KAE_LZ4_WINTYPE wintype is ：%d ", wintype);
+    US_DEBUG("KAE_SNAPPY_WINTYPE wintype is ：%d ", wintype);
     return wintype;
 }
 
-static void kaelz4_ctx_callback(const void *msg, void *tag)
+static void kaesnappy_ctx_callback(const void *msg, void *tag)
 {
     const struct wcrypto_comp_msg *respmsg = msg;
-    kaelz4_ctx_t *kz_ctx = (kaelz4_ctx_t *)tag;
+    kaesnappy_ctx_t *kz_ctx = (kaesnappy_ctx_t *)tag;
 
     if (kz_ctx->callback)
         kz_ctx->callback(respmsg->status, kz_ctx->param);
@@ -110,24 +110,24 @@ static void kaelz4_ctx_callback(const void *msg, void *tag)
     return;
 }
 
-static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype)
+static kaesnappy_ctx_t* kaesnappy_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype)
 {
-    kaelz4_ctx_t *kz_ctx = NULL;
-    kz_ctx = (kaelz4_ctx_t *)kae_malloc(sizeof(kaelz4_ctx_t));
+    kaesnappy_ctx_t *kz_ctx = NULL;
+    kz_ctx = (kaesnappy_ctx_t *)kae_malloc(sizeof(kaesnappy_ctx_t));
     if (unlikely(kz_ctx == NULL)) {
         US_ERR("kaezip ctx malloc fail.");
         return NULL;
     }
-    memset(kz_ctx, 0, sizeof(kaelz4_ctx_t));
+    memset(kz_ctx, 0, sizeof(kaesnappy_ctx_t));
 
-    kz_ctx->setup.comp_lv = kaelz4_get_comp_lv();
-    kz_ctx->setup.win_size  = kaelz4_get_win_size();
-    kz_ctx->setup.br.alloc = kaelz4_wd_alloc_blk;
-    kz_ctx->setup.br.free = kaelz4_wd_free_blk;
-    kz_ctx->setup.br.iova_map = kaelz4_dma_map;
-    kz_ctx->setup.br.iova_unmap = kaelz4_dma_unmap;
+    kz_ctx->setup.comp_lv = kaesnappy_get_comp_lv();
+    kz_ctx->setup.win_size  = kaesnappy_get_win_size();
+    kz_ctx->setup.br.alloc = kaesnappy_wd_alloc_blk;
+    kz_ctx->setup.br.free = kaesnappy_wd_free_blk;
+    kz_ctx->setup.br.iova_map = kaesnappy_dma_map;
+    kz_ctx->setup.br.iova_unmap = kaesnappy_dma_unmap;
     kz_ctx->setup.br.usr = q_node->kae_queue_mem_pool;
-    kz_ctx->setup.cb = kaelz4_ctx_callback;
+    kz_ctx->setup.cb = kaesnappy_ctx_callback;
 
     kz_ctx->op_data.in = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE);
     if (kz_ctx->op_data.in == NULL) {
@@ -141,11 +141,11 @@ static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
         goto err;
     }
 
-    kz_ctx->op_data.priv = &kz_ctx->lz4_data;
+    kz_ctx->op_data.priv = &kz_ctx->snappy_data;
     kz_ctx->q_node = q_node;
     q_node->priv_ctx = kz_ctx;
 
-    if (kaelz4_create_wd_ctx(kz_ctx, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
+    if (kaesnappy_create_wd_ctx(kz_ctx, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
         US_ERR("create wd ctx fail!");
         goto err;
     }
@@ -153,12 +153,12 @@ static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
     return kz_ctx;
 
 err:
-    kaelz4_free_kz_ctx(kz_ctx);
+    kaesnappy_free_kz_ctx(kz_ctx);
 
     return NULL;
 }
 
-static int kaelz4_create_wd_ctx(kaelz4_ctx_t *kz_ctx, int alg_comp_type, int comp_optype)
+static int kaesnappy_create_wd_ctx(kaesnappy_ctx_t *kz_ctx, int alg_comp_type, int comp_optype)
 {
     if (kz_ctx->wd_ctx != NULL) {
         US_WARN("wd ctx is in used by other comp");
@@ -183,21 +183,21 @@ static int kaelz4_create_wd_ctx(kaelz4_ctx_t *kz_ctx, int alg_comp_type, int com
     return KAEZIP_SUCCESS;
 }
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype)
+kaesnappy_ctx_t* kaesnappy_get_ctx(int alg_comp_type, int comp_optype)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
-    kaelz4_ctx_t               *kz_ctx = NULL;
+    kaesnappy_ctx_t               *kz_ctx = NULL;
 
-    KAE_QUEUE_POOL_HEAD_S* qp = kaelz4_get_qp(comp_optype);
+    KAE_QUEUE_POOL_HEAD_S* qp = kaesnappy_get_qp(comp_optype);
     if(unlikely(!qp)) {
         US_ERR("failed to get hardware queue pool");
         return NULL;
     }
 
-    q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype);
+    q_node = kaesnappy_get_node_from_pool(qp, alg_comp_type, comp_optype);
     if (q_node == NULL) {
-        kaelz4_queue_pool_check_and_release(qp, kaelz4_free_kz_ctx);
-        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype);
+        kaesnappy_queue_pool_check_and_release(qp, kaesnappy_free_kz_ctx);
+        q_node = kaesnappy_get_node_from_pool(qp, alg_comp_type, comp_optype);
 
         if (q_node == NULL) {
             US_ERR("failed to get hardware queue");
@@ -205,23 +205,23 @@ kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype)
         }
     }
 
-    kz_ctx = (kaelz4_ctx_t *)q_node->priv_ctx;
+    kz_ctx = (kaesnappy_ctx_t *)q_node->priv_ctx;
     if (kz_ctx == NULL) {
-        kz_ctx = kaelz4_new_ctx(q_node, alg_comp_type, comp_optype);
+        kz_ctx = kaesnappy_new_ctx(q_node, alg_comp_type, comp_optype);
         if (kz_ctx == NULL) {
             US_ERR("kaezip new engine ctx fail!");
-            (void)kaelz4_put_node_to_pool(qp, q_node, kaelz4_free_kz_ctx);
+            (void)kaesnappy_put_node_to_pool(qp, q_node, kaesnappy_free_kz_ctx);
             return NULL;
         }
     }
 
     kz_ctx->q_node = q_node;
-    kaelz4_init_ctx(kz_ctx);
+    kaesnappy_init_ctx(kz_ctx);
 
     return kz_ctx;
 }
 
-void kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx)
+void kaesnappy_init_ctx(kaesnappy_ctx_t* kz_ctx)
 {
     if(unlikely(!kz_ctx)) {
         US_ERR("kae zip ctx NULL!");
@@ -238,14 +238,14 @@ void kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx)
 
     kz_ctx->flush        = 0;
     kz_ctx->status       = KAEZIP_COMP_INIT;
-    kz_ctx->lz4_data.blk_type = 2; //  lz4 compressed block
+    kz_ctx->snappy_data.blk_type = 2; //  snappy compressed block
     kz_ctx->callback = NULL;
     kz_ctx->param = NULL;
 
     memset(&kz_ctx->end_block, 0, sizeof(struct wcrypto_end_block));
 }
 
-void kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx)
+void kaesnappy_put_ctx(kaesnappy_ctx_t* kz_ctx)
 {
     KAE_QUEUE_DATA_NODE_S* temp = NULL;
     if (unlikely(kz_ctx == NULL)) {
@@ -256,7 +256,7 @@ void kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx)
     if (kz_ctx->q_node != NULL) {
         temp = kz_ctx->q_node;
         kz_ctx->q_node = NULL;
-        (void)kaelz4_put_node_to_pool(kaelz4_get_qp(kz_ctx->comp_type), temp, kaelz4_free_kz_ctx);
+        (void)kaesnappy_put_node_to_pool(kaesnappy_get_qp(kz_ctx->comp_type), temp, kaesnappy_free_kz_ctx);
     }
 
     kz_ctx = NULL;
@@ -264,17 +264,17 @@ void kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx)
     return;
 }
 
-void kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx)
+void kaesnappy_free_ctx(kaesnappy_ctx_t* kz_ctx)
 {
     if (unlikely(kz_ctx == NULL)) {
         US_ERR("kae zip ctx NULL!");
         return;
     }
 
-    kaelz4_free_wd_queue_memory(kz_ctx->q_node, kaelz4_free_kz_ctx);
+    kaesnappy_free_wd_queue_memory(kz_ctx->q_node, kaesnappy_free_kz_ctx);
 }
 
-static int kaelz4_driver_do_comp_impl(kaelz4_ctx_t* kz_ctx)
+static int kaesnappy_driver_do_comp_impl(kaesnappy_ctx_t* kz_ctx)
 {
     KAEZIP_RETURN_FAIL_IF(kz_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
 
@@ -293,39 +293,39 @@ static int kaelz4_driver_do_comp_impl(kaelz4_ctx_t* kz_ctx)
     return KAEZIP_SUCCESS;
 }
 
-int kaelz4_driver_do_comp(kaelz4_ctx_t *kaelz4_ctx)
+int kaesnappy_driver_do_comp(kaesnappy_ctx_t *kaesnappy_ctx)
 {
-    KAEZIP_RETURN_FAIL_IF(kaelz4_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
+    KAEZIP_RETURN_FAIL_IF(kaesnappy_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
 
-    if (kaelz4_ctx->remain != 0) {
-        return kaelz4_get_remain_data(kaelz4_ctx);
+    if (kaesnappy_ctx->remain != 0) {
+        return kaesnappy_get_remain_data(kaesnappy_ctx);
     }
 
-    if (kaelz4_ctx->in_len == 0) {
+    if (kaesnappy_ctx->in_len == 0) {
         US_DEBUG("kaezip do comp impl success, for input len zero, comp type : %s",
-            kaelz4_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
+            kaesnappy_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
         return KAEZIP_SUCCESS;
     }
 
-    if (kaelz4_ctx->in_len >= KAEZIP_STREAM_CHUNK_IN) {
-        kaelz4_ctx->do_comp_len = KAEZIP_STREAM_CHUNK_IN;
+    if (kaesnappy_ctx->in_len >= KAEZIP_STREAM_CHUNK_IN) {
+        kaesnappy_ctx->do_comp_len = KAEZIP_STREAM_CHUNK_IN;
     } else {
-        kaelz4_ctx->do_comp_len = kaelz4_ctx->in_len;
+        kaesnappy_ctx->do_comp_len = kaesnappy_ctx->in_len;
     }
 
-    kaelz4_set_input_data(kaelz4_ctx);
-    int ret = kaelz4_driver_do_comp_impl(kaelz4_ctx);
+    kaesnappy_set_input_data(kaesnappy_ctx);
+    int ret = kaesnappy_driver_do_comp_impl(kaesnappy_ctx);
     if (ret != KAEZIP_SUCCESS) {
         US_DEBUG("kaezip do comp impl success, comp type : %s",
-            kaelz4_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
+            kaesnappy_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
         return ret;
     }
-    kaelz4_get_output_data(kaelz4_ctx);
+    kaesnappy_get_output_data(kaesnappy_ctx);
 
     return KAEZIP_SUCCESS;
 }
 
-void kaelz4_set_input_data(kaelz4_ctx_t *kz_ctx)
+void kaesnappy_set_input_data(kaesnappy_ctx_t *kz_ctx)
 {
     kz_ctx->op_data.in_len = 0;
 
@@ -340,9 +340,9 @@ void kaelz4_set_input_data(kaelz4_ctx_t *kz_ctx)
     }
 }
 
-static void kaelz4_set_comp_status(kaelz4_ctx_t *kz_ctx)
+static void kaesnappy_set_comp_status(kaesnappy_ctx_t *kz_ctx)
 {
-    US_DEBUG("kaelz4 before comp status is %u, op_data.status is %u", kz_ctx->status, kz_ctx->op_data.status);
+    US_DEBUG("kaesnappy before comp status is %u, op_data.status is %u", kz_ctx->status, kz_ctx->op_data.status);
     if (kz_ctx->comp_type == WCRYPTO_INFLATE) {
         switch (kz_ctx->op_data.status) {
             case WCRYPTO_DECOMP_END:
@@ -385,15 +385,15 @@ static void kaelz4_set_comp_status(kaelz4_ctx_t *kz_ctx)
                 break;
         }
     }
-    US_DEBUG("kaelz4 after  comp status is %u", kz_ctx->status);
+    US_DEBUG("kaesnappy after  comp status is %u", kz_ctx->status);
 }
 
-void kaelz4_get_output_data(kaelz4_ctx_t *kz_ctx)
+void kaesnappy_get_output_data(kaesnappy_ctx_t *kz_ctx)
 {
-    kaelz4_set_comp_status(kz_ctx);
+    kaesnappy_set_comp_status(kz_ctx);
 }
 
-int kaelz4_get_remain_data(kaelz4_ctx_t *kz_ctx)
+int kaesnappy_get_remain_data(kaesnappy_ctx_t *kz_ctx)
 {
     KAEZIP_RETURN_FAIL_IF(kz_ctx->op_data.produced < kz_ctx->remain, "wrong remain data", KAEZIP_FAILED);
     int data_begin = kz_ctx->op_data.produced - kz_ctx->remain;
@@ -410,7 +410,7 @@ int kaelz4_get_remain_data(kaelz4_ctx_t *kz_ctx)
     return KAEZIP_SUCCESS;
 }
 
-static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype)
+static KAE_QUEUE_POOL_HEAD_S* kaesnappy_get_qp(int algtype)
 {
     if ((algtype != WCRYPTO_DEFLATE) && (algtype != WCRYPTO_INFLATE) ) {
         US_ERR("kaezip get q pool failed, not a support algtye %d!", algtype);
@@ -418,46 +418,46 @@ static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype)
     }
 
     if (algtype == WCRYPTO_DEFLATE) {
-        if (g_kaelz4_deflate_qp) {
-            return g_kaelz4_deflate_qp;
+        if (g_kaesnappy_deflate_qp) {
+            return g_kaesnappy_deflate_qp;
         }
-        pthread_mutex_lock(&g_kaelz4_deflate_pool_init_mutex);
-        if (g_kaelz4_deflate_qp != NULL) {
-            pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
-            return g_kaelz4_deflate_qp;
+        pthread_mutex_lock(&g_kaesnappy_deflate_pool_init_mutex);
+        if (g_kaesnappy_deflate_qp != NULL) {
+            pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
+            return g_kaesnappy_deflate_qp;
         }
-        kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_kz_ctx);
-        g_kaelz4_deflate_qp = kaelz4_init_queue_pool(algtype);
-        pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
+        kaesnappy_queue_pool_destroy(g_kaesnappy_deflate_qp, kaesnappy_free_kz_ctx);
+        g_kaesnappy_deflate_qp = kaesnappy_init_queue_pool(algtype);
+        pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
 
-        return g_kaelz4_deflate_qp == NULL ? NULL : g_kaelz4_deflate_qp;
+        return g_kaesnappy_deflate_qp == NULL ? NULL : g_kaesnappy_deflate_qp;
     } else {
-        if (g_kaelz4_inflate_qp) {
-            return g_kaelz4_inflate_qp;
+        if (g_kaesnappy_inflate_qp) {
+            return g_kaesnappy_inflate_qp;
         }
-        pthread_mutex_lock(&g_kaelz4_inflate_pool_init_mutex);
-        if (g_kaelz4_inflate_qp != NULL) {
-            pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
-            return g_kaelz4_inflate_qp;
+        pthread_mutex_lock(&g_kaesnappy_inflate_pool_init_mutex);
+        if (g_kaesnappy_inflate_qp != NULL) {
+            pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
+            return g_kaesnappy_inflate_qp;
         }
-        kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_kz_ctx);
-        g_kaelz4_inflate_qp = kaelz4_init_queue_pool(algtype);
-        pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
+        kaesnappy_queue_pool_destroy(g_kaesnappy_inflate_qp, kaesnappy_free_kz_ctx);
+        g_kaesnappy_inflate_qp = kaesnappy_init_queue_pool(algtype);
+        pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
 
-        return g_kaelz4_inflate_qp == NULL ? NULL : g_kaelz4_inflate_qp;
+        return g_kaesnappy_inflate_qp == NULL ? NULL : g_kaesnappy_inflate_qp;
     }
 
     return NULL;
 }
 
-void kaelz4_free_all_qps(void)
+void kaesnappy_free_all_qps(void)
 {
-    pthread_mutex_lock(&g_kaelz4_deflate_pool_init_mutex);
-    kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_kz_ctx);
-    g_kaelz4_deflate_qp = NULL;
-    pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
-    pthread_mutex_lock(&g_kaelz4_inflate_pool_init_mutex);
-    kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_kz_ctx);
-    g_kaelz4_inflate_qp = NULL;
-    pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
+    pthread_mutex_lock(&g_kaesnappy_deflate_pool_init_mutex);
+    kaesnappy_queue_pool_destroy(g_kaesnappy_deflate_qp, kaesnappy_free_kz_ctx);
+    g_kaesnappy_deflate_qp = NULL;
+    pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
+    pthread_mutex_lock(&g_kaesnappy_inflate_pool_init_mutex);
+    kaesnappy_queue_pool_destroy(g_kaesnappy_inflate_qp, kaesnappy_free_kz_ctx);
+    g_kaesnappy_inflate_qp = NULL;
+    pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
 }

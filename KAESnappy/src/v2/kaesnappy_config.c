@@ -23,32 +23,32 @@
 #define CTX_SET_SIZE 4
 #define CTX_SET_NUM 1
 
-enum lz4_init_status {
-    KAE_LZ4_UNINIT,
-    KAE_LZ4_INIT,
+enum snappy_init_status {
+    KAE_SNAPPY_UNINIT,
+    KAE_SNAPPY_INIT,
 };
 
-struct kz_lz4wrapper_config {
+struct kz_snappywrapper_config {
     int count;
     int status;
 };
 
-static struct kz_lz4wrapper_config lz4_config = {0};
-static pthread_mutex_t kz_lz4_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct kz_snappywrapper_config snappy_config = {0};
+static pthread_mutex_t kz_snappy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static inline int kaelz4_lock()
+static inline int kaesnappy_lock()
 {
-   return pthread_mutex_lock(&kz_lz4_mutex);
+   return pthread_mutex_lock(&kz_snappy_mutex);
 }
 
-static inline int kaelz4_unlock()
+static inline int kaesnappy_unlock()
 {
-   return pthread_mutex_unlock(&kz_lz4_mutex);
+   return pthread_mutex_unlock(&kz_snappy_mutex);
 }
 
-inline KaeLz4Config* kaelz4_get_config(SNAPPY_CCtx* zc)
+inline KaeSnappyConfig* kaesnappy_get_config(SNAPPY_CCtx* zc)
 {
-    KaeLz4Config* config = (KaeLz4Config*)(zc->kaeConfig);
+    KaeSnappyConfig* config = (KaeSnappyConfig*)(zc->kaeConfig);
 
     if (config != NULL) {
         return config;
@@ -57,17 +57,17 @@ inline KaeLz4Config* kaelz4_get_config(SNAPPY_CCtx* zc)
     }
 }
 
-inline void kaelz4_set_config(SNAPPY_CCtx* zc, KaeLz4Config* config)
+inline void kaesnappy_set_config(SNAPPY_CCtx* zc, KaeSnappyConfig* config)
 {
     if (zc != NULL) {
         zc->kaeConfig = (uintptr_t)config;
     }
 }
 
-static inline void kaelz4_options_init(KaeLz4Config *config)
+static inline void kaesnappy_options_init(KaeSnappyConfig *config)
 {
-    config->opts.ctx_num = KAELZ4_DEFAULT_CTX_NUM;
-    config->opts.thread_num = KAELZ4_DEFAULT_THREAD_NUM;
+    config->opts.ctx_num = KAESNAPPY_DEFAULT_CTX_NUM;
+    config->opts.thread_num = KAESNAPPY_DEFAULT_THREAD_NUM;
 }
 
 // level 8\9 win 0-4
@@ -116,31 +116,31 @@ static void Compression_level_conversion(int reqlevel, int* kae_lev, int* kae_wi
     }
 }
 
-static int kaelz4_get_level_by_env()
+static int kaesnappy_get_level_by_env()
 {
-    char *lz4_str = getenv("KAE_LZ4_LEVEL");
-    if (lz4_str == NULL) {
-        US_DEBUG("KAE_LZ4_LEVEL is NULL\n");
+    char *snappy_str = getenv("KAE_SNAPPY_LEVEL");
+    if (snappy_str == NULL) {
+        US_DEBUG("KAE_SNAPPY_LEVEL is NULL\n");
         return -1;
     }
-    int lz4_val = atoi(lz4_str);
-    if (lz4_val < 1 || lz4_val > 22) {
-        US_DEBUG("KAE_LZ4_LEVEL value out of range ：%d ", lz4_val);
+    int snappy_val = atoi(snappy_str);
+    if (snappy_val < 1 || snappy_val > 22) {
+        US_DEBUG("KAE_SNAPPY_LEVEL value out of range ：%d ", snappy_val);
         return -1;
     }
-    US_DEBUG("KAE_LZ4_LEVEL value is ：%d ", lz4_val);
-    return lz4_val;
+    US_DEBUG("KAE_SNAPPY_LEVEL value is ：%d ", snappy_val);
+    return snappy_val;
 }
 
-static int kaelz4_create_session(KaeLz4Config *config, int lz4_level)
+static int kaesnappy_create_session(KaeSnappyConfig *config, int snappy_level)
 {
     struct sched_params param = {0};
     int kaeLev, kaeWin, reqlevel;
-    int env_level = kaelz4_get_level_by_env();
+    int env_level = kaesnappy_get_level_by_env();
     if (env_level > 0) {
 	reqlevel = env_level;
     } else {
-	reqlevel = lz4_level;
+	reqlevel = snappy_level;
     }
     Compression_level_conversion(reqlevel, &kaeLev, &kaeWin);
 
@@ -165,29 +165,29 @@ static int kaelz4_create_session(KaeLz4Config *config, int lz4_level)
     return 0;
 }
 
-static inline void lz4_uadk_uninit(void)
+static inline void snappy_uadk_uninit(void)
 {
     return wd_comp_uninit2();
 }
 
-# define KAELZ4_CTX_SET_NUM 1
-static int kaelz4_alg_init2(void)
+# define KAESNAPPY_CTX_SET_NUM 1
+static int kaesnappy_alg_init2(void)
 {
     struct wd_ctx_nums *ctx_set_num;
     struct wd_ctx_params cparams = {0};
     int ret, i;
 
-    if (lz4_config.status == 1) {
+    if (snappy_config.status == 1) {
         // 进程已经初始化过，直接返回
         return 0;
     }
-    ctx_set_num = calloc(KAELZ4_CTX_SET_NUM, sizeof(*ctx_set_num));
+    ctx_set_num = calloc(KAESNAPPY_CTX_SET_NUM, sizeof(*ctx_set_num));
     if (!ctx_set_num) {
 	WD_ERR("failed to alloc ctx_set_size!\n");
 	return KAE_SNAPPY_ALLOC_FAIL;
     }
 
-    cparams.op_type_num = KAELZ4_CTX_SET_NUM;
+    cparams.op_type_num = KAESNAPPY_CTX_SET_NUM;
     cparams.ctx_set_num = ctx_set_num;
     cparams.bmp = numa_allocate_nodemask();
     if (!cparams.bmp) {
@@ -208,7 +208,7 @@ static int kaelz4_alg_init2(void)
     US_DEBUG("cpu is %d, numa_niode_of_cpu is %d, dev-numaid is %d\n", cpu, node, dev->numa_id);
 
     for (i = 0; i < 1; i++)
-	ctx_set_num[i].sync_ctx_num = KAELZ4_CTX_SET_NUM;
+	ctx_set_num[i].sync_ctx_num = KAESNAPPY_CTX_SET_NUM;
 
     ret = wd_comp_init2_("lz77_zstd", 0, 1, &cparams);
     if (ret && ret != -WD_EEXIST) {
@@ -216,8 +216,8 @@ static int kaelz4_alg_init2(void)
 	ret = KAE_SNAPPY_INIT_FAIL;
 	goto out_freedev;
     }
-    atexit(lz4_uadk_uninit);  // 注册退出处理函数
-    lz4_config.status = 1;
+    atexit(snappy_uadk_uninit);  // 注册退出处理函数
+    snappy_config.status = 1;
 
 out_freedev:
     free(dev);
@@ -229,53 +229,53 @@ out_freectx:
     return ret;
 }
 
-int kaelz4_init_v2(SNAPPY_CCtx* zc)
+int kaesnappy_init_v2(SNAPPY_CCtx* zc)
 {
     int ret;
-    KaeLz4Config *config = NULL;
+    KaeSnappyConfig *config = NULL;
 
-    US_DEBUG("Begin init KAE-v2 lz4.");
-    config = (KaeLz4Config*)malloc(sizeof(KaeLz4Config));
+    US_DEBUG("Begin init KAE-v2 snappy.");
+    config = (KaeSnappyConfig*)malloc(sizeof(KaeSnappyConfig));
     if (config == NULL) {
         US_ERR("failed to alloc config!\n");
         return KAE_SNAPPY_INIT_FAIL;
     }
-    memset(config, 0, sizeof(KaeLz4Config));
-    kaelz4_options_init(config);
+    memset(config, 0, sizeof(KaeSnappyConfig));
+    kaesnappy_options_init(config);
 
-    kaelz4_lock();
-    ret = kaelz4_alg_init2();
+    kaesnappy_lock();
+    ret = kaesnappy_alg_init2();
     if (ret) {
-        US_ERR("failed to kaelz4_alg_init2!\n");
+        US_ERR("failed to kaesnappy_alg_init2!\n");
         goto free_config;
     }
 
-    ret = kaelz4_create_session(config, zc->kaeLevel);
+    ret = kaesnappy_create_session(config, zc->kaeLevel);
     if (ret) {
         US_ERR("failed to init session!\n");
         goto free_config;
     }
-    kaelz4_unlock();
+    kaesnappy_unlock();
 
-    kaelz4_set_config(zc, config);
+    kaesnappy_set_config(zc, config);
 
-    __atomic_fetch_add(&lz4_config.count, 1, __ATOMIC_SEQ_CST);
+    __atomic_fetch_add(&snappy_config.count, 1, __ATOMIC_SEQ_CST);
     return ret;
 
 free_config:
     free(config);
-    kaelz4_unlock();
+    kaesnappy_unlock();
     return KAE_SNAPPY_INIT_FAIL;
 }
 
-void kaelz4_release_v2(SNAPPY_CCtx* zc)
+void kaesnappy_release_v2(SNAPPY_CCtx* zc)
 {
-    KaeLz4Config *config = NULL;
+    KaeSnappyConfig *config = NULL;
     if (zc == NULL) {
         return;
     }
 
-    config = kaelz4_get_config(zc);
+    config = kaesnappy_get_config(zc);
     wd_comp_free_sess(config->sess);
     free(config->req.dst);
     free(config);
