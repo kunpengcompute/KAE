@@ -19,14 +19,14 @@
 #include "kaesnappy_config.h"
 #include "kaesnappy_log.h"
 
-void kaelz4_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status)
+void kaesnappy_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status)
 {
-    KaeLz4Config *config;
-    config = kaelz4_get_config(zc);
+    KaeSnappyConfig *config;
+    config = kaesnappy_get_config(zc);
     config->tuple.bstatus = status;
 }
 
-static int kaelz4_data_parsing(SNAPPY_CCtx* zc, KaeLz4Config* config)
+static int kaesnappy_data_parsing(SNAPPY_CCtx* zc, KaeSnappyConfig* config)
 {
     if (config->tuple.litStart == NULL || config->tuple.sequencesStart == NULL) {
         US_ERR("config parameter invalid\n");
@@ -48,18 +48,18 @@ static int kaelz4_data_parsing(SNAPPY_CCtx* zc, KaeLz4Config* config)
     return 0;
 }
 
-int kaelz4_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
+int kaesnappy_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
 {
-    KaeLz4Config *config = NULL;
+    KaeSnappyConfig *config = NULL;
     int ret;
 
-    US_INFO("KAE lz4 compress, srcSize is %lu", srcSize);
+    US_INFO("KAE snappy compress, srcSize is %lu", srcSize);
     if (zc == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_SNAPPY_INVAL_PARA;
     }
 
-    config = kaelz4_get_config(zc);
+    config = kaesnappy_get_config(zc);
 
     config->req.src = (void*)src;
     config->req.src_len = srcSize;
@@ -75,5 +75,5 @@ int kaelz4_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
             config->tuple.litlen, config->tuple.seqnum, config->tuple.longLengthType, config->tuple.longLengthPos);
     }
 
-    return kaelz4_data_parsing(zc, config);
+    return kaesnappy_data_parsing(zc, config);
 }

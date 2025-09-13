@@ -22,7 +22,7 @@ function Build_kaesnappy()
     cd "${SRC_PATH}"
 	make clean && make
     make install
-    echo "install kaelz4"
+    echo "install kaesnappy"
 
     cd -
     rm -rf build
@@ -34,13 +34,13 @@ function Build_kaesnappy()
     echo "build snappy success"
 }
 
-function Dev_Build_kaelz4()
+function Dev_Build_kaesnappy()
 {
     Target_snappy
     cd "${SRC_PATH}"
 	make clean && make
     make install
-    echo "install kaelz4"
+    echo "install kaesnappy"
 
     cd -
     rm -rf build
@@ -58,7 +58,7 @@ function Install_kaesnappy()
     cd "${SRC_PATH}"
 	make clean && make
     make install
-    echo "install kaelz4"
+    echo "install kaesnappy"
     
     if [ -d "${SRC_PATH}"/open_source/snappy-1.1.10/ ]; then
         cd "${SRC_PATH}"/open_source/snappy-1.1.10/
@@ -88,7 +88,7 @@ function Uninstall_kaesnappy()
         fi
     fi
 
-    local kaesnappy_path=$(ls /usr/local/kaesnappy/lib | grep libkaelz4.so.${BUILDVERSION})
+    local kaesnappy_path=$(ls /usr/local/kaesnappy/lib | grep libkaesnappy.so.${BUILDVERSION})
     if [ -n "${kaesnappy_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"

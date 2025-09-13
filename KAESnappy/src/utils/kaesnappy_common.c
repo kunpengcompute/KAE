@@ -67,8 +67,8 @@ HIDDEN_API void CONSTRUCTOR KaeSnappyInit(void)
         return;
     }
 
-    if (KaeSnappyDetect() != CPU_HISILICOM_V2) {
-        fprintf(stderr, "KAEsnappy only support in V2, please check CPU ID.\n");
+    if (KaeSnappyDetect() == CPU_HISILICOM_V1 || KaeSnappyDetect() == CPU_UNKNOW) {
+        fprintf(stderr, "KAEsnappy only support in V2+, please check CPU ID.\n");
         abort();
     }
     g_kaesnappyInitialized = 1;
