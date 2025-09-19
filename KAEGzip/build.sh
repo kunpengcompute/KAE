@@ -14,12 +14,10 @@ function install_gzip()
     chmod +x configure
     chmod +x ./build-aux/git-version-gen
 
-    ./configure
-    make CFLAGS="-O2 -lz -lwd -lkaezip -I/usr/local/include/uadk/ -L/usr/local/kaezip/lib -Wl,-rpath=/usr/local/kaezip/lib"
-    # make install
+    LIBS='-lwd -lkaezip -lz' CFLAGS='-O2 -I/usr/local/include/uadk/' LDFLAGS='-L/usr/local/kaezip/lib -L/usr/local/lib -Wl,-rpath=/usr/local/kaezip/lib' ./configure
+    make
 
     cd "${SRC_PATH}"
-    # ln -s /usr/local/bin/gzip gzip
     ln -s ./open_source/gzip-1.13/gzip gzip
 
     if [ -d "${TARGET_DIR}" ]; then
