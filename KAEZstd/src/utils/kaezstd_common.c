@@ -55,7 +55,7 @@ static ARCH_TYPE KaeZstdDetect(void)
         return CPU_HISILICOM_V2;
     } else if ((vendor == 0x48) && (partId == 0xD03)) {
         return CPU_HISILICOM_V3;
-    } else if (partId == 0xD22) {
+    } else if (partId == 0xD22 || partId == 0xD06) {
         return CPU_HISILICOM_V4;
     }
     return CPU_UNKNOW;
@@ -67,8 +67,8 @@ HIDDEN_API void CONSTRUCTOR KaeZstdInit(void)
         return;
     }
 
-    if (KaeZstdDetect() != CPU_HISILICOM_V2) {
-        fprintf(stderr, "KAEzstd only support in V2, please check CPU ID.\n");
+    if (KaeZstdDetect() == CPU_HISILICOM_V1 || KaeZstdDetect() == CPU_UNKNOW) {
+        fprintf(stderr, "KAEzstd only support in V2+, please check CPU ID.\n");
         abort();
     }
     g_kaezstdInitialized = 1;
