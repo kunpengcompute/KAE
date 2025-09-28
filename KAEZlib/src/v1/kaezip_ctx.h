@@ -57,7 +57,8 @@ struct wcrypto_end_block {
 
 #define MAX_KAE_CTX_DEPTH 64
 #define REQ_BUFFER_MAX 255   // uadk支持最大的sgl buf数量
-#define REQ_BUFFER_SIZE (8*1024*1024) // uadk支持最大sge的大小
+#define REQ_BUFFER_MAX_SIZE (8*1024*1024) // uadk支持最大sge的大小
+#define REQ_BUFFER_MIN_SIZE 2   // zlib-format 存在2字节头部
 #define KAE_ASYNC_MAX_RECV_TIMES (2000000)
 #define FLAG_NUM (10)
 struct kaezip_async_sleep_info {
