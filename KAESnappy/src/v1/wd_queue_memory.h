@@ -20,12 +20,12 @@
  *
  *****************************************************************************/
 
-#ifndef __KAELZ4_QUEUE_MEMORY_H
-#define __KAELZ4_QUEUE_MEMORY_H
+#ifndef __KAESNAPPY_QUEUE_MEMORY_H
+#define __KAESNAPPY_QUEUE_MEMORY_H
 
 #include <semaphore.h>
 #include "uadk/v1/wd.h"
-#include "kaelz4_utils.h"
+#include "kaesnappy_utils.h"
 
 #define KAE_QUEUE_POOL_MAX_SIZE     (512)
 #define CHECK_QUEUE_TIME_SECONDS    (60)  // seconds
@@ -61,18 +61,18 @@ typedef struct KAE_QUEUE_POOL_HEAD {
     KAE_QUEUE_POOL_NODE_S *kae_queue_pool; /* point to a attray */
 } KAE_QUEUE_POOL_HEAD_S;
 
-void kaelz4_wd_free_blk(void *pool, void *blk);
-void *kaelz4_wd_alloc_blk(void *pool, size_t size);
-void *kaelz4_dma_map(void *usr, void *va, size_t sz);
-void kaelz4_dma_unmap(void *usr, void *va, void *dma, size_t sz);
+void kaesnappy_wd_free_blk(void *pool, void *blk);
+void *kaesnappy_wd_alloc_blk(void *pool, size_t size);
+void *kaesnappy_dma_map(void *usr, void *va, size_t sz);
+void kaesnappy_dma_unmap(void *usr, void *va, void *dma, size_t sz);
 
-KAE_QUEUE_POOL_HEAD_S* kaelz4_init_queue_pool (int algtype);
-KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype);
-int kaelz4_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn);
-void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn);
-void kaelz4_queue_pool_reset(KAE_QUEUE_POOL_HEAD_S* pool_head);
-void kaelz4_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_fn);
-void kaelz4_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_ectx_fn);
+KAE_QUEUE_POOL_HEAD_S* kaesnappy_init_queue_pool (int algtype);
+KAE_QUEUE_DATA_NODE_S* kaesnappy_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype);
+int kaesnappy_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn);
+void kaesnappy_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn);
+void kaesnappy_queue_pool_reset(KAE_QUEUE_POOL_HEAD_S* pool_head);
+void kaesnappy_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_fn);
+void kaesnappy_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_ectx_fn);
 
 #endif
 

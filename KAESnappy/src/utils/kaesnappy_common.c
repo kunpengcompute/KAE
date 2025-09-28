@@ -1,13 +1,13 @@
 /*
  * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
- * @Description: zstd common func
+ * @Description: snappy common func
  * @Author: LiuYongYang
  * @Date: 2024-02-22
  * @LastEditTime: 2024-03-28
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include "kaezstd_common.h"
+#include "kaesnappy_common.h"
 
 #define HIDDEN_API  __attribute__((visibility("hidden")))
 #define CONSTRUCTOR __attribute__((constructor))
@@ -18,31 +18,31 @@ typedef enum ARCH_TYPE {
     CPU_HISILICOM_V4, /* for the future */
     CPU_UNKNOW,
 } ARCH_TYPE;
-static int g_kaezstdInitialized = 0;
+static int g_kaesnappyInitialized = 0;
 
 static inline void versionCpy(char str1[], const char str2[])
 {
     int i = 0;
-    while (i < VERSION_STRUCT_LEN && str2[i] != '\0') {
+    while (i < VERSION_STRUCT_LEN - 1 && str2[i] != '\0') {
         str1[i] = str2[i];
         ++i;
     }
     str1[i] = '\0';
 }
 
-int kaezstd_get_version(KAEZstdVersion* ver)
+int kaesnappy_get_version(KAESnappyVersion* ver)
 {
     if (ver == NULL) {
-        return KAE_ZSTD_INVAL_PARA;
+        return KAE_SNAPPY_INVAL_PARA;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
     versionCpy(ver->productVersion, "23.0.RC2");
-    versionCpy(ver->componentName, "KAEZstd");
+    versionCpy(ver->componentName, "KAESnappy");
     versionCpy(ver->componentVersion, "2.0.4");
-    return KAE_ZSTD_SUCC;
+    return KAE_SNAPPY_SUCC;
 }
 
-static ARCH_TYPE KaeZstdDetect(void)
+static ARCH_TYPE KaeSnappyDetect(void)
 {
     unsigned long long cpuId;
     __asm__ volatile("mrs %0, MIDR_EL1":"=r"(cpuId));
@@ -55,21 +55,21 @@ static ARCH_TYPE KaeZstdDetect(void)
         return CPU_HISILICOM_V2;
     } else if ((vendor == 0x48) && (partId == 0xD03)) {
         return CPU_HISILICOM_V3;
-    } else if (partId == 0xD22 || partId == 0xD06) {
+    } else if (partId == 0xD22) {
         return CPU_HISILICOM_V4;
     }
     return CPU_UNKNOW;
 }
 
-HIDDEN_API void CONSTRUCTOR KaeZstdInit(void)
+HIDDEN_API void CONSTRUCTOR KaeSnappyInit(void)
 {
-    if (g_kaezstdInitialized != 0) {
+    if (g_kaesnappyInitialized != 0) {
         return;
     }
 
-    if (KaeZstdDetect() == CPU_HISILICOM_V1 || KaeZstdDetect() == CPU_UNKNOW) {
-        fprintf(stderr, "KAEzstd only support in V2+, please check CPU ID.\n");
+    if (KaeSnappyDetect() == CPU_HISILICOM_V1 || KaeSnappyDetect() == CPU_UNKNOW) {
+        fprintf(stderr, "KAEsnappy only support in V2+, please check CPU ID.\n");
         abort();
     }
-    g_kaezstdInitialized = 1;
+    g_kaesnappyInitialized = 1;
 }

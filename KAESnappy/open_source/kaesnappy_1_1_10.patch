@@ -1,9 +1,6 @@
-Binary files snappy-1.1.10/.vscode/.cache/clangd/wecode-cpp.db and snappy-1.1.10-KAE/.vscode/.cache/clangd/wecode-cpp.db differ
-Binary files snappy-1.1.10/.vscode/tags-34.wecode-db and snappy-1.1.10-KAE/.vscode/tags-34.wecode-db differ
-Binary files snappy-1.1.10/.vscode/tags-34.wecode-lock and snappy-1.1.10-KAE/.vscode/tags-34.wecode-lock differ
 diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
 --- snappy-1.1.10/CMakeLists.txt	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/CMakeLists.txt	2025-09-01 22:42:04.359817000 +0800
++++ snappy-1.1.10-KAE/CMakeLists.txt	2025-09-08 15:42:38.637547600 +0800
 @@ -84,11 +84,11 @@
  
  # BUILD_SHARED_LIBS is a standard CMake variable, but we declare it here to make
@@ -40,7 +37,7 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
 +set_property(TARGET snappy
 +             APPEND PROPERTY INSTALL_RPATH
 +             /usr/local/kaesnappy/lib;/usr/local/lib)
-+target_link_libraries(snappy PRIVATE :libkaelz4.so.2.0.4)
++target_link_libraries(snappy PRIVATE :libkaesnappy.so.2.0.4)
 +
  target_sources(snappy
    PRIVATE
@@ -51,7 +48,7 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
    )
 +
 +  target_compile_definitions(snappy_unittest PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_unittest snappy_test_support libkaelz4.so.2.0.4)
++  target_link_libraries(snappy_unittest snappy_test_support libkaesnappy.so.2.0.4)
 +  target_include_directories(snappy_unittest PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
@@ -72,7 +69,7 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
 -  target_link_libraries(snappy_test_tool snappy_test_support)
 +  
 +  target_compile_definitions(snappy_test_tool PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_test_tool snappy_test_support libkaelz4.so.2.0.4)
++  target_link_libraries(snappy_test_tool snappy_test_support libkaesnappy.so.2.0.4)
 +  target_include_directories(snappy_test_tool PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
@@ -90,7 +87,7 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
    target_link_libraries(snappy_benchmark snappy_test_support benchmark_main)
  
 +  target_compile_definitions(snappy_benchmark PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_benchmark snappy_test_support libkaelz4.so.2.0.4)
++  target_link_libraries(snappy_benchmark snappy_test_support libkaesnappy.so.2.0.4)
 +  target_include_directories(snappy_benchmark PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
@@ -104,22 +101,262 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
    # This project uses Google benchmark for benchmarking.
    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
    set(BENCHMARK_ENABLE_EXCEPTIONS OFF CACHE BOOL "" FORCE)
-diff -ruN snappy-1.1.10/lz4_accelerater.h snappy-1.1.10-KAE/lz4_accelerater.h
---- snappy-1.1.10/lz4_accelerater.h	1970-01-01 08:00:00.000000000 +0800
-+++ snappy-1.1.10-KAE/lz4_accelerater.h	2025-09-01 19:42:12.944666500 +0800
+diff -ruN snappy-1.1.10/snappy-internal.h snappy-1.1.10-KAE/snappy-internal.h
+--- snappy-1.1.10/snappy-internal.h	2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-KAE/snappy-internal.h	2025-09-04 15:10:21.196708100 +0800
+@@ -40,6 +40,13 @@
+ #include <tmmintrin.h>
+ #endif
+ 
++#ifdef CONF_KAESNAPPY
++extern "C" {
++  #include "kaesnappy.h"
++  #include "kaesnappy_log.h"
++}
++#endif
++
+ #if SNAPPY_HAVE_NEON
+ #include <arm_neon.h>
+ #endif
+@@ -152,7 +159,8 @@
+                        size_t input_length,
+                        char* op,
+                        uint16_t* table,
+-                       const int table_size);
++                       const int table_size,
++                       SNAPPY_CCtx* cctx);
+ 
+ // Find the largest n such that
+ //
+diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
+--- snappy-1.1.10/snappy.cc	2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-KAE/snappy.cc	2025-09-08 16:00:01.302849300 +0800
+@@ -74,6 +74,14 @@
+ #define SNAPPY_PREFETCH(ptr) (void)(ptr)
+ #endif
+ 
++#ifdef CONF_KAESNAPPY
++extern "C" {
++  #include "kaesnappy.h"
++  #include "kaesnappy_log.h"
++  #include "snappy_accelerater.h"
++}
++#endif
++
+ #include <algorithm>
+ #include <array>
+ #include <cstddef>
+@@ -617,6 +625,7 @@
+     *op++ = LITERAL | (n << 2);
+ 
+     UnalignedCopy128(literal, op);
++    // KZL_MEMCPY_16((unsigned char*)(op), (unsigned char*)(literal), len);
+     return op + len;
+   }
+ 
+@@ -637,11 +646,12 @@
+   }
+   // When allow_fast_path is true, we can overwrite up to 16 bytes.
+   if (allow_fast_path) {
+-    char* destination = op;
+-    const char* source = literal;
+-    const char* end = destination + len;
++    unsigned char* destination = (unsigned char*)op;
++    unsigned char* source = (unsigned char*)literal;
++    unsigned char* end = destination + len;
+     do {
+       std::memcpy(destination, source, 16);
++      // KZL_MEMCPY_16(destination, source, 16);
+       destination += 16;
+       source += 16;
+     } while (destination < end);
+@@ -777,7 +787,7 @@
+ // "end - op" is the compressed size of "input".
+ namespace internal {
+ char* CompressFragment(const char* input, size_t input_size, char* op,
+-                       uint16_t* table, const int table_size) {
++                       uint16_t* table, const int table_size, SNAPPY_CCtx* cctx) {
+   // "ip" is the input pointer, and "op" is the output pointer.
+   const char* ip = input;
+   assert(input_size <= kBlockSize);
+@@ -787,6 +797,86 @@
+   const char* base_ip = ip;
+ 
+   const size_t kInputMarginBytes = 15;
++
++#ifdef CONF_KAESNAPPY
++  if (cctx == NULL) {
++    goto _softVersion;
++  }
++  // 硬件压缩
++  
++  if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
++    // 硬件压缩
++    SNAPPY_CCtx& ctxBody = *cctx;
++    int result  = kaesnappy_compress(&ctxBody, input, input_size);
++    if (result) {
++      printf("Snappy kaealz4_compress failed\n");
++      return NULL;
++    }
++
++    // 回收三元组进行软拼接
++    uint32_t sequenceCount = 0;
++    uint32_t tempLiteralLength = 0;
++
++    uint32_t offBase = 0;
++    uint32_t litLength = 0;
++    uint16_t mlBase = 0;
++    uint32_t idx = 0;
++
++    seqDef* sequencespoint = ctxBody.seqStore.sequencesStart;
++    BYTE* litpoint = ctxBody.seqStore.litStart;
++    size_t lit_size = ctxBody.seqStore.maxNbLit;
++    while (sequenceCount < ctxBody.seqnum) {
++      offBase = sequencespoint->offBase + 1;
++      litLength = sequencespoint->litLength;
++      mlBase = sequencespoint->mlBase;
++      sequenceCount++; // sequence计数
++      sequencespoint++;
++
++      if (mlBase == 0) {
++          tempLiteralLength += litLength + mlBase + 3;
++          continue;
++      }
++
++      mlBase -= 1;
++      litLength += tempLiteralLength;
++      tempLiteralLength = 0;
++
++      // printf("litLength:%d, mlBase:%d, literal: %.*s, match: %.*s \n", litLength, (int)mlBase, litLength, ip, mlBase+4, ip+litLength);
++
++      // Literal部分编码
++      if (litLength) {
++        op = EmitLiteral</*allow_fast_path=*/true>(op, ip, litLength);
++        ip += litLength;
++      }
++      
++      // // Copy部分编码
++      if (mlBase < 8) {
++        op = EmitCopy</*len_less_than_12=*/true>(op, offBase, mlBase + 4);
++      } else {
++        op = EmitCopy</*len_less_than_12=*/false>(op, offBase, mlBase + 4);
++      }
++      ip += mlBase + 4;
++      if (SNAPPY_PREDICT_FALSE(ip >= input + input_size - kInputMarginBytes)) {
++        break;
++      }
++    }
++    //释放硬件资源
++    // ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
++    // ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
++    // kaesnappy_release(&ctxBody);
++  }
++
++  //处理尾部数据
++  if (ip < ip_end) {
++    op = EmitLiteral</*allow_fast_path=*/false>(op, ip, ip_end - ip);
++    // printf("last litLength:%d,last literal: %.*s \n", ip_end - ip, ip_end - ip, ip);
++  }
++
++
++  return op;
++
++_softVersion:
++#endif
+   if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
+     const char* ip_limit = input + input_size - kInputMarginBytes;
+ 
+@@ -1616,7 +1706,45 @@
+   writer->Append(ulength, p - ulength);
+   written += (p - ulength);
+ 
++// std::string hex_str;
++// for (char* ptr = ulength; ptr < p; ++ptr) {
++//     char buffer[3];
++//     sprintf(buffer, "%02X", static_cast<unsigned char>(*ptr));
++//     hex_str += buffer;
++// }
++
++// // 打印十六进制结果
++// printf("Varint编码结果（十六进制）: %s\n", hex_str.c_str());
++
+   internal::WorkingMemory wmem(N);
++#ifdef CONF_KAESNAPPY
++  SNAPPY_CCtx ctxBody;
++  SNAPPY_CCtx* cctx = &ctxBody;
++  ctxBody.kaeInited = 0;
++  ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
++  ctxBody.kaeConfig = NULL;
++
++  ctxBody.seqStore.llCode = NULL;
++  ctxBody.seqStore.mlCode = NULL;
++  ctxBody.seqStore.ofCode = NULL;
++  ctxBody.seqStore.lit = NULL;
++  ctxBody.seqStore.litStart = NULL;
++  ctxBody.seqStore.sequencesStart = NULL;
++  ctxBody.seqStore.sequences = NULL;
++
++  ctxBody.compressionLevel = 8;
++  ctxBody.kaeLevel = 8;
++  ctxBody.seqnum = 0;
++
++  int ret;
++  ret = kaesnappy_init(&ctxBody);
++  if (ret == 0) {
++    ctxBody.kaeInited = 1;
++  } else {
++    printf("Snappy kealz4_init failed\n");
++    cctx = NULL;
++  }
++#endif
+ 
+   while (N > 0) {
+     // Get next block to compress (without copying if possible)
+@@ -1652,7 +1780,6 @@
+     // Get encoding table for compression
+     int table_size;
+     uint16_t* table = wmem.GetHashTable(num_to_read, &table_size);
+-
+     // Compress input_fragment and append to dest
+     const int max_output = MaxCompressedLength(num_to_read);
+ 
+@@ -1664,14 +1791,18 @@
+     // scratch_output[] region is big enough for this iteration.
+     char* dest = writer->GetAppendBuffer(max_output, wmem.GetScratchOutput());
+     char* end = internal::CompressFragment(fragment, fragment_size, dest, table,
+-                                           table_size);
++                                           table_size, cctx);
+     writer->Append(dest, end - dest);
+     written += (end - dest);
+ 
+     N -= num_to_read;
+     reader->Skip(pending_advance);
+   }
+-
++#ifdef CONF_KAESNAPPY
++  ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
++  ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
++  kaesnappy_release(&ctxBody);
++#endif
+   Report("snappy_compress", written, uncompressed_size);
+ 
+   return written;
+diff -ruN snappy-1.1.10/snappy_accelerater.h snappy-1.1.10-KAE/snappy_accelerater.h
+--- snappy-1.1.10/snappy_accelerater.h	1970-01-01 08:00:00.000000000 +0800
++++ snappy-1.1.10-KAE/snappy_accelerater.h	2025-09-08 16:02:45.017369300 +0800
 @@ -0,0 +1,131 @@
 +/* *
 + * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
 + * Create: 2023-04
 + */
 +
-+#ifndef LZ4_ACCELERATER_H
-+#define LZ4_ACCELERATER_H
++#ifndef SNAPPY_ACCELERATER_H
++#define SNAPPY_ACCELERATER_H
 +
 +#include <arm_neon.h>
 +#include "stddef.h"
 +#define NO_PREFETCH
-+#define RAW_LZ4
++#define RAW_SNAPPY
 +
 +#define G_KZLPRIME5BYTES (889523592379ULL)
 +#define G_KZLPRIME8BYTES (11400714785074694791ULL)
@@ -239,248 +476,9 @@ diff -ruN snappy-1.1.10/lz4_accelerater.h snappy-1.1.10-KAE/lz4_accelerater.h
 +int PlatformIsSupport(void);
 +
 +#endif
-diff -ruN snappy-1.1.10/snappy-internal.h snappy-1.1.10-KAE/snappy-internal.h
---- snappy-1.1.10/snappy-internal.h	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy-internal.h	2025-09-01 19:42:12.945663100 +0800
-@@ -40,6 +40,13 @@
- #include <tmmintrin.h>
- #endif
- 
-+#ifdef CONF_KAESNAPPY
-+extern "C" {
-+  #include "kaelz4.h"
-+  #include "kaelz4_log.h"
-+}
-+#endif
-+
- #if SNAPPY_HAVE_NEON
- #include <arm_neon.h>
- #endif
-@@ -152,7 +159,8 @@
-                        size_t input_length,
-                        char* op,
-                        uint16_t* table,
--                       const int table_size);
-+                       const int table_size,
-+                       LZ4_CCtx* cctx);
- 
- // Find the largest n such that
- //
-diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
---- snappy-1.1.10/snappy.cc	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy.cc	2025-09-01 19:42:12.947656300 +0800
-@@ -74,6 +74,14 @@
- #define SNAPPY_PREFETCH(ptr) (void)(ptr)
- #endif
- 
-+#ifdef CONF_KAESNAPPY
-+extern "C" {
-+  #include "kaelz4.h"
-+  #include "kaelz4_log.h"
-+  #include "lz4_accelerater.h"
-+}
-+#endif
-+
- #include <algorithm>
- #include <array>
- #include <cstddef>
-@@ -617,6 +625,7 @@
-     *op++ = LITERAL | (n << 2);
- 
-     UnalignedCopy128(literal, op);
-+    // KZL_MEMCPY_16((unsigned char*)(op), (unsigned char*)(literal), len);
-     return op + len;
-   }
- 
-@@ -637,11 +646,12 @@
-   }
-   // When allow_fast_path is true, we can overwrite up to 16 bytes.
-   if (allow_fast_path) {
--    char* destination = op;
--    const char* source = literal;
--    const char* end = destination + len;
-+    unsigned char* destination = (unsigned char*)op;
-+    unsigned char* source = (unsigned char*)literal;
-+    unsigned char* end = destination + len;
-     do {
-       std::memcpy(destination, source, 16);
-+      // KZL_MEMCPY_16(destination, source, 16);
-       destination += 16;
-       source += 16;
-     } while (destination < end);
-@@ -777,7 +787,7 @@
- // "end - op" is the compressed size of "input".
- namespace internal {
- char* CompressFragment(const char* input, size_t input_size, char* op,
--                       uint16_t* table, const int table_size) {
-+                       uint16_t* table, const int table_size, LZ4_CCtx* cctx) {
-   // "ip" is the input pointer, and "op" is the output pointer.
-   const char* ip = input;
-   assert(input_size <= kBlockSize);
-@@ -787,6 +797,85 @@
-   const char* base_ip = ip;
- 
-   const size_t kInputMarginBytes = 15;
-+
-+#ifdef CONF_KAESNAPPY
-+  if (cctx == NULL) {
-+    goto _softVersion;
-+  }
-+  // 硬件压缩
-+    
-+  if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
-+    // 硬件压缩
-+    LZ4_CCtx& ctxBody = *cctx;
-+    int result  = kaelz4_compress(&ctxBody, input, input_size);
-+    if (result) {
-+      printf("Snappy kaealz4_compress failed\n");
-+      return NULL;
-+    }
-+
-+    // 回收三元组进行软拼接
-+    uint32_t sequenceCount = 0;
-+    uint32_t tempLiteralLength = 0;
-+
-+    uint32_t offBase = 0;
-+    uint32_t litLength = 0;
-+    uint16_t mlBase = 0;
-+    uint32_t idx = 0;
-+
-+    seqDef* sequencespoint = ctxBody.seqStore.sequencesStart;
-+    BYTE* litpoint = ctxBody.seqStore.litStart;
-+    size_t lit_size = ctxBody.seqStore.maxNbLit;
-+    while (sequenceCount < ctxBody.seqnum) {
-+      offBase = sequencespoint->offBase + 1;
-+      litLength = sequencespoint->litLength;
-+      mlBase = sequencespoint->mlBase;
-+      sequenceCount++; // sequence计数
-+      sequencespoint++;
-+
-+      if (mlBase == 0) {
-+          tempLiteralLength += litLength + mlBase + 3;
-+          continue;
-+      }
-+
-+      mlBase -= 1;
-+      litLength += tempLiteralLength;
-+      tempLiteralLength = 0;
-+
-+      // printf("litLength:%d, mlBase:%d, literal: %.*s, match: %.*s \n", litLength, (int)mlBase, litLength, ip, mlBase+4, ip+litLength);
-+
-+      // Literal部分编码
-+      if (litLength) {
-+        op = EmitLiteral</*allow_fast_path=*/true>(op, ip, litLength);
-+        ip += litLength;
-+      }
-+      
-+      // // Copy部分编码
-+      if (mlBase < 8) {
-+        op = EmitCopy</*len_less_than_12=*/true>(op, offBase, mlBase + 4);
-+      } else {
-+        op = EmitCopy</*len_less_than_12=*/false>(op, offBase, mlBase + 4);
-+      }
-+      ip += mlBase + 4;
-+      if (SNAPPY_PREDICT_FALSE(ip >= input + input_size - kInputMarginBytes)) {
-+        break;
-+      }
-+    }
-+    //释放硬件资源
-+    // ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
-+    // ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
-+    // kaelz4_release(&ctxBody);
-+  }
-+
-+  //处理尾部数据
-+  if (ip < ip_end) {
-+    op = EmitLiteral</*allow_fast_path=*/false>(op, ip, ip_end - ip);
-+    // printf("last litLength:%d,last literal: %.*s \n", ip_end - ip, ip_end - ip, ip);
-+  }
-+
-+  return op;
-+
-+_softVersion:
-+#endif
-   if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
-     const char* ip_limit = input + input_size - kInputMarginBytes;
- 
-@@ -1616,7 +1705,45 @@
-   writer->Append(ulength, p - ulength);
-   written += (p - ulength);
- 
-+// std::string hex_str;
-+// for (char* ptr = ulength; ptr < p; ++ptr) {
-+//     char buffer[3];
-+//     sprintf(buffer, "%02X", static_cast<unsigned char>(*ptr));
-+//     hex_str += buffer;
-+// }
-+
-+// // 打印十六进制结果
-+// printf("Varint编码结果（十六进制）: %s\n", hex_str.c_str());
-+
-   internal::WorkingMemory wmem(N);
-+#ifdef CONF_KAESNAPPY
-+  LZ4_CCtx ctxBody;
-+  LZ4_CCtx* cctx = &ctxBody;
-+  ctxBody.kaeInited = 0;
-+  ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
-+  ctxBody.kaeConfig = NULL;
-+
-+  ctxBody.seqStore.llCode = NULL;
-+  ctxBody.seqStore.mlCode = NULL;
-+  ctxBody.seqStore.ofCode = NULL;
-+  ctxBody.seqStore.lit = NULL;
-+  ctxBody.seqStore.litStart = NULL;
-+  ctxBody.seqStore.sequencesStart = NULL;
-+  ctxBody.seqStore.sequences = NULL;
-+
-+  ctxBody.compressionLevel = 8;
-+  ctxBody.kaeLevel = 8;
-+  ctxBody.seqnum = 0;
-+
-+  int ret;
-+  ret = kaelz4_init(&ctxBody);
-+  if (ret == 0) {
-+    ctxBody.kaeInited = 1;
-+  } else {
-+    printf("Snappy kealz4_init failed\n");
-+    cctx = NULL;
-+  }
-+#endif
- 
-   while (N > 0) {
-     // Get next block to compress (without copying if possible)
-@@ -1652,7 +1779,6 @@
-     // Get encoding table for compression
-     int table_size;
-     uint16_t* table = wmem.GetHashTable(num_to_read, &table_size);
--
-     // Compress input_fragment and append to dest
-     const int max_output = MaxCompressedLength(num_to_read);
- 
-@@ -1664,14 +1790,18 @@
-     // scratch_output[] region is big enough for this iteration.
-     char* dest = writer->GetAppendBuffer(max_output, wmem.GetScratchOutput());
-     char* end = internal::CompressFragment(fragment, fragment_size, dest, table,
--                                           table_size);
-+                                           table_size, cctx);
-     writer->Append(dest, end - dest);
-     written += (end - dest);
- 
-     N -= num_to_read;
-     reader->Skip(pending_advance);
-   }
--
-+#ifdef CONF_KAESNAPPY
-+  ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
-+  ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
-+  kaelz4_release(&ctxBody);
-+#endif
-   Report("snappy_compress", written, uncompressed_size);
- 
-   return written;
 diff -ruN snappy-1.1.10/snappy_unittest.cc snappy-1.1.10-KAE/snappy_unittest.cc
 --- snappy-1.1.10/snappy_unittest.cc	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy_unittest.cc	2025-09-01 19:42:12.949650100 +0800
++++ snappy-1.1.10-KAE/snappy_unittest.cc	2025-09-03 15:55:26.864334600 +0800
 @@ -225,7 +225,7 @@
    compressed.resize(prefix.size()+snappy::MaxCompressedLength(input.size()));
    char* dest = string_as_array(&compressed) + prefix.size();
