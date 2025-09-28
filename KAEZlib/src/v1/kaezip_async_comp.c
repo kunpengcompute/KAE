@@ -9,6 +9,7 @@
 #include "kaezip_async_comp.h"
 #include "kaezip_log.h"
 #include "kaezip_init.h"
+#include "kaezip_common.h"
 
 
 #define PREFL1_64B(ptr) __builtin_prefetch((ptr), 0, 0)
@@ -465,7 +466,7 @@ void kaezip_ctx_clear(struct kaezip_async_ctrl *ctrl)
     }
 }
 
-int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype)
+int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype, int comp_algtype)
 {
     struct kaezip_async_ctrl *new_ctrl = (struct kaezip_async_ctrl *)kae_malloc(sizeof(struct kaezip_async_ctrl));
     if (!new_ctrl)
@@ -478,7 +479,7 @@ int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr
     new_ctrl->usr_map = usr_map;
     new_ctrl->is_polling = TRUE;
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
-        new_ctrl->kz_ctx[i] = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype);
+        new_ctrl->kz_ctx[i] = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
         if (new_ctrl->kz_ctx[i] == NULL) {
             goto free_kz_ctx;
         }
@@ -557,7 +558,7 @@ int kaezip_async_compress_polling(struct kaezip_async_ctrl *ctrl, int budget)
     return cnt;
 }
 
-void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype)
+void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype, int comp_algtype)
 {
     struct kaezip_compress_ctx *compress_ctx = ctrl->ctx_head;
     struct kaezip_async_req *req = NULL;
@@ -592,7 +593,7 @@ void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype)
         if (ctrl->kz_ctx[i] != NULL) {
             continue;
         }
-        kaezip_ctx_t *kz_ctx = kaezip_init_v1(win_size, is_sgl, comp_optype);
+        kaezip_ctx_t *kz_ctx = kaezip_init_v1(win_size, is_sgl, comp_optype, comp_algtype);
         if (kz_ctx == NULL) {
             return;
         }
@@ -603,14 +604,14 @@ void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype)
 
 static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
 
-static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int comp_optype)
+static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int comp_optype, int comp_algtype)
 {
     int enter_polling = 0;
     kaezip_ctx_t *kz_ctx = NULL;
 
     if (unlikely(ctrl->kz_ctx[ctrl->ctx_index] == NULL)) {
         int is_sgl = (ctrl->usr_map != NULL) ? 1 : 0;
-        kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype);
+        kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
         while (kz_ctx == NULL) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             struct timespec timeout;
             if (enter_polling == 0) {
@@ -624,7 +625,7 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
             }
 
             (void)kaezip_async_compress_polling(ctrl, 1);
-            kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype);
+            kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
         }
         ctrl->kz_ctx[ctrl->ctx_index] = kz_ctx;
         ctrl->kz_ctx[ctrl->ctx_index]->usr_map = ctrl->usr_map;
@@ -648,10 +649,10 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
     return kz_ctx;
 }
 
-static int kaezip_send_async_compress(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req, int comp_optype)
+static int kaezip_send_async_compress(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req, int comp_optype, int comp_algtype)
 {
     // 1.kae上下文初始化函数调用
-    req->kz_ctx = kaezip_async_init_ctx(ctrl, comp_optype);
+    req->kz_ctx = kaezip_async_init_ctx(ctrl, comp_optype, comp_algtype);
     if (unlikely(req->kz_ctx == NULL)) {
         US_ERR("Get kae hw ctx failed!\n");
         return KAE_ZLIB_INIT_FAIL;
@@ -670,7 +671,8 @@ static int kaezip_send_async_compress(struct kaezip_async_ctrl *ctrl, struct kae
     return ret;
 }
 
-static void kaezip_fill_hw_req_dst_buf_list(struct kaezip_async_req *req, const struct kaezip_buffer_list *dst)
+static void kaezip_fill_hw_req_dst_buf_list(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req, 
+                                            const struct kaezip_buffer_list *dst)
 {
     unsigned int index = 0;
 
@@ -687,9 +689,20 @@ static void kaezip_fill_hw_req_dst_buf_list(struct kaezip_async_req *req, const 
 
         req->dst.buf_num++;
     }
+
+    if (ctrl->kz_ctx[0]->comp_type == WCRYPTO_DEFLATE && ctrl->kz_ctx[0]->comp_alg_type == WCRYPTO_ZLIB) {
+        // 添加2字节的 zlib header
+        ((char*)req->dst.buf[0].data)[0] = ctrl->header[0];
+        ((char*)req->dst.buf[0].data)[1] = ctrl->header[1];
+        void* original_ptr = req->dst.buf[0].data;
+        req->dst.buf[0].data = (char*)original_ptr + 2;
+        req->dst.buf[0].buf_len -= 2;
+        req->dst_len -= 2;
+    }
 }
 
-static void kaezip_fill_hw_req_src_buf_list(struct kaezip_async_req *req, const struct kaezip_buffer_list *src)
+static void kaezip_fill_hw_req_src_buf_list(struct kaezip_async_ctrl *ctrl, struct kaezip_async_req *req, 
+                                            const struct kaezip_buffer_list *src)
 {
     unsigned int index = 0;
 
@@ -706,9 +719,17 @@ static void kaezip_fill_hw_req_src_buf_list(struct kaezip_async_req *req, const 
 
         req->src.buf_num++;
     }
+
+    if (ctrl->kz_ctx[0]->comp_alg_type == WCRYPTO_ZLIB && ctrl->kz_ctx[0]->comp_type == WCRYPTO_INFLATE) {
+        // 跳过 zlib 格式压缩文件的头部字段
+        void* original_ptr = req->src.buf[0].data;
+        req->src.buf[0].data = (char*)original_ptr + 2;
+        req->src.buf[0].buf_len -= 2;
+        req->src_size -= 2;
+    }
 }
 
-static void kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *arg, int comp_optype)
+static void kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *arg, int comp_optype, int comp_algtype)
 {
     struct kaezip_compress_ctx *compress_ctx = arg;
 
@@ -730,12 +751,11 @@ static void kaezip_async_compress_process(struct kaezip_async_ctrl *ctrl, void *
         return;
     }
 
-    // 针对zlib的matchlength转换定义的数据结构
-    kaezip_fill_hw_req_src_buf_list(req, compress_ctx->src);
-    kaezip_fill_hw_req_dst_buf_list(req, compress_ctx->dst);
+    kaezip_fill_hw_req_src_buf_list(ctrl, req, compress_ctx->src);
+    kaezip_fill_hw_req_dst_buf_list(ctrl, req, compress_ctx->dst);
 
     int ret = KAE_ZLIB_SUCC;
-    ret = kaezip_send_async_compress(ctrl, req, comp_optype);
+    ret = kaezip_send_async_compress(ctrl, req, comp_optype, comp_algtype);
     if (ret != KAE_ZLIB_SUCC) {
         req->compress_ctx->status = KAE_ZLIB_COMP_FAIL;
         req->done = 1;
@@ -793,7 +813,7 @@ static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct
 
     struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
     unsigned int output_len = op_data->produced;
-    if (req->kz_ctx[0].comp_type == WCRYPTO_DEFLATE) {
+    if (req->kz_ctx[0].comp_type == WCRYPTO_DEFLATE && req->kz_ctx[0].comp_alg_type == WCRYPTO_GZIP) {
         // extract checksum from dst buffer
 #ifdef KAE_USE_CRC32
         if (req->compress_ctx->result->ibuf_crc != NULL) {
@@ -803,6 +823,9 @@ static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct
 #endif
         // remove checksum (4 Bytes) and isize (4 Bytes) in dst buffer
         output_len -= 8;
+    } else if (req->kz_ctx[0].comp_type == WCRYPTO_DEFLATE && req->kz_ctx[0].comp_alg_type == WCRYPTO_ZLIB) {
+        // 2 bytes header
+        output_len += 2;
     }
     return output_len;
 }
@@ -813,7 +836,7 @@ const kaezip_post_process_handle_t g_post_process_handle[KAEZIP_ASYNC_BUTT] = {
 
 int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                            kaezip_async_callback callback, struct kaezip_result *result,
-                           enum kaezip_async_data_format data_format, int comp_optype)
+                           enum kaezip_async_data_format data_format, int comp_optype, int comp_algtype)
 {
     struct kaezip_compress_ctx *compress_ctx = &ctrl->ctx[ctrl->ctx_index];
 
@@ -841,9 +864,14 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
     }
     ctrl->tail = compress_ctx;
 
-    kaezip_async_compress_process(ctrl, compress_ctx, comp_optype);
+    kaezip_async_compress_process(ctrl, compress_ctx, comp_optype, comp_algtype);
 
     ctrl->ctx_index = (ctrl->ctx_index + 1) % MAX_NUM_IN_COMP;
     ctrl->cur_num_in_comp++;
     return KAE_ZLIB_SUCC;
+}
+
+void kaezip_set_zlib_header(struct kaezip_async_ctrl *ctrl, int level, int windowBits)
+{
+    ctrl->header = kaezip_get_fmt_header_zlib(level, windowBits);
 }

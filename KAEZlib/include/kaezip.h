@@ -160,5 +160,20 @@ int KAEZIP_decompress_async_in_session(void *sess, const struct kaezip_buffer_li
  * @param: sess : session
  */
 void KAEZIP_reset_session(void *sess);
-#endif
 
+/**
+ * @brief: Initialize Task Queues and Threads on the KAE Side with zlib format.
+* @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+* @param: level : an integer from 0 to 9 or -1 controlling the level of compression
+* @param: windowBits : an integer from 8 to 15 to control the size of sliding window
+* @return: session, NULL if fail
+*/
+void *KAEZIP_create_async_compress_session_zlib(iova_map_fn usr_map, int level, int windowBits);
+      
+/**
+ * @brief: Initialize Task Queues and Threads on the KAE Side for decompress with zlib format.
+ * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @return: session, NULL if fail
+ */
+void *KAEZIP_create_async_decompress_session_zlib(iova_map_fn usr_map);
+#endif

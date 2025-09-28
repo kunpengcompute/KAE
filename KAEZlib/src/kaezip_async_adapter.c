@@ -18,7 +18,8 @@
 #include "uadk/wd.h"
 
 
-static void kaezip_dequeue_process(struct kaezip_async_ctrl *ctrl, kaezip_task_queue *task_queue, int budget, int comp_optype, compress_async_fn compress_fn)
+static void kaezip_dequeue_process(struct kaezip_async_ctrl *ctrl, kaezip_task_queue *task_queue, int budget, 
+                                    int comp_optype, int comp_algtype, compress_async_fn compress_fn)
 {
     int cnt = 0;
     // 等待任务
@@ -44,7 +45,7 @@ static void kaezip_dequeue_process(struct kaezip_async_ctrl *ctrl, kaezip_task_q
         // 更新 ci，复用空闲位置
         task_queue->ci++;
         // 执行压缩操作
-        compress_fn(ctrl, task.src, task.dst, task.callback, task.result, task.data_format, comp_optype);
+        compress_fn(ctrl, task.src, task.dst, task.callback, task.result, task.data_format, comp_optype, comp_algtype);
         cnt++;
     }
     return;
@@ -121,15 +122,31 @@ static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct
         return KAE_ZLIB_INVAL_PARA;
     }
     result->src_size = 0;
-    for (unsigned int i = 0; i < src->buf_num; i++) {
-        if (unlikely(src->buf[i].data == NULL || src->buf[i].buf_len == 0 || src->buf[i].buf_len > REQ_BUFFER_SIZE)) {
+
+    // 对于 zlib 格式，第一个SGE缓冲区大小不得小于2字节，用于容纳zlib-header
+    if (unlikely(src->buf[0].data == NULL || src->buf[0].buf_len == 0 || 
+                        src->buf[0].buf_len > REQ_BUFFER_MAX_SIZE || src->buf[0].buf_len < REQ_BUFFER_MIN_SIZE)) {
+        return KAE_ZLIB_INVAL_PARA;
+    }
+    result->src_size += src->buf[0].buf_len;
+
+    for (unsigned int i = 1; i < src->buf_num; i++) {
+        if (unlikely(src->buf[i].data == NULL || src->buf[i].buf_len == 0 || 
+                        src->buf[i].buf_len > REQ_BUFFER_MAX_SIZE)) {
             return KAE_ZLIB_INVAL_PARA;
         }
         result->src_size += src->buf[i].buf_len;
     }
 
-    for (unsigned int i = 0; i < dst->buf_num; i++) {
-        if (unlikely(dst->buf[i].data == NULL || dst->buf[i].buf_len == 0 || dst->buf[i].buf_len > REQ_BUFFER_SIZE)) {
+    if (unlikely(dst->buf[0].data == NULL || dst->buf[0].buf_len == 0 || 
+                        dst->buf[0].buf_len > REQ_BUFFER_MAX_SIZE || dst->buf[0].buf_len < REQ_BUFFER_MIN_SIZE)) {
+        return KAE_ZLIB_INVAL_PARA;
+    }
+    result->dst_len += dst->buf[0].buf_len;
+    
+    for (unsigned int i = 1; i < dst->buf_num; i++) {
+        if (unlikely(dst->buf[i].data == NULL || dst->buf[i].buf_len == 0 || 
+                        dst->buf[i].buf_len > REQ_BUFFER_MAX_SIZE || dst->buf[i].buf_len < REQ_BUFFER_MIN_SIZE)) {
             return KAE_ZLIB_INVAL_PARA;
         }
         result->dst_len += dst->buf[i].buf_len;
@@ -155,7 +172,7 @@ static int kaezip_check_session_valid(kaezip_session *sess, int comp_optype)
 
 static int kaezip_async_do_comp_in_session(kaezip_session *sess, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                                            kaezip_async_callback callback, struct kaezip_result *result,
-                                           enum kaezip_async_data_format data_format, int comp_optype)
+                                           enum kaezip_async_data_format data_format, int comp_optype, int comp_algtype)
 {
     kaezip_task_queue *task_queue = &sess->task_queue;
     kaezip_async_task_t task = {0};
@@ -166,14 +183,14 @@ static int kaezip_async_do_comp_in_session(kaezip_session *sess, const struct ka
     task.data_format = data_format;
 
     if (task_queue->pi != task_queue->ci && !kaezip_async_is_thread_do_comp_full(sess->ctrl)) {
-        kaezip_dequeue_process(sess->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, comp_optype, kaezip_compress_async);
+        kaezip_dequeue_process(sess->ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, comp_optype, comp_algtype, kaezip_compress_async);
     }
 
     if (task_queue->pi != task_queue->ci || kaezip_async_is_thread_do_comp_full(sess->ctrl)) {
         return kaezip_enqueue(task_queue, &task);
     } else {
         return kaezip_compress_async(sess->ctrl, task.src, task.dst, task.callback, task.result,
-                                     task.data_format, comp_optype);
+                                     task.data_format, comp_optype, comp_algtype);
     }
 }
 
@@ -185,7 +202,7 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
         return KAE_ZLIB_INVAL_PARA;
     }
 
-    return kaezip_async_do_comp_in_session(sess, src, dst, callback, result, KAEZIP_ASYNC_BLOCK, WCRYPTO_DEFLATE);
+    return kaezip_async_do_comp_in_session(sess, src, dst, callback, result, KAEZIP_ASYNC_BLOCK, WCRYPTO_DEFLATE, ((kaezip_session *)sess)->comp_algtype);
 }
 
 void KAEZIP_async_polling_in_session(void *sess, int budget)
@@ -205,7 +222,8 @@ void KAEZIP_async_polling_in_session(void *sess, int budget)
     while (ret > 0 && cnt < budget) {
         ret = kaezip_async_compress_polling(ctrl, ASYNC_POLLING_DEFAULT_BUDGET);
         if (!kaezip_async_is_thread_do_comp_full(ctrl)) {
-            kaezip_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, ((kaezip_session *)sess)->comp_optype, kaezip_compress_async);
+            kaezip_dequeue_process(ctrl, task_queue, ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET, ((kaezip_session *)sess)->comp_optype, 
+                                    ((kaezip_session *)sess)->comp_algtype, kaezip_compress_async);
         }
         cnt += ret;
     }
@@ -221,12 +239,13 @@ void *KAEZIP_create_async_compress_session(iova_map_fn usr_map)
 
     sess->usr_map = usr_map;
     sess->comp_optype = WCRYPTO_DEFLATE;
+    sess->comp_algtype = WCRYPTO_RAW_DEFLATE;
     ret = kaezip_task_queue_init(&sess->task_queue, 0, NULL);
     if (ret != 0) {
         free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
     if (ret != 0) {
         kaezip_task_queue_free(&sess->task_queue);
         free(sess);
@@ -247,7 +266,7 @@ void KAEZIP_destroy_async_compress_session(void *sess)
 
 static int kaezip_task_flush_callback(struct kaezip_async_ctrl *ctrl, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                                       kaezip_async_callback callback, struct kaezip_result *result,
-                                      enum kaezip_async_data_format data_format, int comp_optype)
+                                      enum kaezip_async_data_format data_format, int comp_optype, int comp_algtype)
 {
     result->status = KAE_ZLIB_HW_TIMEOUT_FAIL;
     result->dst_len = 0;
@@ -257,13 +276,13 @@ static int kaezip_task_flush_callback(struct kaezip_async_ctrl *ctrl, const stru
 
 static void kaezip_flush_task_queue(kaezip_session *sess)
 {
-    kaezip_dequeue_process(sess->ctrl, &sess->task_queue, 0, sess->comp_optype, kaezip_task_flush_callback);
+    kaezip_dequeue_process(sess->ctrl, &sess->task_queue, 0, sess->comp_optype, sess->comp_algtype, kaezip_task_flush_callback);
 }
 
 void KAEZIP_reset_session(void *sess)
 {
     if (sess) {
-        kaezip_hw_timeout_handle(((kaezip_session *)sess)->ctrl, ((kaezip_session *)sess)->comp_optype);
+        kaezip_hw_timeout_handle(((kaezip_session *)sess)->ctrl, ((kaezip_session *)sess)->comp_optype, ((kaezip_session *)sess)->comp_algtype);
         kaezip_flush_task_queue(sess);
     }
 }
@@ -278,12 +297,13 @@ void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map)
 
     sess->usr_map = usr_map;
     sess->comp_optype = WCRYPTO_INFLATE;
+    sess->comp_algtype = WCRYPTO_RAW_DEFLATE;
     ret = kaezip_task_queue_init(&sess->task_queue, 0, NULL);
     if (ret != 0) {
         free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
     if (ret != 0) {
         kaezip_task_queue_free(&sess->task_queue);
         free(sess);
@@ -305,5 +325,60 @@ int KAEZIP_decompress_async_in_session(void *sess, const struct kaezip_buffer_li
         return KAE_ZLIB_INVAL_PARA;
     }
 
-    return kaezip_async_do_comp_in_session(sess, src, dst, callback, result, KAEZIP_ASYNC_BLOCK, WCRYPTO_INFLATE);
+    return kaezip_async_do_comp_in_session(sess, src, dst, callback, result, KAEZIP_ASYNC_BLOCK, WCRYPTO_INFLATE, ((kaezip_session *)sess)->comp_algtype);
+}
+
+void *KAEZIP_create_async_compress_session_zlib(iova_map_fn usr_map, int level, int windowBits)
+{
+    kaezip_session *sess = (kaezip_session *)kae_malloc(sizeof(kaezip_session));
+    int ret = 0;
+
+    if (!sess)
+        return NULL;
+
+    sess->usr_map = usr_map;
+    sess->comp_optype = WCRYPTO_DEFLATE;
+    sess->comp_algtype = WCRYPTO_ZLIB;
+    ret = kaezip_task_queue_init(&sess->task_queue, 0, NULL);
+    if (ret != 0) {
+         free(sess);
+        return NULL;
+    }
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    // generate zlib header
+    kaezip_set_zlib_header(sess->ctrl, level, windowBits);
+
+    if (ret != 0) {
+        kaezip_task_queue_free(&sess->task_queue);
+        free(sess);
+        return NULL;
+    }
+
+    return sess;
+}
+
+void *KAEZIP_create_async_decompress_session_zlib(iova_map_fn usr_map)
+{
+    kaezip_session *sess = (kaezip_session *)kae_malloc(sizeof(kaezip_session));
+    int ret = 0;
+
+    if (!sess)
+        return NULL;
+
+    sess->usr_map = usr_map;
+    sess->comp_optype = WCRYPTO_INFLATE;
+    sess->comp_algtype = WCRYPTO_ZLIB;
+    ret = kaezip_task_queue_init(&sess->task_queue, 0, NULL);
+    if (ret != 0) {
+        free(sess);
+        return NULL;
+    }
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    if (ret != 0) {
+        kaezip_task_queue_free(&sess->task_queue);
+        free(sess);
+        return NULL;
+    }
+
+    return sess;
 }

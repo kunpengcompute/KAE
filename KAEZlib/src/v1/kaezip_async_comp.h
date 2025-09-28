@@ -94,6 +94,7 @@ struct kaezip_async_ctrl {
     volatile int *stop_flag;
     iova_map_fn usr_map;
     int is_polling;
+    const char *header;
 };
 
 #define KZL_MEMCPY_16(dst, src, size) vst1q_u8((dst), vld1q_u8(src))
