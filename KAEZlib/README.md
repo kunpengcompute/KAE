@@ -45,8 +45,8 @@ void *KAEZIP_create_async_compress_session(iova_map_fn usr_map);
 /**
  * @brief: compress async api
  * @param: sess : session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: src [IN] : input data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
+ * @param: dst [OUT] : output data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*kaezip_async_callback)(struct kaezip_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaezip_result.
  * @return: 0 success, other fail
@@ -78,8 +78,8 @@ void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map);
 /**
  * @brief: decompress async api
  * @param: sess : session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: src [IN] : input data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
+ * @param: dst [OUT] : output data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*kaezip_async_callback)(struct kaezip_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaezip_result.
  * @return: 0 success, other fail

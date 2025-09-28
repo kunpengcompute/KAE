@@ -128,6 +128,7 @@ static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct
                         src->buf[0].buf_len > REQ_BUFFER_MAX_SIZE || src->buf[0].buf_len < REQ_BUFFER_MIN_SIZE)) {
         return KAE_ZLIB_INVAL_PARA;
     }
+    result->src_size += src->buf[0].buf_len;
 
     for (unsigned int i = 1; i < src->buf_num; i++) {
         if (unlikely(src->buf[i].data == NULL || src->buf[i].buf_len == 0 || 
@@ -141,6 +142,7 @@ static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct
                         dst->buf[0].buf_len > REQ_BUFFER_MAX_SIZE || dst->buf[0].buf_len < REQ_BUFFER_MIN_SIZE)) {
         return KAE_ZLIB_INVAL_PARA;
     }
+    result->dst_len += dst->buf[0].buf_len;
     
     for (unsigned int i = 1; i < dst->buf_num; i++) {
         if (unlikely(dst->buf[i].data == NULL || dst->buf[i].buf_len == 0 || 
