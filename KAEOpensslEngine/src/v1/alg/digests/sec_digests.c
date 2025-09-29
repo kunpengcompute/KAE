@@ -34,7 +34,11 @@
 
 #define DIGEST_SM3_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (512)
 #define DIGEST_MD5_SMALL_PACKET_OFFLOAD_THRESHOLD_DEFAULT (8 * 1024)
-
+#if OPENSSL_VERSION_NUMBER >= 30000000L
+#ifndef EVP_MD_CTX_md_data(ctx)
+#define EVP_MD_CTX_md_data(ctx) EVP_MD_CTX_get0_md_data(ctx)
+#endif
+#endif
 struct digest_info {
 	int nid;
 	int is_enabled;
@@ -604,6 +608,49 @@ static void sec_create_digests(void)
 	}
 }
 
+int sw_sec_digests_init(EVP_MD_CTX *ctx)
+{
+    int sts = 0;
+    int (*sw_fn_ptr)(EVP_MD_CTX *) = NULL;
+    sw_fn_ptr = EVP_MD_meth_get_init((EVP_MD *)EVP_sm3());
+    sts = (*sw_fn_ptr)(ctx);
+
+    return sts;
+}
+
+int sw_sec_digests_update(EVP_MD_CTX *ctx)
+{
+    int sts = 0;
+    int (*sw_fn_ptr)(EVP_MD_CTX *) = NULL;
+    sw_fn_ptr = EVP_MD_meth_get_update((EVP_MD *)EVP_sm3());
+    sts = (*sw_fn_ptr)(ctx);
+
+    return sts;
+}
+
+int sw_sec_digests_final(EVP_MD_CTX *ctx)
+{
+    int sts = 0;
+    int (*sw_fn_ptr)(EVP_MD_CTX *) = NULL;
+    sw_fn_ptr = EVP_MD_meth_get_final((EVP_MD *)EVP_sm3());
+    sts = (*sw_fn_ptr)(ctx);
+
+    return sts;
+}
+
+int sw_sm3_md_methods(EVP_MD *c)
+{
+    int res = 1;
+    res &= EVP_MD_meth_set_result_size(c, 32);
+    res &= EVP_MD_meth_set_input_blocksize(c, SM3_CBLOCK);
+    res &= EVP_MD_meth_set_app_datasize(c, sizeof(EVP_MD *) + sizeof(sec_digest_priv_t));
+    res &= EVP_MD_meth_set_flags(c, 0);
+    res &= EVP_MD_meth_set_init(c, sw_sec_digests_init);
+    res &= EVP_MD_meth_set_update(c, sw_sec_digests_update);
+    res &= EVP_MD_meth_set_final(c, sw_sec_digests_final);
+    return res;
+}
+
 /******************************************************************************
  * function:
  *         sec_engine_digests(ENGINE *e,
@@ -643,9 +690,19 @@ int sec_engine_digests(ENGINE *e, const EVP_MD **digest, const int **nids, int n
 			if (g_sec_digests_info[i].digest == NULL)
 				sec_create_digests();
 			/*SM3 is disabled*/
-			*digest = g_sec_digests_info[i].is_enabled
-				? g_sec_digests_info[i].digest : (EVP_MD *)EVP_MD_meth_dup(EVP_sm3());
-			return OPENSSL_SUCCESS;
+            if (g_sec_digests_info[i].is_enabled) {
+                *digest = g_sec_digests_info[i].digest;
+            } else {
+#if OPENSSL_VERSION_NUMBER >= 30000000L
+                EVP_MD *tmp = EVP_MD_CTX_new();
+                tmp = (EVP_MD *)EVP_MD_meth_dup(EVP_sm3());
+                sw_sm3_md_methods(tmp);
+                *digest = tmp;
+#else
+                *digest = (EVP_MD *)EVP_MD_meth_dup(EVP_sm3());
+#endif
+            }
+            return OPENSSL_SUCCESS;
 		}
 	}
 
@@ -674,8 +731,15 @@ int sec_engine_soft_digests(ENGINE *e, const EVP_MD **digest, const int **nids, 
 	}
 
 	*digest = EVP_get_digestbynid(nid);
-
-	return OPENSSL_SUCCESS;
+#if OPENSSL_VERSION_NUMBER >= 30000000L
+    if (nid == 1143 || nid == 40) {  //sm3 and md5
+        EVP_MD *tmp = EVP_MD_CTX_new();
+        tmp = (EVP_MD *)EVP_MD_meth_dup(EVP_sm3());
+        sw_sm3_md_methods(tmp);
+        *digest = tmp;
+    }
+#endif
+    return OPENSSL_SUCCESS;
 }
 
 void sec_digests_free_methods(void)

@@ -32,6 +32,11 @@
 #include "v2/utils/uadk_utils.h"
 #include "utils/engine_log.h"
 
+#if OPENSSL_VERSION_NUMBER >= 30000000L
+#ifndef EVP_MD_CTX_md_data(ctx)
+#define EVP_MD_CTX_md_data(ctx) EVP_MD_CTX_get0_md_data(ctx)
+#endif
+#endif
 #define UADK_DO_SOFT	(-0xE0)
 #define CTX_SYNC	0
 #define CTX_ASYNC	1
