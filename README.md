@@ -249,7 +249,7 @@ RPM包在gitee社区[release界面](https://gitee.com/kunpengcompute/KAE/release
   
   ```shell
   cd KAE
-  chmod +x config
+  chmod +x configure
   ./configure
   make clean & make
   make install
