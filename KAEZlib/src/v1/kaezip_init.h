@@ -11,6 +11,6 @@
 
 #include "kaezip_common.h"
 
-void *kaezip_init_v1(int win_size, int is_sgl, int comp_type, int comp_algtype);
+void *kaezip_init_v1(int win_size, int is_sgl, int comp_type, int comp_algtype, const device_config_t *config);
 
 #endif

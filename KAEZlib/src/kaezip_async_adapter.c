@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <semaphore.h>
 #include <stdatomic.h>
+#include <pthread.h>
 #include "kaezlib_common.h"
 #include "kaezip_ctx.h"
 #include "kaezip.h"
@@ -17,6 +18,10 @@
 #include "kaezip_log.h"
 #include "uadk/wd.h"
 
+static struct zip_dev g_devices[MAX_DEVICES];
+static unsigned int g_dev_count = 0;
+static atomic_int g_initialized = 0; // 初始化标志
+static pthread_mutex_t g_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void kaezip_dequeue_process(struct kaezip_async_ctrl *ctrl, kaezip_task_queue *task_queue, int budget, 
                                     int comp_optype, int comp_algtype, compress_async_fn compress_fn)
@@ -229,13 +234,18 @@ void KAEZIP_async_polling_in_session(void *sess, int budget)
     }
 }
 
-void *KAEZIP_create_async_compress_session(iova_map_fn usr_map)
+void *KAEZIP_create_async_compress_session(iova_map_fn usr_map, const device_config_t *config)
 {
     kaezip_session *sess = (kaezip_session *)kae_malloc(sizeof(kaezip_session));
     int ret = 0;
 
     if (!sess)
         return NULL;
+
+    // check config
+    if (config != NULL && config->policy == KAE_SELECT_BY_DEV && config->param.dev == NULL) {
+        return NULL;
+    }
 
     sess->usr_map = usr_map;
     sess->comp_optype = WCRYPTO_DEFLATE;
@@ -245,7 +255,7 @@ void *KAEZIP_create_async_compress_session(iova_map_fn usr_map)
         free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype, config);
     if (ret != 0) {
         kaezip_task_queue_free(&sess->task_queue);
         free(sess);
@@ -287,13 +297,18 @@ void KAEZIP_reset_session(void *sess)
     }
 }
 
-void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map)
+void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map, const device_config_t *config)
 {
     kaezip_session *sess = (kaezip_session *)kae_malloc(sizeof(kaezip_session));
     int ret = 0;
 
     if (!sess)
         return NULL;
+
+    // check config
+    if (config != NULL && config->policy == KAE_SELECT_BY_DEV && config->param.dev == NULL) {
+        return NULL;
+    }
 
     sess->usr_map = usr_map;
     sess->comp_optype = WCRYPTO_INFLATE;
@@ -303,7 +318,7 @@ void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map)
         free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype, config);
     if (ret != 0) {
         kaezip_task_queue_free(&sess->task_queue);
         free(sess);
@@ -344,7 +359,7 @@ void *KAEZIP_create_async_compress_session_zlib(iova_map_fn usr_map, int level, 
          free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype, NULL);
     // generate zlib header
     kaezip_set_zlib_header(sess->ctrl, level, windowBits);
 
@@ -373,7 +388,7 @@ void *KAEZIP_create_async_decompress_session_zlib(iova_map_fn usr_map)
         free(sess);
         return NULL;
     }
-    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype);
+    ret = kaezip_async_instances_init(&sess->ctrl, usr_map, sess->comp_optype, sess->comp_algtype, NULL);
     if (ret != 0) {
         kaezip_task_queue_free(&sess->task_queue);
         free(sess);
@@ -381,4 +396,29 @@ void *KAEZIP_create_async_decompress_session_zlib(iova_map_fn usr_map)
     }
 
     return sess;
+}
+
+const struct zip_dev *KAEZIP_get_devices(unsigned int *num)
+{
+    // initialized, return without lock
+    if (atomic_load_explicit(&g_initialized, memory_order_acquire)) {
+        if (num) {
+            *num = g_dev_count;
+        }
+        return g_dev_count > 0 ? g_devices : NULL;
+    }
+
+    // not initialized
+    pthread_mutex_lock(&g_init_mutex);
+    if (!g_initialized) {
+        if (scan_hisi_zip_devices(g_devices, &g_dev_count) == 0) {
+            atomic_store_explicit(&g_initialized, 1, memory_order_release);
+        }
+    }
+    pthread_mutex_unlock(&g_init_mutex);
+
+    if (num) {
+        *num = g_dev_count;
+    }
+    return g_dev_count > 0 ? g_devices : NULL;
 }

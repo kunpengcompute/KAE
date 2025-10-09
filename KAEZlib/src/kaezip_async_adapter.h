@@ -83,8 +83,12 @@ int kaezip_async_compress_polling(struct kaezip_async_ctrl *ctrl, int budget);
 
 int kaezip_async_is_thread_do_comp_full(struct kaezip_async_ctrl *ctrl);
 
-int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype, int comp_algtype);
+int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype, 
+                                int comp_algtype, const device_config_t *config);
+                                
 void kaezip_async_instances_deinit(struct kaezip_async_ctrl *ctrl);
 void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype, int comp_algtype);
 void kaezip_set_zlib_header(struct kaezip_async_ctrl *ctrl, int level, int windowBits);
+
+int scan_hisi_zip_devices(struct zip_dev *g_devices, unsigned int *g_dev_count);
 #endif

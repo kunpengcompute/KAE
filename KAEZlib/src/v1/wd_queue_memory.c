@@ -60,7 +60,7 @@ static int get_numa_mask(int mask) {
     return 1 << nid;
 }
 
-struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_sgl)
+struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_sgl, const device_config_t *config)
 {
     struct wd_queue* queue = (struct wd_queue *)kae_malloc(sizeof(struct wd_queue));
     if (queue == NULL) {
@@ -98,6 +98,20 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_
 
     struct wcrypto_paras *priv = (struct wcrypto_paras *)&(queue->capa.priv);
     priv->direction = comp_optype;
+
+    /* request queue based on config */
+    if (config != NULL && config->policy != KAE_SELECT_AUTO) {
+        switch (config->policy) {
+            case KAE_SELECT_BY_DEV:
+                snprintf(queue->dev_path, PATH_STR_SIZE, "%s", config->param.dev->dev_name);
+                break;
+            case KAE_SELECT_BY_NUMA:
+                queue->node_mask = 1 << config->param.numa_node;
+                break;
+            default:
+                break;
+        }
+    }
     int ret = wd_request_queue(queue);
     if (ret) {
         US_ERR("request wd queue fail!errno:%d", ret);
@@ -288,7 +302,8 @@ void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_
     US_DEBUG("free wd queue success");
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type, int win_size, int is_sgl)
+static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type, int win_size, int is_sgl, 
+                                                            const device_config_t *config)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
 
@@ -299,7 +314,7 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int 
     }
     memset(queue_node, 0, sizeof(KAE_QUEUE_DATA_NODE_S));
 
-    queue_node->kae_wd_queue = kaezip_wd_new_queue(comp_alg_type, comp_type, is_sgl);
+    queue_node->kae_wd_queue = kaezip_wd_new_queue(comp_alg_type, comp_type, is_sgl, config);
     if (queue_node->kae_wd_queue == NULL) {
         US_ERR("new wd queue fail");
         goto err;
@@ -325,7 +340,8 @@ err:
     return NULL;
 }
 
-KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, int win_size, int is_sgl)
+KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, 
+                                                    int win_size, int is_sgl, const device_config_t *config)
 {
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
 
@@ -336,7 +352,7 @@ KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
 
     queue_data_node = kaezip_get_queue_data_from_list(pool_head, comp_alg_type, win_size, is_sgl);
     if (queue_data_node == NULL) {
-        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type, win_size, is_sgl);
+        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type, win_size, is_sgl, config);
     }
 
     return queue_data_node;
