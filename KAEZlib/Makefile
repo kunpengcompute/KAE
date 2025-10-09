@@ -106,10 +106,12 @@ install :
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	install -m 755 $(WORK_PATH)/include/kaezip.h $(ENGINE_INSTALL_PATH)/include
+	install -m 755 $(WORK_PATH)/include/kaezip_dev.h $(ENGINE_INSTALL_PATH)/include
 uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaezip.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/kaezip_dev.h
 	$(RM) /var/log/kaezip.log
 	$(RM) /var/log/kaezip.log.old

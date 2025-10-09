@@ -614,7 +614,7 @@ void kaezip_free_instance(void *arg)
 
 #define COMP_OPTYPE_NUM (2)
 __thread struct kaezip_instance *g_cur_instance[COMP_OPTYPE_NUM];
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl)
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaezip_ctx_t               *kz_ctx = NULL;
@@ -629,10 +629,10 @@ kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, i
     // check cur_instance
     if (cur_instance == NULL || cur_instance->q_node->comp_alg_type != alg_comp_type \
         || cur_instance->q_node->win_size != win_size || cur_instance->q_node->is_sgl != is_sgl) {
-        q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl);
+        q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config);
         if (q_node == NULL) {
             kaezip_queue_pool_check_and_release(qp, kaezip_free_instance);
-            q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl);
+            q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config);
 
             if (q_node == NULL) {
                 kae_free(cur_instance);

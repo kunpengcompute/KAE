@@ -14,7 +14,9 @@
 #include <stdint.h>
 #include <arm_acle.h>
 #include <arm_neon.h>
+#include <dirent.h>
 #include "uadk/v1/wd_sgl.h"
+#include "kaezip_dev.h"
 
 #define KAE_ZLIB_REBUILD_FAIL -257
 #define KAE_ZLIB_SW_RETURN_0_FAIL -256
@@ -95,6 +97,7 @@ struct kaezip_async_ctrl {
     iova_map_fn usr_map;
     int is_polling;
     const char *header;
+    const device_config_t *config;
 };
 
 #define KZL_MEMCPY_16(dst, src, size) vst1q_u8((dst), vld1q_u8(src))
@@ -109,4 +112,6 @@ static inline void ZIP_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd
 }
 
 int kaezip_async_is_thread_do_comp_full(struct kaezip_async_ctrl *ctrl);
+
+int scan_hisi_zip_devices(struct zip_dev *g_devices, unsigned int *g_dev_count);
 #endif

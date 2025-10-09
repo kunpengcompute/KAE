@@ -466,7 +466,8 @@ void kaezip_ctx_clear(struct kaezip_async_ctrl *ctrl)
     }
 }
 
-int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype, int comp_algtype)
+int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr_map, int comp_optype, 
+                                int comp_algtype, const device_config_t *config)
 {
     struct kaezip_async_ctrl *new_ctrl = (struct kaezip_async_ctrl *)kae_malloc(sizeof(struct kaezip_async_ctrl));
     if (!new_ctrl)
@@ -478,8 +479,9 @@ int kaezip_async_instances_init(struct kaezip_async_ctrl **ctrl, iova_map_fn usr
 
     new_ctrl->usr_map = usr_map;
     new_ctrl->is_polling = TRUE;
+    new_ctrl->config = config;
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
-        new_ctrl->kz_ctx[i] = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
+        new_ctrl->kz_ctx[i] = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype, config);
         if (new_ctrl->kz_ctx[i] == NULL) {
             goto free_kz_ctx;
         }
@@ -593,7 +595,7 @@ void kaezip_hw_timeout_handle(struct kaezip_async_ctrl *ctrl, int comp_optype, i
         if (ctrl->kz_ctx[i] != NULL) {
             continue;
         }
-        kaezip_ctx_t *kz_ctx = kaezip_init_v1(win_size, is_sgl, comp_optype, comp_algtype);
+        kaezip_ctx_t *kz_ctx = kaezip_init_v1(win_size, is_sgl, comp_optype, comp_algtype, ctrl->config);
         if (kz_ctx == NULL) {
             return;
         }
@@ -611,7 +613,7 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
 
     if (unlikely(ctrl->kz_ctx[ctrl->ctx_index] == NULL)) {
         int is_sgl = (ctrl->usr_map != NULL) ? 1 : 0;
-        kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
+        kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype, ctrl->config);
         while (kz_ctx == NULL) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             struct timespec timeout;
             if (enter_polling == 0) {
@@ -625,7 +627,7 @@ static kaezip_ctx_t *kaezip_async_init_ctx(struct kaezip_async_ctrl *ctrl, int c
             }
 
             (void)kaezip_async_compress_polling(ctrl, 1);
-            kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype);
+            kz_ctx = kaezip_init_v1(kaezip_get_win_size(), is_sgl, comp_optype, comp_algtype, ctrl->config);
         }
         ctrl->kz_ctx[ctrl->ctx_index] = kz_ctx;
         ctrl->kz_ctx[ctrl->ctx_index]->usr_map = ctrl->usr_map;
@@ -874,4 +876,113 @@ int kaezip_compress_async(struct kaezip_async_ctrl *ctrl, const struct kaezip_bu
 void kaezip_set_zlib_header(struct kaezip_async_ctrl *ctrl, int level, int windowBits)
 {
     ctrl->header = kaezip_get_fmt_header_zlib(level, windowBits);
+}
+
+static int parse_hw_id(const char *name, unsigned int *hw_id)
+{
+    const char *p = name + strlen(ZIP_PREFIX);
+    char *endptr;
+    long val;
+
+    if (*p == '\0') {
+        return -1;
+    }
+
+    errno = 0;
+    val = strtol(p, &endptr, 10);
+    if (errno != 0 || *endptr != '\0' || val < 0 || val > UINT_MAX) {
+        return -1;
+    }
+    *hw_id = (unsigned int)val;
+    return 0;
+}
+
+static int compare_devs(const void *a, const void *b)
+{
+    unsigned int id1 = ((const struct zip_dev *)a)->hw_id;
+    unsigned int id2 = ((const struct zip_dev *)b)->hw_id;
+    if (id1 < id2) return -1;
+    if (id1 > id2) return 1;
+    return 0;
+}
+
+static int read_numa_node(const char *dev_path)
+{
+    char node_path[MAX_STR_SIZE + 16];
+    FILE *fp;
+    int numa_id = -1;
+
+    // 构建 node_id 文件路径
+    snprintf(node_path, MAX_STR_SIZE + 16, "%s/node_id", dev_path);
+
+    fp = fopen(node_path, "r");
+    if (!fp) {
+        return -1;
+    }
+
+    // 读取一个整数
+    if (fscanf(fp, "%d", &numa_id) != 1) {
+        numa_id = -1; // 读取失败
+    }
+
+    fclose(fp);
+    return numa_id;
+}
+
+int scan_hisi_zip_devices(struct zip_dev *g_devices, unsigned int *g_dev_count)
+{
+    DIR *dir = opendir(UACCE_CLASS_PATH);
+    if (!dir) {
+        fprintf(stderr, "[hisi_zip] Failed to open %s: %s\n", 
+                UACCE_CLASS_PATH, strerror(errno));
+        return -1;
+    }
+
+    struct zip_dev temp_devs[MAX_DEVICES];
+    unsigned int count = 0;
+    struct dirent *entry;
+
+    while ((entry = readdir(dir)) != NULL) {
+        // 跳过 "." 和 ".."
+        if (entry->d_name[0] == '.' &&
+            (entry->d_name[1] == '\0' ||
+             (entry->d_name[1] == '.' && entry->d_name[2] == '\0'))) {
+            continue;
+        }
+
+        // 检查是否以 "hisi_zip-" 开头
+        if (strncmp(entry->d_name, ZIP_PREFIX, strlen(ZIP_PREFIX)) != 0) {
+            continue;
+        }
+
+        // 解析数字 ID
+        unsigned int hw_id;
+        if (parse_hw_id(entry->d_name, &hw_id) != 0) {
+            continue; // 跳过非法名称
+        }
+        temp_devs[count].hw_id = hw_id;
+
+        // 保存设备名称及完整路径
+        snprintf(temp_devs[count].dev_name, MAX_STR_SIZE, "%s", entry->d_name);
+        snprintf(temp_devs[count].dev_root, MAX_STR_SIZE, "%s/%s", UACCE_CLASS_PATH, entry->d_name);
+
+        // 保存设备 numa_id
+        char dev_path[MAX_STR_SIZE];
+        snprintf(dev_path, MAX_STR_SIZE, "%s/%s", UACCE_CLASS_PATH, entry->d_name);
+        temp_devs[count].numa_id = read_numa_node(dev_path);
+
+        count++;
+    }
+
+    closedir(dir);
+
+    // 按 hw_id 升序排序
+    qsort(temp_devs, count, sizeof(struct zip_dev), compare_devs);
+    // 写入全局缓存
+    for (unsigned int i = 0; i < count; i++) {
+        g_devices[i] = temp_devs[i];
+        g_devices[i].dev_id = i; // 分配逻辑 dev_id
+    }
+    *g_dev_count = count;
+    return 0;
 }

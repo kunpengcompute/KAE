@@ -25,6 +25,7 @@
 #include <sys/time.h>
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
+#include "kaezip_dev.h"
 
 enum kaezip_comp_status {
     KAEZIP_COMP_INIT = 0,
@@ -115,7 +116,7 @@ struct kaezip_instance {
 
 typedef struct kaezip_ctx   kaezip_ctx_t;
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl);
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config);
 void          kaezip_put_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_init_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_free_ctx(kaezip_ctx_t* kz_ctx);

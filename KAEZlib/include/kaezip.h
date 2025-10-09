@@ -25,6 +25,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "zlib.h"
+#include "kaezip_dev.h"
+
 #define Z_CALL_SOFT 10
 
 #define VERSION_STRUCT_MAXLEN 100
@@ -103,8 +105,8 @@ extern void setDeflateKaezipCtx(z_streamp strm, unsigned long kaezip_ctx);
 /**
  * @brief: block compress async api
  * @param: sess : session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: src [IN] : input data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
+ * @param: dst [OUT] : output data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*kaezip_async_callback)(struct kaezip_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaezip_result.
  * @return: 0 success, other fail
@@ -121,9 +123,10 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
 /**
  * @brief: Initialize Task Queues and Threads on the KAE Side.
  * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @param: config : pointer to device configuration structure used to select KAE device
  * @return: session, NULL if fail
  */
-void *KAEZIP_create_async_compress_session(iova_map_fn usr_map);
+void *KAEZIP_create_async_compress_session(iova_map_fn usr_map, const device_config_t *config);
 
 /**
  * @brief: Destroy session and hardware ctx.
@@ -134,9 +137,10 @@ void KAEZIP_destroy_async_compress_session(void *sess);
 /**
  * @brief: Initialize Task Queues and Threads on the KAE Side for decompress.
  * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @param: config : pointer to device configuration structure used to select KAE device
  * @return: session, NULL if fail
  */
-void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map);
+void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map, const device_config_t *config);
 
 /**
  * @brief: Destroy decompress session and hardware ctx.
@@ -147,8 +151,8 @@ void KAEZIP_destroy_async_decompress_session(void *sess);
 /**
  * @brief: block decompress async api
  * @param: sess : session
- * @param: src [IN] : input data
- * @param: dst [OUT] : output data, only support buf_num == 1 now.
+ * @param: src [IN] : input data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
+ * @param: dst [OUT] : output data, up to 255 SGES, each physically contiguous and ≤8 MB in size.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*kaezip_async_callback)(struct kaezip_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaezip_result.
  * @return: 0 success, other fail
@@ -163,11 +167,11 @@ void KAEZIP_reset_session(void *sess);
 
 /**
  * @brief: Initialize Task Queues and Threads on the KAE Side with zlib format.
-* @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
-* @param: level : an integer from 0 to 9 or -1 controlling the level of compression
-* @param: windowBits : an integer from 8 to 15 to control the size of sliding window
-* @return: session, NULL if fail
-*/
+ * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @param: level : an integer from 0 to 9 or -1 controlling the level of compression
+ * @param: windowBits : an integer from 8 to 15 to control the size of sliding window
+ * @return: session, NULL if fail
+ */
 void *KAEZIP_create_async_compress_session_zlib(iova_map_fn usr_map, int level, int windowBits);
       
 /**
@@ -176,4 +180,11 @@ void *KAEZIP_create_async_compress_session_zlib(iova_map_fn usr_map, int level, 
  * @return: session, NULL if fail
  */
 void *KAEZIP_create_async_decompress_session_zlib(iova_map_fn usr_map);
+
+/**
+ * @brief: retrieve the list of available ZIP accelerator devices.
+ * @param: num [out] : pointer to store the number of devices.
+ * @return: pointer to an array of device descriptors.
+ */
+const struct zip_dev *KAEZIP_get_devices(unsigned int *num);
 #endif
