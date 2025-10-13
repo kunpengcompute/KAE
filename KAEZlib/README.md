@@ -18,6 +18,7 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 
 | 接口                                | 简介                     |
 |---------------------------------------|--------------------------|
+| `KAEZIP_get_devices`| 获取当前ZIP加速器设备信息 |
 | `KAEZIP_create_async_compress_session`| 创建异步压缩任务session       |
 | `KAEZIP_compress_async_in_session`        | 提交异步压缩任务        |
 | `KAEZIP_async_polling_in_session`          | polling查询异步压缩/解压任务的结果        |
@@ -36,11 +37,19 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 
 ```c
 /**
+ * @brief: retrieve the list of available ZIP accelerator devices.
+ * @param: num [out] : pointer to store the number of devices.
+ * @return: pointer to an array of device descriptors, NULL if no KAE device.
+ */
+const struct zip_dev *KAEZIP_get_devices(unsigned int *num);
+
+/**
  * @brief: Initialize Task Queues and Threads on the KAE Side.
  * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @param: config : pointer to device configuration structure used to select KAE device
  * @return: session, NULL if fail
  */
-void *KAEZIP_create_async_compress_session(iova_map_fn usr_map);
+void *KAEZIP_create_async_compress_session(iova_map_fn usr_map, const device_config_t *config);
 
 /**
  * @brief: compress async api
@@ -61,7 +70,6 @@ int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list
  */
  void KAEZIP_async_polling_in_session(void *sess, int budget);
 
-
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session
@@ -71,9 +79,10 @@ void KAEZIP_destroy_async_compress_session(void *sess);
 /**
  * @brief: Initialize Task Queues and Threads on the KAE Side for decompress.
  * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
+ * @param: config : pointer to device configuration structure used to select KAE device
  * @return: session, NULL if fail
  */
-void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map);
+void *KAEZIP_create_async_decompress_session(iova_map_fn usr_map, const device_config_t *config);
 
 /**
  * @brief: decompress async api
@@ -98,6 +107,49 @@ void KAEZIP_destroy_async_decompress_session(void *sess);
  * @param: sess : session
  */
 void KAEZIP_reset_session(void *sess);
+```
+
+### 指定加速器设备
+KAEZip提供了查询接口用于查询当前ZIP加速器设备的相关信息，同时异步压缩解压接口支持由用户自行选择所需要使用的加速器设备。加速器设备信息的结构体定义如下：
+```c
+struct zip_dev {
+	int numa_id;                  // 所属 NUMA 节点
+	char dev_name[256];           // hisi_zip-*
+    char dev_root[MAX_STR_SIZE];  // /sys/class/uacce/hizi_zip-*
+    unsigned int hw_id;           // 硬件 ID ( - 后面的数字，如 hisi_zip-8)
+    unsigned int dev_id;          // 逻辑 ID ( 0,1,2...)
+};
+```
+当前支持3种设备指定策略：
+1. 默认策略，根据NUMA亲和性自动选择加速器设备
+2. 指定NUMA，使用该NUMA上的ZIP加速器设备
+3. 指定设备，使用指定的ZIP加速器设备
+
+具体用法demo如下：
+```c
+#include "kaezip.h"
+
+int main()
+{
+    unsigned int num = 0;
+    const struct zip_dev *devs = KAEZIP_get_devices(&num);
+
+    if (devs == NULL) {
+        return -1; // No KAE device
+    }
+
+    // 根据NUMA亲和性自动选择加速器设备
+    device_config_t conf_auto = KAE_CONFIG_AUTO();
+    // 指定第一个加速器设备
+    device_config_t conf_dev  = KAE_CONFIG_BY_DEV(&devs[0]);
+    // 指定使用NUMA-0上的加速器设备
+    device_config_t conf_numa = KAE_CONFIG_BY_NUMA(0);
+
+    // 创建session时如果设备选择策略为空，则根据NUMA亲和性自动选择加速器设备
+    void *sess = KAEZIP_create_async_compress_session(usr_map, NULL);
+    void *sess_dev  = KAEZIP_create_async_compress_session(usr_map, &conf_dev);
+    void *sess_numa = KAEZIP_create_async_compress_session(usr_map, &conf_numa);
+}
 ```
 
 ### API使用demo
