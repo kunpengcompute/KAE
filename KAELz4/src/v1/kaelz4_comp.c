@@ -15,6 +15,10 @@ __thread struct kaelz4_async_ctrl g_async_ctrl = {0};
 
 void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status)
 {
+    if (!zc) {
+        US_ERR("kaelz4 ctx is NULL.");
+        return;
+    }
     kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     if (kaelz4_ctx) {
         kaelz4_ctx->lz4_data.blk_type = status;

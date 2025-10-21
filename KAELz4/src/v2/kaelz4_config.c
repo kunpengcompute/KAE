@@ -156,6 +156,11 @@ static int kaelz4_create_session(KaeLz4Config *config, int lz4_level)
         return KAE_LZ4_ALLOC_FAIL;
     }
     config->req.dst = malloc(REQ_DSTBUFF_LEN);
+    if (!config->req.dst) {
+        US_ERR("failed to alloc req dst!\n");
+        wd_comp_free_sess(config->sess);
+        return KAE_LZ4_ALLOC_FAIL;
+    }
     config->req.dst_len = REQ_DSTBUFF_LEN;
     config->req.op_type = WD_DIR_COMPRESS;
     config->req.data_fmt = WD_FLAT_BUF;
