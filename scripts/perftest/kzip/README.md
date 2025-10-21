@@ -1,5 +1,5 @@
 
-# 压缩性能测试小工具 kzip
+# 压缩性能测试工具 kzip
 
 ## 安装
 1、安装依赖
@@ -14,9 +14,41 @@ sh build.sh zlib
 ```
 2、打包 kzip
 ```
-# 在测试目录中
+# 在 scripts/perftest/kzip/ 目录中
 sh build.sh
 ```
+
+
+## 前置设置
+
+1、开启观察KAE硬件队列
+~~~shell
+# 不同型号设备的ZIP加速器数量可能存在差异
+# 容器化部署场景中，队列数量跟分配给容器的设备相关。
+watch -n 0.2 cat /sys/class/uacce/hisi_zip-*/available_instances
+~~~
+
+2、开启驱动fast模式
+~~~shell
+# 卸载原驱动，执行后无法观察到KAE硬件队列。
+rmmod hisi_zip
+
+# 重新以fast模式加载驱动
+modprobe hisi_zip perf_mode=1 uacce_mode=2 pf_q_num=256 #执行后观察KAE硬件队列会看到多个256，表示使能正确
+~~~
+
+3、设置fast模式下特定有效压缩窗长
+```shell
+export KAE_LZ4_WINTYPE=8
+export KAE_LZ4_COMP_TYPE=8
+export KAE_ZLIB_WINTYPE=8
+```
+
+4、查看工具参数说明
+~~~shell
+export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:/usr/local/kaezip/lib:$LD_LIBRARY_PATH
+./kzip -h
+~~~
 
 ## 参数说明
 所有参数均可选
@@ -32,16 +64,16 @@ kaezlib_deflate: 同步zlib deflate_raw格式压缩
 kaezlibasync_deflate: 异步zlib deflate_raw格式压缩
 ```
 - -d 处理压缩任务或解压任务
-default:null 默认压缩任务。
+default:null 默认压缩任务
 
 - -m 并发进程数量
-默认值1，表示仅一个主进程，对应单并发场景。大于1时，使用fork()复制进程进行测试。异步测试时推荐并发1。
+默认值1，表示仅一个主进程，对应单并发场景。大于1时，使用fork()复制进程进行测试。异步测试时推荐并发1
 
 - -t 并发线程数量
-默认1，不使用pthread_create()创建更多子线程。大于1时-m参数失效。
+默认1，不使用pthread_create()创建更多子线程。大于1时-m参数失效
 
 - -i 客户端流量控制，inflight num。
-异步压缩时，同一时间依次下发压缩任务的数量。默认256，最大1024。
+异步压缩时，同一时间依次下发压缩任务的数量。默认256，最大1024
 
 - -g 是否展示时延数据
 默认1展示。
@@ -59,21 +91,21 @@ default:null 默认压缩任务。
 默认1000
 
 - -P 大页配置
-是否使用大页存储待压缩数据。默认0不使用
+是否使用大页存储待压缩数据。默认使用
 
-- -p poll模式配置
-是否开启poll模式进行压缩。默认0不开启。
+- -p polling模式配置
+是否开启polling模式进行压缩。默认0不开启
 
-- -r crc32校验处理
-是否携带crc32校验值。默认0 不携带。
+- -r crc32c校验处理
+是否携带crc32c校验值。默认0 不携带
 
 
 ## 使用限制
-1、异步接口硬件环境限制：kunpeng 920 7280z
-2、最大性能测试时需要开启fast，详见 KAELZ4/README.md 《KAELz4 异步压缩接口用户使用指南》
-3、KAE 加速器与 NUMA 节点存在绑定关系。将进程绑定至特定 NUMA 节点后，该进程即可使用该节点对应的 KAE 硬件加速器。
-4、不支持SGL模式分段buffer切软算。
-5、kzip工具通过使用大页内存获取真实的物理地址，测试SGL模式的时候，要先申请大页内存。推荐参考如下命令：
+1、 异步接口硬件环境限制：kunpeng 920新型号。  
+2、 最大性能测试时需要开启fast模式。  
+3、 KAE 加速器与 NUMA 节点存在绑定关系。将进程绑定至特定 NUMA 节点后，该进程即可使用该节点对应的 KAE 硬件加速器。  
+4、 不支持SGL模式分段buffer切软算。  
+5、 kzip工具通过使用大页内存获取真实的物理地址，测试SGL模式的时候，要先申请大页内存。推荐参考如下命令：  
 ```
 sysctl vm.nr_hugepages=10000
 echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
@@ -81,42 +113,37 @@ echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hu
 
 ## 测试命令
 
-```shell
-# 不同数据集下接口功能测试
-sh runFunc.sh
-```
-
-polling模式lz77_raw格式转换为frame格式压缩接口测试
+polling模式lz77_raw格式转换为block格式压缩接口测试
 ```shell
 # 1、单IO时延数据
-sh runPerf.sh -A kaelz4async_lz77_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+sh runPerf.sh -A kaelz4async_lz77 -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 ```
 
-polling模式frame格式压缩接口测试：
+polling模式lz4 block格式压缩接口测试：
 ```shell
 # 1、单IO时延数据：等价串行流程，结果表示单个IO的压缩时延。
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 # 2、单核压缩能力：单线程加压，结果表示单线程能提供的压缩带宽与时延。
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar]
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar]
 ```
 
-非polling模式frame格式压缩接口测试：
+非polling模式lz4 block格式压缩接口测试：
 ```shell
 # 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
 
 # 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
 
 # 3、单KAE能力：多线程加压，结果表示满足5G@4K的压缩带宽前提的时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=5 # 可选5或6
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
 
 #4、单KAE最大能力：多线程满压，结果表示单KAE能够提供的最大压缩带宽。
 export KAE_LZ4_ASYNC_THREAD_NUM=8
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
+sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
 ```
 
 
@@ -143,14 +170,8 @@ sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -k 1 -i 64
 
 # 环境变量 KAE_ZIP_QUEUE_NODES_MASK 的使用说明：
 # export KAE_ZIP_QUEUE_NODES_MASK=15  # 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
-# export KAE_ZIP_QUEUE_NODES_MASK=12  # 十进制12 → 二进制 0011 → 使用NUMA 2,3
+# export KAE_ZIP_QUEUE_NODES_MASK=12  # 十进制12 → 二进制 1100 → 使用NUMA 2,3
 # export KAE_ZIP_QUEUE_NODES_MASK=11  # 十进制11 → 二进制 1011 → 使用NUMA 0,1,3
-# export KAE_ZIP_QUEUE_NODES_MASK=7  # 十进制7 → 二进制 0111 → 使用NUMA 0,1,2
-# export KAE_ZIP_QUEUE_NODES_MASK=5  # 十进制5 → 二进制 0101 → 使用NUMA 0,3
-```
-
-```
-# 单一场景接口组合使用demo测试
-export LD_LIBRARY_PATH=/usr/local/kaezip/lib/:/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
-./kzip -T 1
+# export KAE_ZIP_QUEUE_NODES_MASK=7   # 十进制7  → 二进制 0111 → 使用NUMA 0,1,2
+# export KAE_ZIP_QUEUE_NODES_MASK=5   # 十进制5  → 二进制 0101 → 使用NUMA 0,2
 ```

@@ -23,10 +23,10 @@
 
 该接口属于KAE2.0的KAELz4压缩的一部分，硬件环境和操作系统限制见KAE安装前准备章节。
 
-使用该接口需要正确安装KAE2.0，推荐使用源码安装方式安装最新版本KAE，过程详见：[https://www.hikunpeng.com/document/detail/zh/kunpengaccel/compress/devg-kaezip/kunpengaccel\_kaezip\_0029.html](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/compress/devg-kaezip/kunpengaccel_kaezip_0029.html)
+使用该接口需要正确安装KAE2.0，推荐使用源码安装方式安装最新版本KAE，过程详见：[https://www.hikunpeng.com/document/detail/zh/kunpengaccel/kae/usermanual/kunpengaccel_06_0012.html](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/kae/usermanual/kunpengaccel_06_0012.html)
 
 * 硬件限制：
-  CPU：限制为 Kunpeng 920 7280Z
+  CPU：限制为 Kunpeng 920新型号
 * 注意事项：
   KAELz4依赖原生的Lz4头文件，确保相关开发套件的安装。安装命令如下：
 
@@ -50,8 +50,8 @@ struct kaelz4_result {
     void *user_data; # 用户调用异步接口时传入的自定义数据指针
     size_t src_size; # 压缩任务原始数据总大小
     size_t dst_len; # 传入时表示目标buffer的大小，要求大于compressBound(srcLen)，回调时表示压缩后大小
-    uint32_t *ibuf_crc; # 存放输入数据CRC32校验的指针。如果存在，将对输入数据计算CRC32校验
-    uint32_t *obuf_crc; # 存放压缩数据CRC32校验的指针。如果存在，将对压缩后的数据计算CRC32校验
+    uint32_t *ibuf_crc; # 存放输入数据CRC32C校验的指针。如果存在，将对输入数据计算CRC32C校验
+    uint32_t *obuf_crc; # 存放压缩数据CRC32C校验的指针。如果存在，将对压缩后的数据计算CRC32C校验
 };
 
 // SGL相关数据格式
@@ -1073,72 +1073,9 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 - 3、支持polling接口和通用接口切软算
 - 4、不支持SGL模式分段buffer切软算
 
-## 五、kzip工具说明
+## 五、kzip测试工具使用说明
 
-### kzip工具说明
-
-#### 前置环境设置
-
-- 开启观察KAE硬件队列
-    ~~~shell
-    # 默认2个CPU的设备能够观察到4个256，表示当前机器上共支持4*256个KAE硬件驱动压缩队列。容器化部署场景中，队列数量跟分配给容器的设备相关。
-    watch -n 0.2 cat /sys/class/uacce/hisi_zip-*/available_instances
-    ~~~
-
-- 开启驱动fast模式
-    ~~~shell
-    # 卸载原驱动
-    rmmod hisi_zip # 执行后，无法观察到KAE硬件队列。
-
-    # 重新以fast模式加载驱动
-    modprobe hisi_zip perf_mode=1 uacce_mode=2 pf_q_num=256 #执行后观察KAE硬件队列会看到4个256，表示使能正确
-    ~~~
-- 设置fast模式下特定有效压缩窗长
-    ```shell
-    export KAE_LZ4_WINTYPE=8
-    export KAE_LZ4_COMP_TYPE=8
-    ```
-
-### 使用步骤
-
-进入kzip工具目录
-
-~~~shell
-cd KAELz4/test/kzip
-# 编译打包kzip工具
-sh build.sh
-~~~
-
-~~~shell
-# 查看工具参数说明
-export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:$LD_LIBRARY_PATH
-./kzip -h
-~~~
-
-~~~shell
-# 基本功能测试：测试不同数据集下，不同压缩算法，不同分片大小时的压缩解压测试。
-sh runFunc.sh
-~~~
-
-~~~shell
-# 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
-export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
-
-# 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
-export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
-
-# 3、单KAE能力：多线程加压，结果表示满足5G@4K的压缩带宽前提的时延。
-export KAE_LZ4_ASYNC_THREAD_NUM=5 # 可选5或6
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
-
-#4、单KAE最大能力：多线程满压，结果表示单KAE能够提供的最大压缩带宽。
-export KAE_LZ4_ASYNC_THREAD_NUM=8
-sh runPerf.sh -A kaelz4async_frame -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
-~~~
-
-更多测试工具使用说明详见 KAELz4/test/kzip/README.md
+该部分内容请参见 `scripts/perftest/kzip/README.md`
 
 ## 六、性能优化
 
