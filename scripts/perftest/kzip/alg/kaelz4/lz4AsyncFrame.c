@@ -37,19 +37,32 @@ static int lz4_async_frame_compress(struct compress_session *sess, struct compre
 }
 
 // 单个 LZ4 frame 格式文件的解压实现
-static int lz4_async_frame_decompress(struct compress_session *sess, struct compress_param *params)
-{
-    kaelz4_param *param = &params->kaelz4_param;
+// static int lz4_async_frame_decompress(struct compress_session *sess, struct compress_param *params)
+// {
+//     kaelz4_param *param = &params->kaelz4_param;
 
-    const struct kaelz4_buffer_list *src = &param->src;
-    struct kaelz4_buffer_list *dst = param->dst_buf_list;
-    struct kaelz4_result *result =  &param->result;
-    int ret = LZ4F_decompress_async(src, dst, lz4_compress_async_callback, result, NULL);
-    return ret;
-}
+//     const struct kaelz4_buffer_list *src = &param->src;
+//     struct kaelz4_buffer_list *dst = param->dst_buf_list;
+//     struct kaelz4_result *result =  &param->result;
+//     int ret = LZ4F_decompress_async(src, dst, lz4_compress_async_callback, result, NULL);
+//     return ret;
+// }
 
 static int lz4_frame_bound(int src_len) {
     return LZ4F_compressFrameBound(src_len, NULL) * 1.2;
+}
+
+static int lz4_frame_decompress(struct compress_param *param)
+{
+    LZ4F_decompressionContext_t dctx;
+    LZ4F_createDecompressionContext(&dctx, 100);
+    size_t tmp_src_len = param->src_len;
+    size_t tmp_dst_len = param->dst_len;
+    int ret = LZ4F_decompress(dctx, param->dst_buf, &tmp_dst_len, param->src_buf + param->src_buf_offset, &tmp_src_len, NULL);
+    LZ4F_freeDecompressionContext(dctx);
+    param->dst_len = tmp_dst_len > 0 ? tmp_dst_len : 0;
+    param->done = 1;
+    return ret > 0 ? 0 : ret;
 }
 
 // LZ4 frame 算法实例
@@ -58,7 +71,7 @@ compression_algorithm_t lz4_async_frame_algorithm = {
     .bound = lz4_frame_bound,
     .poll = lz4_async_polling,
     .async_compress = lz4_async_frame_compress,
-    .async_decompress = lz4_async_frame_decompress,
+    .decompress = lz4_frame_decompress,
     .init = lz4_async_init,
     .prepare_param = lz4_prepare_param_from_ctx,
     .prepare_outbuf = lz4_prepre_out_buf,
