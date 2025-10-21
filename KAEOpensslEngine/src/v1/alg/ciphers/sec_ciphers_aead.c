@@ -285,6 +285,8 @@ static int sec_aes_gcm_init(EVP_CIPHER_CTX *ctx, const unsigned char *ckey,
     if (ckey) {
         ckey_len = EVP_CIPHER_CTX_key_length(ctx);
 		priv_ctx->key = (uint8_t *)kae_malloc(ckey_len); 
+        if (!priv_ctx->key)
+            goto ERR;
 		kae_memcpy(priv_ctx->key, ckey, ckey_len);
         wcrypto_set_aead_ckey(priv_ctx->e_aead_ctx->wd_ctx, priv_ctx->key, ckey_len);
         priv_ctx->key_len = ckey_len;  //感觉多余，考虑是否删除该成员变量
@@ -313,6 +315,7 @@ static int sec_aes_gcm_init(EVP_CIPHER_CTX *ctx, const unsigned char *ckey,
 #endif
 	return OPENSSL_SUCCESS;
 ERR:
+    US_DEBUG("init failed!");
 	sec_aead_engine_cleanup(priv_ctx);
     //do soft?
 	return OPENSSL_FAIL;

@@ -23,7 +23,8 @@ void kaezstd_setstatus_v2(ZSTD_CCtx* zc, unsigned int status)
 {
     KaeZstdConfig *config;
     config = kaezstd_get_config(zc);
-    config->tuple.bstatus = status;
+    if (config)
+        config->tuple.bstatus = status;
 }
 
 static int kaezstd_data_parsing(ZSTD_CCtx* zc, KaeZstdConfig* config)
