@@ -19,6 +19,6 @@ typedef enum ARCH_TYPE {
     CPU_UNKNOW,
 } ARCH_TYPE;
 
-int kaezip_checkCpu_isV2(void);
+int kaezip_check_support_deflate(void);
 
 #endif
