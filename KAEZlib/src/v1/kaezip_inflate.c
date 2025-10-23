@@ -202,7 +202,7 @@ int kz_do_inflateInit(z_streamp strm, int alg_comp_type)
         return Z_OK;
     }
 
-    if ((alg_comp_type == WCRYPTO_NONE) || (alg_comp_type == WCRYPTO_RAW_DEFLATE && !kaezip_checkCpu_isV2())) {
+    if ((alg_comp_type == WCRYPTO_NONE) || (alg_comp_type == WCRYPTO_RAW_DEFLATE && !kaezip_check_support_deflate())) {
         US_WARN("unsupport alg_comp_type %d!", alg_comp_type);
         setInflateKaezipCtx(strm, 0);
         return Z_OK;

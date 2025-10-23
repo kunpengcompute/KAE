@@ -61,7 +61,7 @@ int kz_deflateInit2_v1(z_streamp strm, int level,
     }
 
     int alg_comp_type = kaezip_winbits2algtype(windowBits);
-    if ((alg_comp_type == WCRYPTO_NONE) || (alg_comp_type == WCRYPTO_RAW_DEFLATE && !kaezip_checkCpu_isV2())) {
+    if ((alg_comp_type == WCRYPTO_NONE) || (alg_comp_type == WCRYPTO_RAW_DEFLATE && !kaezip_check_support_deflate())) {
         //  raw-deflate only support in V2
         US_WARN("unsupport windowbits %d!", windowBits);
         setDeflateKaezipCtx(strm, 0);
