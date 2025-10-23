@@ -44,7 +44,7 @@ HIDDEN_API void CONSTRUCTOR KaeZlibInit(void)
     g_kaezlibInitialized = 1;
 }
 
-int kaezip_checkCpu_isV2(void)
+int kaezip_check_support_deflate(void)
 {
-    return g_arch == CPU_HISILICOM_V2;
+    return g_arch >= CPU_HISILICOM_V2;
 }
