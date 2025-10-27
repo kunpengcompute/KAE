@@ -197,15 +197,21 @@ static size_t write_outputFile(const char* outFileName, struct compress_out_buf 
         base_offset += fragments[num].len; // 更新下一个分片的偏移量
         uint32_t tmp_crc = crc32(0, out_buf_node->buf_addr, out_buf_node->len);
         if (out_buf_node->obuf_crc != 0 && out_buf_node->obuf_crc != tmp_crc) {
-            printf("Obuf crc err ! expected 0x%x recv 0x%x\n", tmp_crc, out_buf_node->obuf_crc);
-            return -1;
+            tmp_crc = crc32c_sw(0, out_buf_node->buf_addr, out_buf_node->len);
+            if (out_buf_node->obuf_crc != 0 && out_buf_node->obuf_crc != tmp_crc) {
+                printf("Obuf crc err ! expected 0x%x but recv 0x%x\n", tmp_crc, out_buf_node->obuf_crc);
+                return -1;
+            }
         }
         tmp_crc = crc32(0, out_buf_node->src, out_buf_node->src_len);
         if (out_buf_node->ibuf_crc != 0 && out_buf_node->ibuf_crc != tmp_crc) {
-            printf("Ibuf crc err ! expected 0x%x recv 0x%x\n", tmp_crc, out_buf_node->ibuf_crc);
-            return -1;
+            tmp_crc = crc32c_sw(0, out_buf_node->src, out_buf_node->src_len);
+            if (out_buf_node->ibuf_crc != 0 && out_buf_node->ibuf_crc != tmp_crc) {
+                printf("Ibuf crc err ! expected 0x%x but recv 0x%x\n", tmp_crc, out_buf_node->ibuf_crc);
+                return -1;
+            }
         }
-
+        
         count += fwrite(out_buf_node->buf_addr, sizeof(Bytef), out_buf_node->len, outputFile);
         num++;
 
