@@ -148,6 +148,7 @@ struct thread_compress_args {
 #define mb() __sync_synchronize()  /* rw fence */
 #endif
 
+uint32_t crc32c_sw(uint32_t crc, const uint8_t *data, size_t len);
 void *get_physical_address_wrapper(void *usr, void *vaddr, size_t sz);
 void release_huge_pages(void *addr, size_t total_size);
 void *get_huge_pages(size_t total_size);
