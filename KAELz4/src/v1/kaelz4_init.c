@@ -9,9 +9,9 @@
 #include "kaelz4_init.h"
 #include "kaelz4_log.h"
 
-int kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl)
-{
-    kaelz4_ctx_t* kaelz4_ctx = kaelz4_get_ctx(WCRYPTO_LZ77_ONLY, WCRYPTO_DEFLATE, is_sgl);
+int kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode)
+{   
+    kaelz4_ctx_t* kaelz4_ctx = kaelz4_get_ctx(WCRYPTO_LZ77_ONLY, WCRYPTO_DEFLATE, is_sgl, mode);
     if (!kaelz4_ctx) {
         US_ERR("kaelz4 failed to get kaezip ctx!");
         return KAE_LZ4_INIT_FAIL;

@@ -51,7 +51,7 @@ end:
      US_INFO("kaelz4 v%d inited!\n", g_platform);
 }
 
-int kaelz4_init(LZ4_CCtx* zc, int is_sgl)
+int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode)
 {
     uadk_get_accel_platform();
 
@@ -61,7 +61,7 @@ int kaelz4_init(LZ4_CCtx* zc, int is_sgl)
     case HW_NONE:
         break;
     case HW_V1:
-        ret = kaelz4_init_v1(zc, is_sgl);
+        ret = kaelz4_init_v1(zc, is_sgl, mode);
         break;
     case HW_V2:
         ret = kaelz4_init_v2(zc);

@@ -26,6 +26,7 @@
 #include <semaphore.h>
 #include "uadk/v1/wd.h"
 #include "kaelz4_utils.h"
+#include "kaelz4.h"
 
 #define KAE_QUEUE_POOL_MAX_SIZE     (512)
 #define CHECK_QUEUE_TIME_SECONDS    (60)  // seconds
@@ -72,7 +73,7 @@ void *kaelz4_dma_map_sgl(void *usr, void *va, size_t sz);
 void kaelz4_dma_unmap_sgl(void *usr, void *va, void *dma, size_t sz);
 
 KAE_QUEUE_POOL_HEAD_S* kaelz4_init_queue_pool (int algtype);
-KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype, int is_sgl);
+KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode);
 int kaelz4_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn);
 void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn);
 void kaelz4_queue_pool_reset(KAE_QUEUE_POOL_HEAD_S* pool_head);
