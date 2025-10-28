@@ -82,8 +82,13 @@ typedef struct {
     char componentVersion[VERSION_STRUCT_LEN];
 } KAELz4Version;
 
+typedef enum {
+    SYNC_MODE = 0,
+    ASYNC_MODE,
+} operation_mode;
+
 extern int kaelz4_get_version(KAELz4Version* ver);
-extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl);
+extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode);
 extern void kaelz4_reset(LZ4_CCtx* zc);
 extern void kaelz4_release(LZ4_CCtx* zc);
 extern void kaelz4_setstatus(LZ4_CCtx* zc, unsigned int status);

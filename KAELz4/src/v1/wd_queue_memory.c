@@ -82,10 +82,10 @@ void* kaelz4_create_sgl_mempool(struct wd_queue *q)
     return mempool;
 }
 
-void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q)
+void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q, operation_mode mode)
 {
     unsigned int block_size = COMP_BLOCK_SIZE;
-    unsigned int block_num = COMP_BLOCK_NUM * MAX_KAE_CTX_DEPTH;
+    unsigned int block_num  = COMP_BLOCK_NUM * (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
     struct wd_blkpool_setup setup;
 
     memset(&setup, 0, sizeof(setup));
@@ -194,7 +194,7 @@ KAE_QUEUE_POOL_HEAD_S* kaelz4_init_queue_pool(int algtype)
     return kae_pool;
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type, int is_sgl)
+static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type, int is_sgl, operation_mode mode)
 {
     int i = 0;
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
@@ -264,7 +264,7 @@ void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_
     US_DEBUG("free wd queue success");
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int comp_type, int is_sgl)
+static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int comp_type, int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
 
@@ -284,7 +284,7 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int 
     if (is_sgl) {
         queue_node->kae_queue_mem_pool = kaelz4_create_sgl_mempool(queue_node->kae_wd_queue);
     } else {
-        queue_node->kae_queue_mem_pool = kaelz4_create_alg_wd_queue_mempool(queue_node->kae_wd_queue);
+        queue_node->kae_queue_mem_pool = kaelz4_create_alg_wd_queue_mempool(queue_node->kae_wd_queue, mode);
     }
 
     queue_node->is_sgl = is_sgl;
@@ -302,7 +302,8 @@ err:
     return NULL;
 }
 
-KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, int is_sgl)
+KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, 
+                                                    int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
 
@@ -311,9 +312,9 @@ KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
         return NULL;
     }
 
-    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type, is_sgl);
+    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type, is_sgl, mode);
     if (queue_data_node == NULL) {
-        queue_data_node = kaelz4_new_wd_queue_memory(comp_alg_type, comp_type, is_sgl);
+        queue_data_node = kaelz4_new_wd_queue_memory(comp_alg_type, comp_type, is_sgl, mode);
     }
 
     return queue_data_node;

@@ -421,7 +421,7 @@ diff -uprN lz4-1.9.4/lib/lz4.c lz4-1.9.4-new/lib/lz4.c
 +        ctxBody.seqnum = 0;
 +
 +        int ret;
-+        ret = kaelz4_init(&ctxBody, 0); // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
++        ret = kaelz4_init(&ctxBody, 0, SYNC_MODE); // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
 +        if (ret == 0) {
 +            ctxBody.kaeInited = 1;
 +        } else {

@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
+#include "kaelz4_common.h"
 
 #define MAX_KAE_CTX_DEPTH 64
 #define REQ_BUFFER_MAX 255   // uadk支持最大的sgl buf数量
@@ -83,7 +84,7 @@ struct kaelz4_instance {
 
 typedef struct kaelz4_ctx   kaelz4_ctx_t;
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl);
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode);
 void          kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx);

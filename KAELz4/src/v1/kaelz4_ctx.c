@@ -194,7 +194,8 @@ static int kaelz4_create_wd_ctx(struct kaelz4_instance *instance, int alg_comp_t
     return KAEZIP_SUCCESS;
 }
 
-static struct kaelz4_instance *kaelz4_new_instance(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, int is_sgl)
+static struct kaelz4_instance *kaelz4_new_instance(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, 
+                                                    int is_sgl, operation_mode mode)
 {
     struct kaelz4_instance *instance = (struct kaelz4_instance *)kae_malloc(sizeof(struct kaelz4_instance));
 
@@ -206,7 +207,7 @@ static struct kaelz4_instance *kaelz4_new_instance(KAE_QUEUE_DATA_NODE_S* q_node
     memset(instance, 0, sizeof(struct kaelz4_instance));
 
     instance->q_node = q_node;
-    instance->total_num = MAX_KAE_CTX_DEPTH;
+    instance->total_num = (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
     instance->setup.comp_lv = kaelz4_get_comp_lv();
     instance->setup.win_size  = kaelz4_get_win_size();
     instance->setup.br.usr = q_node->kae_queue_mem_pool;
@@ -252,7 +253,7 @@ void kaelz4_free_instance(void *arg)
 }
 
 __thread struct kaelz4_instance *g_cur_instance;
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl)
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaelz4_ctx_t               *kz_ctx = NULL;
@@ -264,10 +265,10 @@ kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl)
     }
 
     if (g_cur_instance == NULL) {
-        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl);
+        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
         if (q_node == NULL) {
             kaelz4_queue_pool_check_and_release(qp, kaelz4_free_instance);
-            q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl);
+            q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
 
             if (q_node == NULL) {
                 kae_free(g_cur_instance);
@@ -278,7 +279,7 @@ kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl)
         }
 
         if (q_node->priv_ctx == NULL) {
-            g_cur_instance = kaelz4_new_instance(q_node, alg_comp_type, comp_optype, is_sgl);
+            g_cur_instance = kaelz4_new_instance(q_node, alg_comp_type, comp_optype, is_sgl, mode);
             if (g_cur_instance == NULL) {
                 US_ERR("create instance fail!");
                 (void)kaelz4_put_node_to_pool(qp, q_node, kaelz4_free_instance);

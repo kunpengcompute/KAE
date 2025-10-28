@@ -75,7 +75,7 @@ typedef int (*compress_async_fn)(struct kaelz4_async_ctrl *ctrl, const struct ka
                                  lz4_async_callback callback, struct kaelz4_result *result,
                                  enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 
-int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl);
+int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode);
 void kaelz4_reset_v1(LZ4_CCtx* zc);
 void kaelz4_release_v1(LZ4_CCtx* zc);
 void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
