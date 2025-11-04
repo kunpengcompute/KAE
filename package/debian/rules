@@ -38,6 +38,9 @@ override_dh_auto_install:
 	install -d debian/tmp/usr/local/kaelz4/include/
 	install -d debian/tmp/usr/local/kaelz4/bin/
 	install -d debian/tmp/usr/local/kaelz4/share/man/man1/
+    
+	# engine path
+	install -d debian/tmp/usr/local/KAEOpensslEngine/lib/
 
 	# install driver
 	install -b -m755 $(PROJECT_ROOT)/kae_build/driver/*.ko   debian/tmp/lib/modules/$(KERNEL_VER)/extra/
@@ -59,6 +62,9 @@ override_dh_auto_install:
 	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/bin/*     debian/tmp/usr/local/kaelz4/bin/
 	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/include/* debian/tmp/usr/local/kaelz4/include/
 	cp -a $(PROJECT_ROOT)/kae_build/kaelz4/share/*   debian/tmp/usr/local/kaelz4/share/
+
+	# install engine library
+	cp -a $(PROJECT_ROOT)/KAEOpensslEngine/src/.libs/* debian/tmp/usr/local/KAEOpensslEngine/lib
 
 override_dh_usrlocal:
 	@echo "skip dh_usrlocal checking"

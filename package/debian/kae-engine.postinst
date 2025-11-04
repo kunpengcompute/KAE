@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+echo "KAE Engine post-installation configuration"
+/sbin/ldconfig
+echo "Post-installation completed"
+exit 0
