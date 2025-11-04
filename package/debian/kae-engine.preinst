@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+echo "KAE Engine pre-installation: cleaning old engine directories"
+rm -rf /usr/local/lib/engines-1.1 /usr/local/lib/engines-3.0 2>/dev/null || true
+echo "Pre-installation completed"
+exit 0

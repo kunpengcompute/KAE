@@ -22,3 +22,9 @@ Architecture: arm64
 Depends: ${shlibs:Depends}
 Description: KAE Zip Libraries
  Huawei Kunpeng Accelerator Engine for Zip compression.
+
+Package: kae-engine
+Architecture: arm64
+Depends: ${shlibs:Depends}
+Description: KAE openssl engine Libraries
+ Huawei Kunpeng Accelerator Engine for openssl.

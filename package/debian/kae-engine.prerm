@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+echo "KAE Engine pre-removal script"
+exit 0

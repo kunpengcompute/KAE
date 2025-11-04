@@ -339,6 +339,13 @@ function build_deb()
     mkdir -p $KAE_BUILD/lib
     cp -a ${KAE_UADK_DIR}/.libs/*so* $KAE_BUILD/lib
 
+    # 编译 OpenSSL engine
+    cd $KAE_OPENSSL_DIR
+    export PKG_CONFIG_PATH=$KAE_BUILD/uadk/pkgconfig
+    autoreconf -i
+    ./configure $OPENSSL_CONFIGURE_FLAG
+    make -j
+
     # 编译 zlib
     cd $KAE_ZLIB_DIR
     bash setup.sh devbuild KAE2
