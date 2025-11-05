@@ -17,6 +17,7 @@ enum kae_lz4_async_data_format {
     KAELZ4_ASYNC_SMALL_BLOCK = 0,
     KAELZ4_ASYNC_BLOCK,
     KAELZ4_ASYNC_FRAME,
+    KAELZ4_ASYNC_LZ77_RAW,
     KAELZ4_ASYNC_BUTT,
 };
 

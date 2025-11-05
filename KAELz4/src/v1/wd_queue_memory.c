@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include "wd_queue_memory.h"
 #include "kaelz4_log.h"
+#include "uadk/v1/wd_sgl.h"
 #include "uadk/v1/wd_bmm.h"
 #include "uadk/v1/wd_comp.h"
 #include "kaelz4_ctx.h"
@@ -64,10 +65,27 @@ void kaelz4_wd_free_queue(struct wd_queue* queue)
     }
 }
 
-void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q)
+void* kaelz4_create_sgl_mempool(struct wd_queue *q)
+{
+    struct wd_sglpool_setup setup;
+
+    memset(&setup, 0, sizeof(setup));
+
+    setup.buf_size = COMP_BLOCK_SIZE;
+    setup.align_size = 64;
+    setup.sge_num_in_sgl = 1;
+    setup.buf_num_in_sgl = setup.sge_num_in_sgl;
+    setup.sgl_num = MAX_KAE_CTX_DEPTH * 2;   // SGL模式下，每个SGL output需要两段buf分别给seq和lit
+    setup.buf_num = setup.buf_num_in_sgl * setup.sgl_num + setup.sgl_num * 2 + 2;
+    void *mempool = wd_sglpool_create(q, &setup);
+
+    return mempool;
+}
+
+void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q, operation_mode mode)
 {
     unsigned int block_size = COMP_BLOCK_SIZE;
-    unsigned int block_num = COMP_BLOCK_NUM;
+    unsigned int block_num  = COMP_BLOCK_NUM * (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
     struct wd_blkpool_setup setup;
 
     memset(&setup, 0, sizeof(setup));
@@ -80,19 +98,44 @@ void* kaelz4_create_alg_wd_queue_mempool(struct wd_queue *q)
     return mempool;
 }
 
+static void kaelz4_sgl_pool_destroy(void *pool)
+{
+    return wd_sglpool_destroy(pool);
+}
+
 void kaelz4_wd_queue_mempool_destroy(void *pool)
 {
     return wd_blkpool_destroy(pool);
 }
 
-void *kaelz4_dma_map(void *usr, void *va, size_t sz)
+void *kaelz4_dma_map_sgl(void *usr, void *va, size_t sz)
+{
+    return wd_sgl_iova_map(usr, va, sz);
+}
+
+void kaelz4_dma_unmap_sgl(void *usr, void *va, void *dma, size_t sz)
+{
+    return wd_sgl_iova_unmap(usr, dma, va);
+}
+
+void *kaelz4_dma_map_blk(void *usr, void *va, size_t sz)
 {
     return wd_blk_iova_map(usr, va);
 }
 
-void kaelz4_dma_unmap(void *usr, void *va, void *dma, size_t sz)
+void kaelz4_dma_unmap_blk(void *usr, void *va, void *dma, size_t sz)
 {
     return wd_blk_iova_unmap(usr, dma, va);
+}
+
+void *kaelz4_wd_alloc_sgl(void *pool, size_t size)
+{
+    if (pool == NULL) {
+        US_ERR("mem pool empty!");
+        return NULL;
+    }
+
+    return wd_alloc_sgl(pool, size);
 }
 
 void *kaelz4_wd_alloc_blk(void *pool, size_t size)
@@ -103,6 +146,16 @@ void *kaelz4_wd_alloc_blk(void *pool, size_t size)
     }
 
     return wd_alloc_blk(pool);
+}
+
+void kaelz4_wd_free_sgl(void *pool, void *sgl)
+{
+    if (pool == NULL) {
+        US_ERR("mem pool empty!");
+        return;
+    }
+
+    return wd_free_sgl(pool, sgl);
 }
 
 void kaelz4_wd_free_blk(void *pool, void *blk)
@@ -141,14 +194,14 @@ KAE_QUEUE_POOL_HEAD_S* kaelz4_init_queue_pool(int algtype)
     return kae_pool;
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type)
+static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type, int is_sgl, operation_mode mode)
 {
     int i = 0;
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
 
     if ((pool_head->pool_use_num == 0) && (pool_head->next == NULL)) {
-        return queue_data_node;
+        return NULL;
     }
 
     while (temp_pool != NULL) {
@@ -158,17 +211,17 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
             }
 
             if (KAE_SPIN_TRYLOCK(temp_pool->kae_queue_pool[i].spinlock)) {
-                if (temp_pool->kae_queue_pool[i].node_data == NULL) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
-                if (temp_pool->kae_queue_pool[i].node_data->comp_alg_type != type) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
                 queue_data_node = temp_pool->kae_queue_pool[i].node_data;
+                if (queue_data_node == NULL) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
+                if (queue_data_node->comp_alg_type != type || queue_data_node->is_sgl != is_sgl) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
                 temp_pool->kae_queue_pool[i].node_data = NULL;
                 KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
 
@@ -180,7 +233,7 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
         temp_pool = temp_pool->next;
     }
 
-    return queue_data_node;
+    return NULL;
 }
 
 void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn)
@@ -192,7 +245,13 @@ void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_
         }
 
         if (queue_node->kae_queue_mem_pool != NULL) {
-            kaelz4_wd_queue_mempool_destroy(queue_node->kae_queue_mem_pool);
+            if (queue_node->is_sgl) {
+                kaelz4_sgl_pool_destroy(queue_node->kae_queue_mem_pool);
+            }
+            else {
+                kaelz4_wd_queue_mempool_destroy(queue_node->kae_queue_mem_pool);
+            }
+
             queue_node->kae_queue_mem_pool = NULL;
         }
         if (queue_node->kae_wd_queue != NULL) {
@@ -207,7 +266,7 @@ void kaelz4_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_
     US_DEBUG("free wd queue success");
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int comp_type)
+static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int comp_type, int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
 
@@ -224,7 +283,14 @@ static KAE_QUEUE_DATA_NODE_S* kaelz4_new_wd_queue_memory(int comp_alg_type, int 
         goto err;
     }
 
-    queue_node->kae_queue_mem_pool = kaelz4_create_alg_wd_queue_mempool(queue_node->kae_wd_queue);
+    if (is_sgl) {
+        queue_node->kae_queue_mem_pool = kaelz4_create_sgl_mempool(queue_node->kae_wd_queue);
+    } else {
+        queue_node->kae_queue_mem_pool = kaelz4_create_alg_wd_queue_mempool(queue_node->kae_wd_queue, mode);
+    }
+
+    queue_node->is_sgl = is_sgl;
+
     if (queue_node->kae_queue_mem_pool == NULL) {
         US_ERR("request mempool fail!");
         goto err;
@@ -238,7 +304,8 @@ err:
     return NULL;
 }
 
-KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type)
+KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type,
+                                                 int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
 
@@ -247,9 +314,9 @@ KAE_QUEUE_DATA_NODE_S* kaelz4_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
         return NULL;
     }
 
-    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type);
+    queue_data_node = kaelz4_get_queue_data_from_list(pool_head, comp_alg_type, is_sgl, mode);
     if (queue_data_node == NULL) {
-        queue_data_node = kaelz4_new_wd_queue_memory(comp_alg_type, comp_type);
+        queue_data_node = kaelz4_new_wd_queue_memory(comp_alg_type, comp_type, is_sgl, mode);
     }
 
     return queue_data_node;

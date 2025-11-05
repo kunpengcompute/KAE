@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 SRC_PATH=$(pwd)
 KAE_KERNEL_DIR=""
@@ -25,6 +25,10 @@ function build_check_OS_version()
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=/usr/"
+    elif [[ "$KERNEL_VERSION" == 5.15.* ]]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
     elif [[ "$KERNEL_VERSION" == 5.10.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.10
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
@@ -33,7 +37,7 @@ function build_check_OS_version()
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.4
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
-    else 
+    else
 		echo "[KAE error]:unsupport kernel version $KERNEL_VERSION"
     fi
 }
@@ -60,8 +64,8 @@ function build_all_comp_sva()
 
     # 编译uadk
     cd $KAE_UADK_DIR
-    sh autogen.sh
-    sh conf.sh
+    bash autogen.sh
+    bash conf.sh
     make -j
 
     cp ${KAE_UADK_DIR}/.libs/lib* $KAE_BUILD_LIB
@@ -82,14 +86,14 @@ function build_all_comp_sva()
 
     # 编译zlib
     cd $KAE_ZLIB_DIR
-    sh setup.sh devbuild KAE2
+    bash setup.sh devbuild KAE2
 
     cp $KAE_ZLIB_DIR/lib* $KAE_BUILD_LIB
     cp $KAE_ZLIB_DIR/open_source/zlib-1.2.11/lib* $KAE_BUILD_LIB
 
     # 编译zstd
     cd $KAE_ZSTD_DIR
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     cp $KAE_ZSTD_DIR/lib* $KAE_BUILD_LIB
     cp $KAE_ZSTD_DIR/open_source/zstd/programs/zstd $KAE_BUILD_LIB
@@ -137,9 +141,13 @@ function build_rpm()
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
 
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
+
+
     cd $KAE_UADK_DIR
-    sh autogen.sh
-    # sh conf.sh
+    bash autogen.sh
+    # bash conf.sh
     # 在 conf.sh中的内容后添加 --prefix 参数，为了使uadk编译生成的pkgconfig/*.pc文件中动态库的路径为RPM包编译时的临时目录，这样Opensslengine编译时才能够找到uadk动态库。
     ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes ./configure \
         --enable-perf=yes \
@@ -189,7 +197,7 @@ function build_rpm()
 
     # 编译 zlib
     cd $KAE_ZLIB_DIR
-    sh setup.sh devbuild KAE2
+    bash setup.sh devbuild KAE2
 
     mkdir -p $KAE_BUILD/kaezip
     mkdir -p $KAE_BUILD/kaezip/include
@@ -208,7 +216,7 @@ function build_rpm()
 
     # 编译 zstd
     cd $KAE_ZSTD_DIR
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     mkdir -p $KAE_BUILD/kaezstd/lib/pkgconfig
     mkdir -p $KAE_BUILD/kaezstd/bin
@@ -233,7 +241,7 @@ function build_rpm()
 
     # 编译 lz4
     cd ${SRC_PATH}/KAELz4
-    sh build.sh devbuild
+    bash build.sh devbuild
 
     mkdir -p $KAE_BUILD/kaelz4/lib
     mkdir -p $KAE_BUILD/kaelz4/bin
@@ -328,9 +336,12 @@ function build_uadk()
     patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch || true
     patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch
 
+    patch --no-backup-if-mismatch -p1 -R -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch || true
+    patch --no-backup-if-mismatch -p1 -N -s --forward < ./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch
+
 	cd ${SRC_PATH}/uadk
-    sh autogen.sh
-    sh conf.sh
+    bash autogen.sh
+    bash conf.sh
     make -j64
     make install
 }
@@ -340,7 +351,7 @@ function uadk_clean()
     cd ${SRC_PATH}/uadk
     make uninstall
     make clean
-    sh cleanup.sh
+    bash cleanup.sh
 }
 
 function build_engine_log()
@@ -586,52 +597,52 @@ function engine_clean_boringssl()
 function build_zlib()
 {
     cd ${SRC_PATH}/KAEZlib
-    sh setup.sh install
+    bash setup.sh install
 }
 
 function zlib_clean()
 {
     cd ${SRC_PATH}/KAEZlib
-    sh setup.sh uninstall
+    bash setup.sh uninstall
     rm -rf /usr/local/kaezip
 }
 
 function build_zstd()
 {
     cd ${SRC_PATH}/KAEZstd
-    sh build.sh install
+    bash build.sh install
 }
 
 function zstd_clean()
 {
     cd ${SRC_PATH}/KAEZstd
-    sh build.sh uninstall
+    bash build.sh uninstall
     rm -rf /usr/local/kaezstd/
 }
 
 function build_lz4()
 {
     cd ${SRC_PATH}/KAELz4
-    sh build.sh install
+    bash build.sh install
 }
 
 function lz4_clean()
 {
     cd ${SRC_PATH}/KAELz4
-    sh build.sh uninstall
+    bash build.sh uninstall
     rm -rf /usr/local/kaelz4/
 }
 
 function build_gzip()
 {
     cd ${SRC_PATH}/KAEGzip
-    sh build.sh install
+    bash build.sh install
 }
 
 function gzip_clean()
 {
     cd ${SRC_PATH}/KAEGzip
-    sh build.sh uninstall
+    bash build.sh uninstall
 }
 
 function help()

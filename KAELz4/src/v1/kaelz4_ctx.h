@@ -10,6 +10,10 @@
 #include <sys/time.h>
 #include "wd_queue_memory.h"
 #include "uadk/v1/wd_comp.h"
+#include "kaelz4_common.h"
+
+#define MAX_KAE_CTX_DEPTH 64
+#define REQ_BUFFER_MAX 255   // uadk支持最大的sgl buf数量
 
 enum kaelz4_comp_status {
     KAEZIP_COMP_INIT = 0,
@@ -49,19 +53,38 @@ struct kaelz4_ctx {
     int              comp_type;     // WCRYPTO_DEFLATE / WCRYPTO_INFLATE
     unsigned int     do_comp_len;   // a compress proccess cost len
     int              status;        // enum kaelz4_comp_status
+    unsigned int     index;
 
     struct wcrypto_end_block        end_block;
-    KAE_QUEUE_DATA_NODE_S*          q_node;
-    struct wcrypto_comp_ctx_setup   setup;
+    KAE_QUEUE_DATA_NODE_S           *q_node;
+    struct wcrypto_comp_ctx_setup   *setup;
     struct wcrypto_comp_op_data     op_data;
     struct wcrypto_lz77_zstd_format lz4_data;
     void*                           wd_ctx;
+    struct wcrypto_zstd_out         output;
+    wd_map                          usr_map;
+    unsigned char                   src_sgl_buf[32 + (32 * (REQ_BUFFER_MAX + 1))];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60 + 1 * sizeof(struct wd_sge) for hisi_sge
+    unsigned char                   dst_sgl_buf[32 + (32 * (REQ_BUFFER_MAX + 1))];   // 32: sizeof(struct wd_sgl) + sizeof(struct wd_sge) * 60 + 1 * sizeof(struct wd_sge) for hisi_sge
+    void                            *src_sgl;
+    void                            *dst_sgl_usr;
+    void                            *dst_sgl_kernel;
     void (*callback)(int status, void *param);
     void* param;
 };
+
+struct kaelz4_instance {
+    KAE_QUEUE_DATA_NODE_S *q_node;
+    void *wd_ctx;
+    struct kaelz4_ctx *kz_ctx[MAX_KAE_CTX_DEPTH];
+    struct wcrypto_comp_ctx_setup setup;
+    unsigned int total_num;
+    unsigned int cur_idx;
+    unsigned int free_num;
+};
+
 typedef struct kaelz4_ctx   kaelz4_ctx_t;
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype);
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode);
 void          kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_init_ctx(kaelz4_ctx_t* kz_ctx);
 void          kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx);

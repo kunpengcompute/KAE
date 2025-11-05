@@ -16,6 +16,9 @@
 #include "zip.h"
 
 #define PCI_DEVICE_ID_HUAWEI_ZIP_PF	0xa250
+#ifndef PCI_DEVICE_ID_HUAWEI_ZIP_VF
+#define PCI_DEVICE_ID_HUAWEI_ZIP_VF 0xa251
+#endif
 
 #define HZIP_QUEUE_NUM_V1		4096
 

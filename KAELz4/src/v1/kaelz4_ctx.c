@@ -8,6 +8,7 @@
 #include "kaelz4_ctx.h"
 #include "kaelz4_utils.h"
 #include "kaelz4_log.h"
+#include "uadk/v1/wd_sgl.h"
 
 static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_deflate_qp = NULL;
 static KAE_QUEUE_POOL_HEAD_S* g_kaelz4_inflate_qp = NULL;
@@ -15,9 +16,6 @@ static pthread_mutex_t g_kaelz4_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALI
 static pthread_mutex_t g_kaelz4_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype);
-static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
-static int kaelz4_create_wd_ctx(kaelz4_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
-static int kaelz4_driver_do_comp_impl(kaelz4_ctx_t *kz_ctx);
 
 static void kaelz4_free_kz_ctx(void* kz_ctx)
 {
@@ -26,19 +24,24 @@ static void kaelz4_free_kz_ctx(void* kz_ctx)
         return;
     }
 
-    if (kaelz4_ctx->op_data.in && kaelz4_ctx->setup.br.usr) {
-        kaelz4_ctx->setup.br.free(kaelz4_ctx->setup.br.usr, (void *)kaelz4_ctx->op_data.in);
-        kaelz4_ctx->op_data.in = NULL;
-    }
-
-    if (kaelz4_ctx->op_data.out && kaelz4_ctx->setup.br.usr) {
-        kaelz4_ctx->setup.br.free(kaelz4_ctx->setup.br.usr, (void *)kaelz4_ctx->op_data.out);
-        kaelz4_ctx->op_data.out = NULL;
-    }
-
-    if (kaelz4_ctx->wd_ctx != NULL) {
-        wcrypto_del_comp_ctx(kaelz4_ctx->wd_ctx);
-        kaelz4_ctx->wd_ctx = NULL;
+    if (!kaelz4_ctx->q_node->is_sgl) {
+        if (kaelz4_ctx->op_data.in && kaelz4_ctx->setup->br.usr) {
+            kaelz4_ctx->setup->br.free(kaelz4_ctx->setup->br.usr, (void *)kaelz4_ctx->op_data.in);
+            kaelz4_ctx->op_data.in = NULL;
+        }
+        if (kaelz4_ctx->op_data.out && kaelz4_ctx->setup->br.usr) {
+            kaelz4_ctx->setup->br.free(kaelz4_ctx->setup->br.usr, (void *)kaelz4_ctx->op_data.out);
+            kaelz4_ctx->op_data.out = NULL;
+        }
+    } else {
+        if (kaelz4_ctx->output.literal && kaelz4_ctx->setup->br.usr) {
+            kaelz4_ctx->setup->br.free(kaelz4_ctx->setup->br.usr, (void *)kaelz4_ctx->output.literal);
+            kaelz4_ctx->output.literal = NULL;
+        }
+        if (kaelz4_ctx->dst_sgl_kernel && kaelz4_ctx->setup->br.usr) {
+            kaelz4_ctx->setup->br.free(kaelz4_ctx->setup->br.usr, (void *)kaelz4_ctx->dst_sgl_kernel);
+            kaelz4_ctx->output.sequence = NULL;
+        }
     }
 
     kae_free(kaelz4_ctx);
@@ -110,7 +113,8 @@ static void kaelz4_ctx_callback(const void *msg, void *tag)
     return;
 }
 
-static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype)
+static kaelz4_ctx_t* kaelz4_new_ctx(struct kaelz4_instance *instance,
+                                    int alg_comp_type, int comp_optype, int is_sgl)
 {
     kaelz4_ctx_t *kz_ctx = NULL;
     kz_ctx = (kaelz4_ctx_t *)kae_malloc(sizeof(kaelz4_ctx_t));
@@ -120,35 +124,43 @@ static kaelz4_ctx_t* kaelz4_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_
     }
     memset(kz_ctx, 0, sizeof(kaelz4_ctx_t));
 
-    kz_ctx->setup.comp_lv = kaelz4_get_comp_lv();
-    kz_ctx->setup.win_size  = kaelz4_get_win_size();
-    kz_ctx->setup.br.alloc = kaelz4_wd_alloc_blk;
-    kz_ctx->setup.br.free = kaelz4_wd_free_blk;
-    kz_ctx->setup.br.iova_map = kaelz4_dma_map;
-    kz_ctx->setup.br.iova_unmap = kaelz4_dma_unmap;
-    kz_ctx->setup.br.usr = q_node->kae_queue_mem_pool;
-    kz_ctx->setup.cb = kaelz4_ctx_callback;
+    kz_ctx->setup = &instance->setup;
+    kz_ctx->comp_alg_type = alg_comp_type;
+    kz_ctx->comp_type     = comp_optype;
+    kz_ctx->q_node = instance->q_node;
+    kz_ctx->wd_ctx = instance->wd_ctx;
 
-    kz_ctx->op_data.in = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE);
-    if (kz_ctx->op_data.in == NULL) {
-        US_ERR("alloc opdata in buf failed");
-        goto err;
-    }
+    if (is_sgl) {
+        kz_ctx->op_data.in = (void *)kz_ctx->src_sgl_buf;
+        kz_ctx->output.lit_sz = COMP_BLOCK_SIZE;
+        kz_ctx->output.seq_sz = COMP_BLOCK_SIZE;
+        kz_ctx->output.literal = kz_ctx->setup->br.alloc(kz_ctx->setup->br.usr, COMP_BLOCK_SIZE);
+        if (kz_ctx->output.literal == NULL) {
+            US_ERR("alloc opdata output.literal buf failed");
+            goto err;
+        }
+        kz_ctx->dst_sgl_kernel = kz_ctx->setup->br.alloc(kz_ctx->setup->br.usr, COMP_BLOCK_SIZE);
+        if (kz_ctx->dst_sgl_kernel == NULL) {
+            US_ERR("alloc opdata output.sequence buf failed");
+            goto err;
+        }
 
-    kz_ctx->op_data.out = kz_ctx->setup.br.alloc(kz_ctx->setup.br.usr, COMP_BLOCK_SIZE);
-    if (kz_ctx->op_data.out == NULL) {
-        US_ERR("alloc opdata out buf failed");
-        goto err;
+        kz_ctx->op_data.out = (void *)&kz_ctx->output;
+    } else {
+        kz_ctx->op_data.in = kz_ctx->setup->br.alloc(kz_ctx->setup->br.usr, COMP_BLOCK_SIZE);
+        if (kz_ctx->op_data.in == NULL) {
+            US_ERR("alloc opdata in buf failed");
+            goto err;
+        }
+
+        kz_ctx->op_data.out = kz_ctx->setup->br.alloc(kz_ctx->setup->br.usr, COMP_BLOCK_SIZE);
+        if (kz_ctx->op_data.out == NULL) {
+            US_ERR("alloc opdata out buf failed");
+            goto err;
+        }
     }
 
     kz_ctx->op_data.priv = &kz_ctx->lz4_data;
-    kz_ctx->q_node = q_node;
-    q_node->priv_ctx = kz_ctx;
-
-    if (kaelz4_create_wd_ctx(kz_ctx, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
-        US_ERR("create wd ctx fail!");
-        goto err;
-    }
 
     return kz_ctx;
 
@@ -158,65 +170,147 @@ err:
     return NULL;
 }
 
-static int kaelz4_create_wd_ctx(kaelz4_ctx_t *kz_ctx, int alg_comp_type, int comp_optype)
+static int kaelz4_create_wd_ctx(struct kaelz4_instance *instance, int alg_comp_type, int comp_optype)
 {
-    if (kz_ctx->wd_ctx != NULL) {
+    if (instance->wd_ctx != NULL) {
         US_WARN("wd ctx is in used by other comp");
         return KAEZIP_FAILED;
     }
 
-    struct wd_queue *q = kz_ctx->q_node->kae_wd_queue;
+    struct wd_queue *q = instance->q_node->kae_wd_queue;
 
-    kz_ctx->setup.alg_type  = (enum wcrypto_comp_alg_type)alg_comp_type;
-    kz_ctx->setup.op_type = (enum wcrypto_comp_optype)comp_optype;
-    kz_ctx->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATEFUL;
+    instance->setup.alg_type  = (enum wcrypto_comp_alg_type)alg_comp_type;
+    instance->setup.op_type = (enum wcrypto_comp_optype)comp_optype;
+    instance->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATELESS;
+    if (instance->q_node->is_sgl)
+        instance->setup.data_fmt = WD_SGL_BUF;
 
-    kz_ctx->wd_ctx = wcrypto_create_comp_ctx(q, &kz_ctx->setup);
-    if (kz_ctx->wd_ctx == NULL) {
+    instance->wd_ctx = wcrypto_create_comp_ctx(q, &instance->setup);
+    if (instance->wd_ctx == NULL) {
         US_ERR("wd create kae comp ctx fail!");
         return KAEZIP_FAILED;
     }
 
-    kz_ctx->comp_alg_type = alg_comp_type;
-    kz_ctx->comp_type     = comp_optype;
-
     return KAEZIP_SUCCESS;
 }
 
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype)
+static struct kaelz4_instance *kaelz4_new_instance(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype,
+                                                   int is_sgl, operation_mode mode)
+{
+    struct kaelz4_instance *instance = (struct kaelz4_instance *)kae_malloc(sizeof(struct kaelz4_instance));
+
+    if (instance == NULL) {
+        US_ERR("failed to alloc kaelz4 instance");
+        return NULL;
+    }
+
+    memset(instance, 0, sizeof(struct kaelz4_instance));
+
+    instance->q_node = q_node;
+    instance->total_num = (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
+    instance->setup.comp_lv = kaelz4_get_comp_lv();
+    instance->setup.win_size  = kaelz4_get_win_size();
+    instance->setup.br.usr = q_node->kae_queue_mem_pool;
+    instance->setup.cb = kaelz4_ctx_callback;
+
+    if (is_sgl) {
+        instance->setup.br.alloc = kaelz4_wd_alloc_sgl;
+        instance->setup.br.free = kaelz4_wd_free_sgl;
+        instance->setup.br.iova_map = kaelz4_dma_map_sgl;
+        instance->setup.br.iova_unmap = kaelz4_dma_unmap_sgl;
+    } else {
+        instance->setup.br.alloc = kaelz4_wd_alloc_blk;
+        instance->setup.br.free = kaelz4_wd_free_blk;
+        instance->setup.br.iova_map = kaelz4_dma_map_blk;
+        instance->setup.br.iova_unmap = kaelz4_dma_unmap_blk;
+    }
+
+    if (kaelz4_create_wd_ctx(instance, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
+        US_ERR("create wd ctx fail!");
+        kae_free(instance);
+        return NULL;
+    }
+    return instance;
+}
+
+void kaelz4_free_instance(void *arg)
+{
+    struct kaelz4_instance *instance = arg;
+
+    for (int i = 0; i < instance->total_num; i++) {
+        if (instance->kz_ctx[i]) {
+            kaelz4_free_kz_ctx(instance->kz_ctx[i]);
+            instance->kz_ctx[i] = NULL;
+        }
+    }
+
+    if (instance->wd_ctx != NULL) {
+        wcrypto_del_comp_ctx(instance->wd_ctx);   // scy: TBM
+        instance->wd_ctx = NULL;
+    }
+
+    kae_free(instance);
+}
+
+__thread struct kaelz4_instance *g_cur_instance;
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaelz4_ctx_t               *kz_ctx = NULL;
-
     KAE_QUEUE_POOL_HEAD_S* qp = kaelz4_get_qp(comp_optype);
+
     if(unlikely(!qp)) {
         US_ERR("failed to get hardware queue pool");
         return NULL;
     }
 
-    q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype);
-    if (q_node == NULL) {
-        kaelz4_queue_pool_check_and_release(qp, kaelz4_free_kz_ctx);
-        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype);
-
+    if (g_cur_instance == NULL) {
+        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
         if (q_node == NULL) {
-            US_ERR("failed to get hardware queue");
-            return NULL;
+            kaelz4_queue_pool_check_and_release(qp, kaelz4_free_instance);
+            q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
+            if (q_node == NULL) {
+                kae_free(g_cur_instance);
+                g_cur_instance = NULL;
+                US_ERR("failed to get hardware queue");
+                return NULL;
+            }
         }
+
+        if (q_node->priv_ctx == NULL) {
+            g_cur_instance = kaelz4_new_instance(q_node, alg_comp_type, comp_optype, is_sgl, mode);
+            if (g_cur_instance == NULL) {
+                US_ERR("create instance fail!");
+                (void)kaelz4_put_node_to_pool(qp, q_node, kaelz4_free_instance);
+                return NULL;
+            }
+            q_node->priv_ctx = g_cur_instance;
+        } else {
+            g_cur_instance = q_node->priv_ctx;
+        }
+    } else {
+        q_node = g_cur_instance->q_node;
     }
 
-    kz_ctx = (kaelz4_ctx_t *)q_node->priv_ctx;
+    kz_ctx = g_cur_instance->kz_ctx[g_cur_instance->cur_idx];
     if (kz_ctx == NULL) {
-        kz_ctx = kaelz4_new_ctx(q_node, alg_comp_type, comp_optype);
+        kz_ctx = kaelz4_new_ctx(g_cur_instance, alg_comp_type, comp_optype, is_sgl);
         if (kz_ctx == NULL) {
-            US_ERR("kaezip new engine ctx fail!");
-            (void)kaelz4_put_node_to_pool(qp, q_node, kaelz4_free_kz_ctx);
+            if (g_cur_instance->cur_idx == 0) {
+                (void)kaelz4_put_node_to_pool(qp, q_node, kaelz4_free_instance);
+            }
+            g_cur_instance = NULL;
             return NULL;
         }
+        g_cur_instance->kz_ctx[g_cur_instance->cur_idx] = kz_ctx;
     }
 
-    kz_ctx->q_node = q_node;
     kaelz4_init_ctx(kz_ctx);
+    kz_ctx->index = g_cur_instance->cur_idx;
+    g_cur_instance->cur_idx++;
+    if (g_cur_instance->cur_idx == g_cur_instance->total_num) {
+        g_cur_instance = NULL;
+    }
 
     return kz_ctx;
 }
@@ -254,9 +348,18 @@ void kaelz4_put_ctx(kaelz4_ctx_t* kz_ctx)
     }
 
     if (kz_ctx->q_node != NULL) {
+        struct kaelz4_instance *instance = (struct kaelz4_instance *)kz_ctx->q_node->priv_ctx;
+
         temp = kz_ctx->q_node;
-        kz_ctx->q_node = NULL;
-        (void)kaelz4_put_node_to_pool(kaelz4_get_qp(kz_ctx->comp_type), temp, kaelz4_free_kz_ctx);
+        instance->free_num++;
+        if (instance->free_num == instance->cur_idx) {
+            (void)kaelz4_put_node_to_pool(kaelz4_get_qp(kz_ctx->comp_type), temp, kaelz4_free_instance);
+            instance->cur_idx = 0;
+            instance->free_num = 0;
+            if (instance == g_cur_instance) {
+                g_cur_instance = NULL;
+            }
+        }
     }
 
     kz_ctx = NULL;
@@ -271,7 +374,29 @@ void kaelz4_free_ctx(kaelz4_ctx_t* kz_ctx)
         return;
     }
 
-    kaelz4_free_wd_queue_memory(kz_ctx->q_node, kaelz4_free_kz_ctx);
+    struct kaelz4_instance *instance = (struct kaelz4_instance *)kz_ctx->q_node->priv_ctx;
+    KAE_QUEUE_DATA_NODE_S *q_node = kz_ctx->q_node;
+
+    if (kz_ctx->q_node->is_sgl) {
+        if (kz_ctx->src_sgl) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl);
+            kz_ctx->src_sgl = NULL;
+        }
+        if (kz_ctx->dst_sgl_usr) {
+            wd_destory_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr);
+            kz_ctx->dst_sgl_usr = NULL;
+        }
+    }
+    instance->kz_ctx[kz_ctx->index] = NULL;
+    kaelz4_free_kz_ctx(kz_ctx);
+
+    instance->free_num++;
+    if (instance->free_num == instance->cur_idx) {
+        kaelz4_free_wd_queue_memory(q_node, kaelz4_free_instance);
+        if (instance == g_cur_instance) {
+            g_cur_instance = NULL;
+        }
+    }
 }
 
 static int kaelz4_driver_do_comp_impl(kaelz4_ctx_t* kz_ctx)
@@ -426,7 +551,7 @@ static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype)
             pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
             return g_kaelz4_deflate_qp;
         }
-        kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_kz_ctx);
+        kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_instance);
         g_kaelz4_deflate_qp = kaelz4_init_queue_pool(algtype);
         pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
 
@@ -440,7 +565,7 @@ static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype)
             pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
             return g_kaelz4_inflate_qp;
         }
-        kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_kz_ctx);
+        kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_instance);
         g_kaelz4_inflate_qp = kaelz4_init_queue_pool(algtype);
         pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
 
@@ -453,11 +578,11 @@ static KAE_QUEUE_POOL_HEAD_S* kaelz4_get_qp(int algtype)
 void kaelz4_free_all_qps(void)
 {
     pthread_mutex_lock(&g_kaelz4_deflate_pool_init_mutex);
-    kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_kz_ctx);
+    kaelz4_queue_pool_destroy(g_kaelz4_deflate_qp, kaelz4_free_instance);
     g_kaelz4_deflate_qp = NULL;
     pthread_mutex_unlock(&g_kaelz4_deflate_pool_init_mutex);
     pthread_mutex_lock(&g_kaelz4_inflate_pool_init_mutex);
-    kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_kz_ctx);
+    kaelz4_queue_pool_destroy(g_kaelz4_inflate_qp, kaelz4_free_instance);
     g_kaelz4_inflate_qp = NULL;
     pthread_mutex_unlock(&g_kaelz4_inflate_pool_init_mutex);
 }
