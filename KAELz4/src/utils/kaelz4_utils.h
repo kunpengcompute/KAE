@@ -33,6 +33,14 @@
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+
 #ifndef true
 #define true (0 == 0)
 #endif
@@ -104,7 +112,7 @@ static inline void kae_spinlock_unlock(struct kae_spinlock *lock)
 #define NSEC_TO_SEC 1000000000L
 static inline void get_time_out_spec(struct timespec *start, struct timespec *polling_timeout)
 {
-    clock_gettime(CLOCK_REALTIME, start); /* Get current real time. */
+    clock_gettime(CLOCK_MONOTONIC_RAW, start); /* Get current real time. */
     start->tv_sec += polling_timeout->tv_sec;
     start->tv_nsec += polling_timeout->tv_nsec;
     start->tv_sec += start->tv_nsec / NSEC_TO_SEC;
@@ -114,7 +122,7 @@ static inline void get_time_out_spec(struct timespec *start, struct timespec *po
 static inline int check_time_out(struct timespec *time)
 {
     struct timespec now;
-    clock_gettime(CLOCK_REALTIME, &now); /* Get current real time. */
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now); /* Get current real time. */
 
     if ((now.tv_sec < time->tv_sec) || (now.tv_sec == time->tv_sec && now.tv_nsec <= time->tv_nsec)) {
         return 0;

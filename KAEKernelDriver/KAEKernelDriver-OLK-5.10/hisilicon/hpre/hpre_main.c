@@ -114,6 +114,10 @@
 #define HPRE_DFX_COMMON2_LEN		0xE
 #define HPRE_DFX_CORE_LEN		0x43
 
+#ifndef PCI_DEVICE_ID_HUAWEI_HPRE_VF
+#define PCI_DEVICE_ID_HUAWEI_HPRE_VF 0xa259
+#endif
+
 static const char hpre_name[] = "hisi_hpre";
 static struct dentry *hpre_debugfs_root;
 static const struct pci_device_id hpre_dev_ids[] = {

@@ -121,6 +121,9 @@
 					GENMASK_ULL(42, 25))
 #define SEC_AEAD_BITMAP			(GENMASK_ULL(7, 6) | GENMASK_ULL(18, 17) | \
 					GENMASK_ULL(45, 43))
+#ifndef PCI_DEVICE_ID_HUAWEI_SEC_VF
+#define PCI_DEVICE_ID_HUAWEI_SEC_VF 0xa256
+#endif
 
 struct sec_hw_error {
 	u32 int_msk;
