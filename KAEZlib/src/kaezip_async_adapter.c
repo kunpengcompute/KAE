@@ -113,7 +113,9 @@ static inline int kaezip_enqueue(kaezip_task_queue *task_queue, kaezip_async_tas
 {
     uint32_t pos = atomic_fetch_add(&task_queue->pi, 1);
     kaezip_async_task_t *cell = &task_queue->tasks[pos % KAEZLIB_TASK_QUEUE_DEPTH];
-    while (atomic_load_explicit(&cell->ready, memory_order_acquire)); // 等待槽空
+    if (atomic_load_explicit(&cell->ready, memory_order_acquire)) {
+        return KAE_ZLIB_TASK_QUEUE_FULL;
+    }
     *cell = *task;
     atomic_store_explicit(&cell->ready, true, memory_order_release);
     pthread_cond_signal(&task_queue->cond);
