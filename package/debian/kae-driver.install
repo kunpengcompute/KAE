@@ -15,7 +15,3 @@ usr/local/lib/libhisi_dae.*
 usr/local/lib/libisa_ce.*
 usr/local/lib/libisa_sve.*
 usr/local/lib/libwd_dae.*
-
-# uadk header file
-usr/include/uadk/*.h
-usr/include/uadk/drv/*.h

@@ -5,7 +5,7 @@ case "$1" in
     configure)
         implementer=$(grep "CPU implementer" /proc/cpuinfo | awk 'NR==1{print $4}')
         part=$(grep "CPU part" /proc/cpuinfo | awk 'NR==1{print $4}')
-        if [ "${implementer}-${part}" != "0x48-0xd02" ]; then
+        if [ "${implementer}-${part}" == "0x48-0xd01" ]; then
             rm -rf /usr/local/kaelz4
         fi
         /sbin/ldconfig

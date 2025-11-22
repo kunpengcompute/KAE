@@ -10,7 +10,7 @@ override_dh_auto_configure:
 	# CPU check
 	implementer=$$(grep "CPU implementer" /proc/cpuinfo | awk 'NR==1{print $$4}'); \
 	part=$$(grep "CPU part" /proc/cpuinfo | awk 'NR==1{print $$4}'); \
-	if [ "$${implementer}-$${part}" != "0x48-0xd01" ] && [ "$${implementer}-$${part}" != "0x48-0xd02" ]; then \
+	if [ "$${implementer}" != "0x48" ]; then \
 		echo "Error: Only supported on Kunpeng CPUs"; \
 		exit 1; \
 	fi
@@ -25,8 +25,6 @@ override_dh_auto_install:
 
 	# uadk path
 	install -d debian/tmp/usr/local/lib/
-	install -d debian/tmp/usr/include/uadk/
-	install -d debian/tmp/usr/include/uadk/drv/
 
 	# zlib path
 	install -d debian/tmp/usr/local/kaezip/lib/
@@ -48,8 +46,6 @@ override_dh_auto_install:
 
 	# install uadk
 	chrpath -d $(PROJECT_ROOT)/kae_build/uadk/lib/*
-	install -b -m755 $(PROJECT_ROOT)/kae_build/uadk/include/*.h      debian/tmp/usr/include/uadk/
-	install -b -m755 $(PROJECT_ROOT)/kae_build/uadk/include/drv/*.h  debian/tmp/usr/include/uadk/drv/
 	cp -a $(PROJECT_ROOT)/kae_build/uadk/lib/*  debian/tmp/usr/local/lib/
 
 	# install zlib library
