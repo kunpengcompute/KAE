@@ -4,12 +4,8 @@ echo "Running pre-installation cleanup for zip package..."
 
 implementer=$(grep "CPU implementer" /proc/cpuinfo | awk 'NR==1{print $4}')
 part=$(grep "CPU part" /proc/cpuinfo | awk 'NR==1{print $4}')
-if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" != "0x48-0xd02" ]; then
+if [ "${implementer}" != "0x48" ]; then
     echo "WARNING: Not Kunpeng CPU - hardware acceleration disabled"
-fi
-
-if [ "$1" = "upgrade" ]; then
-    rm -rf /usr/local/kaezip     >/dev/null 2>&1 || true
 fi
 
 exit 0
