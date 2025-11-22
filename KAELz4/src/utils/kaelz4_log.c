@@ -229,8 +229,19 @@ void kaelz4_save_log(FILE *src)
     fseek(src, 0, SEEK_SET);
     while (1) {
         size = fread(buf, sizeof(char), 1024, src); // buf length:1024
-        fwrite(buf, sizeof(char), size, dst);
-        if (!size) {
+        if (size > 0) {
+            size_t written = fwrite(buf, sizeof(char), size, dst);
+            if (written != size) {
+                perror("Error occurred while writing to file");
+                break;
+            }
+        } else {
+            if (ferror(src)) {
+                perror("Error occurred while reading from file");
+                break;
+            } else if (feof(src)) {
+                break;
+            }
             break;
         }
     }
