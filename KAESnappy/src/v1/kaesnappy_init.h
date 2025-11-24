@@ -12,7 +12,6 @@
 #include "kaesnappy_common.h"
 
 int  kaesnappy_init_v1(SNAPPY_CCtx* zc);
-void kaesnappy_reset_v1(SNAPPY_CCtx* zc);
 void kaesnappy_release_v1(SNAPPY_CCtx* zc);
 
 #endif

@@ -1,8 +1,8 @@
 #
-# Date:   2024/7/6
+# Date:   2025/11/6
 
 # Description:
-# compile for KAELz4
+# compile for KAESnappy
 #
 # Usage:
 #   $ make           compile and link the program.

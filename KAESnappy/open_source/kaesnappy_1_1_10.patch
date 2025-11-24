@@ -1,6 +1,6 @@
-diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
---- snappy-1.1.10/CMakeLists.txt	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/CMakeLists.txt	2025-09-08 15:42:38.637547600 +0800
+diff -uNr snappy-1.1.10/CMakeLists.txt snappy-1.1.10-opt/CMakeLists.txt
+--- snappy-1.1.10/CMakeLists.txt 2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-opt/CMakeLists.txt   2025-11-13 10:59:47.094865540 +0800
 @@ -84,11 +84,11 @@
  
  # BUILD_SHARED_LIBS is a standard CMake variable, but we declare it here to make
@@ -16,14 +16,21 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
  
  option(SNAPPY_FUZZING_BUILD "Build Snappy for fuzzing." OFF)
  
-@@ -236,6 +236,25 @@
+@@ -98,6 +98,10 @@
+ 
+ option(SNAPPY_INSTALL "Install Snappy's header and library" ON)
+ 
++if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
++  set(CMAKE_CXX_FLAGS "-march=armv8.2-a ${CMAKE_CXX_FLAGS}")
++endif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
++
+ include(TestBigEndian)
+ test_big_endian(SNAPPY_IS_BIG_ENDIAN)
+ 
+@@ -236,6 +240,21 @@
    "${PROJECT_BINARY_DIR}/snappy-stubs-public.h")
  
  add_library(snappy "")
-+
-+#add_compile_options(-g)
-+
-+#add_definitions("-Wall -g")
 +
 +target_include_directories(snappy PRIVATE
 +    /usr/local/kaesnappy/include
@@ -101,37 +108,10 @@ diff -ruN snappy-1.1.10/CMakeLists.txt snappy-1.1.10-KAE/CMakeLists.txt
    # This project uses Google benchmark for benchmarking.
    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
    set(BENCHMARK_ENABLE_EXCEPTIONS OFF CACHE BOOL "" FORCE)
-diff -ruN snappy-1.1.10/snappy-internal.h snappy-1.1.10-KAE/snappy-internal.h
---- snappy-1.1.10/snappy-internal.h	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy-internal.h	2025-09-04 15:10:21.196708100 +0800
-@@ -40,6 +40,13 @@
- #include <tmmintrin.h>
- #endif
- 
-+#ifdef CONF_KAESNAPPY
-+extern "C" {
-+  #include "kaesnappy.h"
-+  #include "kaesnappy_log.h"
-+}
-+#endif
-+
- #if SNAPPY_HAVE_NEON
- #include <arm_neon.h>
- #endif
-@@ -152,7 +159,8 @@
-                        size_t input_length,
-                        char* op,
-                        uint16_t* table,
--                       const int table_size);
-+                       const int table_size,
-+                       SNAPPY_CCtx* cctx);
- 
- // Find the largest n such that
- //
-diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
---- snappy-1.1.10/snappy.cc	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy.cc	2025-09-08 16:00:01.302849300 +0800
-@@ -74,6 +74,14 @@
+diff -uNr snappy-1.1.10/snappy.cc snappy-1.1.10-opt/snappy.cc
+--- snappy-1.1.10/snappy.cc   2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-opt/snappy.cc  2025-11-13 09:29:23.954865540 +0800
+@@ -74,6 +74,13 @@
  #define SNAPPY_PREFETCH(ptr) (void)(ptr)
  #endif
  
@@ -139,22 +119,81 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
 +extern "C" {
 +  #include "kaesnappy.h"
 +  #include "kaesnappy_log.h"
-+  #include "snappy_accelerater.h"
 +}
 +#endif
 +
  #include <algorithm>
  #include <array>
  #include <cstddef>
-@@ -617,6 +625,7 @@
-     *op++ = LITERAL | (n << 2);
+@@ -83,6 +90,9 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#ifdef __aarch64__
++#include <arm_neon.h>
++#endif
  
-     UnalignedCopy128(literal, op);
-+    // KZL_MEMCPY_16((unsigned char*)(op), (unsigned char*)(literal), len);
-     return op + len;
-   }
+ namespace snappy {
  
-@@ -637,11 +646,12 @@
+@@ -106,6 +116,57 @@
+ using internal::V128_DupChar;
+ #endif
+ 
++// GCC dispatches to libc for memmoves > 16 bytes, so we need to
++// do some work to get good code from that compiler. Clang handles
++// powers-of-2 at least up to 64 well.
++#if !defined(__GNUC__) || defined(__clang__)
++  template <size_t SIZE>
++  SNAPPY_ATTRIBUTE_ALWAYS_INLINE
++  inline void FixedSizeMemMove(void* dest, const void* src) {
++    memmove(dest, src, SIZE);
++  }
++#else
++  template <size_t SIZE>
++  SNAPPY_ATTRIBUTE_ALWAYS_INLINE
++  inline void FixedSizeMemMove(void* dest, const void* src) {
++    if (SIZE <= 16) {
++      // gcc has patterns for memmove up to 16 bytes
++      memmove(dest, src, SIZE);
++    } else {
++      // This generates reasonable code on x86_64, but on aarch64 this produces a
++      // dead store to tmp, plus takes up stack space.
++      char tmp[SIZE];
++      memcpy(tmp, src, SIZE);
++      memcpy(dest, tmp, SIZE);
++    }
++  }
++
++  #ifdef __aarch64__ // Implies neon support
++    template <>
++    SNAPPY_ATTRIBUTE_ALWAYS_INLINE
++    inline void FixedSizeMemMove<32>(void* dest, const void* src) {
++      V128 a = V128_LoadU(reinterpret_cast<const V128*>(src));
++      V128 b = V128_LoadU(reinterpret_cast<const V128*>(src) + 1);
++      V128_StoreU(reinterpret_cast<V128*>(dest), a);
++      V128_StoreU(reinterpret_cast<V128*>(dest) + 1, b);
++    }
++
++    template <>
++    SNAPPY_ATTRIBUTE_ALWAYS_INLINE
++    inline void FixedSizeMemMove<64>(void* dest, const void* src) {
++      V128 a = V128_LoadU(reinterpret_cast<const V128*>(src));
++      V128 b = V128_LoadU(reinterpret_cast<const V128*>(src) + 1);
++      V128 c = V128_LoadU(reinterpret_cast<const V128*>(src) + 2);
++      V128 d = V128_LoadU(reinterpret_cast<const V128*>(src) + 3);
++      V128_StoreU(reinterpret_cast<V128*>(dest), a);
++      V128_StoreU(reinterpret_cast<V128*>(dest) + 1, b);
++      V128_StoreU(reinterpret_cast<V128*>(dest) + 2, c);
++      V128_StoreU(reinterpret_cast<V128*>(dest) + 3, d);
++    }
++  #endif
++#endif
++
++
+ // We translate the information encoded in a tag through a lookup table to a
+ // format that requires fewer instructions to decode. Effectively we store
+ // the length minus the tag part of the offset. The lowest significant byte
+@@ -637,9 +698,9 @@
    }
    // When allow_fast_path is true, we can overwrite up to 16 bytes.
    if (allow_fast_path) {
@@ -166,11 +205,8 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
 +    unsigned char* end = destination + len;
      do {
        std::memcpy(destination, source, 16);
-+      // KZL_MEMCPY_16(destination, source, 16);
        destination += 16;
-       source += 16;
-     } while (destination < end);
-@@ -777,7 +787,7 @@
+@@ -777,7 +838,7 @@
  // "end - op" is the compressed size of "input".
  namespace internal {
  char* CompressFragment(const char* input, size_t input_size, char* op,
@@ -179,24 +215,25 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
    // "ip" is the input pointer, and "op" is the output pointer.
    const char* ip = input;
    assert(input_size <= kBlockSize);
-@@ -787,6 +797,86 @@
+@@ -787,6 +848,80 @@
    const char* base_ip = ip;
  
    const size_t kInputMarginBytes = 15;
 +
 +#ifdef CONF_KAESNAPPY
 +  if (cctx == NULL) {
++    US_ERR("Snappy kae init failed, turn to soft version\n");
 +    goto _softVersion;
 +  }
 +  // 硬件压缩
 +  
 +  if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
-+    // 硬件压缩
++    // 待压缩内容送入硬件
 +    SNAPPY_CCtx& ctxBody = *cctx;
 +    int result  = kaesnappy_compress(&ctxBody, input, input_size);
 +    if (result) {
-+      printf("Snappy kaealz4_compress failed\n");
-+      return NULL;
++      US_ERR("Snappy kaesnappy_compress failed, turn to soft version\n");
++      goto _softVersion;
 +    }
 +
 +    // 回收三元组进行软拼接
@@ -227,11 +264,9 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
 +      litLength += tempLiteralLength;
 +      tempLiteralLength = 0;
 +
-+      // printf("litLength:%d, mlBase:%d, literal: %.*s, match: %.*s \n", litLength, (int)mlBase, litLength, ip, mlBase+4, ip+litLength);
-+
 +      // Literal部分编码
 +      if (litLength) {
-+        op = EmitLiteral</*allow_fast_path=*/true>(op, ip, litLength);
++        op = EmitLiteral</*allow_fast_path=*/false>(op, ip, litLength);
 +        ip += litLength;
 +      }
 +      
@@ -246,18 +281,13 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
 +        break;
 +      }
 +    }
-+    //释放硬件资源
-+    // ctxBody.seqStore.lit = ctxBody.seqStore.litStart = NULL;
-+    // ctxBody.seqStore.sequences = ctxBody.seqStore.sequencesStart = NULL;
-+    // kaesnappy_release(&ctxBody);
 +  }
 +
 +  //处理尾部数据
 +  if (ip < ip_end) {
 +    op = EmitLiteral</*allow_fast_path=*/false>(op, ip, ip_end - ip);
-+    // printf("last litLength:%d,last literal: %.*s \n", ip_end - ip, ip_end - ip, ip);
++    US_INFO("last litLength:%d,last literal: %.*s \n", ip_end - ip, ip_end - ip, ip);
 +  }
-+
 +
 +  return op;
 +
@@ -266,20 +296,21 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
    if (SNAPPY_PREDICT_TRUE(input_size >= kInputMarginBytes)) {
      const char* ip_limit = input + input_size - kInputMarginBytes;
  
-@@ -1616,7 +1706,45 @@
-   writer->Append(ulength, p - ulength);
+@@ -1066,6 +1201,11 @@
+     data = _mm256_lddqu_si256(static_cast<const __m256i *>(src) + 1);
+     _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst) + 1, data);
+   }
++#elif defined(__aarch64__)
++  // Emperically it is faster to just copy all 64 rather than branching.
++  (void)kShortMemCopy;
++  (void)size;
++  FixedSizeMemMove<64>(dst, src);
+ #else
+   std::memmove(dst, src, kShortMemCopy);
+   // Profiling shows that nearly all copies are short.
+@@ -1617,6 +1757,33 @@
    written += (p - ulength);
  
-+// std::string hex_str;
-+// for (char* ptr = ulength; ptr < p; ++ptr) {
-+//     char buffer[3];
-+//     sprintf(buffer, "%02X", static_cast<unsigned char>(*ptr));
-+//     hex_str += buffer;
-+// }
-+
-+// // 打印十六进制结果
-+// printf("Varint编码结果（十六进制）: %s\n", hex_str.c_str());
-+
    internal::WorkingMemory wmem(N);
 +#ifdef CONF_KAESNAPPY
 +  SNAPPY_CCtx ctxBody;
@@ -305,14 +336,13 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
 +  if (ret == 0) {
 +    ctxBody.kaeInited = 1;
 +  } else {
-+    printf("Snappy kealz4_init failed\n");
 +    cctx = NULL;
 +  }
 +#endif
  
    while (N > 0) {
      // Get next block to compress (without copying if possible)
-@@ -1652,7 +1780,6 @@
+@@ -1652,7 +1819,6 @@
      // Get encoding table for compression
      int table_size;
      uint16_t* table = wmem.GetHashTable(num_to_read, &table_size);
@@ -320,7 +350,7 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
      // Compress input_fragment and append to dest
      const int max_output = MaxCompressedLength(num_to_read);
  
-@@ -1664,14 +1791,18 @@
+@@ -1664,14 +1830,18 @@
      // scratch_output[] region is big enough for this iteration.
      char* dest = writer->GetAppendBuffer(max_output, wmem.GetScratchOutput());
      char* end = internal::CompressFragment(fragment, fragment_size, dest, table,
@@ -341,150 +371,155 @@ diff -ruN snappy-1.1.10/snappy.cc snappy-1.1.10-KAE/snappy.cc
    Report("snappy_compress", written, uncompressed_size);
  
    return written;
-diff -ruN snappy-1.1.10/snappy_accelerater.h snappy-1.1.10-KAE/snappy_accelerater.h
---- snappy-1.1.10/snappy_accelerater.h	1970-01-01 08:00:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy_accelerater.h	2025-09-08 16:02:45.017369300 +0800
-@@ -0,0 +1,131 @@
-+/* *
-+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
-+ * Create: 2023-04
-+ */
-+
-+#ifndef SNAPPY_ACCELERATER_H
-+#define SNAPPY_ACCELERATER_H
-+
-+#include <arm_neon.h>
-+#include "stddef.h"
-+#define NO_PREFETCH
-+#define RAW_SNAPPY
-+
-+#define G_KZLPRIME5BYTES (889523592379ULL)
-+#define G_KZLPRIME8BYTES (11400714785074694791ULL)
-+
-+#ifndef KZL_FORCE_INLINE
-+#  ifdef _MSC_VER
-+#    define KZL_FORCE_INLINE static __forceinline
-+#  else
-+#    if defined (__cplusplus) || defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L   /* C99 */
-+#      ifdef __GNUC__
-+#        define KZL_FORCE_INLINE static inline __attribute__((always_inline))
-+#      else
-+#        define KZL_FORCE_INLINE static inline
-+#      endif
-+#    else
-+#      define KZL_FORCE_INLINE static
-+#    endif
-+#  endif
-+#endif
-+
-+#if defined(__GNUC__) && (__GNUC__ >= 4)
-+#    define KZL_MEMCPY_2(dst, src, size) __builtin_memcpy(dst, src, size)
-+#    define KZL_MEMCPY_4(dst, src, size) __builtin_memcpy(dst, src, size)
-+#    define KZL_MEMCPY_8(dst, src, size) vst1_u8((dst), vld1_u8(src))
-+#    define KZL_MEMCPY_16(dst, src, size) vst1q_u8((dst), vld1q_u8(src))
-+#    define KZL_MEMCPY_32(dst, src, size) vst1q_u8((dst), vld1q_u8(src)); vst1q_u8(((dst)+16), vld1q_u8(((src)+16)))
-+#    define KZL_MEMCPY_16X1(dst, src, size) vst1q_u64((dst), vld1q_u64(src))
-+#    define KZL_MEMCPY_32X1(dst, src, size) vst1q_u64((dst), vld1q_u64(src)); \
-+                vst1q_u64(((dst)+16), vld1q_u64(((src)+16)))
-+#endif
-+
-+/* prefetch 321
-+ * can be disabled, by declaring NO_PREFETCH build macro */
-+#if defined(NO_PREFETCH)
-+#    define PREFETCH_L1(ptr)  (void)(ptr)  /* disabled */
-+#    define PREFETCH_L2(ptr)  (void)(ptr)  /* disabled */
-+#    define PREFETCH_L3(ptr)  (void)(ptr)  /* disabled */
+@@ -2014,7 +2184,11 @@
+       *op_p = IncrementalCopy(op - offset, op, op_end, op_limit_);
+       return true;
+     }
++#ifdef __aarch64__
++    FixedSizeMemMove<kSlopBytes>(op, op - offset);
 +#else
-+#  if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))  /* _mm_prefetch() is not defined outside of x86/x64 */
-+#    include <mmintrin.h>   /* https://msdn.microsoft.com/fr-fr/library/84szxsww(v=vs.90).aspx */
-+#    define PREFETCH_L1(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T0)
-+#    define PREFETCH_L2(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T1)
-+#    define PREFETCH_L2(ptr)  _mm_prefetch((const char*)(ptr), _MM_HINT_T2)
-+#  elif defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
-+#    define PREFETCH_L1(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 3 /* locality */)
-+#    define PREFETCH_L2(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 2 /* locality */)
-+#    define PREFETCH_L3(ptr)  __builtin_prefetch((ptr), 1 /* rw==write */, 1 /* locality */)
-+#  elif defined(__aarch64__)
-+#    define PREFETCH_L1(ptr)  __asm__ __volatile__("prfm pldl1keep, %0" ::"Q"(*(ptr)))
-+#    define PREFETCH_L2(ptr)  __asm__ __volatile__("prfm pldl2keep, %0" ::"Q"(*(ptr)))
-+#    define PREFETCH_L3(ptr)  __asm__ __volatile__("prfm pldl3keep, %0" ::"Q"(*(ptr)))
-+#  else
-+#    define PREFETCH_L1(ptr) (void)(ptr)  /* disabled */
-+#    define PREFETCH_L2(ptr) (void)(ptr)  /* disabled */
-+#    define PREFETCH_L3(ptr) (void)(ptr)  /* disabled */
-+#  endif
-+#endif  /* NO_PREFETCH */
-+
-+#define L1_CACHELINE_SIZE 64
-+#define L2_CACHELINE_SIZE 64
-+#define L3_CACHELINE_SIZE 128
-+
-+#define PREFETCH_AREA_L1(p, s)  {            \
-+                const char* const ptr = (const char*)(p);  \
-+                size_t const size = (size_t)(s);     \
-+                size_t pos;                          \
-+                for (pos=0; pos<size; pos+=L1_CACHELINE_SIZE) {  \
-+                    PREFETCH_L1(ptr + pos);         \
-+                }                                     \
-+            }
-+
-+#define PREFETCH_AREA_L2(p, s)  {            \
-+            const char* const ptr = (const char*)(p);  \
-+            size_t const size = (size_t)(s);     \
-+            size_t pos;                          \
-+            for (pos=0; pos<size; pos+=L2_CACHELINE_SIZE) {  \
-+                PREFETCH_L2(ptr + pos);         \
-+            }                                     \
-+        }
-+
-+#define PREFETCH_AREA_L3(p, s)  {            \
-+            const char* const ptr = (const char*)(p);  \
-+            size_t const size = (size_t)(s);     \
-+            size_t pos;                          \
-+            for (pos=0; pos<size; pos+=L3_CACHELINE_SIZE) {  \
-+                PREFETCH_L3(ptr + pos);         \
-+            }                                     \
-+        }
-+
-+enum PrefetchCpuCacheType {
-+    L1CACHE = 1,
-+    L2CACHE = 2,
-+    L3CACHE = 3
-+};
-+
-+typedef enum PrefetchCpuCacheType CpuCacheType;
-+
-+#define SEQUENCE_MOVE 24
-+#define HASH_SIZE 64
-+
-+KZL_FORCE_INLINE uint32_t KZL_LittleEndianfastHash5(uint64_t sequence, uint8_t HashLogUsage)
-+{
-+    // for data ≤ 64KB
-+    return (uint32_t)(((sequence << SEQUENCE_MOVE) * G_KZLPRIME5BYTES) >> (HASH_SIZE - HashLogUsage));
-+}
-+
-+KZL_FORCE_INLINE uint32_t KZL_BigEndianfastHash5(uint64_t sequence, uint8_t HashLogUsage)
-+{
-+    // for data > 64KB
-+    return (uint32_t)(((sequence >> SEQUENCE_MOVE) * G_KZLPRIME8BYTES) >> (HASH_SIZE - HashLogUsage));
-+}
-+
-+void accerlerater(int srcSize, uint8_t *acceleration);
-+void skipTrigger(int srcSize, uint8_t *skipStep);
-+void PrefetchCpuCacheArea(const void* p, size_t s, CpuCacheType cacheType);
-+
-+int PlatformIsSupport(void);
-+
+     std::memmove(op, op - offset, kSlopBytes);
 +#endif
-diff -ruN snappy-1.1.10/snappy_unittest.cc snappy-1.1.10-KAE/snappy_unittest.cc
---- snappy-1.1.10/snappy_unittest.cc	2023-03-09 07:44:00.000000000 +0800
-+++ snappy-1.1.10-KAE/snappy_unittest.cc	2025-09-03 15:55:26.864334600 +0800
-@@ -225,7 +225,7 @@
+     *op_p = op_end;
+     return true;
+   }
+@@ -2266,7 +2440,11 @@
+     }
+     // Fast path
+     char* const op_end = op + len;
++#ifdef __aarch64__
++    FixedSizeMemMove<kSlopBytes>(op, op - offset);
++#else
+     std::memmove(op, op - offset, kSlopBytes);
++#endif
+     *op_p = op_end;
+     return true;
+   }
+diff -uNr snappy-1.1.10/snappy-internal.h snappy-1.1.10-opt/snappy-internal.h
+--- snappy-1.1.10/snappy-internal.h 2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-opt/snappy-internal.h   2025-11-13 09:29:23.954865540 +0800
+@@ -40,6 +40,13 @@
+ #include <tmmintrin.h>
+ #endif
+ 
++#ifdef CONF_KAESNAPPY
++extern "C" {
++  #include "kaesnappy.h"
++  #include "kaesnappy_log.h"
++}
++#endif
++
+ #if SNAPPY_HAVE_NEON
+ #include <arm_neon.h>
+ #endif
+@@ -152,7 +159,8 @@
+                        size_t input_length,
+                        char* op,
+                        uint16_t* table,
+-                       const int table_size);
++                       const int table_size,
++                       SNAPPY_CCtx* cctx);
+ 
+ // Find the largest n such that
+ //
+@@ -231,9 +239,8 @@
+       int shift = Bits::FindLSBSetNonZero64(xorval);
+       size_t matched_bytes = shift >> 3;
+       uint64_t a3 = UNALIGNED_LOAD64(s2 + 4);
+-#ifndef __x86_64__
+-      a2 = static_cast<uint32_t>(xorval) == 0 ? a3 : a2;
+-#else
++#ifdef __x86_64__
++
+       // Ideally this would just be
+       //
+       // a2 = static_cast<uint32_t>(xorval) == 0 ? a3 : a2;
+@@ -248,6 +255,14 @@
+           : "+r"(a2)
+           : "r"(a3), "r"(xorval)
+           : "cc");
++#elif defined(__aarch64__)
++      asm("cmp %w[xorval], 0\n\t"
++          "csel %x[a2], %[a3], %[a2], eq\n\t"
++          : [a2] "+r" (a2)
++          : [a3] "r" (a3) , [xorval] "r" (xorval)
++          : "cc");
++#else
++      a2 = static_cast<uint32_t>(xorval) == 0 ? a3 : a2;
+ #endif
+       *data = a2 >> (shift & (3 * 8));
+       return std::pair<size_t, bool>(matched_bytes, true);
+@@ -272,14 +287,20 @@
+       int shift = Bits::FindLSBSetNonZero64(xorval);
+       size_t matched_bytes = shift >> 3;
+       uint64_t a3 = UNALIGNED_LOAD64(s2 + 4);
+-#ifndef __x86_64__
+-      a2 = static_cast<uint32_t>(xorval) == 0 ? a3 : a2;
+-#else
++#ifdef __x86_64__
+       asm("testl %k2, %k2\n\t"
+           "cmovzq %1, %0\n\t"
+           : "+r"(a2)
+           : "r"(a3), "r"(xorval)
+           : "cc");
++#elif defined(__aarch64__)
++      asm("cmp %w[xorval], 0\n\t"
++          "csel %x[a2], %[a3], %[a2], eq\n\t"
++          : [a2] "+r" (a2)
++          : [a3] "r" (a3) , [xorval] "r" (xorval)
++          : "cc");
++#else
++      a2 = static_cast<uint32_t>(xorval) == 0 ? a3 : a2;
+ #endif
+       *data = a2 >> (shift & (3 * 8));
+       matched += matched_bytes;
+diff -uNr snappy-1.1.10/snappy_unittest.cc snappy-1.1.10-opt/snappy_unittest.cc
+--- snappy-1.1.10/snappy_unittest.cc   2023-03-09 07:44:00.000000000 +0800
++++ snappy-1.1.10-opt/snappy_unittest.cc  2025-11-13 10:17:38.000000000 +0800
+@@ -42,6 +42,8 @@
+ #include "snappy-sinksource.h"
+ #include "snappy.h"
+ #include "snappy_test_data.h"
++#include "kaesnappy.h"
++#include "kaesnappy_log.h"
+ 
+ SNAPPY_FLAG(bool, snappy_dump_decompression_table, false,
+             "If true, we print the decompression table during tests.");
+@@ -224,9 +226,36 @@
+   compressed += prefix;
    compressed.resize(prefix.size()+snappy::MaxCompressedLength(input.size()));
    char* dest = string_as_array(&compressed) + prefix.size();
++
++  SNAPPY_CCtx ctxBody;
++  SNAPPY_CCtx* cctx = &ctxBody;
++  ctxBody.kaeInited = 0;
++  ctxBody.kaeFrameMode = 1; // 相当于每个都强刷
++  ctxBody.kaeConfig = NULL;
++
++  ctxBody.seqStore.llCode = NULL;
++  ctxBody.seqStore.mlCode = NULL;
++  ctxBody.seqStore.ofCode = NULL;
++  ctxBody.seqStore.lit = NULL;
++  ctxBody.seqStore.litStart = NULL;
++  ctxBody.seqStore.sequencesStart = NULL;
++  ctxBody.seqStore.sequences = NULL;
++
++  ctxBody.compressionLevel = 8;
++  ctxBody.kaeLevel = 8;
++  ctxBody.seqnum = 0;
++
++  int ret;
++  ret = kaesnappy_init(&ctxBody);
++  if (ret == 0) {
++    ctxBody.kaeInited = 1;
++  } else {
++    cctx = NULL;
++  }
    char* end = snappy::internal::CompressFragment(input.data(), input.size(),
 -                                                dest, table, table_size);
-+                                                dest, table, table_size, NULL);
++                                                dest, table, table_size, cctx);
    compressed.resize(end - compressed.data());
++  kaesnappy_release(&ctxBody);
  
    // Uncompress into std::string
+   std::string uncomp_str;

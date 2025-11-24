@@ -64,14 +64,9 @@ typedef struct kaesnappy_ctx   kaesnappy_ctx_t;
 kaesnappy_ctx_t* kaesnappy_get_ctx(int alg_comp_type, int comp_optype);
 void          kaesnappy_put_ctx(kaesnappy_ctx_t* kz_ctx);
 void          kaesnappy_init_ctx(kaesnappy_ctx_t* kz_ctx);
-void          kaesnappy_free_ctx(kaesnappy_ctx_t* kz_ctx);
 
 void          kaesnappy_set_input_data(kaesnappy_ctx_t *kz_ctx);
 void          kaesnappy_get_output_data(kaesnappy_ctx_t *kz_ctx);
-
-int           kaesnappy_get_remain_data(kaesnappy_ctx_t *kz_ctx);
-int           kaesnappy_driver_do_comp(kaesnappy_ctx_t *kaesnappy_ctx);
-void          kaesnappy_free_all_qps(void);
 
 #endif
 

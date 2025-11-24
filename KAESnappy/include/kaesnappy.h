@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2021-2024. All rights reserved.
  * Description: contain kaesnappy api defines
  * Author: DSA
- * Create: 2024-7-6
+ * Create: 2025-11-6
  */
 
 #ifndef KAESNAPPY_H
@@ -81,9 +81,7 @@ typedef struct {
 
 extern int kaesnappy_get_version(KAESnappyVersion* ver);
 extern int kaesnappy_init(SNAPPY_CCtx* zc);
-extern void kaesnappy_reset(SNAPPY_CCtx* zc);
 extern void kaesnappy_release(SNAPPY_CCtx* zc);
-extern void kaesnappy_setstatus(SNAPPY_CCtx* zc, unsigned int status);
 extern int kaesnappy_compress(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 
 struct kaesnappy_result {
@@ -100,7 +98,4 @@ typedef void (*snappy_async_callback)(struct kaesnappy_result *result);
 typedef int (*sw_compress_fn)(const char* src, char* dst, int srcSize, int dstCapacity);
 typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, const void* srcBuffer, size_t srcSize,
                                        const void* preferences_ptr);
-int KAESNAPPY_compress_async(const void *src, void *dst, snappy_async_callback callback, struct kaesnappy_result *result);
-void KAESNAPPY_teardown_async_compress(void);
-int KAESNAPPY_async_compress_init(sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame);
 #endif

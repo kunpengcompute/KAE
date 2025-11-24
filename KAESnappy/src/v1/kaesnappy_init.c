@@ -22,16 +22,6 @@ int kaesnappy_init_v1(SNAPPY_CCtx* zc)
     return KAE_SNAPPY_SUCC;
 }
 
-void kaesnappy_reset_v1(SNAPPY_CCtx* zc)
-{
-    kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;
-    if (kaesnappy_ctx) {
-        kaesnappy_ctx->status = KAEZIP_COMP_INIT;
-        kaesnappy_ctx->snappy_data.blk_type = 2; //  snappy compressed block
-        US_DEBUG("kaesnappy reset v1");
-    }
-}
-
 void kaesnappy_release_v1(SNAPPY_CCtx* zc)
 {
     kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t*)zc->kaeConfig;

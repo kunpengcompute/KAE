@@ -69,9 +69,7 @@ void kaesnappy_dma_unmap(void *usr, void *va, void *dma, size_t sz);
 KAE_QUEUE_POOL_HEAD_S* kaesnappy_init_queue_pool (int algtype);
 KAE_QUEUE_DATA_NODE_S* kaesnappy_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype);
 int kaesnappy_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn);
-void kaesnappy_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn);
 void kaesnappy_queue_pool_reset(KAE_QUEUE_POOL_HEAD_S* pool_head);
-void kaesnappy_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_fn);
 void kaesnappy_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_ectx_fn);
 
 #endif

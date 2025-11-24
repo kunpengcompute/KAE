@@ -195,20 +195,6 @@ void kaesnappy_debug_init_log()
     pthread_mutex_unlock(&g_kaesnappy_debug_file_mutex);
 }
 
-void kaesnappy_debug_close_log()
-{
-    pthread_mutex_lock(&g_kaesnappy_debug_file_mutex);
-    g_kaesnappy_log_init_times--;
-    if (g_kaesnappy_debug_file_ref_count && (g_kaesnappy_log_init_times == 0)) {
-        if (g_kaesnappy_debug_log_file != NULL) {
-            fclose(g_kaesnappy_debug_log_file);
-            g_kaesnappy_debug_file_ref_count--;
-            g_kaesnappy_debug_log_file = stderr;
-        }
-    }
-    pthread_mutex_unlock(&g_kaesnappy_debug_file_mutex);
-}
-
 void kaesnappy_save_log(FILE *src)
 {
     int size = 0;

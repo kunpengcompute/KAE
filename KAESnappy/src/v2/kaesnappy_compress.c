@@ -19,12 +19,6 @@
 #include "kaesnappy_config.h"
 #include "kaesnappy_log.h"
 
-void kaesnappy_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status)
-{
-    KaeSnappyConfig *config;
-    config = kaesnappy_get_config(zc);
-    config->tuple.bstatus = status;
-}
 
 static int kaesnappy_data_parsing(SNAPPY_CCtx* zc, KaeSnappyConfig* config)
 {
