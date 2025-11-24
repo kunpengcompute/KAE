@@ -10,39 +10,16 @@
 #include "kaesnappy_log.h"
 
 static KAE_QUEUE_POOL_HEAD_S* g_kaesnappy_deflate_qp = NULL;
-static KAE_QUEUE_POOL_HEAD_S* g_kaesnappy_inflate_qp = NULL;
 static pthread_mutex_t g_kaesnappy_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t g_kaesnappy_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static KAE_QUEUE_POOL_HEAD_S* kaesnappy_get_qp(int algtype);
 static kaesnappy_ctx_t* kaesnappy_new_ctx(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype);
 static int kaesnappy_create_wd_ctx(kaesnappy_ctx_t *kz_ctx, int alg_comp_type, int comp_optype);
-static int kaesnappy_driver_do_comp_impl(kaesnappy_ctx_t *kz_ctx);
 
 static void kaesnappy_free_kz_ctx(void* kz_ctx)
 {
     kaesnappy_ctx_t* kaesnappy_ctx = (kaesnappy_ctx_t *)kz_ctx;
-    if (kaesnappy_ctx == NULL) {
-        return;
-    }
-
-    if (kaesnappy_ctx->op_data.in && kaesnappy_ctx->setup.br.usr) {
-        kaesnappy_ctx->setup.br.free(kaesnappy_ctx->setup.br.usr, (void *)kaesnappy_ctx->op_data.in);
-        kaesnappy_ctx->op_data.in = NULL;
-    }
-
-    if (kaesnappy_ctx->op_data.out && kaesnappy_ctx->setup.br.usr) {
-        kaesnappy_ctx->setup.br.free(kaesnappy_ctx->setup.br.usr, (void *)kaesnappy_ctx->op_data.out);
-        kaesnappy_ctx->op_data.out = NULL;
-    }
-
-    if (kaesnappy_ctx->wd_ctx != NULL) {
-        wcrypto_del_comp_ctx(kaesnappy_ctx->wd_ctx);
-        kaesnappy_ctx->wd_ctx = NULL;
-    }
-
     kae_free(kaesnappy_ctx);
-
     return;
 }
 
@@ -101,12 +78,6 @@ static int kaesnappy_get_win_size()
 
 static void kaesnappy_ctx_callback(const void *msg, void *tag)
 {
-    const struct wcrypto_comp_msg *respmsg = msg;
-    kaesnappy_ctx_t *kz_ctx = (kaesnappy_ctx_t *)tag;
-
-    if (kz_ctx->callback)
-        kz_ctx->callback(respmsg->status, kz_ctx->param);
-
     return;
 }
 
@@ -264,67 +235,6 @@ void kaesnappy_put_ctx(kaesnappy_ctx_t* kz_ctx)
     return;
 }
 
-void kaesnappy_free_ctx(kaesnappy_ctx_t* kz_ctx)
-{
-    if (unlikely(kz_ctx == NULL)) {
-        US_ERR("kae zip ctx NULL!");
-        return;
-    }
-
-    kaesnappy_free_wd_queue_memory(kz_ctx->q_node, kaesnappy_free_kz_ctx);
-}
-
-static int kaesnappy_driver_do_comp_impl(kaesnappy_ctx_t* kz_ctx)
-{
-    KAEZIP_RETURN_FAIL_IF(kz_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
-
-    struct wcrypto_comp_op_data *op_data = &kz_ctx->op_data;
-
-    int ret = wcrypto_do_comp(kz_ctx->wd_ctx, op_data, NULL);
-    if (unlikely(ret < 0)) {
-        US_ERR("wd_do_comp fail!");
-        return KAEZIP_FAILED;
-    }
-
-    if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
-        op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;
-    }
-
-    return KAEZIP_SUCCESS;
-}
-
-int kaesnappy_driver_do_comp(kaesnappy_ctx_t *kaesnappy_ctx)
-{
-    KAEZIP_RETURN_FAIL_IF(kaesnappy_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
-
-    if (kaesnappy_ctx->remain != 0) {
-        return kaesnappy_get_remain_data(kaesnappy_ctx);
-    }
-
-    if (kaesnappy_ctx->in_len == 0) {
-        US_DEBUG("kaezip do comp impl success, for input len zero, comp type : %s",
-            kaesnappy_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
-        return KAEZIP_SUCCESS;
-    }
-
-    if (kaesnappy_ctx->in_len >= KAEZIP_STREAM_CHUNK_IN) {
-        kaesnappy_ctx->do_comp_len = KAEZIP_STREAM_CHUNK_IN;
-    } else {
-        kaesnappy_ctx->do_comp_len = kaesnappy_ctx->in_len;
-    }
-
-    kaesnappy_set_input_data(kaesnappy_ctx);
-    int ret = kaesnappy_driver_do_comp_impl(kaesnappy_ctx);
-    if (ret != KAEZIP_SUCCESS) {
-        US_DEBUG("kaezip do comp impl success, comp type : %s",
-            kaesnappy_ctx->comp_type == WCRYPTO_DEFLATE ? "deflate" : "inflate");
-        return ret;
-    }
-    kaesnappy_get_output_data(kaesnappy_ctx);
-
-    return KAEZIP_SUCCESS;
-}
-
 void kaesnappy_set_input_data(kaesnappy_ctx_t *kz_ctx)
 {
     kz_ctx->op_data.in_len = 0;
@@ -343,47 +253,15 @@ void kaesnappy_set_input_data(kaesnappy_ctx_t *kz_ctx)
 static void kaesnappy_set_comp_status(kaesnappy_ctx_t *kz_ctx)
 {
     US_DEBUG("kaesnappy before comp status is %u, op_data.status is %u", kz_ctx->status, kz_ctx->op_data.status);
-    if (kz_ctx->comp_type == WCRYPTO_INFLATE) {
-        switch (kz_ctx->op_data.status) {
-            case WCRYPTO_DECOMP_END:
-                kz_ctx->status = (kz_ctx->remain == 0 ? KAEZIP_DECOMP_END : KAEZIP_DECOMP_END_BUT_DATAREMAIN);
-                break;
-            case WCRYPTO_STATUS_NULL:
-                kz_ctx->status = KAEZIP_DECOMP_DOING;
-                break;
-            case WD_VERIFY_ERR:
-                kz_ctx->status = KAEZIP_DECOMP_VERIFY_ERR;
-                break;
-            default:
-                kz_ctx->status = KAEZIP_DECOMP_DOING;
-                break;
-        }
-    } else {
-        switch (kz_ctx->op_data.status) {
-            case WCRYPTO_STATUS_NULL:
-                if (kz_ctx->in_len > kz_ctx->consumed) {
-                    kz_ctx->status = KAEZIP_COMP_DOING;
-                    break;
-                }
-
-                if (kz_ctx->flush != WCRYPTO_FINISH) {
-                    kz_ctx->status = KAEZIP_COMP_CRC_UNCHECK;
-                    break;
-                }
-
-                if (kz_ctx->remain != 0) {
-                    kz_ctx->status = KAEZIP_COMP_END_BUT_DATAREMAIN;
-                } else {
-                    kz_ctx->status = KAEZIP_COMP_END;
-                }
-                break;
-            case WD_VERIFY_ERR:
-                kz_ctx->status = KAEZIP_COMP_VERIFY_ERR;
-                break;
-            default:
+    switch (kz_ctx->op_data.status) {
+        case WCRYPTO_STATUS_NULL:
+            if (kz_ctx->in_len > kz_ctx->consumed) {
                 kz_ctx->status = KAEZIP_COMP_DOING;
                 break;
-        }
+            }
+        default:
+            kz_ctx->status = KAEZIP_COMP_DOING;
+            break;
     }
     US_DEBUG("kaesnappy after  comp status is %u", kz_ctx->status);
 }
@@ -391,23 +269,6 @@ static void kaesnappy_set_comp_status(kaesnappy_ctx_t *kz_ctx)
 void kaesnappy_get_output_data(kaesnappy_ctx_t *kz_ctx)
 {
     kaesnappy_set_comp_status(kz_ctx);
-}
-
-int kaesnappy_get_remain_data(kaesnappy_ctx_t *kz_ctx)
-{
-    KAEZIP_RETURN_FAIL_IF(kz_ctx->op_data.produced < kz_ctx->remain, "wrong remain data", KAEZIP_FAILED);
-    int data_begin = kz_ctx->op_data.produced - kz_ctx->remain;
-
-    if (kz_ctx->remain < kz_ctx->avail_out) {
-        kz_ctx->produced = kz_ctx->remain;
-        memcpy(kz_ctx->out, (uint8_t*)kz_ctx->op_data.out + data_begin, kz_ctx->produced);
-        kz_ctx->remain = 0;
-    } else {
-        kz_ctx->produced = kz_ctx->avail_out;
-        memcpy(kz_ctx->out, (uint8_t*)kz_ctx->op_data.out + data_begin, kz_ctx->produced);
-        kz_ctx->remain -= kz_ctx->produced;
-    }
-    return KAEZIP_SUCCESS;
 }
 
 static KAE_QUEUE_POOL_HEAD_S* kaesnappy_get_qp(int algtype)
@@ -426,38 +287,12 @@ static KAE_QUEUE_POOL_HEAD_S* kaesnappy_get_qp(int algtype)
             pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
             return g_kaesnappy_deflate_qp;
         }
-        kaesnappy_queue_pool_destroy(g_kaesnappy_deflate_qp, kaesnappy_free_kz_ctx);
+
         g_kaesnappy_deflate_qp = kaesnappy_init_queue_pool(algtype);
         pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
 
         return g_kaesnappy_deflate_qp == NULL ? NULL : g_kaesnappy_deflate_qp;
-    } else {
-        if (g_kaesnappy_inflate_qp) {
-            return g_kaesnappy_inflate_qp;
-        }
-        pthread_mutex_lock(&g_kaesnappy_inflate_pool_init_mutex);
-        if (g_kaesnappy_inflate_qp != NULL) {
-            pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
-            return g_kaesnappy_inflate_qp;
-        }
-        kaesnappy_queue_pool_destroy(g_kaesnappy_inflate_qp, kaesnappy_free_kz_ctx);
-        g_kaesnappy_inflate_qp = kaesnappy_init_queue_pool(algtype);
-        pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
-
-        return g_kaesnappy_inflate_qp == NULL ? NULL : g_kaesnappy_inflate_qp;
     }
-
     return NULL;
 }
 
-void kaesnappy_free_all_qps(void)
-{
-    pthread_mutex_lock(&g_kaesnappy_deflate_pool_init_mutex);
-    kaesnappy_queue_pool_destroy(g_kaesnappy_deflate_qp, kaesnappy_free_kz_ctx);
-    g_kaesnappy_deflate_qp = NULL;
-    pthread_mutex_unlock(&g_kaesnappy_deflate_pool_init_mutex);
-    pthread_mutex_lock(&g_kaesnappy_inflate_pool_init_mutex);
-    kaesnappy_queue_pool_destroy(g_kaesnappy_inflate_qp, kaesnappy_free_kz_ctx);
-    g_kaesnappy_inflate_qp = NULL;
-    pthread_mutex_unlock(&g_kaesnappy_inflate_pool_init_mutex);
-}

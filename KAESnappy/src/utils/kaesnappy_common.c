@@ -20,28 +20,6 @@ typedef enum ARCH_TYPE {
 } ARCH_TYPE;
 static int g_kaesnappyInitialized = 0;
 
-static inline void versionCpy(char str1[], const char str2[])
-{
-    int i = 0;
-    while (i < VERSION_STRUCT_LEN - 1 && str2[i] != '\0') {
-        str1[i] = str2[i];
-        ++i;
-    }
-    str1[i] = '\0';
-}
-
-int kaesnappy_get_version(KAESnappyVersion* ver)
-{
-    if (ver == NULL) {
-        return KAE_SNAPPY_INVAL_PARA;
-    }
-    versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "23.0.RC2");
-    versionCpy(ver->componentName, "KAESnappy");
-    versionCpy(ver->componentVersion, "2.0.4");
-    return KAE_SNAPPY_SUCC;
-}
-
 static ARCH_TYPE KaeSnappyDetect(void)
 {
     unsigned long long cpuId;

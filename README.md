@@ -322,9 +322,34 @@ lrwxrwxrwx. 1 root root     15 May 10 09:30 liblz4.so.1 -> liblz4.so.1.9.4
 drwxr-xr-x. 2 root root   4096 May 10 09:30 pkgconfig
 ```
 
-若通过**ldd**命令查看zstd加速库没链接到libwd和libkaelz4，可以通过LD_LIBRARY_PATH指定依赖库地址。
+若通过**ldd**命令查看lz4加速库没链接到libwd和libkaelz4，可以通过LD_LIBRARY_PATH指定依赖库地址。
 
-#### 2.4.2.6 源码方式卸载
+#### 2.4.2.7 安装KAESnappy（按需）
+
+此特性仅在920新型号处理器有效
+
+```shell
+sh build.sh snappy
+```
+
+查看kaesnappy软件库是否生成
+
+```shell
+[root@localhost KAE]# ll /usr/local/kaesnappy/lib/
+total 464
+drwxr-xr-x. 3 root root   4096 Nov  6 16:21 cmake
+-rwxr-xr-x. 1 root root 256378 Nov 12 14:27 libkaesnappy.a
+lrwxrwxrwx. 1 root root     46 Nov 12 14:27 libkaesnappy.so -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
+lrwxrwxrwx. 1 root root     46 Nov 12 14:27 libkaesnappy.so.0 -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
+-rwxr-xr-x. 1 root root 147960 Nov 12 14:27 libkaesnappy.so.2.0.4
+lrwxrwxrwx. 1 root root     14 Nov  6 16:21 libsnappy.so -> libsnappy.so.1
+lrwxrwxrwx. 1 root root     19 Nov  6 16:21 libsnappy.so.1 -> libsnappy.so.1.1.10
+-rwxr-xr-x. 1 root root  79208 Nov 12 14:27 libsnappy.so.1.1.10
+```
+
+若通过**ldd**命令查看snappy加速库没链接到libwd和libkaesnappy，可以通过LD_LIBRARY_PATH指定依赖库地址。
+
+#### 2.4.2.8 源码方式卸载
 
 ```shell
 sh build.sh driver clean  内核驱动卸载
@@ -334,6 +359,7 @@ sh build.sh zlib clean 压缩库zlib卸载
 sh build.sh gzip clean  压缩库gzip卸载
 sh build.sh zstd clean 压缩库zstd卸载
 sh build.sh lz4 clean 压缩库lz4卸载
+sh build.sh snappy clean 压缩库snappy卸载
 ###
 sh build.sh cleanup 一键式卸载
 ```

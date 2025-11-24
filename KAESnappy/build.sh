@@ -109,7 +109,6 @@ function Operate()
             Build_kaesnappy "$2"
             ;;
         install)
-            # Build_kaesnappy "$2"
             Install_kaesnappy
             ;;
         uninstall)

@@ -55,23 +55,12 @@ typedef struct {
 } snappy_task_queues;
 
 int  kaesnappy_init_v1(SNAPPY_CCtx* zc);
-void kaesnappy_reset_v1(SNAPPY_CCtx* zc);
 void kaesnappy_release_v1(SNAPPY_CCtx* zc);
-void kaesnappy_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status);
 int  kaesnappy_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
-void kaesnappy_compress_async(const void *src, void *dst,
-                           snappy_async_callback callback, struct kaesnappy_result *result,
-                           enum kae_snappy_async_data_format data_format, const int *ptr);
-int kaesnappy_async_compress_polling(int budget);
 
 int  kaesnappy_init_v2(SNAPPY_CCtx* zc);
 void kaesnappy_release_v2(SNAPPY_CCtx* zc);
-void kaesnappy_setstatus_v2(SNAPPY_CCtx* zc, unsigned int status);
 int  kaesnappy_compress_v2(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 
 int wd_get_available_dev_num(const char* alogrithm);
-int kaesnappy_async_is_thread_do_comp_full();
-void kaesnappy_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame);
-void kaesnappy_async_deinit(void);
-void kaesnappy_ctx_clear(void);
 #endif

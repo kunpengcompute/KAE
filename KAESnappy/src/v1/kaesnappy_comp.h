@@ -45,7 +45,6 @@ typedef union { U16 u16; U32 u32; reg_t uArch; } __attribute__((packed)) SNAPPY_
 struct kaesnappy_compress_ctx;
 struct kaesnappy_async_req;
 
-typedef int (*kaesnappy_post_process_handle_t)(struct kaesnappy_async_req *req, const void *source, void *dest);
 
 struct kaesnappy_compress_ctx {
     size_t srcSize;
@@ -61,7 +60,6 @@ struct kaesnappy_compress_ctx {
     struct kaesnappy_result *result;
     enum kae_snappy_async_data_format data_format;
     int preferences;
-    kaesnappy_post_process_handle_t kaesnappy_post_process_handle;
     struct kaesnappy_async_req *req_list;
     struct kaesnappy_compress_ctx *next;
 };
@@ -90,7 +88,6 @@ struct kaesnappy_async_ctrl {
     volatile int *stop_flag;
 };
 
-void kaesnappy_setstatus_v1(SNAPPY_CCtx* zc, unsigned int status);
 int  kaesnappy_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize);
 
 // part1.frame模式的header & footer描述
@@ -150,5 +147,4 @@ inline unsigned long KAESNAPPYBlockHeaderSz(void)
     return KAESNAPPY_BLOCK_HEADER_SIZE;
 }
 
-int kaesnappy_async_is_thread_do_comp_full();
 #endif
