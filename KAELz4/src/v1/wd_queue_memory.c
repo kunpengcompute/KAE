@@ -402,12 +402,12 @@ void kaelz4_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_pri
     while (cur_pool != NULL) {
         error = pthread_mutex_lock(&cur_pool->destroy_mutex);
         if (error != 0) {
-            (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
+            US_ERR("Failed to acquire destroy_mutex");
             return;
         }
-
         error = pthread_mutex_lock(&cur_pool->kae_queue_mutex);
         if (error != 0) {
+            US_ERR("Failed to acquire kae_queue_mutex");
             (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
             return;
         }
@@ -453,7 +453,6 @@ void kaelz4_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_r
         error = pthread_mutex_lock(&cur_pool->destroy_mutex);
         if (error != 0) {
             cur_pool = cur_pool->next;
-            (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
             continue;
         }
         if (cur_pool->kae_queue_pool == NULL) {
