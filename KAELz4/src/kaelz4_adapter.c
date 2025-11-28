@@ -314,8 +314,13 @@ static void *decompress_thread_func(void *arg)
     struct timespec timeout;
     int enter_idle = 0;
     int ret = 0;
+    int dctx_created = 1;
 
-    LZ4F_createDecompressionContext(&dctx, 100);
+    LZ4F_errorCode_t dctxStatus = LZ4F_createDecompressionContext(&dctx, 100);
+    if (LZ4F_isError(dctxStatus)) {
+        US_ERR("LZ4F_dctx creation error");
+        dctx_created = 0;
+    }
 
     while (1) {
         // 等待任务
@@ -360,7 +365,7 @@ static void *decompress_thread_func(void *arg)
             // 更新 ci，复用空闲位置
             task_queue->ci++;
 
-            // 执行压缩操作
+            // 执行解压操作
             if (task.data_format == KAELZ4_ASYNC_BLOCK) {
                 ret = sw_decompress(task.src->buf[0].data, task.dst->buf[0].data, task.result->src_size,
                                     task.result->dst_len);
@@ -372,6 +377,13 @@ static void *decompress_thread_func(void *arg)
                     ret = KAE_LZ4_COMP_FAIL;
                 }
             } else {
+                if (!dctx_created) {
+                    US_ERR("Error: LZ4F decompression context not available");
+                    task.result->status = KAE_LZ4_COMP_FAIL;
+                    task.result->dst_len = 0;
+                    task.callback(task.result);
+                    continue;
+                }
                 ret = LZ4F_decompress(dctx, task.dst->buf[0].data, &task.result->dst_len, task.src->buf[0].data,
                                       &task.result->src_size, &task.options);
                 LZ4F_resetDecompressionContext(dctx);
@@ -390,7 +402,9 @@ static void *decompress_thread_func(void *arg)
     }
 
 exit_thread:
-    LZ4F_freeDecompressionContext(dctx);
+    if (dctx_created) {
+        LZ4F_freeDecompressionContext(dctx);
+    }
     kaelz4_async_deinit();
     task_queue->stop = 0;
     return NULL;
@@ -622,7 +636,13 @@ static inline int kaelz4_enqueue(lz4_task_queue *task_queue, lz4_async_task_t *t
 {
     uint32_t pos = atomic_fetch_add(&task_queue->pi, 1);
     lz4_async_task_t *cell = &task_queue->tasks[pos % KAELZ4_TASK_QUEUE_DEPTH];
-    while (atomic_load_explicit(&cell->ready, memory_order_acquire)); // 等待槽空
+    if (task_queue->is_polling == TRUE) {
+        if (atomic_load_explicit(&cell->ready, memory_order_acquire)) {
+            return KAE_LZ4_TASK_QUEUE_FULL;
+        }
+    } else {
+        while (atomic_load_explicit(&cell->ready, memory_order_acquire)); // 等待槽空
+    }
     *cell = *task;
     atomic_store_explicit(&cell->ready, true, memory_order_release);
     pthread_cond_signal(&task_queue->cond);
