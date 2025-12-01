@@ -111,7 +111,8 @@ struct compress_ctx {
     unsigned int src_buf_num;
     struct compress_session sess;
     struct compress_session *sess_array;  // sess指针数组
-    int sess_count;     // sess指针数量，默认1
+    int sess_count;       // sess指针数量，默认1
+    int enable_huge_page; // 是否开启大页, 使能零拷贝
 
     uint64_t *all_delays;
     int is_polling;

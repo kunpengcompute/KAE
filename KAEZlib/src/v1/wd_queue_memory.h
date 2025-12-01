@@ -31,8 +31,10 @@
 #define KAE_QUEUE_POOL_MAX_SIZE     (512)
 #define CHECK_QUEUE_TIME_SECONDS    (60)  // seconds
 
-#define COMP_BLOCK_NUM              (4)
-#define COMP_BLOCK_SIZE             (2 * 1024 * 1024)
+typedef enum {
+    SYNC_MODE = 0,
+    ASYNC_MODE,
+} operation_mode;
 
 typedef void (*kae_release_priv_ctx_cb)(void* priv_ctx);
 
@@ -71,7 +73,7 @@ void kaezip_dma_unmap(void *usr, void *va, void *dma, size_t sz);
 
 KAE_QUEUE_POOL_HEAD_S* kaezip_init_queue_pool (int algtype);
 KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int alg_comp_type, int comp_optype, 
-                                                    int win_size, int is_sgl, const device_config_t *config);
+                                                    int win_size, int is_sgl, const device_config_t *config, operation_mode mode);
 int kaezip_put_node_to_pool (KAE_QUEUE_POOL_HEAD_S* pool_head, KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn);
 void kaezip_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_fn);
 void kaezip_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_ectx_fn);

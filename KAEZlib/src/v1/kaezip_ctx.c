@@ -34,7 +34,7 @@ static enum kaezip_mode g_kaezip_mode = KAEZIP_SYNC;
 
 static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
 static kaezip_ctx_t *kaezip_new_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype, int is_sgl);
-static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype);
+static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype, operation_mode mode);
 static int kaezip_driver_do_comp_impl(kaezip_ctx_t *kz_ctx);
 static int kaezip_set_comp_input_data(kaezip_ctx_t *kz_ctx);
 static void kaezip_get_buffer_remain_data(kaezip_ctx_t *kz_ctx);
@@ -530,7 +530,7 @@ int kaezip_get_remain_data(kaezip_ctx_t *kz_ctx)
     return KAEZIP_SUCCESS;
 }
 
-static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype)
+static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype, operation_mode mode)
 {
     if (instance->wd_ctx != NULL) {
         US_WARN("wd ctx is in used by other comp");
@@ -541,9 +541,15 @@ static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_t
 
     instance->setup.alg_type  = (enum wcrypto_comp_alg_type)alg_comp_type;
     instance->setup.op_type = (enum wcrypto_comp_optype)comp_optype;
-    instance->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATEFUL;
-    if (instance->q_node->is_sgl) {
+
+    if (mode == SYNC_MODE) {
+        instance->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATEFUL;
+    } else {
+        // ASYNC_MODE only support stateless
         instance->setup.stream_mode = (enum wcrypto_comp_state)WCRYPTO_COMP_STATELESS;
+    }
+
+    if (instance->q_node->is_sgl) {
         instance->setup.data_fmt = WD_SGL_BUF;
     }
 
@@ -556,7 +562,8 @@ static int kaezip_create_wd_ctx(struct kaezip_instance *instance, int alg_comp_t
     return KAEZIP_SUCCESS;
 }
 
-static struct kaezip_instance *kaezip_new_instance(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype, int win_size, int is_sgl)
+static struct kaezip_instance *kaezip_new_instance(KAE_QUEUE_DATA_NODE_S* q_node, int alg_comp_type, int comp_optype,
+                                                    int win_size, int is_sgl, operation_mode mode)
 {
     struct kaezip_instance *instance = (struct kaezip_instance *)kae_malloc(sizeof(struct kaezip_instance));
 
@@ -568,7 +575,7 @@ static struct kaezip_instance *kaezip_new_instance(KAE_QUEUE_DATA_NODE_S* q_node
     memset(instance, 0, sizeof(struct kaezip_instance));
 
     instance->q_node = q_node;
-    instance->total_num = MAX_KAE_CTX_DEPTH;
+    instance->total_num = (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
     instance->setup.win_size = win_size;
     instance->setup.br.usr = q_node->kae_queue_mem_pool;
     instance->setup.cb = kaezip_callback;
@@ -585,7 +592,7 @@ static struct kaezip_instance *kaezip_new_instance(KAE_QUEUE_DATA_NODE_S* q_node
         instance->setup.br.iova_unmap = kaezip_dma_unmap;
     }
 
-    if (kaezip_create_wd_ctx(instance, alg_comp_type, comp_optype) == KAEZIP_FAILED) {
+    if (kaezip_create_wd_ctx(instance, alg_comp_type, comp_optype, mode) == KAEZIP_FAILED) {
         US_ERR("create wd ctx fail!");
         kae_free(instance);
         return NULL;
@@ -614,7 +621,7 @@ void kaezip_free_instance(void *arg)
 
 #define COMP_OPTYPE_NUM (2)
 __thread struct kaezip_instance *g_cur_instance[COMP_OPTYPE_NUM];
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config)
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaezip_ctx_t               *kz_ctx = NULL;
@@ -629,10 +636,10 @@ kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, i
     // check cur_instance
     if (cur_instance == NULL || cur_instance->q_node->comp_alg_type != alg_comp_type \
         || cur_instance->q_node->win_size != win_size || cur_instance->q_node->is_sgl != is_sgl) {
-        q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config);
+        q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config, mode);
         if (q_node == NULL) {
             kaezip_queue_pool_check_and_release(qp, kaezip_free_instance);
-            q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config);
+            q_node = kaezip_get_node_from_pool(qp, alg_comp_type, comp_optype, win_size, is_sgl, config, mode);
 
             if (q_node == NULL) {
                 kae_free(cur_instance);
@@ -642,7 +649,7 @@ kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, i
         }
 
         if (q_node->priv_ctx == NULL) {
-            cur_instance = kaezip_new_instance(q_node, alg_comp_type, comp_optype, win_size, is_sgl);
+            cur_instance = kaezip_new_instance(q_node, alg_comp_type, comp_optype, win_size, is_sgl, mode);
             if (cur_instance == NULL) {
                 US_ERR("create instance fail!");
                 (void)kaezip_put_node_to_pool(qp, q_node, kaezip_free_instance);

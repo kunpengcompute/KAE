@@ -70,7 +70,7 @@ int kz_deflateInit2_v1(z_streamp strm, int level,
 
     int win_size, alg;
     (void)kz_zlib_analy_alg(-15, &alg, &win_size, level);
-    kaezip_ctx_t* kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_DEFLATE, win_size, 0, NULL);
+    kaezip_ctx_t* kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_DEFLATE, win_size, 0, NULL, SYNC_MODE);
     if (kaezip_ctx == NULL) {
         US_ERR("failed to get kaezip ctx, windowbits %d!", windowBits);
         setDeflateKaezipCtx(strm, 0);

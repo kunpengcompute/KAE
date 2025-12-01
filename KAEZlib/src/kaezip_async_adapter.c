@@ -122,12 +122,17 @@ static inline int kaezip_enqueue(kaezip_task_queue *task_queue, kaezip_async_tas
     return 0;
 }
 
-static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
+static int kaezip_check_param_valid(kaezip_session *sess, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                                     kaezip_async_callback callback, struct kaezip_result *result)
 {
     if (unlikely(src == NULL || dst == NULL || callback == NULL || result == NULL)) {
         return KAE_ZLIB_INVAL_PARA;
     }
+
+    if (unlikely(src->buf_num > REQ_BUFFER_MAX || src->buf_num <= 0 || dst->buf_num > REQ_BUFFER_MAX || dst->buf_num <= 0)) {
+        return KAE_ZLIB_INVAL_PARA;
+    }
+
     result->src_size = 0;
 
     // 对于 zlib 格式，第一个SGE缓冲区大小不得小于2字节，用于容纳zlib-header
@@ -150,16 +155,17 @@ static int kaezip_check_param_valid(const struct kaezip_buffer_list *src, struct
         return KAE_ZLIB_INVAL_PARA;
     }
     result->dst_len += dst->buf[0].buf_len;
-    
+
     for (unsigned int i = 1; i < dst->buf_num; i++) {
-        if (unlikely(dst->buf[i].data == NULL || dst->buf[i].buf_len == 0 || 
-                        dst->buf[i].buf_len > REQ_BUFFER_MAX_SIZE || dst->buf[i].buf_len < REQ_BUFFER_MIN_SIZE)) {
+        if (unlikely(dst->buf[i].data == NULL || dst->buf[i].buf_len == 0 ||
+                        dst->buf[i].buf_len > REQ_BUFFER_MAX_SIZE)) {
             return KAE_ZLIB_INVAL_PARA;
         }
         result->dst_len += dst->buf[i].buf_len;
     }
 
-    if (unlikely(src->buf_num > REQ_BUFFER_MAX || src->buf_num <= 0 || dst->buf_num > REQ_BUFFER_MAX || dst->buf_num <= 0)) {
+    // src_size should not be larger than ASYNC_COMP_BLOCK_SIZE for no-SVA case
+    if (unlikely(sess->usr_map == NULL && result->src_size > ASYNC_COMP_BLOCK_SIZE)) {
         return KAE_ZLIB_INVAL_PARA;
     }
 
@@ -205,7 +211,7 @@ static int kaezip_async_do_comp_in_session(kaezip_session *sess, const struct ka
 int KAEZIP_compress_async_in_session(void *sess, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                                      kaezip_async_callback callback, struct kaezip_result *result)
 {
-    if (unlikely(kaezip_check_session_valid(sess, WCRYPTO_DEFLATE) != KAE_ZLIB_SUCC || kaezip_check_param_valid(src, dst, callback, result) != KAE_ZLIB_SUCC)) {
+    if (unlikely(kaezip_check_session_valid(sess, WCRYPTO_DEFLATE) != KAE_ZLIB_SUCC || kaezip_check_param_valid(sess, src, dst, callback, result) != KAE_ZLIB_SUCC)) {
         return KAE_ZLIB_INVAL_PARA;
     }
 
@@ -338,7 +344,7 @@ void KAEZIP_destroy_async_decompress_session(void *sess)
 int KAEZIP_decompress_async_in_session(void *sess, const struct kaezip_buffer_list *src, struct kaezip_buffer_list *dst,
                                      kaezip_async_callback callback, struct kaezip_result *result)
 {
-    if (unlikely(kaezip_check_session_valid(sess, WCRYPTO_INFLATE) != KAE_ZLIB_SUCC || kaezip_check_param_valid(src, dst, callback, result) != KAE_ZLIB_SUCC)) {
+    if (unlikely(kaezip_check_session_valid(sess, WCRYPTO_INFLATE) != KAE_ZLIB_SUCC || kaezip_check_param_valid(sess, src, dst, callback, result) != KAE_ZLIB_SUCC)) {
         return KAE_ZLIB_INVAL_PARA;
     }
 

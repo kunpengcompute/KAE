@@ -57,15 +57,17 @@
 #define false (0 == 1)
 #endif
 
-#define KAEZIP_FAILED           (-1)
-#define KAEZIP_SUCCESS          (0)
+#define KAEZIP_FAILED              (-1)
+#define KAEZIP_SUCCESS             (0)
 #define KAEZIP_DRIVER_DO_TASK_NOW  (1)
 #define KAEZIP_SAVE_DATA_TO_BUFFER (2)
 
 #define COMP_BLOCK_NUM              (4)
 #define COMP_BLOCK_SIZE             (2 * 1024 * 1024)
-#define KAEZIP_STREAM_CHUNK_IN         ((COMP_BLOCK_SIZE) >> 3)  // change the input size would change the performace
-#define KAEZIP_STREAM_CHUNK_OUT        (COMP_BLOCK_SIZE)
+#define KAEZIP_STREAM_CHUNK_IN      ((COMP_BLOCK_SIZE) >> 3)  // change the input size would change the performace
+#define KAEZIP_STREAM_CHUNK_OUT     (COMP_BLOCK_SIZE)
+
+#define ASYNC_COMP_BLOCK_SIZE       (8 * 1024 * 1024)
 
 #define KAEZIP_RETURN_FAIL_IF(cond, mesg, ret) \
         if (unlikely(cond)) {\

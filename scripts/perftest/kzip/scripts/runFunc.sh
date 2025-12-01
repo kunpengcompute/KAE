@@ -13,7 +13,6 @@ fi
 
 sh build.sh $buildParams
 
-Datasets=("calgary" "itemdata" "dickens" "mozilla" "mr" "nci" "ooffice" "osdb" "reymont" "samba" "sao" "webster" "xml" "x-ray")
 Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
 BlockSize=("4" "8" "16" "64" "128" "2090"  "8192" "10244" "0")
 Polling=("1" "0")

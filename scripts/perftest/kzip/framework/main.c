@@ -321,7 +321,7 @@ static int do_real_compression(struct compress_ctx *ctx, struct compress_param *
 }
 
 static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompress, unsigned int inflight_num,
-                       unsigned int chunk_len, compression_algorithm_t *algorithm, int is_test_crc, int sess_nums)
+                       unsigned int chunk_len, compression_algorithm_t *algorithm, int is_test_crc, int sess_nums, int enable_huge_pages)
 {
     memset(ctx, 0, sizeof(struct compress_ctx));
     ctx->algorithm = algorithm;
@@ -339,6 +339,7 @@ static void compress_ctx_init(struct compress_ctx *ctx, int compress_or_decompre
     ctx->all_delays = (uint64_t *)malloc(sizeof(uint64_t) * MAX_LATENCY_COUNT);
     ctx->param_index = 0;
     ctx->is_lz77_mode = 0;
+    ctx->enable_huge_page = enable_huge_pages;
 
     int is_test_lz77_block = strcmp(algorithm->name, "kaelz4async_lz77") == 0;
     int is_test_lz77_frame = strcmp(algorithm->name, "kaelz4async_lz77_frame") == 0;
@@ -1077,7 +1078,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
             return -1;
         }
         struct compress_ctx ctx;
-        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, 0, 1);
+        compress_ctx_init(&ctx, compress, inflight_num, chunk_len, algorithm, 0, 1, g_enable_huge_pages);
         ctx.loop_times = loop_times;
         if (!ctx.compress_or_decompress) {
             ctx.loop_times = 1;
@@ -1095,7 +1096,7 @@ int round_trip_fuzztest(uint32_t RDGseed)
                 int j;
                 for (j = 0; j < threadNum; j++) {
                     struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
-                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, 0, 1);
+                    compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, 0, 1, g_enable_huge_pages);
                     args->ctx.thread_id = j;
                     args->ctx.loop_times = loop_times;
                     args->in_filename = in_filename;
@@ -1268,7 +1269,7 @@ int main(int argc, char **argv)
 
     struct compress_ctx *ctx = malloc(sizeof(struct compress_ctx));
 
-    compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums);
+    compress_ctx_init(ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums, g_enable_huge_pages);
     ctx->loop_times = loop_times;
 
     if (!ctx->compress_or_decompress && threadNum == 1) { // 如果是分片解压，单独处理
@@ -1280,7 +1281,7 @@ int main(int argc, char **argv)
             for (j = 0; j < threadNum; j++) {
                 struct thread_compress_args *args = malloc(sizeof(struct thread_compress_args));
 
-                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums);
+                compress_ctx_init(&args->ctx, compress, inflight_num, chunk_len, algorithm, is_test_crc, sess_nums, g_enable_huge_pages);
                 args->ctx.thread_id = j;
                 args->ctx.loop_times = loop_times;
                 args->in_filename = in_filename;

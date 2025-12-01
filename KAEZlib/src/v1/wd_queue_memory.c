@@ -258,10 +258,10 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
     return NULL;
 }
 
-void* kaezip_create_alg_wd_queue_mempool(struct wd_queue *q)
+void* kaezip_create_alg_wd_queue_mempool(struct wd_queue *q, operation_mode mode)
 {
-    unsigned int block_size = COMP_BLOCK_SIZE;
-    unsigned int block_num = COMP_BLOCK_NUM * MAX_KAE_CTX_DEPTH;
+    unsigned int block_size = mode == SYNC_MODE ? COMP_BLOCK_SIZE : ASYNC_COMP_BLOCK_SIZE;
+    unsigned int block_num = COMP_BLOCK_NUM * (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
     struct wd_blkpool_setup setup;
 
     memset(&setup, 0, sizeof(setup));
@@ -303,7 +303,7 @@ void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_
 }
 
 static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type, int win_size, int is_sgl, 
-                                                            const device_config_t *config)
+                                                            const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
 
@@ -323,7 +323,7 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int 
     if (is_sgl) {
         queue_node->kae_queue_mem_pool = kaezip_create_sgl_mempool(queue_node->kae_wd_queue);
     } else {
-        queue_node->kae_queue_mem_pool = kaezip_create_alg_wd_queue_mempool(queue_node->kae_wd_queue);
+        queue_node->kae_queue_mem_pool = kaezip_create_alg_wd_queue_mempool(queue_node->kae_wd_queue, mode);
     }
     queue_node->is_sgl = is_sgl;
     queue_node->win_size = win_size;
@@ -341,7 +341,7 @@ err:
 }
 
 KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, 
-                                                    int win_size, int is_sgl, const device_config_t *config)
+                                                    int win_size, int is_sgl, const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
 
@@ -352,7 +352,7 @@ KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
 
     queue_data_node = kaezip_get_queue_data_from_list(pool_head, comp_alg_type, win_size, is_sgl);
     if (queue_data_node == NULL) {
-        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type, win_size, is_sgl, config);
+        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type, win_size, is_sgl, config, mode);
     }
 
     return queue_data_node;
