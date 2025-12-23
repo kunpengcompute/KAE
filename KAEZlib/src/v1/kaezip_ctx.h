@@ -116,7 +116,7 @@ struct kaezip_instance {
 
 typedef struct kaezip_ctx   kaezip_ctx_t;
 
-kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config);
+kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config, operation_mode mode);
 void          kaezip_put_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_init_ctx(kaezip_ctx_t* kz_ctx);
 void          kaezip_free_ctx(kaezip_ctx_t* kz_ctx);

@@ -150,10 +150,11 @@ static int lz4_bound(int src_len)
 // LZ4 初始化
 int lz4_async_init(struct compress_ctx *ctx)
 {
+    iova_map_fn map_func = ctx->enable_huge_page ? get_physical_address_wrapper : NULL;
     if (ctx->is_polling && ctx->compress_or_decompress) {
-        ctx->sess.kae_sess = KAELZ4_create_async_compress_session(get_physical_address_wrapper);
+        ctx->sess.kae_sess = KAELZ4_create_async_compress_session(map_func);
     } else {
-        LZ4_async_compress_init(get_physical_address_wrapper);
+        LZ4_async_compress_init(map_func);
     }
     return 0;
 }

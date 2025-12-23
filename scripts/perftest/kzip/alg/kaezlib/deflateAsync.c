@@ -122,12 +122,13 @@ static int zlib_bound(int src_len) {
 
 // Zlib 初始化
 static int zlib_async_deflate_init(struct compress_ctx *ctx) {
+    iova_map_fn map_func = ctx->enable_huge_page ? get_physical_address_wrapper : NULL;
     if(ctx->sess_count > 1) {
         for (int i = 0; i < ctx->sess_count; ++i) {
             if(ctx->compress_or_decompress == 1) {
-                ctx->sess_array[i].kae_sess = KAEZIP_create_async_compress_session(get_physical_address_wrapper, NULL);
+                ctx->sess_array[i].kae_sess = KAEZIP_create_async_compress_session(map_func, NULL);
             } else {
-                ctx->sess_array[i].kae_sess = KAEZIP_create_async_decompress_session(get_physical_address_wrapper, NULL);
+                ctx->sess_array[i].kae_sess = KAEZIP_create_async_decompress_session(map_func, NULL);
             }
             if (!ctx->sess_array[i].kae_sess) {
                 fprintf(stderr, "Failed to create session %d\n", i);
@@ -135,9 +136,9 @@ static int zlib_async_deflate_init(struct compress_ctx *ctx) {
         }
     } else {
         if(ctx->compress_or_decompress == 1) {
-            ctx->sess.kae_sess = KAEZIP_create_async_compress_session(get_physical_address_wrapper, NULL);
+            ctx->sess.kae_sess = KAEZIP_create_async_compress_session(map_func, NULL);
         } else {
-            ctx->sess.kae_sess = KAEZIP_create_async_decompress_session(get_physical_address_wrapper, NULL);
+            ctx->sess.kae_sess = KAEZIP_create_async_decompress_session(map_func, NULL);
         }
     }
     return 0;

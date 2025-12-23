@@ -377,7 +377,7 @@ static void kaezip_fill_flat_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_li
         offset += src->buf[i].buf_len;
     }
     op_data->in_len += kz_ctx->do_comp_len;
-    op_data->avail_out = KAEZIP_STREAM_CHUNK_OUT;
+    op_data->avail_out = ASYNC_COMP_BLOCK_SIZE;
     op_data->flush   = kz_ctx->flush;
     op_data->alg_type = kz_ctx->comp_alg_type;
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
@@ -829,6 +829,35 @@ static int kaezip_async_block_padding(struct kaezip_async_req *req, const struct
         // 2 bytes header
         output_len += 2;
     }
+
+    // copy produced data from op_data.out to dst_buffer when not sgl mode
+    if (!kz_ctx->q_node->is_sgl) {
+        struct kaezip_buffer_list *dst = req->compress_ctx->dst;
+        unsigned int copied = 0;   // the length of data that has been copied
+        unsigned int capacity = 0; // the capacity of the dst buffer list
+        for (unsigned int i = 0; i < dst->buf_num; i++) {
+            struct kaezip_buffer *dst_buf = &dst->buf[i];
+            if (!dst_buf->data || dst_buf->buf_len == 0) {
+                continue;
+            }
+            capacity += dst_buf->buf_len;
+            // all data has been copied
+            if (copied >= output_len) {
+                break;
+            }
+            // get the length of data that has not been copied
+            unsigned int remaining = output_len - copied;
+            // get the length of data that can be copied
+            unsigned int to_copy = (remaining < dst_buf->buf_len) ? remaining : dst_buf->buf_len;
+            memcpy(dst_buf->data, op_data->out + copied, to_copy);
+            copied += to_copy;
+        }
+        if (output_len > capacity) {
+            US_ERR("The length of produced data exceeds the capacity of the dst buffer list.");
+            return KAE_ZLIB_DST_BUF_OVERFLOW;
+        }
+    }
+
     return output_len;
 }
 
