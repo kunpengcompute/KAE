@@ -241,3 +241,47 @@ libnuma.so.1 => /usr/lib64/libnuma.so.1 (0x0000ffff894b0000)
 
 此代码仓计划参与OpenSSL/Tongsuo/BoringSSL/Lz4/Zlib/Gzip/Zstd软件开源，仅作OpenSSL/Tongsuo/BoringSSL/Lz4/Zlib/Gzip/Zstd功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责
 
+# 常见问题
+
+## 驱动加载失败问题
+
+* 内核版本和内核开发包版本不一致导致内核安装失败。（包括小版本号）
+  
+  > uname -r 查看内核版本 rpm -qa | grep kernel-devel 查看内核开发包版本
+  
+  解决办法：安装和内核版本一致的开发包
+* 缺少license导致加载失败
+  
+  > lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  
+  解决办法：920申请license安装；920新型号更新免license版本BIOS
+  
+## 驱动修改instance数量
+  
+  驱动instance数量默认安装是每个加速器设备256个instance。
+  
+  > cat /sys/class/uacce/hisi_*/available_instances 显示的数量为256（每个加速器）
+  
+  每个加速器最大的instance数量为1024，修改方式如下（选择1种合适的方式即可）：
+  
+  1、可以在驱动目录对应的Makefile文件将pf_q_num=256修改为pf_q_num=1024之后，卸载驱动重新编译安装。
+  
+  2、或者直接执行：
+  ```modprobe -r hisi_zip
+  modprobe -r hisi_hpre
+  modprobe -r hisi_sec2
+  modprobe -r hisi_qm
+  modprobe -r uacce
+  ```
+
+  先卸载驱动 之后再执行：
+  ```modprobe uacce 
+  modprobe hisi_qm
+  modprobe hisi_sec2 uacce_mode=2 pf_q_num=1024
+  modprobe hisi_hpre uacce_mode=2 pf_q_num=1024
+  modprobe hisi_zip uacce_mode=2 pf_q_num=1024
+  ```
+
+  按新的队列数量加载驱动。（uacce_mode=2是nosva模式，一般场景不涉及）
+  
+  > 注意，若容器场景，每个设备虚拟出的VF，也是和PF共享1024个instance，也就是PF+VF的instance最大为1024
