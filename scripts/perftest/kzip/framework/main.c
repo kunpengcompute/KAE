@@ -373,6 +373,14 @@ static void compress_ctx_destory(struct compress_ctx *ctx)
     }
     ctx->out_buf_list = NULL;
     ctx->out_buf_tail = NULL;
+    
+    free(ctx->all_delays);
+    free(ctx->sess_array);
+
+    struct cache_page_map* cache = (struct cache_page_map*)ctx->page_info;
+    free_cache_page_map(cache);
+    cache = (struct cache_page_map*)ctx->tuple_page_info;
+    free_cache_page_map(cache);
 }
 #define MAX_CPUS 512 // 最大可绑核数量。
 static int g_taskset_cpus_arr[MAX_CPUS];
@@ -915,7 +923,7 @@ static int start_work_decompress(
         free(inbuf);
     }
     free(outbuf);
-
+    free(loaded_fragments);
     return ret;
 }
 static void format_cpu_env(char *str)

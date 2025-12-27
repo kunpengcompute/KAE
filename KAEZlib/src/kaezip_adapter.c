@@ -28,7 +28,7 @@ int uadk_get_accel_platform(void)
         return g_platform;
     }
     //	init log
-    kaezip_debug_init_log();
+    // kaezip_debug_init_log();
     //  check sva
     struct uacce_dev* dev = wd_get_accel_dev("zlib");
     if (dev) {

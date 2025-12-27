@@ -21,6 +21,28 @@ MODULE_DEFINES := $(foreach mod,$(MODULES),-DCONFIG_$(shell echo $(mod) | tr '[:
 CFLAGS += $(MODULE_DEFINES)
 CFLAGS += $(INCLD)
 
+# 大页和页面大小配置（从build.sh传入）
+PAGE_SHIFT ?= 12
+HUGE_PAGE_SIZE ?= 1GB
+HUGE_PAGE_KB ?= 1048576
+HUGE_PAGE_MASK ?= MAP_HUGE_1GB
+
+# 根据大页大小设置宏定义
+ifeq ($(HUGE_PAGE_SIZE),512MB)
+    CFLAGS += -DCONFIG_512MB_HUGEPAGE -DHPAGE_SIZE_BYTES=$(shell echo 512*1024*1024 | bc)
+    CFLAGS += -DHUGE_PAGE_KB=$(HUGE_PAGE_KB) -DHUGE_PAGE_MASK=$(HUGE_PAGE_MASK)
+else
+    CFLAGS += -DCONFIG_1GB_HUGEPAGE -DHPAGE_SIZE_BYTES=$(shell echo 1024*1024*1024 | bc)
+    CFLAGS += -DHUGE_PAGE_KB=$(HUGE_PAGE_KB) -DHUGE_PAGE_MASK=$(HUGE_PAGE_MASK)
+endif
+
+# 根据页面大小设置宏定义
+ifeq ($(PAGE_SHIFT),16)
+    CFLAGS += -DCONFIG_64K_PAGE -DPAGE_SHIFT=16
+else
+    CFLAGS += -DCONFIG_4K_PAGE -DPAGE_SHIFT=12
+endif
+
 # 定义每个模块需要的链接库
 MODULE_LIBS_kaelz4 := -L/usr/local/kaelz4/lib -llz4 -lkaelz4
 MODULE_LIBS_kaezlib := -L/usr/local/kaezip/lib -lkaezip
@@ -62,5 +84,10 @@ help:
 	@echo "  make              # 编译所有模块"
 	@echo "  make MODULES=\"module1 module2\"  # 选择性编译模块"
 	@echo "  make clean        # 清理所有生成的文件"
+	@echo ""
+	@echo "当前配置:"
+	@echo "  PAGE_SHIFT=$(PAGE_SHIFT)"
+	@echo "  HUGE_PAGE_SIZE=$(HUGE_PAGE_SIZE)"
+	@echo "  HUGE_PAGE_KB=$(HUGE_PAGE_KB)"
 
 .PHONY: all clean help FORCE
