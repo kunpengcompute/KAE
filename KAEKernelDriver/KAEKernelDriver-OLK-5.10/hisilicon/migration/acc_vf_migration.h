@@ -10,6 +10,16 @@
 
 #include "../hisi_acc_qm.h"
 
+#ifndef PCI_DEVICE_ID_HUAWEI_SEC_VF
+#define PCI_DEVICE_ID_HUAWEI_SEC_VF 0xa256
+#endif
+#ifndef PCI_DEVICE_ID_HUAWEI_HPRE_VF
+#define PCI_DEVICE_ID_HUAWEI_HPRE_VF 0xa259
+#endif
+#ifndef PCI_DEVICE_ID_HUAWEI_ZIP_VF
+#define PCI_DEVICE_ID_HUAWEI_ZIP_VF 0xa251
+#endif
+
 #define VFIO_PCI_OFFSET_SHIFT   40
 #define VFIO_PCI_OFFSET_TO_INDEX(off)   ((off) >> VFIO_PCI_OFFSET_SHIFT)
 #define VFIO_PCI_INDEX_TO_OFFSET(index)	((u64)(index) << VFIO_PCI_OFFSET_SHIFT)
