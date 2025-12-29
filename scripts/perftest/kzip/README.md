@@ -6,18 +6,18 @@
 ```
 cd KAE
 # 安装 frame 相关头文件
-yum install lz4-devel
+yum install lz4-devel      (for openeuler OS)
+apt-get install liblz4-dev (for debian OS)
 # 覆盖安装本次新增异步接口相关头文件
 sh build.sh uadk
 sh build.sh lz4
 sh build.sh zlib
 ```
-2、打包 kzip
+2、编译 kzip
 ```
 # 在 scripts/perftest/kzip/ 目录中
 sh build.sh
 ```
-
 
 ## 前置设置
 
@@ -116,47 +116,47 @@ echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hu
 polling模式lz77_raw格式转换为block格式压缩接口测试
 ```shell
 # 1、单IO时延数据
-sh runPerf.sh -A kaelz4async_lz77 -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaelz4async_lz77 -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 ```
 
 polling模式lz4 block格式压缩接口测试：
 ```shell
 # 1、单IO时延数据：等价串行流程，结果表示单个IO的压缩时延。
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 # 2、单核压缩能力：单线程加压，结果表示单线程能提供的压缩带宽与时延。
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar]
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar]
 ```
 
 非polling模式lz4 block格式压缩接口测试：
 ```shell
 # 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 0 -f [path to calgary.tar] 
 
 # 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=1
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 0 -f [path to calgary.tar]
 
 # 3、单KAE能力：多线程加压，结果表示满足5G@4K的压缩带宽前提的时延。
 export KAE_LZ4_ASYNC_THREAD_NUM=5 # 可选5或6
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 16 -p 0 -f [path to calgary.tar]
 
 #4、单KAE最大能力：多线程满压，结果表示单KAE能够提供的最大压缩带宽。
 export KAE_LZ4_ASYNC_THREAD_NUM=8
-sh runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
+sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 64 -p 0 -f [path to calgary.tar]
 ```
 
 
 zlib下deflate_raw格式异步压缩接口测试：
 ```shell
 # 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
-sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
 
 # 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
-sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar] 
 
 # 3、单KAE能力测试：单线程继续加压，结果表示单个KAE能够提供的压缩带宽与时延。
-sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 8 -p 1 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 8 -p 1 -f [path to calgary.tar] 
 ```
 
 zlib下deflate_raw格式单个进程同时使用多个KAE的测试：
@@ -166,7 +166,7 @@ zlib下deflate_raw格式单个进程同时使用多个KAE的测试：
 # 以下测试命令将进程绑定到numa0上，并同时使用numa0和numa1对应的KAE。
 export KAE_ZIP_QUEUE_NODES_MASK=3  # 使用NUMA 0,1
 # 双KAE压缩解压能力测试
-sh runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -k 1 -i 64 -p 1 -e 2 -f [path to calgary.tar] 
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -k 1 -i 64 -p 1 -e 2 -f [path to calgary.tar] 
 
 # 环境变量 KAE_ZIP_QUEUE_NODES_MASK 的使用说明：
 # export KAE_ZIP_QUEUE_NODES_MASK=15  # 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3

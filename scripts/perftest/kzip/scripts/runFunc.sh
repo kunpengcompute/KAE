@@ -19,7 +19,7 @@ Polling=("1" "0")
 
 
 current_time=$(date +"%Y-%m-%d_%H-%M-%S")
-LogFile=kaelz4-function.log.$current_time
+LogFile=kae.log.$current_time
 testFilePath=../../../scripts/compressTestDataset
 passCnt=0
 failCnt=0

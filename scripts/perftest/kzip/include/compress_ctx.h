@@ -154,4 +154,5 @@ void *get_physical_address_wrapper(void *usr, void *vaddr, size_t sz);
 void release_huge_pages(void *addr, size_t total_size);
 void *get_huge_pages(size_t total_size);
 struct cache_page_map* init_cache_page_map(void *base_vaddr, size_t total_size);
+void free_cache_page_map(struct cache_page_map *cache);
 #endif

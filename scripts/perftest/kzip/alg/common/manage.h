@@ -13,7 +13,12 @@
 #include <lz4.h>
 #include <lz4frame.h>
 
-#define HPAGE_SIZE (1024 * 1024 * 1024)  // 1GB大页
+// 大页大小配置（由Makefile传入，与hugepage.c保持一致）
+#ifndef HPAGE_SIZE_BYTES
+#define HPAGE_SIZE_BYTES (1024 * 1024 * 1024)  // 默认1GB
+#endif
+#define HPAGE_SIZE HPAGE_SIZE_BYTES
+
 #define HW_MAX_SGE_LEN 0x800000UL
 
 typedef enum ALG_TYPE {

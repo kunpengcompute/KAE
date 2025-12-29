@@ -20,7 +20,7 @@ fi
 sh build.sh $buildParams
 
 
-Datasets=("calgary.tar" "silesia.tar")
+Datasets=("calgary" "silesia.tar")
 inflateNum=("1" "4" "8" "16" "64") # 单IO 单核测试
 BlockSize=("4" "8" "16" "32" "64")
 Multi=("1")
@@ -49,6 +49,7 @@ diffFile() {
     diffRes=$(diff $testFile $testFileOrigin)
     if [[ -n "$diffRes" ]] ; then
         echo "Error: 解压后数据与原始数据比对不通过！！"
+        exit 1
     else
         echo "Success: 测试通过 解压数据校验通过"
     fi
