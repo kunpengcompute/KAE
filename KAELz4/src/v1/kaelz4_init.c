@@ -8,10 +8,11 @@
 #include "kaelz4_ctx.h"
 #include "kaelz4_init.h"
 #include "kaelz4_log.h"
+#include "kaelz4_dev.h"
 
-int kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode)
+int kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config)
 {   
-    kaelz4_ctx_t* kaelz4_ctx = kaelz4_get_ctx(WCRYPTO_LZ77_ONLY, WCRYPTO_DEFLATE, is_sgl, mode);
+    kaelz4_ctx_t* kaelz4_ctx = kaelz4_get_ctx(WCRYPTO_LZ77_ONLY, WCRYPTO_DEFLATE, is_sgl, mode, config);
     if (!kaelz4_ctx) {
         US_ERR("kaelz4 failed to get kaezip ctx!");
         return KAE_LZ4_INIT_FAIL;

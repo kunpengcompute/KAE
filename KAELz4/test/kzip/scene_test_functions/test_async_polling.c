@@ -140,7 +140,7 @@ static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, in
         preferences.frameInfo.contentSize = src_len;
     }
 
-    void *sess = KAELZ4_create_async_compress_session(NULL);
+    void *sess = KAELZ4_create_async_compress_session(NULL, NULL);
 
     // 异步压缩
     struct kaelz4_result result = {0};

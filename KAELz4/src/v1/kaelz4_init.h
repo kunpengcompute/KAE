@@ -11,7 +11,7 @@
 
 #include "kaelz4_common.h"
 
-int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode);
+int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config);
 void kaelz4_reset_v1(LZ4_CCtx* zc);
 void kaelz4_release_v1(LZ4_CCtx* zc);
 

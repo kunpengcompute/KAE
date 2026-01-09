@@ -296,7 +296,7 @@ static void compression_callback3(struct kaelz4_result *result) {
 static int retry_compression(struct my_custom_data *my_data)
 {
     iova_map_fn usr_map = get_physical_address_wrapper;
-    void *sess = KAELZ4_create_async_compress_session(usr_map);
+    void *sess = KAELZ4_create_async_compress_session(usr_map, NULL);
 
     struct kaelz4_result result = {0};
     result.user_data = my_data;
@@ -364,7 +364,7 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
 
     iova_map_fn usr_map = get_physical_address_wrapper;
 
-    void *sess = KAELZ4_create_async_compress_session(usr_map);
+    void *sess = KAELZ4_create_async_compress_session(usr_map, NULL);
 
     // 异步压缩
     struct kaelz4_result result = {0};

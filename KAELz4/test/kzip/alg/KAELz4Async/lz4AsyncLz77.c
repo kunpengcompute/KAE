@@ -22,7 +22,7 @@ static int lz4_bound(int src_len) {
 // LZ4 初始化
 static int lz4_async_block_init(struct compress_ctx *ctx) {
     if (ctx->compress_or_decompress)
-        ctx->sess = KAELZ4_create_async_compress_session(ctx->usr_map);
+        ctx->sess = KAELZ4_create_async_compress_session(ctx->usr_map, NULL);
     else
         LZ4_async_compress_init(ctx->usr_map);
 

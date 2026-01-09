@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "kaelz4_dev.h"
 typedef   uint8_t BYTE;
 typedef   uint8_t U8;
 typedef  uint16_t U16;
@@ -88,7 +89,7 @@ typedef enum {
 } operation_mode;
 
 extern int kaelz4_get_version(KAELz4Version* ver);
-extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode);
+extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config);
 extern void kaelz4_reset(LZ4_CCtx* zc);
 extern void kaelz4_release(LZ4_CCtx* zc);
 extern void kaelz4_setstatus(LZ4_CCtx* zc, unsigned int status);
@@ -186,7 +187,7 @@ int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct k
  * @param: usr_map : function to translate src/dst buf's VA to PA/IOVA
  * @return: session, NULL if fail
  */
-void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
+void *KAELZ4_create_async_compress_session(iova_map_fn usr_map, const kaelz4_device_config_t *config);
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session

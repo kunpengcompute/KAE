@@ -310,7 +310,7 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
 
     iova_map_fn usr_map = get_physical_address_wrapper;
 
-    void *sess = KAELZ4_create_async_compress_session(usr_map);
+    void *sess = KAELZ4_create_async_compress_session(usr_map, NULL);
 
     // 异步压缩
     struct kaelz4_result result = {0};
