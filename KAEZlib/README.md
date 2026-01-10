@@ -21,18 +21,19 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 | 接口                                | 简介                     |
 |---------------------------------------|--------------------------|
 | `KAEZIP_get_devices`| 获取当前ZIP加速器设备信息 |
-| `KAEZIP_create_async_compress_session`| 创建异步压缩任务session       |
+| `KAEZIP_create_async_compress_session`| 创建异步压缩任务session（deflate-raw格式）       |
+| `KAEZIP_create_async_compress_session_zlib`| 创建异步压缩任务session（zlib格式）       |
 | `KAEZIP_compress_async_in_session`        | 提交异步压缩任务        |
 | `KAEZIP_async_polling_in_session`          | polling查询异步压缩/解压任务的结果        |
 | `KAEZIP_destroy_async_compress_session` | 销毁压缩任务session     |
-| `KAEZIP_create_async_decompress_session`| 创建异步解压任务session        |
+| `KAEZIP_create_async_decompress_session`| 创建异步解压任务session（deflate-raw格式）        |
+| `KAEZIP_create_async_decompress_session_zlib`| 创建异步解压任务session（zlib格式）        |
 | `KAEZIP_decompress_async_in_session`        | 提交异步解压任务        |
 | `KAEZIP_destroy_async_decompress_session` | 销毁解压任务session     |
 | `KAEZIP_reset_session` | 重置任务session     |
 
 ### API注意事项
 - 约束硬件规格为 Kunpeng 920新型号
-- 当前异步接口仅支持输出 deflate_raw 格式数据
 - 约束每个session只能在同一个线程中使用，所有API接口不保证多线程安全，即不能在多个线程中，调用API接口传入相同的session，否则不保证压缩解压功能正常。不同session之间的资源互斥，建议不同线程创建并使用各自独立的session。
 
 ### API详细说明
