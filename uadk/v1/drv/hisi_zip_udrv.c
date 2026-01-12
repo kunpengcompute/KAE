@@ -32,6 +32,7 @@
 #include "v1/wd_comp.h"
 #include "v1/wd_cipher.h"
 #include "v1/drv/hisi_zip_udrv.h"
+#include "v1/drv/hisi_zip_huf.h"
 #include "v1/wd_sgl.h"
 
 #define BD_TYPE_SHIFT			28
@@ -39,7 +40,7 @@
 #define STREAM_POS_SHIFT		2
 #define STREAM_MODE_SHIFT		1
 #define WINDOWS_SIZE_SHIFT		12
-#define SEQUENCE_SZIE			8
+#define SEQ_DATA_SIZE_SHIFT		3
 
 #define HW_NEGACOMPRESS			0x0d
 #define HW_CRC_ERR			0x10
@@ -48,6 +49,7 @@
 #define HW_UNCOMP_DIF_CHECK_ERR		0x12
 
 #define HW_DECOMP_NO_SPACE		0x01
+#define HW_DECOMPING_NO_SPACE		0x02
 #define HW_DECOMP_BLK_NOSTART		0x03
 #define HW_DECOMP_NO_CRC		0x04
 #define ZIP_DIF_LEN			8
@@ -57,6 +59,8 @@
 #define ZSTD_LIT_RSV_SIZE		16
 #define ZSTD_FREQ_DATA_SIZE		784
 #define REPCODE_SIZE			12
+#define SEQ_LIT_LEN_SIZE		4
+#define OVERFLOW_DATA_SIZE		8
 
 /* Error status 0xe indicates that dest_avail_out insufficient */
 #define ERR_DSTLEN_OUT			0xe
@@ -73,6 +77,21 @@
 #define lower_32_bits(phy)		((__u32)((__u64)(phy)))
 #define upper_32_bits(phy)		((__u32)((__u64)(phy) >> QM_HADDR_SHIFT))
 
+/* 200 * 1.125 + GZIP_HEADER_SZ, align with 4 byte */
+#define STORE_BUF_SIZE			236
+/* The hardware requires at least 200byte output buffers */
+#define SW_STOREBUF_TH			200
+/* The 38KB + CTX_BUFFER_OFFSET offset in ctx_buf is used as the internal buffer */
+#define CTX_STOREBUF_OFFSET		0x9840
+/* When the available output length is less than 0x10, hw will ignores the request */
+#define BYPASS_DEST_LEN			0x10
+
+#define CTX_BLOCKST_OFFSET		0xc00
+#define CTX_WIN_LEN_MASK		0xffff
+#define CTX_HEAD_BIT_CNT_SHIFT		0xa
+#define CTX_HEAD_BIT_CNT_MASK		0xfC00
+#define WIN_LEN_ALIGN(len)		(((len) + 15) & ~(__u32)0x0F)
+
 enum {
 	BD_TYPE,
 	BD_TYPE3 = 3,
@@ -82,6 +101,19 @@ enum lz77_compress_status {
 	UNCOMP_BLK,
 	RLE_BLK,
 	COMP_BLK,
+};
+
+struct hisi_zip_buf {
+	/* Denoted internal store buf */
+	__u8 dst[STORE_BUF_SIZE];
+	/* Denoted whether the output is copied from the storage buffer */
+	__u8 skip_hw;
+	/* Denoted data size left in store buf */
+	__u32 pending_out;
+	/* Size that have been copied */
+	__u32 output_offset;
+	/* Store end flag return by HW */
+	__u32 status;
 };
 
 struct hisi_zip_sqe_addr {
@@ -129,6 +161,62 @@ static void zip_err_bd_print(__u16 ctx_st, __u32 status, __u32 type)
 	}
 }
 
+static __u32 copy_to_out(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf,
+			 __u32 pending_out)
+{
+	__u32 copy_len;
+
+	/*
+	 * msg->avail_out which inputed by user, is the size of user's dst buf,
+	 * and there will ensure that the copy length will not exceed the
+	 * available output length.
+	 */
+	copy_len = pending_out > msg->avail_out ? msg->avail_out : pending_out;
+	memcpy(msg->dst, buf->dst + buf->output_offset, copy_len);
+
+	return copy_len;
+}
+
+static void copy_from_buf(struct wcrypto_comp_msg *msg, struct hisi_zip_buf *buf)
+{
+	__u32 copy_len;
+
+	/*
+	 * After hw processing, pending_out is the length of the hardware output.
+	 * After hw is skipped, pending_out is the remaining length in the buf.
+	 */
+	if (!buf->skip_hw)
+		buf->pending_out = msg->produced;
+
+	copy_len = copy_to_out(msg, buf, buf->pending_out);
+	buf->pending_out -= copy_len;
+	msg->produced = copy_len;
+
+	if (!buf->pending_out) {
+		/* All data copied to output, reset the buf status */
+		if (buf->skip_hw) {
+			buf->skip_hw = 0;
+			msg->status = buf->status == WCRYPTO_DECOMP_END ?
+					WCRYPTO_DECOMP_END : WD_SUCCESS;
+		}
+
+		buf->output_offset = 0;
+	} else {
+		/* Still data need to be copied */
+		buf->output_offset += copy_len;
+		buf->skip_hw = 0;
+
+		/*
+		 * The end flag is cached. It can be output only
+		 * after the data is completely copied to the output.
+		 */
+		if (msg->status == WCRYPTO_DECOMP_END) {
+			buf->status = WCRYPTO_DECOMP_END;
+			msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+		}
+	}
+}
+
 static int fill_zip_comp_alg_v1(struct hisi_zip_sqe *sqe,
 				struct wcrypto_comp_msg *msg)
 {
@@ -150,30 +238,41 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 					struct wcrypto_comp_msg *msg,
 					struct wd_queue *q, bool is_lz77)
 {
+	struct hisi_zip_buf *buf;
 	uintptr_t phy_ctxbuf = 0;
 	uintptr_t phy_out = 0;
 	uintptr_t phy_in;
-
-	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
-	if (!phy_in) {
-		WD_ERR("Get zip in buf dma address fail!\n");
-		return -WD_ENOMEM;
-	}
-
-	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF)) {
-		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
-		if (!phy_out) {
-			WD_ERR("Get zip out buf dma address fail!\n");
-			goto unmap_phy_in;
-		}
-	}
 
 	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL) {
 		phy_ctxbuf = (uintptr_t)drv_iova_map(q, msg->ctx_buf,
 						     MAX_CTX_RSV_SIZE);
 		if (!phy_ctxbuf) {
 			WD_ERR("Get zip ctx buf dma address fail!\n");
-			goto unmap_phy_out;
+			return -WD_ENOMEM;
+		}
+
+		buf = (struct hisi_zip_buf *)(msg->ctx_buf + CTX_STOREBUF_OFFSET);
+		if (buf->pending_out) {
+			/* skip hw and output from internal buf */
+			buf->skip_hw = 1;
+		} else if (msg->avail_out <= SW_STOREBUF_TH && msg->data_fmt != WD_SGL_BUF) {
+			/* Enable internal buf to replace the user output buffer. */
+			phy_out = phy_ctxbuf + CTX_STOREBUF_OFFSET;
+			buf->pending_out = STORE_BUF_SIZE;
+		}
+	}
+
+	phy_in = (uintptr_t)drv_iova_map(q, msg->src, msg->in_size);
+	if (!phy_in) {
+		WD_ERR("Get zip in buf dma address fail!\n");
+		goto unmap_phy_ctx;
+	}
+
+	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF) && !phy_out) {
+		phy_out = (uintptr_t)drv_iova_map(q, msg->dst, msg->avail_out);
+		if (!phy_out) {
+			WD_ERR("Get zip out buf dma address fail!\n");
+			goto unmap_phy_in;
 		}
 	}
 
@@ -183,11 +282,12 @@ static int qm_fill_zip_sqe_get_phy_addr(struct hisi_zip_sqe_addr *addr,
 
 	return WD_SUCCESS;
 
-unmap_phy_out:
-	if (!(is_lz77 && msg->data_fmt == WD_SGL_BUF))
-		drv_iova_unmap(q, msg->dst, (void *)phy_out, msg->avail_out);
 unmap_phy_in:
 	drv_iova_unmap(q, msg->src, (void *)phy_in, msg->in_size);
+unmap_phy_ctx:
+	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL)
+		drv_iova_unmap(q, msg->ctx_buf, (void *)phy_ctxbuf,
+			       MAX_CTX_RSV_SIZE);
 
 	return -WD_ENOMEM;
 }
@@ -289,6 +389,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
@@ -338,6 +439,9 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
 		info->sqe_parse_priv(sqe, WCRYPTO_COMP, tag->priv);
 
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
 
 	return 1;
 }
@@ -382,6 +486,7 @@ static int fill_zip_comp_alg_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
 static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg)
 {
 	struct hisi_zip_sqe_v3 *sqe = ssqe;
+	struct hisi_zip_buf *buf;
 
 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
 		     msg->in_size > MAX_BUFFER_SIZE)) {
@@ -398,6 +503,17 @@ static int fill_zip_buffer_size_deflate(void *ssqe, struct wcrypto_comp_msg *msg
 
 	sqe->input_data_length = msg->in_size;
 	sqe->dest_avail_out = msg->avail_out;
+	if (msg->ctx_buf) {
+		buf = (struct hisi_zip_buf *)(msg->ctx_buf + CTX_STOREBUF_OFFSET);
+		if (buf->skip_hw) {
+			/* Change dest_avail_out to BYPASS_DEST_LEN to skip hw */
+			sqe->dest_avail_out = BYPASS_DEST_LEN;
+			sqe->input_data_length = 0;
+		} else if (buf->pending_out == STORE_BUF_SIZE) {
+			/* Change dest_avail_out to STORE_BUF_SIZE when enable internal buf.*/
+			sqe->dest_avail_out = STORE_BUF_SIZE;
+		}
+	}
 
 	return WD_SUCCESS;
 }
@@ -577,9 +693,18 @@ static void fill_zip_sqe_hw_info_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *
 		sqe->ctx_dw0 = *(__u32 *)msg->ctx_buf;
 		sqe->ctx_dw1 = *(__u32 *)(msg->ctx_buf + CTX_PRIV1_OFFSET);
 		sqe->ctx_dw2 = *(__u32 *)(msg->ctx_buf + CTX_PRIV2_OFFSET);
-		if (format->blk_type != COMP_BLK)
-			memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
-			       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+		if (msg->alg_type == WCRYPTO_LZ77_ZSTD) {
+			if (format->blk_type != COMP_BLK)
+				memcpy(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE2_OFFSET, REPCODE_SIZE);
+			else
+				memcpy(msg->ctx_buf + CTX_REPCODE2_OFFSET,
+				       msg->ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+
+			/* The literal length info of each bd needs to be cleared.  */
+			memset(msg->ctx_buf + CTX_HW_REPCODE_OFFSET + CTX_BUFFER_OFFSET +
+			       REPCODE_SIZE, 0, SEQ_LIT_LEN_SIZE);
+		}
 	}
 
 	sqe->isize = msg->isize;
@@ -640,12 +765,6 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 		return ret;
 	}
 
-	ret = ops[msg->alg_type].fill_sqe_buffer_size(sqe, msg);
-	if (unlikely(ret)) {
-		WD_ERR("The buffer size is invalid!\n");
-		return ret;
-	}
-
 	ret = ops[msg->alg_type].fill_sqe_window_size(sqe, msg);
 	if (unlikely(ret)) {
 		WD_ERR("The window size is invalid!\n");
@@ -655,6 +774,12 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 	ret = ops[msg->alg_type].fill_sqe_addr(sqe, msg, q);
 	if (unlikely(ret))
 		return ret;
+
+	ret = ops[msg->alg_type].fill_sqe_buffer_size(sqe, msg);
+	if (unlikely(ret)) {
+		WD_ERR("The buffer size is invalid!\n");
+		return ret;
+	}
 
 	flush_type = (msg->flush_type == WCRYPTO_FINISH) ? HZ_FINISH :
 		      HZ_SYNC_FLUSH;
@@ -679,8 +804,8 @@ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
 }
 
 /*
- * Checksum[31:24] equals LitLength_Overflow_Pos;
- * Checksum[23:0] equals Freq_Literal_Overflow_cnt;
+ * Checksum[31:24] equals Freq_Literal_Overflow_cnt;
+ * Checksum[23:0] equals LitLength_Overflow_Pos;
  */
 #define LILL_OVERFLOW_POS 	0x00ffffff
 #define LILL_OVERFLOW_CNT_OFFSET 24
@@ -695,8 +820,8 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	format->lit_num = sqe->comp_data_length;
 	format->seq_num = sqe->produced;
 
-	format->lit_length_overflow_cnt = sqe->checksum & LILL_OVERFLOW_POS;
-	format->lit_length_overflow_pos = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
+	format->lit_length_overflow_pos = sqe->checksum & LILL_OVERFLOW_POS;
+	format->lit_length_overflow_cnt = (sqe->checksum & ~LILL_OVERFLOW_POS) >>
 					  LILL_OVERFLOW_CNT_OFFSET;
 
 	if (recv_msg->data_fmt == WD_SGL_BUF) {
@@ -706,16 +831,14 @@ static void fill_priv_lz77_zstd(void *ssqe, struct wcrypto_comp_msg *recv_msg)
 	} else {
 		format->literals_start = recv_msg->dst;
 		format->sequences_start = recv_msg->dst + recv_msg->in_size + ZSTD_LIT_RSV_SIZE;
-		format->freq = (void *)(&format->lit_length_overflow_pos + 1);
+		format->freq = format->sequences_start + (format->seq_num << SEQ_DATA_SIZE_SHIFT) +
+			       OVERFLOW_DATA_SIZE;
 	}
 
-	if (ctx_buf) {
-		memcpy(ctx_buf + CTX_REPCODE2_OFFSET,
-		       ctx_buf + CTX_REPCODE1_OFFSET, REPCODE_SIZE);
+	if (ctx_buf)
 		memcpy(ctx_buf + CTX_REPCODE1_OFFSET,
 		       ctx_buf + CTX_BUFFER_OFFSET + CTX_HW_REPCODE_OFFSET,
 		       REPCODE_SIZE);
-	}
 }
 
 int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
@@ -723,13 +846,19 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 {
 	struct wcrypto_comp_msg *recv_msg = info->req_cache[i];
 	struct hisi_zip_sqe_v3 *sqe = hw_msg;
+	__u16 ctx_bfinal = sqe->ctx_dw0 & HZ_CTX_BFINAL_MASK;
+	__u32 ctx_win_len = sqe->ctx_dw2 & CTX_WIN_LEN_MASK;
 	__u16 ctx_st = sqe->ctx_dw0 & HZ_CTX_ST_MASK;
 	__u16 lstblk = sqe->dw3 & HZ_LSTBLK_MASK;
 	__u32 status = sqe->dw3 & HZ_STATUS_MASK;
 	__u32 type = sqe->dw9 & HZ_REQ_TYPE_MASK;
 	uintptr_t phy_in, phy_out, phy_ctxbuf;
+	struct hisi_zip_buf *buf = NULL;
 	struct wd_queue *q = info->q;
 	struct wcrypto_comp_tag *tag;
+	void *cache_data;
+	__u32 bit_cnt;
+	int ret;
 
 	if (unlikely(!recv_msg)) {
 		WD_ERR("info->req_cache is null at index:%hu\n", i);
@@ -739,12 +868,6 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 	if (usr && sqe->tag_l != usr)
 		return 0;
 
-	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END) {
-		zip_err_bd_print(ctx_st, status, type);
-		recv_msg->status = WD_IN_EPARA;
-	} else {
-		recv_msg->status = 0;
-	}
 	recv_msg->in_cons = sqe->consumed;
 	recv_msg->produced = sqe->produced;
 	if (recv_msg->ctx_buf) {
@@ -757,16 +880,60 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
 
 	phy_in = DMA_ADDR(sqe->source_addr_h, sqe->source_addr_l);
 	drv_iova_unmap(q, recv_msg->src, (void *)phy_in, recv_msg->in_size);
-	phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
-	drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
 	if (recv_msg->ctx_buf) {
+		buf = (struct hisi_zip_buf *)(recv_msg->ctx_buf + CTX_STOREBUF_OFFSET);
 		phy_ctxbuf = DMA_ADDR(sqe->stream_ctx_addr_h, sqe->stream_ctx_addr_l) -
 			     CTX_BUFFER_OFFSET;
 		drv_iova_unmap(q, recv_msg->ctx_buf, (void *)phy_ctxbuf,
 			       MAX_CTX_RSV_SIZE);
 	}
 
+	/*
+	 * The output mapping address needs to be released only when the internal buffer
+	 * is not enabled or hw is skipped.
+	 */
+	if (!buf || !buf->pending_out || buf->skip_hw) {
+		phy_out = DMA_ADDR(sqe->dest_addr_h, sqe->dest_addr_l);
+		drv_iova_unmap(q, recv_msg->dst, (void *)phy_out, recv_msg->avail_out);
+	}
+
+	if (status != 0 && status != HW_NEGACOMPRESS && status != HW_DECOMP_END &&
+	    (!buf || !buf->skip_hw)) {
+		zip_err_bd_print(ctx_st, status, type);
+		recv_msg->status = WD_IN_EPARA;
+	} else {
+		recv_msg->status = 0;
+	}
+
 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
+
+	/*
+	 * It need to analysis the data cache by hardware.
+	 * If the cache data is a complete huffman block,
+	 * the drv send WCRYPTO_DECOMP_BLK_NOSTART to user
+	 * to sending a request for clearing the cache.
+	 */
+	bit_cnt = (sqe->ctx_dw0 & CTX_HEAD_BIT_CNT_MASK) >> CTX_HEAD_BIT_CNT_SHIFT;
+	if (!recv_msg->status && bit_cnt && ctx_st == HW_DECOMP_BLK_NOSTART &&
+	    recv_msg->alg_type == WCRYPTO_RAW_DEFLATE) {
+		/* ctx_win_len need to aligned with 16 */
+		ctx_win_len = WIN_LEN_ALIGN(ctx_win_len);
+		cache_data = recv_msg->ctx_buf + CTX_BUFFER_OFFSET +
+			     CTX_BLOCKST_OFFSET + ctx_win_len;
+		ret = check_huffman_block_integrity(cache_data, bit_cnt);
+		if (ret < 0) {
+			WD_ERR("invalid: unable to parse data!\n");
+			recv_msg->status = WD_IN_EPARA;
+		} else if (ret) {
+			recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+		}
+	}
+
+	if (buf && buf->pending_out)
+		copy_from_buf(recv_msg, buf);
 
 	tag = (void *)(uintptr_t)recv_msg->udata;
 	if (tag && tag->priv && !info->sqe_fill_priv)

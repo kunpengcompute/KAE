@@ -20,6 +20,8 @@ enum wd_comp_alg_type {
 	WD_ZLIB,
 	WD_GZIP,
 	WD_LZ77_ZSTD,
+	WD_LZ4,
+	WD_LZ77_ONLY,
 	WD_COMP_ALG_MAX,
 };
 
@@ -149,6 +151,8 @@ struct wd_comp_sess_setup {
 	enum wd_comp_winsz_type win_sz; /* Denoted by enum wd_comp_winsz_type */
 	enum wd_comp_op_type op_type;   /* Denoted by enum wd_comp_op_type */
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 /**

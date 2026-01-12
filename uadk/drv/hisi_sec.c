@@ -15,7 +15,7 @@
 #define SEC_DIGEST_ALG_OFFSET	11
 #define WORD_ALIGNMENT_MASK	0x3
 #define CTR_MODE_LEN_SHIFT	4
-#define WORD_BYTES		4
+#define BYTES_TO_WORDS(bcount)	((bcount) >> 2)
 #define BYTE_BITS		8
 #define SQE_BYTES_NUMS		128
 #define SEC_FLAG_OFFSET		7
@@ -34,7 +34,6 @@
 #define SEC_CMODE_OFFSET	  12
 #define SEC_CKEY_OFFSET		  9
 #define SEC_CIPHER_OFFSET	  4
-#define XTS_MODE_KEY_DIVISOR	  2
 #define SEC_CTR_CNT_OFFSET	  25
 #define SEC_CTR_CNT_ROLLOVER	  2
 
@@ -49,12 +48,15 @@
 #define SEC_SM4_XTS_GB_V3	0x1
 #define SEC_AUTH_ALG_OFFSET_V3	15
 #define SEC_SVA_PREFETCH_OFFSET	27
+#define SEC_SVA_PREFETCH_MAX_LEN	0x6000
 #define SEC_ENABLE_SVA_PREFETCH	0x1
 #define SEC_CIPHER_AUTH_V3	0xbf
 #define SEC_AUTH_CIPHER_V3	0x40
 #define SEC_AI_GEN_OFFSET_V3	2
 #define SEC_SEQ_OFFSET_V3	6
 #define SEC_AUTH_MASK_V3	0xFFFFFFFC
+#define SEC_BD3_IVLD_OFFSET	0x4
+#define SEC_BD2_IVLD_OFFSET	0x7
 
 #define SEC_SGL_MODE_MASK_V3 0x4800
 #define SEC_PBUFF_MODE_MASK_V3 0x800
@@ -89,6 +91,7 @@
 #define AUTH_ALG_OFFSET		11
 #define WD_CIPHER_THEN_DIGEST		0x0
 #define WD_DIGEST_THEN_CIPHER		0x1
+#define AEAD_AIV_OFFSET			0x6
 
 #define SEC_CTX_Q_NUM_DEF		1
 
@@ -600,6 +603,157 @@ static int hisi_sec_get_usage(void *param)
 	return 0;
 }
 
+static int eops_param_check(struct wd_alg_driver *drv, struct wd_mm_ops *mm_ops)
+{
+	if (!drv || !drv->priv) {
+		WD_ERR("invalid: aead drv or priv is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (!mm_ops) {
+		WD_ERR("invalid: mm_ops is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	return WD_SUCCESS;
+}
+
+static int aead_sess_eops_init(struct wd_alg_driver *drv,
+			       struct wd_mm_ops *mm_ops, void **params)
+{
+	struct wd_aead_aiv_addr *aiv_addr;
+	struct hisi_sec_ctx *sec_ctx;
+	struct hisi_qp *qp;
+	__u16 sq_depth;
+	int ret;
+
+	ret = eops_param_check(drv, mm_ops);
+	if (ret)
+		return ret;
+
+	if (!params) {
+		WD_ERR("invalid: extend ops init params address is NULL!\n");
+		return -WD_EINVAL;
+	}
+
+	if (*params) {
+		WD_ERR("invalid: extend ops init params repeatedly!\n");
+		return -WD_EINVAL;
+	}
+
+	aiv_addr = calloc(1, sizeof(struct wd_aead_aiv_addr));
+	if (!aiv_addr) {
+		WD_ERR("aead failed to alloc aiv_addr memory!\n");
+		return -WD_ENOMEM;
+	}
+
+	sec_ctx = (struct hisi_sec_ctx *)drv->priv;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->config.ctxs[0].ctx);
+	sq_depth = qp->q_info.sq_depth;
+	aiv_addr->aiv = mm_ops->alloc(mm_ops->usr, (__u32)sq_depth << AEAD_AIV_OFFSET);
+	if (!aiv_addr->aiv) {
+		WD_ERR("aead failed to alloc aiv memory!\n");
+		goto aiv_err;
+	}
+	memset(aiv_addr->aiv, 0, (__u32)sq_depth << AEAD_AIV_OFFSET);
+	if (!mm_ops->sva_mode) {
+		aiv_addr->aiv_nosva = mm_ops->iova_map(mm_ops->usr, aiv_addr->aiv,
+				      (__u32)sq_depth << AEAD_AIV_OFFSET);
+		if (!aiv_addr->aiv_nosva)
+			goto aiv_nosva_err;
+	}
+
+	aiv_addr->aiv_status = calloc(1, sq_depth);
+	if (!aiv_addr->aiv_status) {
+		WD_ERR("aead failed to alloc aiv_status memory!\n");
+		goto aiv_status_err;
+	}
+
+	*params = aiv_addr;
+
+	return WD_SUCCESS;
+
+aiv_status_err:
+	if (!mm_ops->sva_mode)
+		mm_ops->iova_unmap(mm_ops->usr, aiv_addr->aiv, (void *)aiv_addr->aiv_nosva,
+				   (__u32)sq_depth << AEAD_AIV_OFFSET);
+aiv_nosva_err:
+	mm_ops->free(mm_ops->usr, aiv_addr->aiv);
+aiv_err:
+	free(aiv_addr);
+	return -WD_ENOMEM;
+}
+
+static void aead_sess_eops_uninit(struct wd_alg_driver *drv,
+				  struct wd_mm_ops *mm_ops, void *params)
+{
+	struct wd_aead_aiv_addr *aiv_addr;
+	struct hisi_sec_ctx *sec_ctx;
+	struct hisi_qp *qp;
+	__u16 sq_depth;
+	int ret;
+
+	ret = eops_param_check(drv, mm_ops);
+	if (ret)
+		return;
+
+	if (!params) {
+		WD_ERR("invalid: extend ops uninit params address is NULL!\n");
+		return;
+	}
+
+	sec_ctx = (struct hisi_sec_ctx *)drv->priv;
+	qp = (struct hisi_qp *)wd_ctx_get_priv(sec_ctx->config.ctxs[0].ctx);
+	sq_depth = qp->q_info.sq_depth;
+
+	aiv_addr = (struct wd_aead_aiv_addr *)params;
+	if (!mm_ops->sva_mode)
+		mm_ops->iova_unmap(mm_ops->usr, aiv_addr->aiv, (void *)aiv_addr->aiv_nosva,
+				   (__u32)sq_depth << AEAD_AIV_OFFSET);
+	mm_ops->free(mm_ops->usr, aiv_addr->aiv);
+	free(aiv_addr->aiv_status);
+	free(params);
+}
+
+static int aead_get_aiv_addr(struct hisi_qp *qp, struct wd_aead_msg *msg)
+{
+	struct wd_aead_aiv_addr *aiv_addr = (struct wd_aead_aiv_addr *)msg->drv_cfg;
+	__u16 sq_depth = qp->q_info.sq_depth;
+	int i;
+
+	for (i = 0; i < sq_depth; i++) {
+		if (!__atomic_test_and_set(&aiv_addr->aiv_status[i], __ATOMIC_ACQUIRE)) {
+			msg->aiv = aiv_addr->aiv + i * AIV_STREAM_LEN;
+			return i;
+		}
+	}
+
+	return -WD_EBUSY;
+}
+
+static void aead_free_aiv_addr(struct wd_aead_msg *msg)
+{
+	struct wd_aead_aiv_addr *aiv_addr = (struct wd_aead_aiv_addr *)msg->drv_cfg;
+	__u32 aiv_idx;
+
+	aiv_idx = (msg->aiv - aiv_addr->aiv) >> AEAD_AIV_OFFSET;
+	__atomic_clear(&aiv_addr->aiv_status[aiv_idx], __ATOMIC_RELEASE);
+}
+
+static int sec_aead_get_extend_ops(void *ops)
+{
+	struct wd_aead_extend_ops *aead_ops = (struct wd_aead_extend_ops *)ops;
+
+	if (!aead_ops)
+		return -WD_EINVAL;
+
+	aead_ops->params = NULL;
+	aead_ops->eops_aiv_init = aead_sess_eops_init;
+	aead_ops->eops_aiv_uninit = aead_sess_eops_uninit;
+
+	return WD_SUCCESS;
+}
+
 #define GEN_SEC_ALG_DRIVER(sec_alg_name, alg_type) \
 {\
 	.drv_name = "hisi_sec2",\
@@ -614,6 +768,7 @@ static int hisi_sec_get_usage(void *param)
 	.send = alg_type##_send,\
 	.recv = alg_type##_recv,\
 	.get_usage = hisi_sec_get_usage,\
+	.get_extend_ops = sec_aead_get_extend_ops,\
 }
 
 static struct wd_alg_driver cipher_alg_driver[] = {
@@ -834,7 +989,7 @@ static int get_aes_c_key_len(struct wd_cipher_msg *msg, __u8 *c_key_len)
 
 	len = msg->key_bytes;
 	if (msg->mode == WD_CIPHER_XTS)
-		len = len / XTS_MODE_KEY_DIVISOR;
+		len = len >> 1;
 
 	switch (len) {
 	case AES_KEYSIZE_128:
@@ -912,13 +1067,83 @@ static int fill_cipher_bd2_mode(struct wd_cipher_msg *msg,
 	return 0;
 }
 
-static void fill_cipher_bd2_addr(struct wd_cipher_msg *msg,
-				 struct hisi_sec_sqe *sqe)
+static void destroy_cipher_bd2_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
 {
-	sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
-	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("cipher failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+	if (sqe->type2.data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->type2.data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->type2.data_dst_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->type2.data_dst_addr,
+				   msg->out_bytes);
+
+	if (sqe->type2.c_key_addr)
+		mm_ops->iova_unmap(mempool, msg->key, (void *)(uintptr_t)sqe->type2.c_key_addr,
+				   msg->key_bytes);
+
+	if (sqe->type2.c_ivin_addr)
+		mm_ops->iova_unmap(mempool, msg->iv, (void *)(uintptr_t)sqe->type2.c_ivin_addr,
+				   msg->iv_bytes);
+}
+
+static int fill_cipher_bd2_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool, *phy_addr;
+
+	if (mm_ops->sva_mode) {
+		sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->key;
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("cipher failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	mempool = mm_ops->usr;
+	phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes);
+	if (!phy_addr)
+		return -WD_ENOMEM;
+	sqe->type2.data_src_addr = (__u64)(uintptr_t)phy_addr;
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->type2.data_dst_addr = (__u64)(uintptr_t)phy_addr;
+	if (msg->iv_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->iv, msg->iv_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->key_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->key, msg->key_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.c_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	return 0;
+
+map_err:
+	destroy_cipher_bd2_addr(msg, sqe);
+	return -WD_ENOMEM;
 }
 
 static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
@@ -943,8 +1168,6 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_CIPHER;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
 		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -952,6 +1175,9 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 				qp->q_info.idx, tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
@@ -961,6 +1187,8 @@ static void parse_cipher_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 		update_iv(temp_msg);
 	else
 		update_iv_sgl(temp_msg);
+
+	destroy_cipher_bd2_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "cipher");
@@ -1022,11 +1250,12 @@ static int cipher_len_check(struct wd_cipher_msg *msg)
 	return 0;
 }
 
-static void hisi_sec_put_sgl(handle_t h_qp, __u8 alg_type, void *in, void *out)
+static void hisi_sec_put_sgl(handle_t h_qp, __u8 alg_type, void *in, void *out,
+			     struct wd_mm_ops *mm_ops)
 {
 	handle_t h_sgl_pool;
 
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
+	h_sgl_pool = hisi_qm_get_sglpool(h_qp, mm_ops);
 	if (!h_sgl_pool)
 		return;
 
@@ -1036,18 +1265,11 @@ static void hisi_sec_put_sgl(handle_t h_qp, __u8 alg_type, void *in, void *out)
 		hisi_qm_put_hw_sgl(h_sgl_pool, out);
 }
 
-static int hisi_sec_fill_sgl(handle_t h_qp, __u8 **in, __u8 **out,
-		struct hisi_sec_sqe *sqe, __u8 type)
+static int hisi_sec_fill_sgl(handle_t h_sgl_pool, __u8 **in, __u8 **out,
+			     struct hisi_sec_sqe *sqe, __u8 type)
 {
-	handle_t h_sgl_pool;
 	void *hw_sgl_in;
 	void *hw_sgl_out;
-
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (!h_sgl_pool) {
-		WD_ERR("failed to get sglpool for hw_v2!\n");
-		return -WD_EINVAL;
-	}
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
 	if (!hw_sgl_in) {
@@ -1076,18 +1298,11 @@ static int hisi_sec_fill_sgl(handle_t h_qp, __u8 **in, __u8 **out,
 	return 0;
 }
 
-static int hisi_sec_fill_sgl_v3(handle_t h_qp, __u8 **in, __u8 **out,
+static int hisi_sec_fill_sgl_v3(handle_t h_sgl_pool, __u8 **in, __u8 **out,
 				struct hisi_sec_sqe3 *sqe, __u8 type)
 {
-	handle_t h_sgl_pool;
 	void *hw_sgl_in;
 	void *hw_sgl_out;
-
-	h_sgl_pool = hisi_qm_get_sglpool(h_qp);
-	if (!h_sgl_pool) {
-		WD_ERR("failed to get sglpool for hw_v3!\n");
-		return -WD_EINVAL;
-	}
 
 	hw_sgl_in = hisi_qm_get_hw_sgl(h_sgl_pool, (struct wd_datalist *)(*in));
 	if (!hw_sgl_in) {
@@ -1163,6 +1378,7 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	int ret;
 
@@ -1177,7 +1393,13 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 		return ret;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("cipher failed to get sglpool for hw_v2!\n");
+			return -WD_EINVAL;
+		}
+
+		ret = hisi_sec_fill_sgl(h_sgl_pool, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
 		if (ret)
 			return ret;
@@ -1186,7 +1408,11 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.clen_ivhlen |= (__u32)msg->in_bytes;
 	sqe.type2.tag = (__u16)msg->tag;
-	fill_cipher_bd2_addr(msg, &sqe);
+	ret = fill_cipher_bd2_addr(msg, &sqe);
+	if (ret < 0) {
+		WD_ERR("cipher map memory is err(%d)!\n", ret);
+		return ret;
+	}
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -1195,8 +1421,8 @@ static int hisi_sec_cipher_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
-					 msg->out);
-
+					 msg->out, msg->mm_ops);
+		destroy_cipher_bd2_addr(msg, &sqe);
 		return ret;
 	}
 
@@ -1223,7 +1449,7 @@ static int hisi_sec_cipher_recv(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
-				 recv_msg->out);
+				 recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -1314,13 +1540,83 @@ static int fill_cipher_bd3_mode(struct wd_cipher_msg *msg,
 	return 0;
 }
 
-static void fill_cipher_bd3_addr(struct wd_cipher_msg *msg,
-		struct hisi_sec_sqe3 *sqe)
+static void destroy_cipher_bd3_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 {
-	sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
-	sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->c_key_addr = (__u64)(uintptr_t)msg->key;
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("cipher failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+	if (sqe->data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->data_dst_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->data_dst_addr,
+				   msg->out_bytes);
+
+	if (sqe->c_key_addr)
+		mm_ops->iova_unmap(mempool, msg->key, (void *)(uintptr_t)sqe->c_key_addr,
+				   msg->key_bytes);
+
+	if (sqe->no_scene.c_ivin_addr)
+		mm_ops->iova_unmap(mempool, msg->iv,
+				   (void *)(uintptr_t)sqe->no_scene.c_ivin_addr, msg->iv_bytes);
+}
+
+static int fill_cipher_bd3_addr(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool, *phy_addr;
+
+	if (mm_ops->sva_mode) {
+		sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		sqe->c_key_addr = (__u64)(uintptr_t)msg->key;
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("cipher failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	mempool = mm_ops->usr;
+	phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes);
+	if (!phy_addr)
+		return -WD_ENOMEM;
+	sqe->data_src_addr = (__u64)(uintptr_t)phy_addr;
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->data_dst_addr = (__u64)(uintptr_t)phy_addr;
+	if (msg->iv_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->iv, msg->iv_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->key_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->key, msg->key_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->c_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	return 0;
+
+map_err:
+	destroy_cipher_bd3_addr(msg, sqe);
+	return -WD_ENOMEM;
 }
 
 static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
@@ -1356,16 +1652,27 @@ static int fill_cipher_bd3(struct wd_cipher_msg *msg, struct hisi_sec_sqe3 *sqe)
 		return ret;
 	}
 
-	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
-
 	return 0;
+}
+
+static void fill_sec_prefetch(__u8 data_fmt, __u32 len, __u16 hw_type, struct hisi_sec_sqe3 *sqe,
+			      bool sva_mode)
+{
+	if (!sva_mode)
+		return;
+
+	if (hw_type >= HISI_QM_API_VER5_BASE ||
+	    (data_fmt == WD_FLAT_BUF && len <= SEC_SVA_PREFETCH_MAX_LEN))
+		sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 }
 
 static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_cipher_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	int ret;
 
@@ -1379,8 +1686,16 @@ static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	if (ret)
 		return ret;
 
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes, qp->q_info.hw_type, &sqe,
+			  msg->mm_ops->sva_mode);
+
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("cipher failed to get sglpool for hw_v3!\n");
+			return -WD_EINVAL;
+		}
+		ret = hisi_sec_fill_sgl_v3(h_sgl_pool, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
 		if (ret)
 			return ret;
@@ -1389,7 +1704,11 @@ static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.c_len_ivin = (__u32)msg->in_bytes;
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
-	fill_cipher_bd3_addr(msg, &sqe);
+	ret = fill_cipher_bd3_addr(msg, &sqe);
+	if (ret < 0) {
+		WD_ERR("cipher map memory is err(%d)!\n", ret);
+		return ret;
+	}
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
@@ -1398,8 +1717,8 @@ static int hisi_sec_cipher_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 
 		if (msg->data_fmt == WD_SGL_BUF)
 			hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in,
-					 msg->out);
-
+					 msg->out, msg->mm_ops);
+		destroy_cipher_bd3_addr(msg, &sqe);
 		return ret;
 	}
 
@@ -1428,8 +1747,6 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_CIPHER;
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
 		temp_msg = wd_cipher_get_msg(qp->q_info.idx, tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -1437,6 +1754,9 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 				qp->q_info.idx, tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
@@ -1446,6 +1766,8 @@ static void parse_cipher_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 		update_iv(temp_msg);
 	else
 		update_iv_sgl(temp_msg);
+
+	destroy_cipher_bd3_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "cipher");
@@ -1471,7 +1793,7 @@ static int hisi_sec_cipher_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
-				recv_msg->out);
+				recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -1489,7 +1811,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 	 * the output full length.
 	 */
 	if (!msg->has_next)
-		sqe->type2.mac_key_alg = msg->out_bytes / WORD_BYTES;
+		sqe->type2.mac_key_alg = BYTES_TO_WORDS(msg->out_bytes);
 
 	/* SM3 can't config 0 in normal mode */
 	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
@@ -1508,9 +1830,7 @@ static int fill_digest_bd2_alg(struct wd_digest_msg *msg,
 			       msg->key_bytes);
 			return -WD_EINVAL;
 		}
-		sqe->type2.mac_key_alg |= (__u32)(msg->key_bytes /
-			WORD_BYTES) << MAC_LEN_OFFSET;
-		sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->key;
+		sqe->type2.mac_key_alg |= (__u32)BYTES_TO_WORDS(msg->key_bytes) << MAC_LEN_OFFSET;
 
 		sqe->type2.mac_key_alg |=
 		g_hmac_a_alg[msg->alg] << AUTH_ALG_OFFSET;
@@ -1577,6 +1897,83 @@ static int fill_digest_long_hash(handle_t h_qp, struct wd_digest_msg *msg,
 	return 0;
 }
 
+static void destroy_digest_bd2_addr(struct wd_digest_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("digest failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+
+	if (sqe->type2.data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->type2.data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->type2.mac_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->type2.mac_addr,
+				   msg->out_bytes);
+
+	if (sqe->type2.a_key_addr && msg->mode == WD_DIGEST_HMAC)
+		mm_ops->iova_unmap(mempool, msg->key, (void *)(uintptr_t)sqe->type2.a_key_addr,
+				   msg->key_bytes);
+}
+
+static int fill_digest_bd2_addr(struct wd_digest_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool, *phy_addr;
+
+	if (mm_ops->sva_mode) {
+		/* avoid HW accessing address 0 when the pointer is NULL */
+		if (msg->in)
+			sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+		else
+			sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->out;
+		sqe->type2.mac_addr = (__u64)(uintptr_t)msg->out;
+		if (msg->mode == WD_DIGEST_HMAC)
+			sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->key;
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("digest failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	mempool = mm_ops->usr;
+	if (msg->in_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes);
+		if (!phy_addr)
+			return -WD_ENOMEM;
+		sqe->type2.data_src_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->type2.mac_addr = (__u64)(uintptr_t)phy_addr;
+
+	if (msg->key_bytes != 0 && msg->mode == WD_DIGEST_HMAC) {
+		phy_addr = mm_ops->iova_map(mempool, msg->key, msg->key_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.a_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	return 0;
+
+map_err:
+	destroy_digest_bd2_addr(msg, sqe);
+	return -WD_ENOMEM;
+}
+
 static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 			     struct wd_digest_msg *recv_msg)
 {
@@ -1597,7 +1994,6 @@ static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_DIGEST;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
 		temp_msg = wd_digest_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -1605,10 +2001,14 @@ static void parse_digest_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 				qp->q_info.idx, recv_msg->tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
 	}
+
+	destroy_digest_bd2_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "digest");
@@ -1710,6 +2110,7 @@ static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
 	struct wd_digest_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	__u8 scene;
 	__u8 de;
@@ -1734,7 +2135,12 @@ static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 	de = DATA_DST_ADDR_DISABLE << SEC_DE_OFFSET;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out, &sqe,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("digest failed to get sglpool for hw_v2!\n");
+			return -WD_EINVAL;
+		}
+		ret = hisi_sec_fill_sgl(h_sgl_pool, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
 		if (ret)
 			return ret;
@@ -1742,16 +2148,19 @@ static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 	sqe.sds_sa_type |= (__u8)(de | scene);
 	sqe.type2.alen_ivllen |= (__u32)msg->in_bytes;
-	sqe.type2.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe.type2.mac_addr = (__u64)(uintptr_t)msg->out;
+	ret = fill_digest_bd2_addr(msg, &sqe);
+	if (ret) {
+		WD_ERR("digest map memory is err(%d)!\n", ret);
+		goto put_sgl;
+	}
 
 	ret = fill_digest_bd2_alg(msg, &sqe);
 	if (ret)
-		goto put_sgl;
+		goto destroy_addr;
 
 	ret = fill_digest_long_hash(h_qp, msg, &sqe);
 	if (ret)
-		goto put_sgl;
+		goto destroy_addr;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
@@ -1760,15 +2169,16 @@ static int hisi_sec_digest_send(struct wd_alg_driver *drv, handle_t ctx, void *w
 		if (ret != -WD_EBUSY)
 			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
-		goto put_sgl;
+		goto destroy_addr;
 	}
 
 	return 0;
 
+destroy_addr:
+	destroy_digest_bd2_addr(msg, &sqe);
 put_sgl:
 	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out, msg->mm_ops);
 	return ret;
 }
 
@@ -1792,7 +2202,7 @@ static int hisi_sec_digest_recv(struct wd_alg_driver *drv, handle_t ctx, void *w
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
-			recv_msg->out);
+				 recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -1822,7 +2232,7 @@ static int hmac_key_len_check(struct wd_digest_msg *msg)
 }
 
 static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
-		struct hisi_sec_sqe3 *sqe)
+			       struct hisi_sec_sqe3 *sqe)
 {
 	int ret;
 
@@ -1836,8 +2246,7 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 	 * the output full length.
 	 */
 	if (!msg->has_next)
-		sqe->auth_mac_key |= (msg->out_bytes / WORD_BYTES) <<
-				SEC_MAC_OFFSET_V3;
+		sqe->auth_mac_key |= BYTES_TO_WORDS(msg->out_bytes) << SEC_MAC_OFFSET_V3;
 
 	/* SM3 can't config 0 in normal mode */
 	if (msg->has_next && msg->mode == WD_DIGEST_NORMAL &&
@@ -1857,15 +2266,12 @@ static int fill_digest_bd3_alg(struct wd_digest_msg *msg,
 		if (ret)
 			return ret;
 
-		sqe->auth_mac_key |= (__u32)(msg->key_bytes /
-			WORD_BYTES) << SEC_AKEY_OFFSET_V3;
-		sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
+		sqe->auth_mac_key |= (__u32)BYTES_TO_WORDS(msg->key_bytes) << SEC_AKEY_OFFSET_V3;
 		sqe->auth_mac_key |=
 		g_hmac_a_alg[msg->alg] << SEC_AUTH_ALG_OFFSET_V3;
 
 		if (msg->alg == WD_DIGEST_AES_GMAC) {
 			sqe->auth_mac_key |= AI_GEN_IVIN_ADDR << SEC_AI_GEN_OFFSET_V3;
-			sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->iv;
 		}
 	} else {
 		WD_ERR("failed to check digest mode, mode = %u\n", msg->mode);
@@ -1949,11 +2355,104 @@ static void fill_digest_v3_scene(struct hisi_sec_sqe3 *sqe,
 	sqe->bd_param |= (__u16)(de | scene);
 }
 
+static void destroy_digest_bd3_addr(struct wd_digest_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("digest failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+
+	if (sqe->data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->mac_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->mac_addr,
+				   msg->out_bytes);
+
+	if (sqe->a_key_addr && msg->mode == WD_DIGEST_HMAC)
+		mm_ops->iova_unmap(mempool, msg->key, (void *)(uintptr_t)sqe->a_key_addr,
+				   msg->key_bytes);
+
+	if (sqe->auth_ivin.a_ivin_addr && msg->mode == WD_DIGEST_HMAC &&
+	    msg->alg == WD_DIGEST_AES_GMAC)
+		mm_ops->iova_unmap(mempool, msg->iv, (void *)(uintptr_t)sqe->auth_ivin.a_ivin_addr,
+				   MAX_IV_SIZE);
+}
+
+static int fill_digest_bd3_addr(struct wd_digest_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool, *phy_addr;
+
+	if (msg->mm_ops->sva_mode) {
+		/* avoid HW accessing address 0 when the pointer is NULL */
+		if (msg->in)
+			sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+		else
+			sqe->data_src_addr = (__u64)(uintptr_t)msg->out;
+		sqe->mac_addr = (__u64)(uintptr_t)msg->out;
+		if (msg->mode == WD_DIGEST_HMAC)
+			sqe->a_key_addr = (__u64)(uintptr_t)msg->key;
+		if (msg->mode == WD_DIGEST_HMAC && msg->alg == WD_DIGEST_AES_GMAC)
+			sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("digest failed to check memory type!\n");
+		return -WD_EINVAL;
+	}
+
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	mempool = mm_ops->usr;
+	if (msg->in_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes);
+		if (!phy_addr)
+			return -WD_ENOMEM;
+		sqe->data_src_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->mac_addr = (__u64)(uintptr_t)phy_addr;
+
+	if (msg->iv && msg->mode == WD_DIGEST_HMAC &&
+	    msg->alg == WD_DIGEST_AES_GMAC) {
+		phy_addr = mm_ops->iova_map(mempool, msg->iv, MAX_IV_SIZE);
+		if (!phy_addr)
+			goto map_err;
+		sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->key_bytes != 0 && msg->mode == WD_DIGEST_HMAC) {
+		phy_addr = mm_ops->iova_map(mempool, msg->key, msg->key_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->a_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	return 0;
+
+map_err:
+	destroy_digest_bd3_addr(msg, sqe);
+	return -WD_ENOMEM;
+}
+
 static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_digest_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	int ret;
 
@@ -1972,42 +2471,53 @@ static int hisi_sec_digest_send_v3(struct wd_alg_driver *drv, handle_t ctx, void
 	sqe.auth_mac_key = AUTH_HMAC_CALCULATE;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("digest failed to get sglpool for hw_v3!\n");
+			return -WD_EINVAL;
+		}
+		ret = hisi_sec_fill_sgl_v3(h_sgl_pool, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
 		if (ret)
 			return ret;
 	}
 
 	sqe.a_len_key = (__u32)msg->in_bytes;
-	sqe.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe.mac_addr = (__u64)(uintptr_t)msg->out;
+	ret = fill_digest_bd3_addr(msg, &sqe);
+	if (ret < 0) {
+		WD_ERR("digest map memory is err(%d)!\n", ret);
+		goto put_sgl;
+	}
 
 	ret = fill_digest_bd3_alg(msg, &sqe);
 	if (ret)
-		goto put_sgl;
+		goto destroy_addr;
 
 	ret = fill_digest_long_hash3(h_qp, msg, &sqe);
 	if (ret)
-		goto put_sgl;
+		goto destroy_addr;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = (__u64)(uintptr_t)msg->tag;
-	sqe.auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
+
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes, qp->q_info.hw_type, &sqe,
+			  msg->mm_ops->sva_mode);
 
 	ret = hisi_qm_send(h_qp, &sqe, 1, &count);
 	if (ret < 0) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("digest send sqe is err(%d)!\n", ret);
 
-		goto put_sgl;
+		goto destroy_addr;
 	}
 
 	return 0;
 
+destroy_addr:
+	destroy_digest_bd3_addr(msg, &sqe);
 put_sgl:
 	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out, msg->mm_ops);
 	return ret;
 }
 
@@ -2031,7 +2541,6 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_DIGEST;
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
 		temp_msg = wd_digest_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -2039,10 +2548,13 @@ static void parse_digest_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 				qp->q_info.idx, recv_msg->tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
 	}
+	destroy_digest_bd3_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "digest");
@@ -2068,7 +2580,7 @@ static int hisi_sec_digest_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp,  recv_msg->alg_type, recv_msg->in,
-				recv_msg->out);
+				 recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -2094,11 +2606,17 @@ static int aead_get_aes_key_len(struct wd_aead_msg *msg, __u8 *key_len)
 	return 0;
 }
 
-static int aead_akey_len_check(struct wd_aead_msg *msg)
+static int aead_auth_spec_check(struct wd_aead_msg *msg)
 {
 	if (unlikely(msg->akey_bytes & WORD_ALIGNMENT_MASK)) {
 		WD_ERR("failed to check aead auth key bytes, size = %u\n",
 		       msg->akey_bytes);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->auth_bytes & WORD_ALIGNMENT_MASK)) {
+		WD_ERR("failed to check aead auth bytes, size = %u\n",
+		       msg->auth_bytes);
 		return -WD_EINVAL;
 	}
 
@@ -2130,14 +2648,12 @@ static int fill_aead_bd2_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	sqe->type2.mac_key_alg = msg->auth_bytes / WORD_BYTES;
-
-	ret = aead_akey_len_check(msg);
+	ret = aead_auth_spec_check(msg);
 	if (ret)
 		return ret;
 
-	sqe->type2.mac_key_alg |= (__u32)(msg->akey_bytes /
-		WORD_BYTES) << MAC_LEN_OFFSET;
+	sqe->type2.mac_key_alg = BYTES_TO_WORDS(msg->auth_bytes);
+	sqe->type2.mac_key_alg |= (__u32)BYTES_TO_WORDS(msg->akey_bytes) << MAC_LEN_OFFSET;
 
 	switch (msg->dalg) {
 	case WD_DIGEST_SHA1:
@@ -2240,22 +2756,6 @@ static void set_aead_auth_iv(struct wd_aead_msg *msg)
 	}
 }
 
-static void fill_aead_bd2_addr(struct wd_aead_msg *msg,
-		struct hisi_sec_sqe *sqe)
-{
-	sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
-	sqe->type2.mac_addr = (__u64)(uintptr_t)msg->mac;
-	sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->ckey;
-	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->akey;
-	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-
-	/* CCM/GCM should init a_iv */
-	set_aead_auth_iv(msg);
-
-	sqe->type2.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
-}
-
 static int aead_len_check(struct wd_aead_msg *msg, enum sec_bd_type type)
 {
 	if (msg->msg_state == AEAD_MSG_MIDDLE) {
@@ -2275,6 +2775,11 @@ static int aead_len_check(struct wd_aead_msg *msg, enum sec_bd_type type)
 	if (unlikely((__u64)msg->in_bytes + msg->assoc_bytes > MAX_INPUT_DATA_LEN)) {
 		WD_ERR("aead input data length is too long, size = %llu\n",
 		       (__u64)msg->in_bytes + msg->assoc_bytes);
+		return -WD_EINVAL;
+	}
+
+	if (unlikely(msg->in_bytes == 0 && msg->assoc_bytes == 0)) {
+		WD_ERR("aead input data length is 0\n");
 		return -WD_EINVAL;
 	}
 
@@ -2310,14 +2815,14 @@ static void gcm_auth_ivin(struct wd_aead_msg *msg)
 	__u32 final_counter = GCM_FINAL_COUNTER;
 
 	/* auth_ivin = {cipher_ivin(16B), null(16B), auth_mac(16B), null(16B)} */
-	memset(msg->aiv_stream, 0, AIV_STREAM_LEN);
+	memset(msg->aiv, 0, AIV_STREAM_LEN);
 
-	memcpy(msg->aiv_stream, msg->iv, GCM_IV_SIZE);
+	memcpy(msg->aiv, msg->iv, GCM_IV_SIZE);
 	/* The last 4 bytes of c_ivin are counters */
-	memcpy(msg->aiv_stream + GCM_IV_SIZE, &final_counter, GCM_FINAL_COUNTER_LEN);
+	memcpy(msg->aiv + GCM_IV_SIZE, &final_counter, GCM_FINAL_COUNTER_LEN);
 
 	/* Fill auth_ivin with the mac of last MIDDLE BD */
-	memcpy(msg->aiv_stream + GCM_STREAM_MAC_OFFSET, msg->mac, GCM_FULL_MAC_LEN);
+	memcpy(msg->aiv + GCM_STREAM_MAC_OFFSET, msg->mac, GCM_FULL_MAC_LEN);
 
 	/* Use the user's origin mac for decrypt icv check */
 	if (msg->op_type == WD_CIPHER_DECRYPTION_DIGEST)
@@ -2340,8 +2845,6 @@ static void fill_gcm_first_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe
 	sqe->type2.c_alg  = 0;
 	sqe->type2.auth_src_offset = 0;
 	sqe->type2.alen_ivllen = msg->assoc_bytes;
-	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
 }
 
 static void fill_gcm_middle_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
@@ -2354,8 +2857,6 @@ static void fill_gcm_middle_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sq
 	fill_gcm_akey_len(msg, sqe, BD_TYPE2);
 	sqe->type2.alen_ivllen = 0;
 	sqe->type2.a_ivin_addr = sqe->type2.mac_addr;
-	sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
 }
 
 static void get_galois_vector_s(struct wd_aead_msg *msg, __u8 *s)
@@ -2372,7 +2873,7 @@ static void get_galois_vector_s(struct wd_aead_msg *msg, __u8 *s)
 
 	/* Based the little-endian operation */
 	for (i = 0; i < GCM_BLOCK_SIZE; i++)
-		s[i] = a_c[i] ^ msg->aiv_stream[(__u8)(GCM_AUTH_MAC_OFFSET - i)];
+		s[i] = a_c[i] ^ msg->aiv[(__u8)(GCM_AUTH_MAC_OFFSET - i)];
 }
 
 static int gcm_do_soft_mac(struct wd_aead_msg *msg)
@@ -2411,9 +2912,9 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 		 */
 		for (i = 0; i < GCM_BLOCK_SIZE; i++)
 			G[i] = data[GCM_BLOCK_OFFSET - i] ^
-			       msg->aiv_stream[(__u8)(GCM_AUTH_MAC_OFFSET - i)];
+			       msg->aiv[(__u8)(GCM_AUTH_MAC_OFFSET - i)];
 
-		galois_compute(G, H, msg->aiv_stream + GCM_STREAM_MAC_OFFSET, GCM_BLOCK_SIZE);
+		galois_compute(G, H, msg->aiv + GCM_STREAM_MAC_OFFSET, GCM_BLOCK_SIZE);
 		len -= block;
 		offset += block;
 	}
@@ -2423,7 +2924,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 	galois_compute(S, H, g, GCM_BLOCK_SIZE);
 
 	/* Encrypt ctr0 based on AES_ECB */
-	aes_encrypt(msg->ckey, msg->ckey_bytes, msg->aiv_stream, ctr_r);
+	aes_encrypt(msg->ckey, msg->ckey_bytes, msg->aiv, ctr_r);
 
 	/* Get the GMAC tag final */
 	for (i = 0; i < GCM_BLOCK_SIZE; i++)
@@ -2440,7 +2941,7 @@ static int gcm_do_soft_mac(struct wd_aead_msg *msg)
 
 	msg->result = WD_SUCCESS;
 
-	return WD_SOFT_COMPUTING;
+	return WD_SUCCESS;
 }
 
 static int fill_stream_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
@@ -2460,6 +2961,8 @@ static int fill_stream_bd2(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
 		if (msg->cmode == WD_CIPHER_GCM) {
 			gcm_auth_ivin(msg);
 			ret = gcm_do_soft_mac(msg);
+			/* Make the bd invalid to avoid recalculation of the data. */
+			sqe->iv_tls_ld = 0x1 << SEC_BD2_IVLD_OFFSET;
 		}
 		break;
 	default:
@@ -2541,11 +3044,158 @@ static int aead_msg_state_check(struct wd_aead_msg *msg)
 	return 0;
 }
 
+static void destroy_aead_bd2_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	aead_free_aiv_addr(msg);
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("aead failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+	if (sqe->type2.data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->type2.data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->type2.data_dst_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->type2.data_dst_addr,
+				   msg->out_bytes);
+
+	if (sqe->type2.c_ivin_addr)
+		mm_ops->iova_unmap(mempool, msg->iv, (void *)(uintptr_t)sqe->type2.c_ivin_addr,
+				   msg->iv_bytes);
+
+	if (sqe->type2.a_key_addr) {
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE)
+		    && msg->cmode == WD_CIPHER_GCM)
+			mm_ops->iova_unmap(mempool, msg->ckey,
+					   (void *)(uintptr_t)sqe->type2.a_key_addr,
+					   msg->ckey_bytes);
+		else
+			mm_ops->iova_unmap(mempool, msg->akey,
+					   (void *)(uintptr_t)sqe->type2.a_key_addr,
+					   msg->akey_bytes);
+	}
+
+	if (sqe->type2.c_key_addr && !((msg->msg_state == AEAD_MSG_FIRST ||
+	    msg->msg_state == AEAD_MSG_MIDDLE) && msg->cmode == WD_CIPHER_GCM))
+		mm_ops->iova_unmap(mempool, msg->ckey, (void *)(uintptr_t)sqe->type2.c_key_addr,
+				   msg->ckey_bytes);
+
+	if (sqe->type2.mac_addr)
+		mm_ops->iova_unmap(mempool, msg->mac, (void *)(uintptr_t)sqe->type2.mac_addr,
+				   msg->auth_bytes);
+}
+
+static int aead_mem_nosva_map(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe, int idx)
+{
+	struct wd_aead_aiv_addr *aiv_addr = (struct wd_aead_aiv_addr *)msg->drv_cfg;
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool, *phy_addr;
+
+	/* No-SVA mode and Memory is USER mode or PROXY mode */
+	mempool = mm_ops->usr;
+
+	phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes + msg->assoc_bytes);
+	if (!phy_addr)
+		return -WD_ENOMEM;
+	sqe->type2.data_src_addr = (__u64)(uintptr_t)phy_addr;
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->type2.data_dst_addr = (__u64)(uintptr_t)phy_addr;
+	if (msg->iv_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->iv, msg->iv_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->akey_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->akey, msg->akey_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.a_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->ckey_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->ckey, msg->ckey_bytes);
+		if (!phy_addr)
+			goto map_err;
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE)
+		    && msg->cmode == WD_CIPHER_GCM)
+			sqe->type2.a_key_addr = (__u64)(uintptr_t)phy_addr;
+		else
+			sqe->type2.c_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+	if (msg->auth_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->mac, msg->auth_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->type2.mac_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	/* CCM/GCM should init a_iv */
+	set_aead_auth_iv(msg);
+	phy_addr = aiv_addr->aiv_nosva + (idx << AEAD_AIV_OFFSET);
+	sqe->type2.a_ivin_addr = (__u64)(uintptr_t)phy_addr;
+
+	return 0;
+
+map_err:
+	destroy_aead_bd2_addr(msg, sqe);
+	return -WD_ENOMEM;
+}
+
+static int fill_aead_bd2_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe *sqe,
+			      struct hisi_qp *qp)
+{
+	int idx;
+
+	idx = aead_get_aiv_addr(qp, msg);
+	if (idx < 0)
+		return idx;
+
+	/* sva mode */
+	if (msg->mm_ops->sva_mode) {
+		sqe->type2.data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->type2.data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->type2.mac_addr = (__u64)(uintptr_t)msg->mac;
+		sqe->type2.c_key_addr = (__u64)(uintptr_t)msg->ckey;
+		sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->akey;
+		sqe->type2.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		/* CCM/GCM should init a_iv */
+		set_aead_auth_iv(msg);
+		sqe->type2.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
+
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE)
+		    && msg->cmode == WD_CIPHER_GCM)
+			sqe->type2.a_key_addr = (__u64)(uintptr_t)msg->ckey;
+
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("aead failed to check memory type!\n");
+		aead_free_aiv_addr(msg);
+		return -WD_EINVAL;
+	}
+
+	/* aiv addr is freed in destroy addr interface */
+	return aead_mem_nosva_map(msg, sqe, idx);
+}
+
 static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_aead_msg *msg = wd_msg;
 	struct hisi_sec_sqe sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	int ret;
 
@@ -2568,21 +3218,27 @@ static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		return ret;
 
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl(h_qp, &msg->in, &msg->out,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("aead failed to get sglpool for hw_v2!\n");
+			return -WD_EINVAL;
+		}
+		ret = hisi_sec_fill_sgl(h_sgl_pool, &msg->in, &msg->out,
 					&sqe, msg->alg_type);
 		if (ret)
 			return ret;
 	}
 
-	fill_aead_bd2_addr(msg, &sqe);
-
-	ret = fill_stream_bd2(msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
-		goto put_sgl;
-	} else if (unlikely(ret)) {
+	ret = fill_aead_bd2_addr(msg, &sqe, qp);
+	if (ret < 0) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("aead map memory is err(%d)!\n", ret);
 		goto put_sgl;
 	}
+
+	ret = fill_stream_bd2(msg, &sqe);
+	if (unlikely(ret))
+		goto destroy_addr;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.type2.tag = (__u16)msg->tag;
@@ -2592,15 +3248,16 @@ static int hisi_sec_aead_send(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 		if (ret != -WD_EBUSY)
 			WD_ERR("aead send sqe is err(%d)!\n", ret);
 
-		goto put_sgl;
+		goto destroy_addr;
 	}
 
 	return 0;
 
+destroy_addr:
+	destroy_aead_bd2_addr(msg, &sqe);
 put_sgl:
 	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out, msg->mm_ops);
 	return ret;
 }
 
@@ -2641,8 +3298,6 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_AEAD;
 		recv_msg->data_fmt = get_data_fmt_v2(sqe->sds_sa_type);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->type2.data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->type2.data_dst_addr;
 		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -2650,33 +3305,19 @@ static void parse_aead_bd2(struct hisi_qp *qp, struct hisi_sec_sqe *sqe,
 				qp->q_info.idx, recv_msg->tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
 	}
 
 	update_stream_counter(temp_msg);
+	destroy_aead_bd2_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
-}
-
-static bool soft_compute_check(struct hisi_qp *qp, struct wd_aead_msg *msg)
-{
-	/* Asynchronous mode does not use the sent message, so ignores it */
-	if (qp->q_info.qp_mode == CTX_MODE_ASYNC)
-		return false;
-	/*
-	 * For aead gcm stream mode, due to some hardware limitations,
-	 * the final message was not sent to hardware if the qm is
-	 * not higher than v3 version or the input length of the
-	 * message is 0, the software calculation has been executed.
-	 */
-	if (msg->msg_state == AEAD_MSG_END && msg->cmode == WD_CIPHER_GCM &&
-	    (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes))
-		return true;
-
-	return false;
 }
 
 static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
@@ -2686,9 +3327,6 @@ static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 	struct hisi_sec_sqe sqe;
 	__u16 count = 0;
 	int ret;
-
-	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
-		return 0;
 
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
@@ -2702,7 +3340,7 @@ static int hisi_sec_aead_recv(struct wd_alg_driver *drv, handle_t ctx, void *wd_
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type, recv_msg->in,
-				recv_msg->out);
+				 recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -2736,15 +3374,13 @@ static int fill_aead_bd3_alg(struct wd_aead_msg *msg,
 	if (msg->cmode == WD_CIPHER_CCM || msg->cmode == WD_CIPHER_GCM)
 		return ret;
 
-	ret = aead_akey_len_check(msg);
+	ret = aead_auth_spec_check(msg);
 	if (ret)
 		return ret;
 
-	sqe->auth_mac_key |= (msg->auth_bytes /
-		WORD_BYTES) << SEC_MAC_OFFSET_V3;
+	sqe->auth_mac_key |= BYTES_TO_WORDS(msg->auth_bytes) << SEC_MAC_OFFSET_V3;
 
-	sqe->auth_mac_key |= (msg->akey_bytes /
-		WORD_BYTES) << SEC_AKEY_OFFSET_V3;
+	sqe->auth_mac_key |= (__u32)BYTES_TO_WORDS(msg->akey_bytes) << SEC_AKEY_OFFSET_V3;
 
 	switch (msg->dalg) {
 	case WD_DIGEST_SHA1:
@@ -2801,23 +3437,6 @@ static int fill_aead_bd3_mode(struct wd_aead_msg *msg,
 	return 0;
 }
 
-static void fill_aead_bd3_addr(struct wd_aead_msg *msg,
-		struct hisi_sec_sqe3 *sqe)
-{
-	sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
-	sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
-
-	sqe->mac_addr = (__u64)(uintptr_t)msg->mac;
-	sqe->c_key_addr = (__u64)(uintptr_t)msg->ckey;
-	sqe->a_key_addr = (__u64)(uintptr_t)msg->akey;
-	sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-
-	/* CCM/GCM should init a_iv */
-	set_aead_auth_iv(msg);
-
-	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
-}
-
 static void fill_gcm_first_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 {
 	sqe->auth_mac_key |= AI_GEN_INNER << SEC_AI_GEN_OFFSET_V3;
@@ -2834,8 +3453,6 @@ static void fill_gcm_first_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sq
 	sqe->c_mode_alg &= ~(0x7 << SEC_CALG_OFFSET_V3);
 	sqe->auth_src_offset = 0;
 	sqe->a_len_key = msg->assoc_bytes;
-	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
 }
 
 static void fill_gcm_middle_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
@@ -2849,8 +3466,6 @@ static void fill_gcm_middle_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *s
 	fill_gcm_akey_len(msg, sqe, BD_TYPE3);
 	sqe->a_len_key = 0;
 	sqe->auth_ivin.a_ivin_addr = sqe->mac_addr;
-	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
 }
 
 static void fill_gcm_final_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
@@ -2865,9 +3480,6 @@ static void fill_gcm_final_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sq
 	sqe->a_len_key = 0;
 	sqe->stream_scene.long_a_data_len = msg->assoc_bytes;
 	sqe->stream_scene.long_a_data_len |= msg->long_data_len << LONG_AUTH_DATA_OFFSET;
-	sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
-	sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
-	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv_stream;
 }
 
 static int fill_stream_bd3(handle_t h_qp, struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
@@ -2888,10 +3500,13 @@ static int fill_stream_bd3(handle_t h_qp, struct wd_aead_msg *msg, struct hisi_s
 		if (msg->cmode == WD_CIPHER_GCM) {
 			gcm_auth_ivin(msg);
 			/* Due to hardware limitations, software compute is required. */
-			if (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes)
+			if (qp->q_info.hw_type <= HISI_QM_API_VER3_BASE || !msg->in_bytes) {
 				ret = gcm_do_soft_mac(msg);
-			else
+				/* Make the bd invalid to avoid recalculation of the data. */
+				sqe->bd_param |= 0x1 << SEC_BD3_IVLD_OFFSET;
+			} else {
 				fill_gcm_final_bd3(msg, sqe);
+			}
 		}
 		break;
 	default:
@@ -2932,7 +3547,6 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	sqe->c_len_ivin = msg->in_bytes;
 	sqe->cipher_src_offset = msg->assoc_bytes;
 	sqe->a_len_key = msg->in_bytes + msg->assoc_bytes;
-	sqe->auth_mac_key |= (__u32)SEC_ENABLE_SVA_PREFETCH << SEC_SVA_PREFETCH_OFFSET;
 
 	ret = fill_aead_bd3_alg(msg, sqe);
 	if (ret) {
@@ -2949,11 +3563,167 @@ static int fill_aead_bd3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
 	return 0;
 }
 
+static void destroy_aead_bd3_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe)
+{
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool;
+
+	aead_free_aiv_addr(msg);
+	/* SVA mode and skip */
+	if (!mm_ops || mm_ops->sva_mode)
+		return;
+
+	if (!mm_ops->usr) {
+		WD_ERR("aead failed to check memory pool!\n");
+		return;
+	}
+
+	mempool = mm_ops->usr;
+	if (sqe->data_src_addr)
+		mm_ops->iova_unmap(mempool, msg->in, (void *)(uintptr_t)sqe->data_src_addr,
+				   msg->in_bytes);
+
+	if (sqe->data_dst_addr)
+		mm_ops->iova_unmap(mempool, msg->out, (void *)(uintptr_t)sqe->data_dst_addr,
+				   msg->out_bytes);
+
+	if (sqe->no_scene.c_ivin_addr)
+		mm_ops->iova_unmap(mempool, msg->iv, (void *)(uintptr_t)sqe->no_scene.c_ivin_addr,
+				   msg->iv_bytes);
+	else if (sqe->stream_scene.c_ivin_addr)
+		mm_ops->iova_unmap(mempool, msg->iv,
+				   (void *)(uintptr_t)sqe->stream_scene.c_ivin_addr,
+				   msg->iv_bytes);
+
+	if (sqe->a_key_addr) {
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE ||
+		     msg->msg_state == AEAD_MSG_END) && msg->cmode == WD_CIPHER_GCM)
+			mm_ops->iova_unmap(mempool, msg->ckey, (void *)(uintptr_t)sqe->a_key_addr,
+					   msg->ckey_bytes);
+		else
+			mm_ops->iova_unmap(mempool, msg->akey, (void *)(uintptr_t)sqe->a_key_addr,
+					   msg->akey_bytes);
+	}
+
+	if (sqe->c_key_addr && !((msg->msg_state == AEAD_MSG_FIRST ||
+	    msg->msg_state == AEAD_MSG_MIDDLE || msg->msg_state == AEAD_MSG_END) &&
+	    msg->cmode == WD_CIPHER_GCM))
+		mm_ops->iova_unmap(mempool, msg->ckey, (void *)(uintptr_t)sqe->c_key_addr,
+				   msg->ckey_bytes);
+
+	if (sqe->mac_addr)
+		mm_ops->iova_unmap(mempool, msg->mac, (void *)(uintptr_t)sqe->mac_addr,
+				   msg->auth_bytes);
+}
+
+static int aead_mem_nosva_map_v3(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe, int idx)
+{
+	struct wd_aead_aiv_addr *aiv_addr = (struct wd_aead_aiv_addr *)msg->drv_cfg;
+	struct wd_mm_ops *mm_ops = msg->mm_ops;
+	void *mempool = mm_ops->usr;
+	void *phy_addr;
+
+	phy_addr = mm_ops->iova_map(mempool, msg->in, msg->in_bytes + msg->assoc_bytes);
+	if (!phy_addr)
+		return -WD_ENOMEM;
+	sqe->data_src_addr = (__u64)(uintptr_t)phy_addr;
+
+	phy_addr = mm_ops->iova_map(mempool, msg->out, msg->out_bytes);
+	if (!phy_addr)
+		goto map_err;
+	sqe->data_dst_addr = (__u64)(uintptr_t)phy_addr;
+
+	if (msg->iv_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->iv, msg->iv_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)phy_addr;
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE ||
+		     msg->msg_state == AEAD_MSG_END) && msg->cmode == WD_CIPHER_GCM)
+			sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	if (msg->akey_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->akey, msg->akey_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->a_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	if (msg->ckey_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->ckey, msg->ckey_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->c_key_addr = (__u64)(uintptr_t)phy_addr;
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE ||
+		     msg->msg_state == AEAD_MSG_END) && msg->cmode == WD_CIPHER_GCM)
+			sqe->a_key_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	if (msg->auth_bytes) {
+		phy_addr = mm_ops->iova_map(mempool, msg->mac, msg->auth_bytes);
+		if (!phy_addr)
+			goto map_err;
+		sqe->mac_addr = (__u64)(uintptr_t)phy_addr;
+	}
+
+	/* CCM/GCM should init a_iv */
+	set_aead_auth_iv(msg);
+	phy_addr = aiv_addr->aiv_nosva + (idx << AEAD_AIV_OFFSET);
+	sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)phy_addr;
+
+	return 0;
+
+map_err:
+	destroy_aead_bd3_addr(msg, sqe);
+	return -WD_ENOMEM;
+}
+
+static int fill_aead_bd3_addr(struct wd_aead_msg *msg, struct hisi_sec_sqe3 *sqe,
+			      struct hisi_qp *qp)
+{
+	int idx;
+
+	idx = aead_get_aiv_addr(qp, msg);
+	if (idx < 0)
+		return idx;
+
+	/* sva mode */
+	if (msg->mm_ops->sva_mode) {
+		sqe->data_src_addr = (__u64)(uintptr_t)msg->in;
+		sqe->data_dst_addr = (__u64)(uintptr_t)msg->out;
+		sqe->no_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+		sqe->c_key_addr = (__u64)(uintptr_t)msg->ckey;
+		sqe->a_key_addr = (__u64)(uintptr_t)msg->akey;
+		sqe->mac_addr = (__u64)(uintptr_t)msg->mac;
+
+		/* CCM/GCM should init a_iv */
+		set_aead_auth_iv(msg);
+		sqe->auth_ivin.a_ivin_addr = (__u64)(uintptr_t)msg->aiv;
+		if ((msg->msg_state == AEAD_MSG_FIRST || msg->msg_state == AEAD_MSG_MIDDLE ||
+		    msg->msg_state == AEAD_MSG_END) && msg->cmode == WD_CIPHER_GCM) {
+			sqe->stream_scene.c_ivin_addr = (__u64)(uintptr_t)msg->iv;
+			sqe->a_key_addr = (__u64)(uintptr_t)msg->ckey;
+		}
+		return 0;
+	}
+	if (msg->mm_type > UADK_MEM_PROXY) {
+		WD_ERR("aead failed to check memory type!\n");
+		aead_free_aiv_addr(msg);
+		return -WD_EINVAL;
+	}
+
+	/* aiv addr is freed in destroy addr interface */
+	return aead_mem_nosva_map_v3(msg, sqe, idx);
+}
+
 static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *wd_msg)
 {
 	handle_t h_qp = (handle_t)wd_ctx_get_priv(ctx);
+	struct hisi_qp *qp = (struct hisi_qp *)h_qp;
 	struct wd_aead_msg *msg = wd_msg;
 	struct hisi_sec_sqe3 sqe;
+	handle_t h_sgl_pool;
 	__u16 count = 0;
 	int ret;
 
@@ -2975,21 +3745,31 @@ static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	if (unlikely(ret))
 		return ret;
 
+	fill_sec_prefetch(msg->data_fmt, msg->in_bytes + msg->assoc_bytes,
+			  qp->q_info.hw_type, &sqe, msg->mm_ops->sva_mode);
+
 	if (msg->data_fmt == WD_SGL_BUF) {
-		ret = hisi_sec_fill_sgl_v3(h_qp, &msg->in, &msg->out, &sqe,
+		h_sgl_pool = hisi_qm_get_sglpool(h_qp, msg->mm_ops);
+		if (!h_sgl_pool) {
+			WD_ERR("aead failed to get sglpool for hw_v3!\n");
+			return -WD_EINVAL;
+		}
+		ret = hisi_sec_fill_sgl_v3(h_sgl_pool, &msg->in, &msg->out, &sqe,
 					msg->alg_type);
 		if (ret)
 			return ret;
 	}
 
-	fill_aead_bd3_addr(msg, &sqe);
-	ret = fill_stream_bd3(h_qp, msg, &sqe);
-	if (ret == WD_SOFT_COMPUTING) {
-		ret = 0;
-		goto put_sgl;
-	} else if (unlikely(ret)) {
+	ret = fill_aead_bd3_addr(msg, &sqe, qp);
+	if (ret < 0) {
+		if (ret != -WD_EBUSY)
+			WD_ERR("aead map memory is err(%d)!\n", ret);
 		goto put_sgl;
 	}
+
+	ret = fill_stream_bd3(h_qp, msg, &sqe);
+	if (unlikely(ret))
+		goto destroy_addr;
 
 	hisi_set_msg_id(h_qp, &msg->tag);
 	sqe.tag = msg->tag;
@@ -2998,15 +3778,16 @@ static int hisi_sec_aead_send_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 		if (ret != -WD_EBUSY)
 			WD_ERR("aead send sqe is err(%d)!\n", ret);
 
-		goto put_sgl;
+		goto destroy_addr;
 	}
 
 	return 0;
 
+destroy_addr:
+	destroy_aead_bd3_addr(msg, &sqe);
 put_sgl:
 	if (msg->data_fmt == WD_SGL_BUF)
-		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out);
-
+		hisi_sec_put_sgl(h_qp, msg->alg_type, msg->in, msg->out, msg->mm_ops);
 	return ret;
 }
 
@@ -3033,8 +3814,6 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 	if (qp->q_info.qp_mode == CTX_MODE_ASYNC) {
 		recv_msg->alg_type = WD_AEAD;
 		recv_msg->data_fmt = get_data_fmt_v3(sqe->bd_param);
-		recv_msg->in = (__u8 *)(uintptr_t)sqe->data_src_addr;
-		recv_msg->out = (__u8 *)(uintptr_t)sqe->data_dst_addr;
 		temp_msg = wd_aead_get_msg(qp->q_info.idx, recv_msg->tag);
 		if (!temp_msg) {
 			recv_msg->result = WD_IN_EPARA;
@@ -3042,12 +3821,16 @@ static void parse_aead_bd3(struct hisi_qp *qp, struct hisi_sec_sqe3 *sqe,
 				qp->q_info.idx, recv_msg->tag);
 			return;
 		}
+		recv_msg->in = temp_msg->in;
+		recv_msg->out = temp_msg->out;
+		recv_msg->mm_ops = temp_msg->mm_ops;
 	} else {
 		/* The synchronization mode uses the same message */
 		temp_msg = recv_msg;
 	}
 
 	update_stream_counter(temp_msg);
+	destroy_aead_bd3_addr(temp_msg, sqe);
 
 	if (unlikely(recv_msg->result != WD_SUCCESS))
 		dump_sec_msg(temp_msg, "aead");
@@ -3061,9 +3844,6 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 	__u16 count = 0;
 	int ret;
 
-	if (soft_compute_check((struct hisi_qp *)h_qp, recv_msg))
-		return 0;
-
 	ret = hisi_qm_recv(h_qp, &sqe, 1, &count);
 	if (ret < 0)
 		return ret;
@@ -3076,7 +3856,7 @@ static int hisi_sec_aead_recv_v3(struct wd_alg_driver *drv, handle_t ctx, void *
 
 	if (recv_msg->data_fmt == WD_SGL_BUF)
 		hisi_sec_put_sgl(h_qp, recv_msg->alg_type,
-			recv_msg->in, recv_msg->out);
+				 recv_msg->in, recv_msg->out, recv_msg->mm_ops);
 
 	return 0;
 }
@@ -3131,15 +3911,17 @@ out:
 
 static void hisi_sec_exit(struct wd_alg_driver *drv)
 {
-	if(!drv || !drv->priv)
-		return;
-
-	struct hisi_sec_ctx *priv = (struct hisi_sec_ctx *)drv->priv;
 	struct wd_ctx_config_internal *config;
+	struct hisi_sec_ctx *priv;
 	handle_t h_qp;
 	__u32 i;
 
+	if (!drv || !drv->priv)
+		return;
+
+	priv = (struct hisi_sec_ctx *)drv->priv;
 	config = &priv->config;
+
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);

@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk], [2.8], [liguozhu@hisilicon.com])
+AC_INIT([uadk], [2.10], [liguozhu@hisilicon.com])
 AC_CONFIG_SRCDIR([wd.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 
@@ -43,6 +43,14 @@ AC_ARG_ENABLE([perf],
 	[perf=false])
   [perf=false]
 )
+
+AC_CANONICAL_HOST
+AS_IF([test "$host_cpu" = "aarch64"],[
+     arch_arm64="true"
+])
+AM_CONDITIONAL([ARCH_ARM64], [test "x$arch_arm64" = "xtrue"])
+
+AC_MSG_NOTICE([Detected host_cpu: $host_cpu])
 
 AC_CHECK_LIB(z, zlibVersion,
 	     [ AC_DEFINE(HAVE_ZLIB, 1, [Have zlib])
@@ -95,14 +103,12 @@ AC_CONFIG_FILES([Makefile
 		 lib/libwd_crypto.pc lib/libwd_comp.pc lib/libwd.pc
 		 test/Makefile
 		 test/hisi_hpre_test/Makefile
-		 test/hisi_zip_test/Makefile
 		 uadk_tool/Makefile
 		 sample/Makefile
 		 v1/test/Makefile
 		 v1/test/bmm_test/Makefile
 		 v1/test/test_mm/Makefile
 		 v1/test/hisi_hpre_test/Makefile
-		 v1/test/hisi_trng_test/Makefile
 		 v1/test/hisi_sec_test/Makefile
 		 v1/test/hisi_sec_test_sgl/Makefile
 		 v1/test/hisi_zip_test/Makefile

@@ -100,6 +100,8 @@ struct wd_digest_sess_setup {
 	enum wd_digest_type alg;
 	enum wd_digest_mode mode;
 	void *sched_param;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 typedef void *wd_digest_cb_t(void *cb_param);
@@ -144,9 +146,9 @@ struct wd_digest_req {
 };
 
 struct wd_cb_tag {
-	void *ctx;	/* user: context or other user relatives */
-	void *tag;	/* to store user tag */
-	int ctx_id;	/* user id: context ID or other user identifier */
+	void *ctx; /* user: context or other user relatives */
+	void *tag; /* to store user tag */
+	int ctx_id; /* user id: context ID or other user identifier */
 };
 
 /* Digest tag format */

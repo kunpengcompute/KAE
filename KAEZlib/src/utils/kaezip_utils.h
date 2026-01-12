@@ -31,7 +31,7 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
-#include "wd_comp.h"
+#include "uadk/v1/wd_comp.h"
 
 #define gettid() syscall(SYS_gettid)
 #define PRINTPID \
@@ -115,26 +115,26 @@ static inline int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize, i
 	static const int DEFLATE_MIN_WBITS = -15;
 	//	windowbits only for algorithm type
 	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
-		*alg = WD_ZLIB;
+		*alg = WCRYPTO_ZLIB;
 	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
-		*alg = WD_GZIP;
+		*alg = WCRYPTO_GZIP;
 	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
-		*alg = WD_DEFLATE;
+		*alg = WCRYPTO_RAW_DEFLATE;
 	} else {
 		return -3;	// Z_DATA_ERROR
 	}
 	//	level only for compress rate
 	level = (level == -1) ? 6 : level;
 	if (level <= 2) {
-		*windowsize = WD_COMP_WS_4K;
+		*windowsize = WCRYPTO_COMP_WS_4K;
 	} else if (level <= 4) {
-		*windowsize = WD_COMP_WS_8K;
+		*windowsize = WCRYPTO_COMP_WS_8K;
 	} else if (level <= 6) {
-		*windowsize = WD_COMP_WS_16K;
+		*windowsize = WCRYPTO_COMP_WS_16K;
 	} else if (level <= 8) {
-		*windowsize = WD_COMP_WS_24K;
+		*windowsize = WCRYPTO_COMP_WS_24K;
 	} else {
-		*windowsize = WD_COMP_WS_32K;
+		*windowsize = WCRYPTO_COMP_WS_32K;
 	}
 
 	return 0;

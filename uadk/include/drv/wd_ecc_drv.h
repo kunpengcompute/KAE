@@ -48,12 +48,16 @@ extern "C" {
 /* ECC message format */
 struct wd_ecc_msg {
 	struct wd_ecc_req req;
+	struct wd_mm_ops *mm_ops;
+	enum wd_mem_type mm_type;
 	struct wd_hash_mt hash;
 	__u32 tag; /* User-defined request identifier */
 	__u8 *key; /* Input key VA, should be DMA buffer */
 	__u16 key_bytes; /* key bytes */
 	__u8 curve_id; /* Ec curve denoted by enum wd_ecc_curve_type */
 	__u8 result; /* alg op error code */
+	void *drv_cfg; /* internal driver configuration */
+	__u8 *rsv_out; /* reserved output data pointer */
 };
 
 struct wd_ecc_pubkey {
@@ -173,6 +177,15 @@ struct wd_ecc_out {
 	wd_ecc_out_param param;
 	__u64 size;
 	char data[];
+};
+
+struct wd_ecc_extend_ops {
+	void *params; /* the params are passed to the following ops */
+	void (*eops_params_cfg)(struct wd_alg_driver *drv,
+				struct wd_ecc_sess_setup *setup,
+				struct wd_ecc_curve *cv, void *params);
+	int (*sess_init)(struct wd_alg_driver *drv, void **params);
+	void (*sess_uninit)(struct wd_alg_driver *drv, void *params);
 };
 
 struct wd_ecc_msg *wd_ecc_get_msg(__u32 idx, __u32 tag);

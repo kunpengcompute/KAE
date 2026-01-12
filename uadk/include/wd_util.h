@@ -42,6 +42,8 @@ enum wd_type {
 	WD_DH_TYPE,
 	WD_ECC_TYPE,
 	WD_AGG_TYPE,
+	WD_UDMA_TYPE,
+	WD_JOIN_GATHER_TYPE,
 	WD_TYPE_MAX,
 };
 
@@ -124,7 +126,7 @@ struct wd_msg_handle {
 
 struct wd_init_attrs {
 	__u32 sched_type;
-	const char *alg;
+	char alg[CRYPTO_MAX_ALG_NAME];
 	struct wd_alg_driver *driver;
 	struct wd_sched *sched;
 	struct wd_ctx_params *ctx_params;
@@ -550,6 +552,8 @@ static inline void wd_ctx_spin_unlock(struct wd_ctx_internal *ctx, int type)
 
 	pthread_spin_unlock(&ctx->lock);
 }
+
+int wd_mem_ops_init(handle_t h_ctx, struct wd_mm_ops *mm_ops, int mem_type);
 
 #ifdef __cplusplus
 }

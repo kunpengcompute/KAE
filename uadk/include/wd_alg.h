@@ -115,26 +115,6 @@ struct wd_alg_driver {
 	int (*get_extend_ops)(void *ops);
 };
 
-inline int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
-{
-	return drv->init(drv, conf);
-}
-
-inline void wd_alg_driver_exit(struct wd_alg_driver *drv)
-{
-	drv->exit(drv);
-}
-
-inline int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->send(drv, ctx, msg);
-}
-
-inline int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
-{
-	return drv->recv(drv, ctx, msg);
-}
-
 /*
  * wd_alg_driver_register() - Register a device driver.
  * @wd_alg_driver: a device driver that supports an algorithm.
@@ -194,6 +174,11 @@ bool wd_drv_alg_support(const char *alg_name,
 void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
+int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf);
+void wd_alg_driver_exit(struct wd_alg_driver *drv);
+int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg);
+int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg);
+
 struct wd_alg_list *wd_get_alg_head(void);
 
 #ifdef WD_STATIC_DRV
@@ -204,11 +189,15 @@ void hisi_sec2_probe(void);
 void hisi_hpre_probe(void);
 void hisi_zip_probe(void);
 void hisi_dae_probe(void);
+void hisi_udma_probe(void);
+void hisi_dae_join_gather_probe(void);
 
 void hisi_sec2_remove(void);
 void hisi_hpre_remove(void);
 void hisi_zip_remove(void);
 void hisi_dae_remove(void);
+void hisi_udma_remove(void);
+void hisi_dae_join_gather_remove(void);
 
 #endif
 

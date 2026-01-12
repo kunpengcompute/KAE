@@ -37,6 +37,7 @@
 #define SEND_USLEEP		100
 #define SEC_2_USEC		1000000
 #define HASH_ZISE		16
+#define SGL_ALIGNED_BYTES	64
 
 #define SCHED_SINGLE		"sched_single"
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
@@ -81,13 +82,20 @@ struct acc_option {
 	bool latency;
 	u32 sched_type;
 	int task_type;
+	int mem_type;
+	u32 data_fmt;
+};
+
+enum uadk_mem_mode {
+	UADK_AUTO,		// SVA or No-SVA
+	UADK_MANUAL,		// No-SVA User manual
+	UADK_PROXY,		// No-SVA UADK API proxy
 };
 
 enum acc_type {
 	SEC_TYPE,
 	HPRE_TYPE,
 	ZIP_TYPE,
-	TRNG_TYPE,
 };
 
 enum acc_init_type {
@@ -121,6 +129,8 @@ enum test_alg {
 	GZIP, // gzip
 	DEFLATE, // deflate
 	LZ77_ZSTD, // lz77_zstd
+	LZ4,
+	LZ77_ONLY,
 	RSA_1024, // rsa
 	RSA_2048,
 	RSA_3072,
@@ -135,7 +145,7 @@ enum test_alg {
 	DH_2048,
 	DH_3072,
 	DH_4096,
-	ECDH_256, // ecdh
+	ECDH_256, // ecdh with secp256r1 curve
 	ECDH_384,
 	ECDH_521,
 	ECDSA_256, // ecdsa
@@ -193,6 +203,8 @@ enum test_alg {
 	AES_128_CBC_SHA256_HMAC,
 	AES_192_CBC_SHA256_HMAC,
 	AES_256_CBC_SHA256_HMAC,
+	AES_128_CBC_SHA1_HMAC,
+	SM4_CBC_SM3_HMAC,
 	SM4_128_CCM,
 	SM4_128_GCM,
 	SM3_ALG, // digest
@@ -220,10 +232,13 @@ extern u32 get_recv_time(void);
 extern void cal_avg_latency(u32 count);
 extern int get_alg_name(int alg, char *alg_name);
 extern void segmentfault_handler(int sig);
+extern void memset_buf(void *buf, size_t sz);
 
+int uadk_parse_dev_id(char *dev_name);
 int acc_cmd_parse(int argc, char *argv[], struct acc_option *option);
 int acc_default_case(struct acc_option *option);
 int acc_option_convert(struct acc_option *option);
 int acc_benchmark_run(struct acc_option *option);
+void print_benchmark_help(void);
 
 #endif /* UADK_BENCHMARK_H */

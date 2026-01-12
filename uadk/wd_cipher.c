@@ -62,11 +62,12 @@ struct wd_cipher_sess {
 	enum wd_cipher_alg	alg;
 	enum wd_cipher_mode	mode;
 	wd_dev_mask_t		*dev_mask;
-	struct wd_alg_cipher	*drv;
 	void			*priv;
-	unsigned char		key[MAX_CIPHER_KEY_SIZE];
+	unsigned char		*key;
 	__u32			key_bytes;
 	void			*sched_key;
+	struct wd_mm_ops	mm_ops;
+	enum wd_mem_type	mm_type;
 };
 
 struct wd_env_config wd_cipher_env_config;
@@ -77,6 +78,7 @@ static void wd_cipher_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_cipher_setting.dlh_list);
+		wd_cipher_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -250,6 +252,31 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	return 0;
 }
 
+static int cipher_setup_memory_and_buffers(struct wd_cipher_sess *sess,
+					   struct wd_cipher_sess_setup *setup)
+{
+	int ret;
+
+	ret = wd_mem_ops_init(wd_cipher_setting.config.ctxs[0].ctx,
+			      &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("cipher failed to init memory ops!\n");
+		return ret;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+
+	sess->key = sess->mm_ops.alloc(sess->mm_ops.usr, MAX_CIPHER_KEY_SIZE);
+	if (!sess->key) {
+		WD_ERR("cipher failed to alloc key memory!\n");
+		return -WD_ENOMEM;
+	}
+	memset(sess->key, 0, MAX_CIPHER_KEY_SIZE);
+
+	return 0;
+}
+
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
@@ -270,31 +297,35 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 	if (setup->alg >= WD_CIPHER_ALG_TYPE_MAX ||
 	     setup->mode >= WD_CIPHER_MODE_TYPE_MAX) {
 		WD_ERR("failed to check algorithm!\n");
-		goto err_sess;
+		goto free_sess;
 	}
 
 	sess->alg_name = wd_cipher_alg_name[setup->alg][setup->mode];
 	ret = wd_drv_alg_support(sess->alg_name, wd_cipher_setting.driver);
 	if (!ret) {
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
-		goto err_sess;
+		goto free_sess;
 	}
 	sess->alg = setup->alg;
 	sess->mode = setup->mode;
+
+	/* Memory type set */
+	if (cipher_setup_memory_and_buffers(sess, setup))
+		goto free_sess;
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_cipher_setting.sched.sched_init(
 		wd_cipher_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		goto free_key;
 	}
 
 	return (handle_t)sess;
 
-err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
+free_key:
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
+free_sess:
 	free(sess);
 	return (handle_t)0;
 }
@@ -309,6 +340,7 @@ void wd_cipher_free_sess(handle_t h_sess)
 	}
 
 	wd_memset_zero(sess->key, sess->key_bytes);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -330,6 +362,7 @@ static int wd_cipher_common_init(struct wd_ctx_config *config,
 	if (ret < 0)
 		return ret;
 
+	wd_cipher_setting.config.alg_name = "cipher";
 	ret = wd_init_ctx_config(&wd_cipher_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -478,7 +511,7 @@ int wd_cipher_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_p
 			goto out_driver;
 		}
 
-		wd_cipher_init_attrs.alg = alg;
+		(void)strcpy(wd_cipher_init_attrs.alg, alg);
 		wd_cipher_init_attrs.sched_type = sched_type;
 		wd_cipher_init_attrs.driver = wd_cipher_setting.driver;
 		wd_cipher_init_attrs.ctx_params = &cipher_ctx_params;
@@ -524,7 +557,6 @@ void wd_cipher_uninit2(void)
 	wd_alg_attrs_uninit(&wd_cipher_init_attrs);
 	wd_alg_drv_unbind(wd_cipher_setting.driver);
 	wd_cipher_close_driver(WD_TYPE_V2);
-	wd_cipher_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_cipher_setting.status);
 }
 
@@ -547,6 +579,8 @@ static void fill_request_msg(struct wd_cipher_msg *msg,
 	msg->iv = req->iv;
 	msg->iv_bytes = req->iv_bytes;
 	msg->data_fmt = req->data_fmt;
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
 }
 
 static int cipher_iv_len_check(struct wd_cipher_req *req,
@@ -790,8 +824,9 @@ struct wd_cipher_msg *wd_cipher_get_msg(__u32 idx, __u32 tag)
 int wd_cipher_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+	struct wd_cipher_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_cipher_msg resp_msg, *msg;
+	struct wd_cipher_msg *msg;
 	struct wd_cipher_req *req;
 	__u64 recv_count = 0;
 	__u32 tmp = expt;

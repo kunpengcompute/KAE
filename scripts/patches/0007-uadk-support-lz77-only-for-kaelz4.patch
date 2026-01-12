@@ -1,59 +1,58 @@
-diff --git a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
-index 8497ebc..d35c9c1 100644
---- a/uadk/v1/drv/hisi_zip_udrv.c
-+++ b/uadk/v1/drv/hisi_zip_udrv.c
-@@ -368,9 +368,17 @@ static int fill_zip_comp_alg_zstd(void *ssqe, struct wcrypto_comp_msg *msg)
+diff -urN a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
+--- a/uadk/v1/drv/hisi_zip_udrv.c	2025-12-30 17:24:27.863920800 +0800
++++ b/uadk/v1/drv/hisi_zip_udrv.c	2025-12-30 17:00:37.472007700 +0800
+@@ -472,9 +472,17 @@
  	struct hisi_zip_sqe_v3 *sqe = ssqe;
  
  	if (msg->comp_lv == WCRYPTO_COMP_L9) {
 -		sqe->dw9 = HW_LZ77_ZSTD_PRICE;
 +		if (msg->alg_type == WCRYPTO_LZ77_ONLY) {
-+			sqe->dw9 = HW_LZ77_ZSTD_NOREPCODE;
-+		} else {
-+			sqe->dw9 = HW_LZ77_ZSTD_PRICE;
-+		}
++ 			sqe->dw9 = HW_LZ77_ZSTD_NOREPCODE;
++ 		} else {
++ 			sqe->dw9 = HW_LZ77_ZSTD_PRICE;
++ 		}
  	} else if (msg->comp_lv == WCRYPTO_COMP_L8 || msg->comp_lv == 0) {
 -		sqe->dw9 = HW_LZ77_ZSTD;
 +		if (msg->alg_type == WCRYPTO_LZ77_ONLY) {
-+			sqe->dw9 = HW_LZ77_ZSTD_PRICE_NOREPCODE;
-+		} else {
-+			sqe->dw9 = HW_LZ77_ZSTD;
-+		}
++ 			sqe->dw9 = HW_LZ77_ZSTD_PRICE_NOREPCODE;
++ 		} else {
++ 			sqe->dw9 = HW_LZ77_ZSTD;
++ 		}
  	} else {
  		WD_ERR("The compress level is invalid!\n");
  		return -WD_EINVAL;
-@@ -614,6 +622,13 @@ static struct zip_fill_sqe_ops ops[] = { {
+@@ -739,7 +747,14 @@
  		.fill_sqe_window_size = fill_zip_window_size,
  		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
  		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
+-	},
 +	}, { // WCRYPTO_LZ77_ONLY
-+		.alg_type = "lz77_only",
-+		.fill_sqe_alg = fill_zip_comp_alg_zstd,
-+		.fill_sqe_buffer_size = fill_zip_buffer_size_zstd,
-+		.fill_sqe_window_size = fill_zip_window_size,
-+		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
-+		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
- 	},
++ 		.alg_type = "lz77_only",
++ 		.fill_sqe_alg = fill_zip_comp_alg_zstd,
++ 		.fill_sqe_buffer_size = fill_zip_buffer_size_zstd,
++ 		.fill_sqe_window_size = fill_zip_window_size,
++ 		.fill_sqe_addr = fill_zip_addr_lz77_zstd,
++ 		.fill_sqe_hw_info = fill_zip_sqe_hw_info_lz77_zstd,
++ 	},
  };
  
-diff --git a/uadk/v1/drv/hisi_zip_udrv.h b/uadk/v1/drv/hisi_zip_udrv.h
-index c93b01a..6389372 100644
---- a/uadk/v1/drv/hisi_zip_udrv.h
-+++ b/uadk/v1/drv/hisi_zip_udrv.h
-@@ -25,6 +25,8 @@ enum hw_comp_alg_type {
+ int qm_fill_zip_sqe_v3(void *smsg, struct qm_queue_info *info, __u16 i)
+diff -urN a/uadk/v1/drv/hisi_zip_udrv.h b/uadk/v1/drv/hisi_zip_udrv.h
+--- a/uadk/v1/drv/hisi_zip_udrv.h	2025-12-30 17:23:16.327225500 +0800
++++ b/uadk/v1/drv/hisi_zip_udrv.h	2025-12-30 16:34:42.141062700 +0800
+@@ -25,6 +25,8 @@
  	HW_GZIP,
  	HW_LZ77_ZSTD_PRICE = 0x42,
  	HW_LZ77_ZSTD,
 +	HW_LZ77_ZSTD_PRICE_NOREPCODE = 0x40,
-+	HW_LZ77_ZSTD_NOREPCODE,
++ 	HW_LZ77_ZSTD_NOREPCODE,
  };
  
  enum hw_zip_cipher_alg_type {
-diff --git a/uadk/v1/wd_comp.h b/uadk/v1/wd_comp.h
-index 4c84ea3..61e3db1 100644
---- a/uadk/v1/wd_comp.h
-+++ b/uadk/v1/wd_comp.h
-@@ -70,6 +70,7 @@ enum wcrypto_comp_alg_type {
+diff -urN a/uadk/v1/wd_comp.h b/uadk/v1/wd_comp.h
+--- a/uadk/v1/wd_comp.h	2025-12-30 17:25:17.232952000 +0800
++++ b/uadk/v1/wd_comp.h	2025-12-30 16:35:10.701955000 +0800
+@@ -70,6 +70,7 @@
  	WCRYPTO_GZIP,
  	WCRYPTO_RAW_DEFLATE,
  	WCRYPTO_LZ77_ZSTD,
@@ -61,15 +60,3 @@ index 4c84ea3..61e3db1 100644
  	WCRYPTO_COMP_MAX_ALG,
  };
  
-diff --git a/uadk/wd_util.c b/uadk/wd_util.c
-index 93249a3..64ad157 100644
---- a/uadk/wd_util.c
-+++ b/uadk/wd_util.c
-@@ -106,6 +106,7 @@ static struct acc_alg_item alg_options[] = {
- 	{"gzip", "gzip"},
- 	{"deflate", "deflate"},
- 	{"lz77_zstd", "lz77_zstd"},
-+	{"lz77_only", "lz77_zstd"},
- 	{"hashagg", "hashagg"},
- 
- 	{"rsa", "rsa"},
