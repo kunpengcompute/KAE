@@ -1,22 +1,26 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <numa.h>
+#include <math.h>
 #include "uadk_benchmark.h"
 
 #include "zip_uadk_benchmark.h"
 #include "include/wd_comp.h"
 #include "include/wd_sched.h"
+#include "include/wd_bmm.h"
 #include "include/fse.h"
 
 #define ZIP_TST_PRT			printf
 #define PATH_SIZE			64
+#define ALIGN_SIZE			64
+#define BLOCK_NUM			64
 #define ZIP_FILE			"./zip"
 #define COMP_LEN_RATE			2
 #define DECOMP_LEN_RATE			2
 #define MAX_POOL_LENTH_COMP		1
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define CHUNK_SIZE			(128 * 1024)
-#define MAX_UNRECV_PACKET_NUM		2
+#define MAX_UNRECV_PACKET_NUM		1
 struct uadk_bd {
 	u8 *src;
 	u8 *dst;
@@ -30,6 +34,7 @@ struct bd_pool {
 
 struct thread_pool {
 	struct bd_pool *pool;
+	void *rsv_pool;
 } g_zip_pool;
 
 enum ZIP_OP_MODE {
@@ -62,6 +67,7 @@ typedef struct uadk_thread_res {
 	struct zip_async_tag *tag;
 	COMP_TUPLE_TAG *ftuple;
 	char *hw_buff_out;
+	int mm_type;
 } thread_data;
 
 struct zip_file_head {
@@ -78,6 +84,8 @@ static unsigned int g_ctxnum;
 static unsigned int g_pktlen;
 static unsigned int g_prefetch;
 static unsigned int g_state;
+static unsigned int g_dev_id;
+static unsigned int g_data_fmt;
 
 #ifndef ZLIB_FSE
 static ZSTD_CCtx* zstd_soft_fse_init(unsigned    int level)
@@ -169,8 +177,15 @@ fd_error:
 static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 {
 	struct zip_file_head *fhead = NULL;
+	struct wd_datalist *src_curr = NULL;
+	struct wd_datalist *dst_curr = NULL;
 	char file_path[PATH_SIZE];
+	size_t total_read = 0;
+	size_t total_len = 0;
+	size_t remaining = 0;
 	ssize_t size = 0xff;
+	size_t copied = 0;
+	size_t len = 0;
 	int i, j, fd;
 	int ret;
 
@@ -210,30 +225,63 @@ static int load_file_data(const char *alg, u32 pkg_len, u32 optype)
 
 	// read data for one buffer one buffer from file line
 	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-		memset(g_zip_pool.pool[0].bds[j].src, 0x0,
-			g_zip_pool.pool[0].bds[j].src_len);
-		if (size != 0) { // zero size buffer no need to read;
-			size = read(fd, g_zip_pool.pool[0].bds[j].src,
-					fhead->blk_sz[j]);
-			if (size < 0) {
-				ZIP_TST_PRT("Decompress read data error size: %lu!\n", size);
-				ret = -EINVAL;
-				goto read_err;
-			} else if (size == 0) {
-				ZIP_TST_PRT("Read file to the end!");
+		if (g_data_fmt == 0) {
+			if (fhead->blk_sz[j] != 0) {
+				size = read(fd, g_zip_pool.pool[0].bds[j].src, fhead->blk_sz[j]);
+				if (size < 0) {
+					ZIP_TST_PRT("Decompress read data error size: %ld!\n", size);
+					ret = -EINVAL;
+					goto read_err;
+				}
+				g_zip_pool.pool[0].bds[j].src_len = size;
+			} else {
+				g_zip_pool.pool[0].bds[j].src_len = 0;
 			}
+		} else {
+			src_curr = (struct wd_datalist *)g_zip_pool.pool[0].bds[j].src;
+			remaining = fhead->blk_sz[j];
+			total_read = 0;
+			while (src_curr && remaining > 0) {
+				len = fmin(remaining, src_curr->len);
+				size = read(fd, src_curr->data, len);
+				if (size < 0) {
+					ZIP_TST_PRT("Decompress read data error at block %d!\n", j);
+					ret = -EINVAL;
+					goto read_err;
+				}
+				total_read += size;
+				remaining -= size;
+				src_curr = src_curr->next;
+			}
+			g_zip_pool.pool[0].bds[j].src_len = total_read;
 		}
-		g_zip_pool.pool[0].bds[j].src_len = size;
 	}
 
 	for (i = 1; i < g_thread_num; i++) {
 		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-			if (g_zip_pool.pool[0].bds[j].src_len)
+			if (g_zip_pool.pool[0].bds[j].src_len == 0)
+				continue;
+
+			if (g_data_fmt == 0) {
 				memcpy(g_zip_pool.pool[i].bds[j].src,
 					g_zip_pool.pool[0].bds[j].src,
 					g_zip_pool.pool[0].bds[j].src_len);
-			g_zip_pool.pool[i].bds[j].src_len =
-				g_zip_pool.pool[0].bds[j].src_len;
+				g_zip_pool.pool[i].bds[j].src_len = g_zip_pool.pool[0].bds[j].src_len;
+			} else {
+				src_curr = (struct wd_datalist *)g_zip_pool.pool[0].bds[j].src;
+				dst_curr = (struct wd_datalist *)g_zip_pool.pool[i].bds[j].src;
+				total_len = g_zip_pool.pool[0].bds[j].src_len;
+				copied = 0;
+				while (src_curr && dst_curr && copied < total_len) {
+					len = fmin(src_curr->len, dst_curr->len);
+					len = fmin(len, total_len - copied);
+					memcpy(dst_curr->data, src_curr->data, len);
+					copied += len;
+					src_curr = src_curr->next;
+					dst_curr = dst_curr->next;
+				}
+				g_zip_pool.pool[i].bds[j].src_len = total_len;
+			}
 		}
 	}
 
@@ -275,6 +323,18 @@ static int zip_uadk_param_parse(thread_data *tddata, struct acc_option *options)
 		alg = WD_LZ77_ZSTD;
 		if (optype == WD_DIR_DECOMPRESS)
 			ZIP_TST_PRT("Zip LZ77_ZSTD just support compress!\n");
+		optype = WD_DIR_COMPRESS;
+		break;
+	case LZ4:
+		alg = WD_LZ4;
+		if (optype == WD_DIR_DECOMPRESS)
+			ZIP_TST_PRT("Zip LZ4 just support compress!\n");
+		optype = WD_DIR_COMPRESS;
+		break;
+	case LZ77_ONLY:
+		alg = WD_LZ77_ONLY;
+		if (optype == WD_DIR_DECOMPRESS)
+			ZIP_TST_PRT("Zip LZ77_ONLY just support compress!\n");
 		optype = WD_DIR_COMPRESS;
 		break;
 	default:
@@ -336,7 +396,10 @@ static int init_ctx_config2(struct acc_option *options)
 	}
 
 	/* init */
-	ret = wd_comp_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+	if (options->mem_type == UADK_AUTO)
+		ret = wd_comp_init2_(alg_name, SCHED_POLICY_RR, TASK_HW, &cparams);
+	else
+		ret = wd_comp_init2_(alg_name, SCHED_POLICY_DEV, TASK_HW, &cparams);
 	if (ret) {
 		ZIP_TST_PRT("failed to do comp init2!\n");
 		return ret;
@@ -407,6 +470,7 @@ static int specified_device_request_ctx(struct acc_option *options)
 		g_ctx_cfg.ctxs[i].op_type = options->optype % WD_DIR_MAX;
 		g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 	}
+	g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 
 	wd_free_list_accels(list);
 	return 0;
@@ -449,6 +513,7 @@ static int non_specified_device_request_ctx(struct acc_option *options)
 			g_ctx_cfg.ctxs[i].op_type = options->optype % WD_DIR_MAX;
 			g_ctx_cfg.ctxs[i].ctx_mode = (__u8)mode;
 		}
+		g_dev_id = uadk_parse_dev_id(dev->char_dev_path);
 
 		free(dev);
 	}
@@ -490,7 +555,10 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_ctxs;
 	}
 
-	g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, max_node, wd_comp_poll_ctx);
+	if (options->mem_type == UADK_AUTO)
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_RR, 2, max_node, wd_comp_poll_ctx);
+	else
+		g_sched = wd_sched_rr_alloc(SCHED_POLICY_DEV, 2, max_node, wd_comp_poll_ctx);
 	if (!g_sched) {
 		ZIP_TST_PRT("failed to alloc sched!\n");
 		ret = -ENOMEM;
@@ -508,6 +576,7 @@ static int init_ctx_config(struct acc_option *options)
 	param.mode = mode;
 	param.begin = 0;
 	param.end = g_ctxnum - 1;
+	param.dev_id = g_dev_id;
 	ret = wd_sched_rr_instance(g_sched, &param);
 	if (ret) {
 		ZIP_TST_PRT("failed to fill sched data!\n");
@@ -548,8 +617,98 @@ static void uninit_ctx_config(void)
 	wd_sched_rr_release(g_sched);
 }
 
+/*
+ * Calculate SGL unit size.
+ */
+static inline size_t cal_unit_sz(size_t sz)
+{
+	return (sz + SGL_ALIGNED_BYTES - 1) & ~(SGL_ALIGNED_BYTES - 1);
+}
+
+/*
+ * Create SGL or common memory buffer.
+ */
+static void *create_buf(int sgl, size_t sz, size_t unit_sz)
+{
+	struct wd_datalist *head, *p, *q;
+	int i, tail_sz, sgl_num;
+	void *buf;
+
+	buf = malloc(sz);
+	if (!buf) {
+		ZIP_TST_PRT("Fail to allocate buffer %ld size!\n", sz);
+		return NULL;
+	}
+
+	memset_buf(buf, sz);
+
+	if (sgl == WD_FLAT_BUF)
+		return buf;
+
+	if (sz == g_pktlen) {
+		get_rand_data(buf, sz * COMPRESSION_RATIO_FACTOR);
+	} else {
+		if (g_prefetch)
+			get_rand_data(buf, sz);
+	}
+	tail_sz = sz % unit_sz;
+	sgl_num = sz / unit_sz;	/* the number with unit_sz bytes */
+
+	/* the additional slot is for tail_sz */
+	head = calloc(sgl_num + 1, sizeof(struct wd_datalist));
+	if (!head) {
+		ZIP_TST_PRT("Fail to allocate memory for SGL head!\n");
+		goto out;
+	}
+
+	q = NULL;
+	for (i = 0; i < sgl_num; i++) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = unit_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (tail_sz) {
+		p = &head[i];
+		p->data = buf + i * unit_sz;
+		p->len = tail_sz;
+		if (q)
+			q->next = p;
+		q = p;
+	}
+
+	if (q)
+		q->next = NULL;
+
+	return head;
+out:
+	free(buf);
+	return NULL;
+}
+
+static void free_buf(int sgl, void *buf)
+{
+	struct wd_datalist *p;
+
+	if (!buf)
+		return;
+	if (sgl == WD_FLAT_BUF) {
+		free(buf);
+		return;
+	}
+	p = (struct wd_datalist *)buf;
+	/* free the whole data buffer of SGL */
+	free(p->data);
+	/* free SGL headers */
+	free(buf);
+}
+
 static int init_uadk_bd_pool(u32 optype)
 {
+	int unit_sz;
 	u32 outsize;
 	u32 insize;
 	int i, j;
@@ -564,29 +723,33 @@ static int init_uadk_bd_pool(u32 optype)
 		outsize = g_pktlen * DECOMP_LEN_RATE;
 	}
 
-	g_zip_pool.pool = malloc(g_thread_num * sizeof(struct bd_pool));
+	g_zip_pool.pool = calloc(1, g_thread_num * sizeof(struct bd_pool));
 	if (!g_zip_pool.pool) {
 		ZIP_TST_PRT("init uadk pool alloc thread failed!\n");
 		return -ENOMEM;
-	} else {
-		for (i = 0; i < g_thread_num; i++) {
-			g_zip_pool.pool[i].bds = malloc(MAX_POOL_LENTH_COMP *
-							 sizeof(struct uadk_bd));
-			if (!g_zip_pool.pool[i].bds) {
-				ZIP_TST_PRT("init uadk bds alloc failed!\n");
-				goto malloc_error1;
-			}
-			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-				g_zip_pool.pool[i].bds[j].src = calloc(1, insize);
-				if (!g_zip_pool.pool[i].bds[j].src)
-					goto malloc_error2;
-				g_zip_pool.pool[i].bds[j].src_len = insize;
+	}
 
-				g_zip_pool.pool[i].bds[j].dst = malloc(outsize);
-				if (!g_zip_pool.pool[i].bds[j].dst)
-					goto malloc_error3;
-				g_zip_pool.pool[i].bds[j].dst_len = outsize;
+	for (i = 0; i < g_thread_num; i++) {
+		g_zip_pool.pool[i].bds = calloc(1, MAX_POOL_LENTH_COMP *
+						sizeof(struct uadk_bd));
+		if (!g_zip_pool.pool[i].bds) {
+			ZIP_TST_PRT("init uadk bds alloc failed!\n");
+			goto malloc_error1;
+		}
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+			unit_sz = cal_unit_sz(insize);
+			g_zip_pool.pool[i].bds[j].src = create_buf(g_data_fmt, insize, unit_sz);
+			if (!g_zip_pool.pool[i].bds[j].src)
+				goto malloc_error2;
+			g_zip_pool.pool[i].bds[j].src_len = insize;
 
+			unit_sz = cal_unit_sz(outsize);
+			g_zip_pool.pool[i].bds[j].dst = create_buf(g_data_fmt, outsize, unit_sz);
+			if (!g_zip_pool.pool[i].bds[j].dst)
+				goto malloc_error3;
+			g_zip_pool.pool[i].bds[j].dst_len = outsize;
+
+			if (g_data_fmt == WD_FLAT_BUF) {
 				get_rand_data(g_zip_pool.pool[i].bds[j].src, insize * COMPRESSION_RATIO_FACTOR);
 				if (g_prefetch)
 					get_rand_data(g_zip_pool.pool[i].bds[j].dst, outsize);
@@ -597,17 +760,17 @@ static int init_uadk_bd_pool(u32 optype)
 	return 0;
 
 malloc_error3:
-	free(g_zip_pool.pool[i].bds[j].src);
+	free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
 malloc_error2:
 	for (j--; j >= 0; j--) {
-		free(g_zip_pool.pool[i].bds[j].src);
-		free(g_zip_pool.pool[i].bds[j].dst);
+		free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+		free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 	}
 malloc_error1:
 	for (i--; i >= 0; i--) {
 		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-			free(g_zip_pool.pool[i].bds[j].src);
-			free(g_zip_pool.pool[i].bds[j].dst);
+			free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+			free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 		}
 		free(g_zip_pool.pool[i].bds);
 		g_zip_pool.pool[i].bds = NULL;
@@ -626,8 +789,8 @@ static void free_uadk_bd_pool(void)
 	for (i = 0; i < g_thread_num; i++) {
 		if (g_zip_pool.pool[i].bds) {
 			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-				free(g_zip_pool.pool[i].bds[j].src);
-				free(g_zip_pool.pool[i].bds[j].dst);
+				free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].src);
+				free_buf(g_data_fmt, g_zip_pool.pool[i].bds[j].dst);
 			}
 		}
 		free(g_zip_pool.pool[i].bds);
@@ -635,6 +798,131 @@ static void free_uadk_bd_pool(void)
 	}
 	free(g_zip_pool.pool);
 	g_zip_pool.pool = NULL;
+}
+
+static int init_uadk_rsv_pool(struct acc_option *option)
+{
+	struct wd_mempool_setup pool_setup;
+	char *alg = option->algclass;
+	u32 insize = g_pktlen;
+	handle_t h_ctx;
+	u32 outsize;
+	int i, j;
+
+	h_ctx = wd_find_ctx(alg);
+	if (!h_ctx) {
+		ZIP_TST_PRT("failed to find a ctx for alg: %s\n", option->algname);
+		return -EINVAL;
+	}
+	g_ctx_cfg.priv = (void *)h_ctx;
+
+	if (option->algtype != LZ77_ZSTD)
+		outsize = g_pktlen + ALIGN_SIZE;
+	else
+		outsize = g_pktlen * DECOMP_LEN_RATE;
+
+	pool_setup.block_size = outsize > CHUNK_SIZE ? outsize : CHUNK_SIZE;
+	pool_setup.block_num = g_thread_num * MAX_POOL_LENTH_COMP * BLOCK_NUM;
+	pool_setup.align_size = ALIGN_SIZE;
+	pool_setup.ops.alloc = NULL;
+	pool_setup.ops.free = NULL;
+	g_zip_pool.rsv_pool = wd_mempool_alloc(h_ctx, &pool_setup);
+	if (!g_zip_pool.rsv_pool) {
+		ZIP_TST_PRT("failed to create block pool\n");
+		return -ENOMEM;
+	}
+
+	pool_setup.ops.alloc = (void *)wd_mem_alloc;
+	pool_setup.ops.free = (void *)wd_mem_free;
+	pool_setup.ops.iova_map = (void *)wd_mem_map;
+	pool_setup.ops.iova_unmap = (void *)wd_mem_unmap;
+	pool_setup.ops.get_bufsize = (void *)wd_get_bufsize;
+	pool_setup.ops.usr = g_zip_pool.rsv_pool;
+
+	g_zip_pool.pool = calloc(1, g_thread_num * sizeof(struct bd_pool));
+	if (!g_zip_pool.pool) {
+		ZIP_TST_PRT("init uadk pool alloc thread failed!\n");
+		goto free_pool;
+	}
+
+	for (i = 0; i < g_thread_num; i++) {
+		g_zip_pool.pool[i].bds = calloc(1, MAX_POOL_LENTH_COMP * sizeof(struct uadk_bd));
+		if (!g_zip_pool.pool[i].bds) {
+			ZIP_TST_PRT("init uadk bds alloc failed!\n");
+			goto malloc_error1;
+		}
+
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+			g_zip_pool.pool[i].bds[j].src = wd_mem_alloc(g_zip_pool.rsv_pool, insize);
+			if (!g_zip_pool.pool[i].bds[j].src) {
+				ZIP_TST_PRT("Failed to alloc src block\n");
+				goto malloc_error2;
+			}
+			g_zip_pool.pool[i].bds[j].src_len = insize;
+
+			g_zip_pool.pool[i].bds[j].dst = wd_mem_alloc(g_zip_pool.rsv_pool, outsize);
+			if (!g_zip_pool.pool[i].bds[j].dst) {
+				ZIP_TST_PRT("Failed to alloc dst block\n");
+				goto malloc_error3;
+			}
+			g_zip_pool.pool[i].bds[j].dst_len = outsize;
+
+			get_rand_data(g_zip_pool.pool[i].bds[j].src, insize * COMPRESSION_RATIO_FACTOR);
+			if (g_prefetch)
+				get_rand_data(g_zip_pool.pool[i].bds[j].dst, outsize);
+		}
+	}
+
+	return 0;
+
+malloc_error3:
+	wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].src);
+
+malloc_error2:
+	for (j--; j >= 0; j--) {
+		wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].src);
+		wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].dst);
+	}
+malloc_error1:
+	for (i--; i >= 0; i--) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+			wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].src);
+			wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].dst);
+		}
+		free(g_zip_pool.pool[i].bds);
+		g_zip_pool.pool[i].bds = NULL;
+	}
+	free(g_zip_pool.pool);
+	g_zip_pool.pool = NULL;
+
+free_pool:
+	wd_mempool_free(h_ctx, g_zip_pool.rsv_pool);
+	g_zip_pool.rsv_pool = NULL;
+
+	ZIP_TST_PRT("init uadk bd pool alloc failed!\n");
+	return -ENOMEM;
+}
+
+static void free_uadk_rsv_pool(struct acc_option *option)
+{
+	handle_t h_ctx = (handle_t)g_ctx_cfg.priv;
+	int i, j;
+
+	for (i = 0; i < g_thread_num; i++) {
+		if (g_zip_pool.pool[i].bds) {
+			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+				wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].src);
+				wd_mem_free(g_zip_pool.rsv_pool, g_zip_pool.pool[i].bds[j].dst);
+			}
+		}
+		free(g_zip_pool.pool[i].bds);
+		g_zip_pool.pool[i].bds = NULL;
+	}
+	free(g_zip_pool.pool);
+	g_zip_pool.pool = NULL;
+
+	wd_mempool_free(h_ctx, g_zip_pool.rsv_pool);
+	g_zip_pool.rsv_pool = NULL;
 }
 
 /*-------------------------------uadk benchmark main code-------------------------------------*/
@@ -736,6 +1024,7 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
 	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
+	struct sched_params sc_param = {0};
 	ZSTD_inBuffer zstd_input = {0};
 	ZSTD_outBuffer zstd_output = {0};
 	COMP_TUPLE_TAG *ftuple = NULL;
@@ -756,11 +1045,25 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -770,14 +1073,17 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
 	if (!ftuple)
 		goto fse_err;
 
-	hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
+	if (pdata->mm_type == UADK_MEM_AUTO)
+		hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
+	else
+		hw_buff_out = wd_mem_alloc(g_zip_pool.rsv_pool, out_len * MAX_POOL_LENTH_COMP);
 	if (!hw_buff_out)
 		goto hw_buff_err;
 	memset(hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
@@ -811,7 +1117,10 @@ static void *zip_uadk_blk_lz77_sync_run(void *arg)
 	}
 
 hw_buff_err:
-	free(hw_buff_out);
+	if (pdata->mm_type == UADK_MEM_AUTO)
+		free(hw_buff_out);
+	else
+		wd_mem_free(g_zip_pool.rsv_pool, hw_buff_out);
 fse_err:
 	free(ftuple);
 	wd_comp_free_sess(h_sess);
@@ -829,6 +1138,7 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct sched_params sc_param = {0};
 	COMP_TUPLE_TAG *ftuple = NULL;
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
@@ -846,11 +1156,25 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -859,7 +1183,7 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	ftuple = malloc(sizeof(COMP_TUPLE_TAG) * MAX_POOL_LENTH_COMP);
@@ -875,10 +1199,15 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 
 		while (in_len > 0) {
 			creq.src_len = in_len > CHUNK_SIZE ? CHUNK_SIZE : in_len;
-			creq.dst_len = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
+			creq.dst_len = out_len > creq.src_len * 2 ? creq.src_len * 2 : out_len;
 			creq.src = src;
 			creq.dst = dst;
 			creq.priv = &ftuple[i];
+
+			if (creq.op_type == WD_DIR_COMPRESS) {
+				if (in_len <= CHUNK_SIZE)
+					creq.last = 1;
+			}
 
 			ret = wd_do_comp_strm(h_sess, &creq);
 			if (ret < 0 || creq.status == WD_IN_EPARA) {
@@ -887,12 +1216,13 @@ static void *zip_uadk_stm_lz77_sync_run(void *arg)
 				break;
 			}
 
-			src += CHUNK_SIZE;
-			in_len -= CHUNK_SIZE;
-			dst += 2 * CHUNK_SIZE;
-			out_len -= 2 * CHUNK_SIZE;
+			src += creq.src_len;
+			in_len -= creq.src_len;
+			dst += creq.dst_len;
+			out_len -= creq.dst_len;
 		}
 
+		wd_comp_reset_sess(h_sess);
 		count++;
 
 		if (get_run_state() == 0)
@@ -914,6 +1244,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
 	ZSTD_CCtx *cctx = zstd_soft_fse_init(15);
+	struct sched_params sc_param = {0};
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -929,11 +1260,25 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -943,7 +1288,7 @@ static void *zip_uadk_blk_lz77_async_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = zip_lz77_async_cb;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.status = 0;
 
 	while(1) {
@@ -989,6 +1334,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct sched_params sc_param = {0};
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -1003,11 +1349,25 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -1017,7 +1377,7 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1049,6 +1409,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct sched_params sc_param = {0};
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -1063,11 +1424,25 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -1077,7 +1452,7 @@ static void *zip_uadk_stm_sync_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = NULL;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1113,6 +1488,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 {
 	thread_data *pdata = (thread_data *)arg;
 	struct wd_comp_sess_setup comp_setup = {0};
+	struct sched_params sc_param = {0};
 	struct bd_pool *uadk_pool;
 	struct wd_comp_req creq;
 	handle_t h_sess;
@@ -1128,11 +1504,25 @@ static void *zip_uadk_blk_async_run(void *arg)
 	memset(&comp_setup, 0, sizeof(comp_setup));
 	memset(&creq, 0, sizeof(creq));
 
+	sc_param.numa_id = param.numa_id;
+	sc_param.type = param.type;
+	sc_param.mode = param.mode;
+	sc_param.begin = param.begin;
+	sc_param.end = param.end;
+	if (g_zip_pool.rsv_pool)
+		sc_param.dev_id = wd_get_dev_id(g_zip_pool.rsv_pool);
+
 	comp_setup.alg_type = pdata->alg;
 	comp_setup.op_type = pdata->optype;
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
-	comp_setup.sched_param = &param;
+	comp_setup.sched_param = &sc_param;
+	comp_setup.mm_type = pdata->mm_type;
+	comp_setup.mm_ops.alloc = (void *)wd_mem_alloc;
+	comp_setup.mm_ops.free = (void *)wd_mem_free;
+	comp_setup.mm_ops.iova_map = (void *)wd_mem_map;
+	comp_setup.mm_ops.iova_unmap = (void *)wd_mem_unmap;
+	comp_setup.mm_ops.usr = g_zip_pool.rsv_pool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -1142,7 +1532,7 @@ static void *zip_uadk_blk_async_run(void *arg)
 	out_len = uadk_pool->bds[0].dst_len;
 
 	creq.cb = zip_async_cb;
-	creq.data_fmt = 0;
+	creq.data_fmt = g_data_fmt;
 	creq.priv = 0;
 	creq.status = 0;
 
@@ -1200,12 +1590,12 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 
 	threads_option.optype = options->optype;
 	if (threads_option.mode == 1) {// stream mode
-		if (threads_option.alg == LZ77_ZSTD)
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 			uadk_zip_sync_run = zip_uadk_stm_lz77_sync_run;
 		else
 			uadk_zip_sync_run = zip_uadk_stm_sync_run;
 	} else {
-		if (threads_option.alg == LZ77_ZSTD)
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 			uadk_zip_sync_run = zip_uadk_blk_lz77_sync_run;
 		else
 			uadk_zip_sync_run = zip_uadk_blk_sync_run;
@@ -1216,6 +1606,7 @@ static int zip_uadk_sync_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].win_sz = threads_option.win_sz;
 		threads_args[i].comp_lv = threads_option.comp_lv;
+		threads_args[i].mm_type = options->mem_type;
 		threads_args[i].td_id = i;
 		ret = pthread_create(&tdid[i], NULL, uadk_zip_sync_run, &threads_args[i]);
 		if (ret) {
@@ -1257,7 +1648,7 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		return 0;
 	}
 
-	if (threads_option.alg == LZ77_ZSTD)
+	if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY)
 		uadk_zip_async_run = zip_uadk_blk_lz77_async_run;
 	else
 		uadk_zip_async_run = zip_uadk_blk_async_run;
@@ -1281,8 +1672,9 @@ static int zip_uadk_async_threads(struct acc_option *options)
 		threads_args[i].optype = threads_option.optype;
 		threads_args[i].win_sz = threads_option.win_sz;
 		threads_args[i].comp_lv = threads_option.comp_lv;
+		threads_args[i].mm_type = options->mem_type;
 		threads_args[i].td_id = i;
-		if (threads_option.alg == LZ77_ZSTD) {
+		if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY) {
 			struct bd_pool *uadk_pool = &g_zip_pool.pool[i];
 			u32 out_len = uadk_pool->bds[0].dst_len;
 
@@ -1293,11 +1685,15 @@ static int zip_uadk_async_threads(struct acc_option *options)
 				goto lz77_free;
 			}
 
-			threads_args[i].hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
+			if (options->mem_type == UADK_MEM_AUTO)
+				threads_args[i].hw_buff_out = malloc(out_len * MAX_POOL_LENTH_COMP);
+			else
+				threads_args[i].hw_buff_out = wd_mem_alloc(g_zip_pool.rsv_pool, out_len * MAX_POOL_LENTH_COMP);
 			if (!threads_args[i].hw_buff_out) {
 				ZIP_TST_PRT("failed to malloc lz77 hw_buff_out!\n");
 				goto lz77_free;
 			}
+
 			memset(threads_args[i].hw_buff_out, 0x0, out_len * MAX_POOL_LENTH_COMP);
 		}
 		threads_args[i].tag = malloc(sizeof(struct zip_async_tag) * MAX_POOL_LENTH_COMP);
@@ -1345,13 +1741,18 @@ tag_free:
 			free(threads_args[i].tag);
 	}
 lz77_free:
-	if (threads_option.alg == LZ77_ZSTD) {
+	if (threads_option.alg == WD_LZ77_ZSTD || threads_option.alg == WD_LZ77_ONLY) {
 		for (i = 0; i < g_thread_num; i++) {
 			if (threads_args[i].ftuple)
 				free(threads_args[i].ftuple);
 
-			if (threads_args[i].hw_buff_out)
-				free(threads_args[i].hw_buff_out);
+			if (threads_args[i].hw_buff_out) {
+				if (options->mem_type == UADK_MEM_AUTO)
+					free(threads_args[i].hw_buff_out);
+				else
+					wd_mem_free(g_zip_pool.rsv_pool,
+						    threads_args[i].hw_buff_out);
+			}
 		}
 	}
 async_error:
@@ -1368,6 +1769,7 @@ int zip_uadk_benchmark(struct acc_option *options)
 	g_pktlen = options->pktlen;
 	g_ctxnum = options->ctxnums;
 	g_prefetch = options->prefetch;
+	g_data_fmt = options->data_fmt;
 
 	if (options->optype >= WD_DIR_MAX * 2) {
 		ZIP_TST_PRT("ZIP optype error: %u\n", options->optype);
@@ -1381,7 +1783,11 @@ int zip_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	ret = init_uadk_bd_pool(options->optype);
+	if (options->mem_type == UADK_MEM_AUTO)
+		ret = init_uadk_bd_pool(options->optype);
+	else
+		ret = init_uadk_rsv_pool(options);
+
 	if (ret)
 		return ret;
 
@@ -1403,7 +1809,11 @@ int zip_uadk_benchmark(struct acc_option *options)
 	if (ret)
 		return ret;
 
-	free_uadk_bd_pool();
+	if (options->mem_type == UADK_MEM_AUTO)
+		free_uadk_bd_pool();
+	else
+		free_uadk_rsv_pool(options);
+
 	if (options->inittype == INIT2_TYPE)
 		uninit_ctx_config2();
 	else

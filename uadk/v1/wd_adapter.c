@@ -20,11 +20,11 @@
 
 #include "v1/wd_util.h"
 #include "v1/drv/hisi_qm_udrv.h"
-#include "v1/drv/hisi_rng_udrv.h"
 #include "v1/wd_adapter.h"
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
+#define WD_MAX_NOIOMMU_ID	2
 
 static const struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.hw_type = HISI_QM_API_VER_BASE WD_UACCE_API_VER_NOIOMMU_SUBFIX,
@@ -86,12 +86,6 @@ static const struct wd_drv_dio_if hw_dio_tbl[] = { {
 		.init_sgl = qm_init_hwsgl_mem,
 		.uninit_sgl = qm_uninit_hwsgl_mem,
 		.sgl_merge = qm_merge_hwsgl,
-	}, {
-		.hw_type = "hisi-trng-v2",
-		.open = rng_init_queue,
-		.close = rng_uninit_queue,
-		.send = rng_send,
-		.recv = rng_recv,
 	},
 };
 
@@ -100,19 +94,30 @@ static const struct wd_drv_dio_if hw_dio_tbl[] = { {
 int drv_open(struct wd_queue *q)
 {
 	struct q_info *qinfo = q->qinfo;
+	__u32 type_size = MAX_HW_TYPE;
+	char *type;
 	__u32 i;
 
 	/* try to find another device if the user driver is not available */
-	for (i = 0; i < MAX_HW_TYPE; i++) {
+	for (i = 0; i < type_size; i++) {
 		if (!strcmp(qinfo->hw_type,
 			hw_dio_tbl[i].hw_type)) {
 			qinfo->hw_type_id = i;
 			return hw_dio_tbl[qinfo->hw_type_id].open(q);
 		}
 	}
-	WD_ERR("No matched driver to use (%s)!\n", qinfo->hw_type);
-	errno = ENODEV;
-	return -ENODEV;
+
+	/*
+	 * If the device version is greater than the current version supported by wd,
+	 * use the latest version of wd.
+	 */
+	type = strstr(qinfo->hw_type, WD_UACCE_API_VER_NOIOMMU_SUBFIX);
+	if (!type)
+		qinfo->hw_type_id = i - 1;
+	else
+		qinfo->hw_type_id = WD_MAX_NOIOMMU_ID;
+
+	return hw_dio_tbl[qinfo->hw_type_id].open(q);
 }
 
 void drv_close(struct wd_queue *q)

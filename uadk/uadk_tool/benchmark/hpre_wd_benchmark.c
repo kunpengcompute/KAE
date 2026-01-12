@@ -447,7 +447,7 @@ static int init_hpre_wd_queue(struct acc_option *options)
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
-		g_thread_queue.bd_res[i].queue = malloc(sizeof(struct wd_queue));
+		g_thread_queue.bd_res[i].queue = calloc(1, sizeof(struct wd_queue));
 		g_thread_queue.bd_res[i].queue->capa.alg = options->algclass;
 		// 0 is ENC, 1 is DEC
 		g_thread_queue.bd_res[i].queue->capa.priv.direction = options->optype;
@@ -1613,11 +1613,22 @@ static int get_ecc_param_from_sample(struct hpre_ecc_setup *setup,
 			setup->sign_size = sizeof(sm2_sign_data);
 
 		} else {
-			setup->priv_key = ecdh_da_secp256k1;
+			/*
+			 * x25519 and ecdh-256 can share same 32-bytes private key of
+			 * ecdh_da_secp256k1, while x448 should use 56-byte private key
+			 * to get accurate performance.
+			 */
+			if (subtype == X448_TYPE)
+				setup->priv_key = x448_da;
+			else
+				setup->priv_key = ecdh_da_secp256k1;
 			setup->except_pub_key = ecdh_except_b_pubkey_secp256k1;
 			setup->pub_key = ecdh_cp_pubkey_secp256k1;
 			setup->share_key = ecdh_cp_sharekey_secp256k1;
-			setup->priv_key_size = sizeof(ecdh_da_secp256k1);
+			if (subtype == X448_TYPE)
+				setup->priv_key_size = sizeof(x448_da);
+			else
+				setup->priv_key_size = sizeof(ecdh_da_secp256k1);
 			setup->except_pub_key_size = sizeof(ecdh_except_b_pubkey_secp256k1);
 			setup->pub_key_size = sizeof(ecdh_cp_pubkey_secp256k1);
 			setup->share_key_size = sizeof(ecdh_cp_sharekey_secp256k1);
@@ -2107,19 +2118,17 @@ static void *ecc_wd_sync_run(void *arg)
 	u32 count = 0;
 	int ret;
 
-	memset(&ctx_setup,	0, sizeof(ctx_setup));
-	memset(&param,	   0, sizeof(param));
-	memset(&opdata,	 0, sizeof(opdata));
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&opdata, 0, sizeof(opdata));
 
 	pool = g_thread_queue.bd_res[pdata->td_id].pool;
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
-	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	memset(&setup, 0, sizeof(setup));
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	ctx_setup.br.alloc = (void *)wd_alloc_blk;
 	ctx_setup.br.free = (void *)wd_free_blk;
@@ -2265,19 +2274,17 @@ static void *ecc_wd_async_run(void *arg)
 	u32 count = 0;
 	int i, ret;
 
-	memset(&ctx_setup,	0, sizeof(ctx_setup));
-	memset(&param,	   0, sizeof(param));
-	memset(&opdata,  0, sizeof(opdata));
+	memset(&ctx_setup, 0, sizeof(ctx_setup));
+	memset(&param, 0, sizeof(param));
+	memset(&opdata, 0, sizeof(opdata));
 
 	pool = g_thread_queue.bd_res[pdata->td_id].pool;
 	queue = g_thread_queue.bd_res[pdata->td_id].queue;
 
-	memset(&setup,	   0, sizeof(setup));
-	if (subtype != X448_TYPE && subtype != X25519_TYPE) {
-		ret = get_ecc_curve(&setup, cid);
-		if (ret)
-			return NULL;
-	}
+	memset(&setup, 0, sizeof(setup));
+	ret = get_ecc_curve(&setup, cid);
+	if (ret)
+		return NULL;
 
 	ctx_setup.cb = (void *)ecc_async_cb;
 	ctx_setup.br.alloc = (void *)wd_alloc_blk;

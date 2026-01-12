@@ -64,10 +64,12 @@ struct wd_digest_sess {
 	enum wd_digest_type	alg;
 	enum wd_digest_mode	mode;
 	void			*priv;
-	unsigned char		key[MAX_HMAC_KEY_SIZE];
+	unsigned char		*key;
 	__u32			key_bytes;
 	void			*sched_key;
 	struct wd_digest_stream_data stream_data;
+	struct wd_mm_ops	mm_ops;
+	enum wd_mem_type	mm_type;
 };
 
 struct wd_env_config wd_digest_env_config;
@@ -78,6 +80,7 @@ static void wd_digest_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_digest_setting.dlh_list);
+		wd_digest_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -158,14 +161,13 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	struct wd_digest_sess *sess = (struct wd_digest_sess *)h_sess;
 	int ret;
 
-	if (!key || !sess) {
-		WD_ERR("invalid: failed to check input param, sess or key is NULL!\n");
+	if (!sess || (key_len && !key)) {
+		WD_ERR("invalid: digest session or key is NULL!\n");
 		return -WD_EINVAL;
 	}
 
-	if ((sess->alg <= WD_DIGEST_SHA224 && key_len >
-		MAX_HMAC_KEY_SIZE >> 1) || key_len == 0 ||
-		key_len > MAX_HMAC_KEY_SIZE) {
+	if ((sess->alg <= WD_DIGEST_SHA224 && key_len > MAX_HMAC_KEY_SIZE >> 1) ||
+	    key_len > MAX_HMAC_KEY_SIZE) {
 		WD_ERR("failed to check digest key length, size = %u\n",
 			key_len);
 		return -WD_EINVAL;
@@ -181,7 +183,33 @@ int wd_digest_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	}
 
 	sess->key_bytes = key_len;
-	memcpy(sess->key, key, key_len);
+	if (key_len)
+		memcpy(sess->key, key, key_len);
+
+	return 0;
+}
+
+static int digest_setup_memory_and_buffers(struct wd_digest_sess *sess,
+					   struct wd_digest_sess_setup *setup)
+{
+	int ret;
+
+	ret = wd_mem_ops_init(wd_digest_setting.config.ctxs[0].ctx,
+			      &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		return ret;
+	}
+
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
+	sess->mm_type = setup->mm_type;
+
+	sess->key = sess->mm_ops.alloc(sess->mm_ops.usr, MAX_HMAC_KEY_SIZE);
+	if (!sess->key) {
+		WD_ERR("digest failed to alloc key memory!\n");
+		return -WD_ENOMEM;
+	}
+	memset(sess->key, 0, MAX_HMAC_KEY_SIZE);
 
 	return 0;
 }
@@ -214,19 +242,24 @@ handle_t wd_digest_alloc_sess(struct wd_digest_sess_setup *setup)
 		WD_ERR("failed to support this algorithm: %s!\n", sess->alg_name);
 		goto err_sess;
 	}
+
+	/* Memory type set */
+	if (digest_setup_memory_and_buffers(sess, setup))
+		goto err_sess;
+
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_digest_setting.sched.sched_init(
 			wd_digest_setting.sched.h_sched_ctx, setup->sched_param);
 	if (WD_IS_ERR(sess->sched_key)) {
 		WD_ERR("failed to init session schedule key!\n");
-		goto err_sess;
+		goto err_key;
 	}
 
 	return (handle_t)sess;
 
+err_key:
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 err_sess:
-	if (sess->sched_key)
-		free(sess->sched_key);
 	free(sess);
 	return (handle_t)0;
 }
@@ -241,6 +274,7 @@ void wd_digest_free_sess(handle_t h_sess)
 	}
 
 	wd_memset_zero(sess->key, sess->key_bytes);
+	sess->mm_ops.free(sess->mm_ops.usr, sess->key);
 	if (sess->sched_key)
 		free(sess->sched_key);
 	free(sess);
@@ -261,6 +295,7 @@ static int wd_digest_init_nolock(struct wd_ctx_config *config,
 	if (ret < 0)
 		return ret;
 
+	wd_digest_setting.config.alg_name = "digest";
 	ret = wd_init_ctx_config(&wd_digest_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -414,7 +449,7 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 			goto out_driver;
 		}
 
-		wd_digest_init_attrs.alg = alg;
+		(void)strcpy(wd_digest_init_attrs.alg, alg);
 		wd_digest_init_attrs.sched_type = sched_type;
 		wd_digest_init_attrs.driver = wd_digest_setting.driver;
 		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
@@ -459,7 +494,6 @@ void wd_digest_uninit2(void)
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
 	wd_alg_drv_unbind(wd_digest_setting.driver);
 	wd_digest_close_driver(WD_TYPE_V2);
-	wd_digest_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
 
@@ -604,6 +638,9 @@ static void fill_request_msg(struct wd_digest_msg *msg,
 	msg->partial_block = sess->stream_data.partial_block;
 	msg->partial_bytes = sess->stream_data.partial_bytes;
 
+	msg->mm_ops = &sess->mm_ops;
+	msg->mm_type = sess->mm_type;
+
 	/* Use iv_bytes to store the stream message state */
 	msg->iv_bytes = sess->stream_data.msg_state;
 }
@@ -741,8 +778,9 @@ struct wd_digest_msg *wd_digest_get_msg(__u32 idx, __u32 tag)
 int wd_digest_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
+	struct wd_digest_msg recv_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_digest_msg recv_msg, *msg;
+	struct wd_digest_msg *msg;
 	struct wd_digest_req *req;
 	__u32 recv_cnt = 0;
 	__u32 tmp = expt;

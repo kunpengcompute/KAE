@@ -24,46 +24,6 @@ static struct wd_alg_list *alg_list_tail = &alg_list_head;
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static bool wd_check_dev_sva(const char *dev_name)
-{
-	char dev_path[PATH_MAX] = {'\0'};
-	char buf[DEV_SVA_SIZE] = {'\0'};
-	unsigned int val;
-	ssize_t ret;
-	int fd;
-
-	ret = snprintf(dev_path, PATH_STR_SIZE, "%s/%s/%s", SYS_CLASS_DIR,
-			  dev_name, SVA_FILE_NAME);
-	if (ret < 0) {
-		WD_ERR("failed to snprintf, device name: %s!\n", dev_name);
-		return false;
-	}
-
-	/**
-	 * The opened file is the specified device driver file.
-	 * no need for realpath processing.
-	 */
-	fd = open(dev_path, O_RDONLY, 0);
-	if (fd < 0) {
-		WD_ERR("failed to open %s(%d)!\n", dev_path, -errno);
-		return false;
-	}
-
-	ret = read(fd, buf, DEV_SVA_SIZE - 1);
-	if (ret <= 0) {
-		WD_ERR("failed to read anything at %s!\n", dev_path);
-		close(fd);
-		return false;
-	}
-	close(fd);
-
-	val = strtol(buf, NULL, STR_DECIMAL);
-	if (val & UACCE_DEV_SVA)
-		return true;
-
-	return false;
-}
-
 static bool wd_check_accel_dev(const char *dev_name)
 {
 	struct dirent *dev_dir;
@@ -80,8 +40,7 @@ static bool wd_check_accel_dev(const char *dev_name)
 		     !strncmp(dev_dir->d_name, "..", LINUX_PRTDIR_SIZE))
 			continue;
 
-		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name)) &&
-		     wd_check_dev_sva(dev_dir->d_name)) {
+		if (!strncmp(dev_dir->d_name, dev_name, strlen(dev_name))) {
 			closedir(wd_class);
 			return true;
 		}
@@ -91,19 +50,31 @@ static bool wd_check_accel_dev(const char *dev_name)
 	return false;
 }
 
-static bool wd_check_ce_support(const char *dev_name)
+static bool wd_check_ce_support(const char *alg_name)
 {
-	unsigned long hwcaps = 0;
+	unsigned long support_sm3 = 0;
+	unsigned long support_sm4 = 0;
+	const char *alg_tail;
+	size_t tail_len;
+	size_t alg_len;
 
-	#if defined(__arm__) || defined(__arm)
-		hwcaps = getauxval(AT_HWCAP2);
-	#elif defined(__aarch64__)
+	#if defined(__aarch64__)
+		unsigned long hwcaps = 0;
+
 		hwcaps = getauxval(AT_HWCAP);
+		support_sm3 = hwcaps & HWCAP_CE_SM3;
+		support_sm4 = hwcaps & HWCAP_CE_SM4;
 	#endif
-	if (!strcmp("isa_ce_sm3", dev_name) && (hwcaps & HWCAP_CE_SM3))
+	if (!strcmp("sm3", alg_name) && support_sm3)
 		return true;
 
-	if (!strcmp("isa_ce_sm4", dev_name) && (hwcaps & HWCAP_CE_SM4))
+	alg_len = strlen(alg_name);
+	tail_len = strlen("(sm4)");
+	if (alg_len <= tail_len)
+		return false;
+
+	alg_tail = alg_name + (alg_len - tail_len);
+	if (!strcmp("(sm4)", alg_tail) && support_sm4)
 		return true;
 
 	return false;
@@ -115,14 +86,16 @@ static bool wd_check_sve_support(void)
 
 	#if defined(__aarch64__)
 		hwcaps = getauxval(AT_HWCAP);
+		hwcaps &= HWCAP_SVE;
 	#endif
-	if (hwcaps & HWCAP_SVE)
+	if (hwcaps)
 		return true;
 
 	return false;
 }
 
-static bool wd_alg_check_available(int calc_type, const char *dev_name)
+static bool wd_alg_check_available(int calc_type,
+	const char *alg_name, const char *dev_name)
 {
 	bool ret = false;
 
@@ -131,7 +104,7 @@ static bool wd_alg_check_available(int calc_type, const char *dev_name)
 		break;
 	/* Should find the CPU if not support CE */
 	case UADK_ALG_CE_INSTR:
-		ret = wd_check_ce_support(dev_name);
+		ret = wd_check_ce_support(alg_name);
 		break;
 	/* Should find the CPU if not support SVE */
 	case UADK_ALG_SVE_INSTR:
@@ -217,7 +190,8 @@ int wd_alg_driver_register(struct wd_alg_driver *drv)
 	new_alg->refcnt = 0;
 	new_alg->next = NULL;
 
-	new_alg->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
+	new_alg->available = wd_alg_check_available(drv->calc_type,
+			     drv->alg_name, drv->drv_name);
 	if (!new_alg->available) {
 		free(new_alg);
 		return -WD_ENODEV;
@@ -307,7 +281,8 @@ void wd_enable_drv(struct wd_alg_driver *drv)
 	}
 
 	if (pnext)
-		pnext->available = wd_alg_check_available(drv->calc_type, drv->drv_name);
+		pnext->available = wd_alg_check_available(drv->calc_type,
+				   drv->alg_name, drv->drv_name);
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -397,3 +372,24 @@ void wd_release_drv(struct wd_alg_driver *drv)
 		select_node->refcnt--;
 	pthread_mutex_unlock(&mutex);
 }
+
+int wd_alg_driver_init(struct wd_alg_driver *drv, void *conf)
+{
+	return drv->init(drv, conf);
+}
+
+void wd_alg_driver_exit(struct wd_alg_driver *drv)
+{
+	drv->exit(drv);
+}
+
+int wd_alg_driver_send(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->send(drv, ctx, msg);
+}
+
+int wd_alg_driver_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
+{
+	return drv->recv(drv, ctx, msg);
+}
+

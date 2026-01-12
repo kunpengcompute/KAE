@@ -17,7 +17,6 @@
 #include "kaezip_buffer.h"
 #include "kaezip_init.h"
 #include "kaezip_log.h"
-#include "kaezip_utils.h"
 
 #define max(a, b)		((a) > (b) ? (a) : (b))
 
@@ -118,6 +117,41 @@ static void kz_zlib_uadk_uninit(void)
 {
 	wd_comp_uninit2();
 	zlib_config.status = WD_ZLIB_UNINIT;
+}
+
+static inline int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize, int level)
+{
+	static const int ZLIB_MAX_WBITS = 15;
+	static const int ZLIB_MIN_WBITS = 8;
+	static const int GZIP_MAX_WBITS = 31;
+	static const int GZIP_MIN_WBITS = 24;
+	static const int DEFLATE_MAX_WBITS = -8;
+	static const int DEFLATE_MIN_WBITS = -15;
+	//	windowbits only for algorithm type
+	if ((windowbits >= ZLIB_MIN_WBITS) && (windowbits <= ZLIB_MAX_WBITS)) {
+		*alg = WD_ZLIB;
+	} else if ((windowbits >= GZIP_MIN_WBITS) && (windowbits <= GZIP_MAX_WBITS)) {
+		*alg = WD_GZIP;
+	} else if ((windowbits >= DEFLATE_MIN_WBITS) && (windowbits <= DEFLATE_MAX_WBITS)) {
+		*alg = WD_DEFLATE;
+	} else {
+		return -3;	// Z_DATA_ERROR
+	}
+	//	level only for compress rate
+	level = (level == -1) ? 6 : level;
+	if (level <= 2) {
+		*windowsize = WD_COMP_WS_4K;
+	} else if (level <= 4) {
+		*windowsize = WD_COMP_WS_8K;
+	} else if (level <= 6) {
+		*windowsize = WD_COMP_WS_16K;
+	} else if (level <= 8) {
+		*windowsize = WD_COMP_WS_24K;
+	} else {
+		*windowsize = WD_COMP_WS_32K;
+	}
+
+	return 0;
 }
 
 static int kz_zlib_alloc_sess(z_streamp strm, int level, int windowbits, enum wd_comp_op_type type)

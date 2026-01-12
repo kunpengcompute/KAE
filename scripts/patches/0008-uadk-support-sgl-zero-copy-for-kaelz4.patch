@@ -1,20 +1,18 @@
-diff --git a/uadk/Makefile.am b/uadk/Makefile.am
-index 9b36ae9..0df1dfd 100644
---- a/uadk/Makefile.am
-+++ b/uadk/Makefile.am
-@@ -41,6 +41,7 @@ pkginclude_HEADERS = include/wd.h include/wd_cipher.h include/wd_aead.h \
- nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h \
- 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h
+diff -urN a/uadk/Makefile.am b/uadk/Makefile.am
+--- a/uadk/Makefile.am	2025-12-30 16:30:28.064531500 +0800
++++ b/uadk/Makefile.am	2025-12-30 17:27:48.145391200 +0800
+@@ -43,6 +43,7 @@
+ nobase_pkginclude_HEADERS = v1/wd.h v1/wd_cipher.h v1/wd_aead.h v1/uacce.h v1/wd_dh.h v1/wd_ecc.h \
+ 			 v1/wd_digest.h v1/wd_rsa.h v1/wd_bmm.h v1/wd_comp.h
  
 +nobase_pkginclude_HEADERS += v1/wd_sgl.h
- lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la
+ lib_LTLIBRARIES=libwd.la libwd_comp.la libwd_crypto.la libwd_dae.la libwd_udma.la
  
  uadk_driversdir=$(libdir)/uadk
-diff --git a/uadk/v1/drv/hisi_qm_udrv.c b/uadk/v1/drv/hisi_qm_udrv.c
-index 7b0183b..224aadb 100644
---- a/uadk/v1/drv/hisi_qm_udrv.c
-+++ b/uadk/v1/drv/hisi_qm_udrv.c
-@@ -53,11 +53,11 @@ static int qm_hw_sgl_info(struct hw_sgl_info *sgl_info)
+diff -urN a/uadk/v1/drv/hisi_qm_udrv.c b/uadk/v1/drv/hisi_qm_udrv.c
+--- a/uadk/v1/drv/hisi_qm_udrv.c	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/drv/hisi_qm_udrv.c	2025-12-30 17:34:05.264801900 +0800
+@@ -61,11 +61,12 @@
  
  /* 'num' starts from 1 */
  static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
@@ -22,14 +20,14 @@ index 7b0183b..224aadb 100644
 +			      struct wd_mm_br *br, int num)
  {
  	void *buf;
--
+ 
 -	buf = wd_get_sge_buf(sgl, num);
-+    __u32 buf_sz = sgl->sge[num - 1].data_len;
++	__u32 buf_sz = sgl->sge[num - 1].data_len;
 +	buf = sgl->sge[num - 1].buf;
  	if (!buf)
  		return -WD_EINVAL;
  
-@@ -69,16 +69,17 @@ static int qm_hw_sgl_sge_init(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+@@ -77,16 +78,17 @@
  	}
  
  	hisi_sgl->sge_entries[num - 1].len = buf_sz;
@@ -45,11 +43,11 @@ index 7b0183b..224aadb 100644
 +			  int num, struct wd_mm_br *br)
  {
  	void *buf;
-+    __u32 buf_sz = sgl->sge[num - 1].data_len;
++	__u32 buf_sz = sgl->sge[num - 1].data_len;
  
  	buf = wd_get_sge_buf(sgl, num);
  	if (!buf)
-@@ -90,24 +91,17 @@ static void qm_hw_sgl_sge_uninit(struct wd_sgl *sgl, struct hisi_sgl *hisi_sgl,
+@@ -98,23 +100,17 @@
  
  static int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
  {
@@ -72,11 +70,10 @@ index 7b0183b..224aadb 100644
 -		WD_ERR("failed to get sgl bufsize!\n");
 -		return ret;
 -	}
--
+ 
  	buf_num = MIN(buf_num, HISI_SGL_SGE_NUM_MAX);
  	sge_num = MIN(sge_num, HISI_SGL_SGE_NUM_MAX);
- 	br = drv_get_br(pool);
-@@ -123,7 +117,7 @@ static int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
+@@ -131,7 +127,7 @@
  	hisi_sgl->next_dma = 0;
  
  	for (i = 0; i < buf_num; i++) {
@@ -85,7 +82,7 @@ index 7b0183b..224aadb 100644
  		if (ret) {
  			WD_ERR("failed to map buf, ret = %d.\n", ret);
  			goto sgl_sge_init_err;
-@@ -136,12 +130,12 @@ static int qm_hw_sgl_init(void *pool, struct wd_sgl *sgl)
+@@ -144,12 +140,12 @@
  		drv_set_sgl_sge_pri(sgl, i, &hisi_sgl->sge_entries[i]);
  	}
  
@@ -100,47 +97,43 @@ index 7b0183b..224aadb 100644
  
  	br->free(br->usr, hisi_sgl);
  
-@@ -609,10 +603,15 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
+@@ -621,10 +617,13 @@
  	int ret;
  	__u32 i;
  
 -	wd_fair_lock(&info->sd_lock);
-+    if (!q->capa.priv.is_single_thread) {
++	if (!q->capa.priv.is_single_thread) {
 +        wd_fair_lock(&info->sd_lock);
 +    }
-+
  	if (unlikely((__u32)__atomic_load_n(&info->used, __ATOMIC_RELAXED) >
--		     info->sq_depth - num - 1)) {
+ 		     info->sq_depth - num - 1)) {
 -		wd_fair_unlock(&info->sd_lock);
-+		         info->sq_depth - num - 1)) {
-+        if (!q->capa.priv.is_single_thread)
++		if (!q->capa.priv.is_single_thread)
 +            wd_fair_unlock(&info->sd_lock);
-+
  		WD_ERR("queue is full!\n");
  		return -WD_EBUSY;
  	}
-@@ -621,7 +620,9 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
+@@ -633,7 +632,8 @@
  		ret = info->sqe_fill[qinfo->atype](req[i], qinfo->priv,
  				info->sq_tail_index);
  		if (unlikely(ret != WD_SUCCESS)) {
 -			wd_fair_unlock(&info->sd_lock);
-+            if (!q->capa.priv.is_single_thread)
-+			    wd_fair_unlock(&info->sd_lock);
-+
++			if (!q->capa.priv.is_single_thread)
++ 			    wd_fair_unlock(&info->sd_lock);
  			WD_ERR("sqe fill error, ret %d!\n", ret);
  			return -WD_EINVAL;
  		}
-@@ -633,7 +634,8 @@ int qm_send(struct wd_queue *q, void **req, __u32 num)
+@@ -645,7 +645,8 @@
  	}
  
  	ret = qm_tx_update(info, num);
 -	wd_fair_unlock(&info->sd_lock);
-+    if (!q->capa.priv.is_single_thread)
-+	    wd_fair_unlock(&info->sd_lock);
++	if (!q->capa.priv.is_single_thread)
++ 	    wd_fair_unlock(&info->sd_lock);
  
  	return ret;
  }
-@@ -686,7 +688,7 @@ int qm_rx_update(struct qm_queue_info *info, __u32 num)
+@@ -698,7 +699,7 @@
  		return ret;
  
  	/* make sure queue status check is complete. */
@@ -149,79 +142,73 @@ index 7b0183b..224aadb 100644
  
  	/* set c_flag to enable interrupt when use poll */
  	info->db(info, DOORBELL_CMD_CQ, info->cq_head_index, info->is_poll);
-@@ -709,7 +711,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
+@@ -721,7 +722,8 @@
  	if (unlikely(ret))
  		return ret;
  
 -	wd_fair_lock(&info->rc_lock);
-+    if (!q->capa.priv.is_single_thread)
-+	    wd_fair_lock(&info->rc_lock);
-+
++	if (!q->capa.priv.is_single_thread)
++ 	    wd_fair_lock(&info->rc_lock);
  	for (i = 0; i < num; i++) {
  		cqe = info->cq_base + info->cq_head_index * sizeof(struct cqe);
  		if (info->cqc_phase != CQE_PHASE(cqe))
-@@ -718,7 +722,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
+@@ -730,7 +732,8 @@
  		mb(); /* make sure the data is all in memory before read */
  		sq_head = CQE_SQ_HEAD_INDEX(cqe);
  		if (unlikely(sq_head >= info->sq_depth)) {
 -			wd_fair_unlock(&info->rc_lock);
-+            if (!q->capa.priv.is_single_thread)
-+			    wd_fair_unlock(&info->rc_lock);
-+
++			if (!q->capa.priv.is_single_thread)
++ 			    wd_fair_unlock(&info->rc_lock);
  			WD_ERR("CQE_SQ_HEAD_INDEX(%u) error\n", sq_head);
  			return -WD_EIO;
  		}
-@@ -730,7 +736,9 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
+@@ -742,7 +745,8 @@
  		if (!ret) {
  			break;
  		} else if (ret < 0) {
 -			wd_fair_unlock(&info->rc_lock);
-+            if (!q->capa.priv.is_single_thread)
-+			    wd_fair_unlock(&info->rc_lock);
-+
++			if (!q->capa.priv.is_single_thread)
++ 			    wd_fair_unlock(&info->rc_lock);
  			WD_ERR("recv sqe error %u\n", sq_head);
  			return ret;
  		}
-@@ -751,7 +759,8 @@ int qm_recv(struct wd_queue *q, void **resp, __u32 num)
+@@ -763,7 +767,8 @@
  			ret = i;
  	}
  
 -	wd_fair_unlock(&info->rc_lock);
-+    if (!q->capa.priv.is_single_thread)
-+	    wd_fair_unlock(&info->rc_lock);
++	if (!q->capa.priv.is_single_thread)
++ 	    wd_fair_unlock(&info->rc_lock);
  
  	return ret;
  }
-diff --git a/uadk/v1/libwd.map b/uadk/v1/libwd.map
-index d53201b..a43a884 100644
---- a/uadk/v1/libwd.map
-+++ b/uadk/v1/libwd.map
-@@ -139,6 +139,8 @@ global:
- 	wcrypto_rng_poll;
+diff -urN a/uadk/v1/libwd.map b/uadk/v1/libwd.map
+--- a/uadk/v1/libwd.map	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/libwd.map	2025-12-30 17:34:33.746104500 +0800
+@@ -134,6 +134,8 @@
+ 	wcrypto_del_rsa_ctx;
  
  	wd_sglpool_create;
-+    wd_build_sgl;
-+    wd_destory_sgl;
++	wd_build_sgl;
++	wd_destory_sgl;
  	wd_sglpool_destroy;
  	wd_alloc_sgl;
  	wd_free_sgl;
-diff --git a/uadk/v1/wd.h b/uadk/v1/wd.h
-index 4618a8c..51a2061 100644
---- a/uadk/v1/wd.h
-+++ b/uadk/v1/wd.h
-@@ -80,6 +80,7 @@ struct wcrypto_paras {
+diff -urN a/uadk/v1/wd.h b/uadk/v1/wd.h
+--- a/uadk/v1/wd.h	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/wd.h	2025-12-30 17:35:02.185228500 +0800
+@@ -80,6 +80,7 @@
  	 */
  	__u8 direction;
  	__u8 is_poll;
-+    __u8 is_single_thread;
++	__u8 is_single_thread;
  
  	 /* to be extended */
  };
-diff --git a/uadk/v1/wd_comp.c b/uadk/v1/wd_comp.c
-index 169f1b4..209fab0 100644
---- a/uadk/v1/wd_comp.c
-+++ b/uadk/v1/wd_comp.c
-@@ -253,16 +253,22 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
+diff -urN a/uadk/v1/wd_comp.c b/uadk/v1/wd_comp.c
+--- a/uadk/v1/wd_comp.c	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/wd_comp.c	2025-12-30 17:36:52.691253400 +0800
+@@ -253,16 +253,22 @@
  	struct wcrypto_comp_ctx *cctx = ctx;
  	struct wcrypto_comp_msg *msg, *resp;
  	__u64 recv_count = 0;
@@ -236,7 +223,7 @@ index 169f1b4..209fab0 100644
 -	ret = wd_get_cookies(&cctx->pool, (void **)&cookie, 1);
 -	if (ret)
 -		return ret;
-+   if (!opdata->cookie || !cctx->q->capa.priv.is_single_thread) {
++	if (!opdata->cookie || !cctx->q->capa.priv.is_single_thread) {
 +        ret = wd_get_cookies(&cctx->pool, (void **)&cookie, 1);
 +        if (ret)
 +            return ret;
@@ -248,42 +235,39 @@ index 169f1b4..209fab0 100644
  
  	msg = &cookie->msg;
  	if (tag) {
-@@ -314,6 +320,7 @@ int wcrypto_do_comp(void *ctx, struct wcrypto_comp_op_data *opdata, void *tag)
+@@ -314,6 +320,7 @@
  
  err_put_cookie:
  	wd_put_cookies(&cctx->pool, (void **)&cookie, 1);
-+    opdata->cookie = NULL;
++	opdata->cookie = NULL;
  	return ret;
  }
  
-@@ -355,7 +362,9 @@ int wcrypto_comp_poll(struct wd_queue *q, unsigned int num)
+@@ -355,7 +362,8 @@
  		tag = (void *)(uintptr_t)resp->udata;
  		ctx = tag->wcrypto_tag.ctx;
  		ctx->cb(resp, tag->wcrypto_tag.tag);
 -		wd_put_cookies(&ctx->pool, (void **)&tag, 1);
-+        if (!q->capa.priv.is_single_thread)
++		if (!q->capa.priv.is_single_thread)
 +            wd_put_cookies(&ctx->pool, (void **)&tag, 1);
-+
  		resp = NULL;
  	} while (--tmp);
  
-diff --git a/uadk/v1/wd_comp.h b/uadk/v1/wd_comp.h
-index 4c84ea3..8c0d9e5 100644
---- a/uadk/v1/wd_comp.h
-+++ b/uadk/v1/wd_comp.h
-@@ -168,6 +168,7 @@ struct wcrypto_comp_op_data {
+diff -urN a/uadk/v1/wd_comp.h b/uadk/v1/wd_comp.h
+--- a/uadk/v1/wd_comp.h	2025-12-30 17:26:27.538343400 +0800
++++ b/uadk/v1/wd_comp.h	2025-12-30 17:37:29.684029300 +0800
+@@ -169,6 +169,7 @@
  	__u32 isize;
  	__u32 checksum;
  	void *priv;
-+    void *cookie;
++	void *cookie;
  };
  
  struct wcrypto_comp_msg {
-diff --git a/uadk/v1/wd_sgl.c b/uadk/v1/wd_sgl.c
-index cb3b8ee..fc1f329 100644
---- a/uadk/v1/wd_sgl.c
-+++ b/uadk/v1/wd_sgl.c
-@@ -44,30 +44,6 @@
+diff -urN a/uadk/v1/wd_sgl.c b/uadk/v1/wd_sgl.c
+--- a/uadk/v1/wd_sgl.c	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/wd_sgl.c	2025-12-30 17:39:42.466082700 +0800
+@@ -44,29 +44,6 @@
  #define ALIGN_SIZE_MAX	0x800
  #define ALIGN_SIZE	64
  
@@ -310,21 +294,20 @@ index cb3b8ee..fc1f329 100644
 -	/* user configuration, 60 sges max */
 -	struct wd_sge sge[];
 -};
--
+ 
  struct wd_sglpool {
  	struct wd_queue *q;
- 	struct wd_lock sgl_lock;
-@@ -167,6 +143,7 @@ static int sgl_chain_build(struct wd_queue *q, struct wd_sglpool *pool)
+@@ -167,6 +144,7 @@
  				goto alloc_buf_err;
  			}
  			sgl_sge_init(sgl_blk[i], j, buf);
-+            sgl_blk[i]->sge[j].data_len = sp->buf_size;
++			sgl_blk[i]->sge[j].data_len = sp->buf_size;
  		}
  
  		ret = drv_init_sgl(q, pool, sgl_blk[i]);
-@@ -1029,3 +1006,76 @@ void wd_sgl_memset(struct wd_sgl *sgl, int ch)
- 	for (i = 0; i < sgl->buf_num; i++)
- 		memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+@@ -1031,3 +1009,76 @@
+ 			memset(sgl->sge[i].buf, ch, sgl->pool->setup.buf_size);
+ 	}
  }
 +
 +struct mix_pool {
@@ -399,14 +382,14 @@ index cb3b8ee..fc1f329 100644
 +{
 +    return drv_uninit_sgl(q, pool, sgl);
 +}
-diff --git a/uadk/v1/wd_sgl.h b/uadk/v1/wd_sgl.h
-index e2e82f2..e254daa 100644
---- a/uadk/v1/wd_sgl.h
-+++ b/uadk/v1/wd_sgl.h
-@@ -43,7 +43,45 @@ struct wd_sglpool_setup {
+\ No newline at end of file
+diff -urN a/uadk/v1/wd_sgl.h b/uadk/v1/wd_sgl.h
+--- a/uadk/v1/wd_sgl.h	2025-12-23 13:54:34.000000000 +0800
++++ b/uadk/v1/wd_sgl.h	2025-12-30 17:40:32.972007900 +0800
+@@ -42,8 +42,44 @@
+ 	/* memory from user if don't use WD memory */
  	struct wd_mm_br br;
  };
- 
 +struct wd_buf {
 +    size_t buf_len;
 +    void *data;
@@ -418,7 +401,7 @@ index e2e82f2..e254daa 100644
 +    struct wd_buf *buf;
 +    void *usr_data;
 +};
-+
+ 
 +struct wd_sge {
 +	/* 'priv' is used by driver, which may be a hardware sgl address */
 +	void *priv;
@@ -442,7 +425,6 @@ index e2e82f2..e254daa 100644
 +	/* user configuration, 60 sges max */
 +	struct wd_sge sge[];
 +};
-+
  void *wd_sglpool_create(struct wd_queue *q, struct wd_sglpool_setup *setup);
 +int wd_build_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl, const struct wd_buf_list *buf_list, wd_map usr_map);
 +int wd_destory_sgl(struct wd_queue *q, void *pool, struct wd_sgl *sgl);

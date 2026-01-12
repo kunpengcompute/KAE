@@ -16,12 +16,12 @@
 #define WCRYPTO_DIR_MAX	(WCRYPTO_INFLATE + 1)
 #define ALIGN_SIZE		64
 
-#define COMP_LEN_RATE		2
 #define DECOMP_LEN_RATE		2
 #define COMPRESSION_RATIO_FACTOR	0.7
 #define MAX_POOL_LENTH_COMP	512
 #define CHUNK_SIZE		(128 * 1024)
 #define MAX_UNRECV_PACKET_NUM		2
+#define MAX_POOL_CREATE_FAIL_TIME	10
 
 #define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
 #define ALIGN(x, a) __ALIGN_MASK(x, (typeof(x))(a)-1)
@@ -284,25 +284,44 @@ static int zip_wd_param_parse(thread_data *tddata, struct acc_option *options)
 	return 0;
 }
 
+static int zip_wd_create_single_blkpool(struct thread_bd_res *bd_res,
+					struct wd_blkpool_setup blksetup)
+{
+	int retry_cnt = 0;
+	int ret;
+
+	while (retry_cnt++ <= MAX_POOL_CREATE_FAIL_TIME) {
+		bd_res->pool = wd_blkpool_create(bd_res->queue, &blksetup);
+		if (bd_res->pool)
+			return 0;
+
+		wd_release_queue(bd_res->queue);
+		ret = wd_request_queue(bd_res->queue);
+		if (ret) {
+			ZIP_TST_PRT("retry to request queue fail!\n");
+			return ret;
+		}
+	}
+
+	return -ENOMEM;
+}
+
 static int init_zip_wd_queue(struct acc_option *options)
 {
 	struct wd_blkpool_setup blksetup;
 	struct wd_bd *bds = NULL;
+	u32 insize = g_pktlen;
 	void *pool = NULL;
 	u32 outsize;
-	u32 insize;
 	u8 op_type;
-	int i, j;
+	int i, j, k;
 	int ret = 0;
 
 	op_type = options->optype % WCRYPTO_DIR_MAX;
-	if (op_type == WCRYPTO_DEFLATE) {//compress
-		insize = g_pktlen;
-		outsize = g_pktlen * COMP_LEN_RATE;
-	} else { // decompress
-		insize = g_pktlen;
+	if (options->algtype != LZ77_ZSTD)
+		outsize = g_pktlen + ALIGN_SIZE;
+	else
 		outsize = g_pktlen * DECOMP_LEN_RATE;
-	}
 
 	g_thread_queue.bd_res = malloc(g_thread_num * sizeof(struct thread_bd_res));
 	if (!g_thread_queue.bd_res) {
@@ -311,7 +330,7 @@ static int init_zip_wd_queue(struct acc_option *options)
 	}
 
 	for (i = 0; i < g_thread_num; i++) {
-		g_thread_queue.bd_res[i].queue = malloc(sizeof(struct wd_queue));
+		g_thread_queue.bd_res[i].queue = calloc(1, sizeof(struct wd_queue));
 		g_thread_queue.bd_res[i].queue->capa.alg = options->algclass;
 		// 0 is compress, 1 is decompress
 		g_thread_queue.bd_res[i].queue->capa.priv.direction = op_type;
@@ -343,12 +362,12 @@ static int init_zip_wd_queue(struct acc_option *options)
 	blksetup.align_size = ALIGN_SIZE;
 
 	for (j = 0; j < g_thread_num; j++) {
-		g_thread_queue.bd_res[j].pool = wd_blkpool_create(g_thread_queue.bd_res[j].queue, &blksetup);
-		if (!g_thread_queue.bd_res[j].pool) {
+		ret = zip_wd_create_single_blkpool(&g_thread_queue.bd_res[j], blksetup);
+		if (ret) {
 			ZIP_TST_PRT("create %dth pool fail!\n", j);
-			ret = -ENOMEM;
 			goto pool_err;
 		}
+
 		pool = g_thread_queue.bd_res[j].pool;
 
 		g_thread_queue.bd_res[j].bds = malloc(sizeof(struct wd_bd) * MAX_POOL_LENTH_COMP);
@@ -356,22 +375,22 @@ static int init_zip_wd_queue(struct acc_option *options)
 			goto bds_error;
 		bds = g_thread_queue.bd_res[j].bds;
 
-		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
-			bds[i].src = wd_alloc_blk(pool);
-			if (!bds[i].src) {
+		for (k = 0; k < MAX_POOL_LENTH_COMP; k++) {
+			bds[k].src = wd_alloc_blk(pool);
+			if (!bds[k].src) {
 				ret = -ENOMEM;
 				goto blk_error2;
 			}
-			bds[i].src_len = insize;
+			bds[k].src_len = insize;
 
-			bds[i].dst = wd_alloc_blk(pool);
-			if (!bds[i].dst) {
+			bds[k].dst = wd_alloc_blk(pool);
+			if (!bds[k].dst) {
 				ret = -ENOMEM;
 				goto blk_error3;
 			}
-			bds[i].dst_len = outsize;
+			bds[k].dst_len = outsize;
 
-			get_rand_data(bds[i].src, insize * COMPRESSION_RATIO_FACTOR);
+			get_rand_data(bds[k].src, insize * COMPRESSION_RATIO_FACTOR);
 		}
 
 	}
@@ -379,11 +398,11 @@ static int init_zip_wd_queue(struct acc_option *options)
 	return 0;
 
 blk_error3:
-	wd_free_blk(pool, bds[i].src);
+	wd_free_blk(pool, bds[k].src);
 blk_error2:
-	for (i--; i >= 0; i--) {
-		wd_free_blk(pool, bds[i].src);
-		wd_free_blk(pool, bds[i].dst);
+	for (k--; k >= 0; k--) {
+		wd_free_blk(pool, bds[k].src);
+		wd_free_blk(pool, bds[k].dst);
 	}
 bds_error:
 	wd_blkpool_destroy(g_thread_queue.bd_res[j].pool);
@@ -391,9 +410,9 @@ pool_err:
 	for (j--; j >= 0; j--) {
 		pool = g_thread_queue.bd_res[j].pool;
 		bds = g_thread_queue.bd_res[j].bds;
-		for (i = 0; i < MAX_POOL_LENTH_COMP; i++) {
-			wd_free_blk(pool, bds[i].src);
-			wd_free_blk(pool, bds[i].dst);
+		for (k = 0; k < MAX_POOL_LENTH_COMP; k++) {
+			wd_free_blk(pool, bds[k].src);
+			wd_free_blk(pool, bds[k].dst);
 		}
 		free(bds);
 		wd_blkpool_destroy(pool);
@@ -404,6 +423,7 @@ queue_out:
 		free(g_thread_queue.bd_res[i].queue);
 	}
 	free(g_thread_queue.bd_res);
+	g_thread_queue.bd_res = NULL;
 	return ret;
 }
 
@@ -412,6 +432,9 @@ static void uninit_zip_wd_queue(void)
 	struct wd_bd *bds = NULL;
 	void *pool = NULL;
 	int j, i;
+
+	if (!g_thread_queue.bd_res)
+		return;
 
 	for (j = 0; j < g_thread_num; j++) {
 		pool = g_thread_queue.bd_res[j].pool;
@@ -846,7 +869,7 @@ static void *zip_wd_blk_sync_run(void *arg)
 
 static void *zip_wd_stm_sync_run(void *arg)
 {
-	u32 in_len, out_len, total_out, count = 0;
+	u32 in_len, out_len, total_out, total_avail_out;
 	thread_data *pdata = (thread_data *)arg;
 	struct wcrypto_comp_ctx_setup comp_setup;
 	struct wcrypto_comp_op_data opdata;
@@ -854,6 +877,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 	struct wd_queue *queue;
 	struct wd_bd *bd_pool;
 	void *src, *dst;
+	u32 count = 0;
 	int ret, i;
 
 	if (pdata->td_id > g_thread_num)
@@ -884,13 +908,14 @@ static void *zip_wd_stm_sync_run(void *arg)
 	opdata.alg_type = pdata->alg;
 	opdata.priv = NULL;
 	opdata.status = 0;
+	total_avail_out = bd_pool[0].dst_len;
 
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
 		src = bd_pool[i].src;
 		dst = bd_pool[i].dst;
 		in_len = bd_pool[i].src_len;
-		out_len = g_pktlen * DECOMP_LEN_RATE;
+		out_len = total_avail_out;
 		total_out = 0;
 		opdata.stream_pos = WCRYPTO_COMP_STREAM_NEW;
 
@@ -899,7 +924,7 @@ static void *zip_wd_stm_sync_run(void *arg)
 			opdata.avail_out = out_len > 2 * CHUNK_SIZE ? 2 * CHUNK_SIZE : out_len;
 			opdata.in = src;
 			opdata.out = dst;
-			opdata.flush = in_len ? WCRYPTO_SYNC_FLUSH : WCRYPTO_FINISH;
+			opdata.flush = in_len > CHUNK_SIZE ? WCRYPTO_SYNC_FLUSH : WCRYPTO_FINISH;
 
 			ret = wcrypto_do_comp(ctx, &opdata, NULL);
 			if (ret || opdata.status == WCRYPTO_DECOMP_END_NOSPACE ||

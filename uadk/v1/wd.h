@@ -110,7 +110,10 @@ struct wd_mm_br {
 	wd_bufsize get_bufsize; /* optional */
 };
 
-/* Warpdrive data buffer */
+/*
+ * Warpdrive data buffer. If the actual size of data is inconsistent
+ * with dsize, undefined behavior occurs.
+ */
 struct wd_dtb {
 	char *data; /* data/buffer start address */
 	__u32 dsize; /* data size */
@@ -181,7 +184,7 @@ struct wd_capa {
 	 * Other capabilities.
 	 * 0~15 bits: number of cookies that the user wants to allocate.
 	 * Optional, user can set value based on the number of requests and system memory,
-	 * 1~1024 is valid. If the value is not set or invalid, the default value 64 (rng is 256)
+	 * 1~1024 is valid. If the value is not set or invalid, the default value 64
 	 * is used to initialize cookies.
 	 */
 	__u32 flags;
@@ -207,8 +210,6 @@ int wd_recv(struct wd_queue *q, void **resp);
 int wd_wait(struct wd_queue *q, __u16 ms);
 int wd_recv_sync(struct wd_queue *q, void **resp, __u16 ms);
 void *wd_reserve_memory(struct wd_queue *q, size_t size);
-int wd_share_reserved_memory(struct wd_queue *q,
-				    struct wd_queue *target_q);
 int wd_get_available_dev_num(const char *algorithm);
 int wd_get_node_id(struct wd_queue *q);
 void *wd_iova_map(struct wd_queue *q, void *va, size_t sz);

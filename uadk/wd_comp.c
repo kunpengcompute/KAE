@@ -15,8 +15,10 @@
 #include "drv/wd_comp_drv.h"
 #include "wd_comp.h"
 
-#define HW_CTX_SIZE			(64 * 1024)
+#define HW_CTX_SIZE			0x10000
 #define STREAM_CHUNK			(128 * 1024)
+#define WD_ZLIB_HEADER_SZ		2
+#define WD_GZIP_HEADER_SZ		10
 
 #define swap_byte(x) \
 	((((x) & 0x000000ff) << 24) | \
@@ -27,7 +29,7 @@
 #define cpu_to_be32(x) swap_byte(x)
 
 static const char *wd_comp_alg_name[WD_COMP_ALG_MAX] = {
-	"zlib", "gzip", "deflate", "lz77_zstd"
+	"zlib", "gzip", "deflate", "lz77_zstd", "lz4", "lz77_only"
 };
 
 struct wd_comp_sess {
@@ -39,6 +41,8 @@ struct wd_comp_sess {
 	__u32 checksum;
 	__u8 *ctx_buf;
 	void *sched_key;
+	struct wd_mm_ops mm_ops;
+	enum wd_mem_type mm_type;
 };
 
 struct wd_comp_setting {
@@ -59,6 +63,7 @@ static void wd_comp_close_driver(int init_type)
 #ifndef WD_STATIC_DRV
 	if (init_type == WD_TYPE_V2) {
 		wd_dlclose_drv(wd_comp_setting.dlh_list);
+		wd_comp_setting.dlh_list = NULL;
 		return;
 	}
 
@@ -151,6 +156,7 @@ static int wd_comp_init_nolock(struct wd_ctx_config *config, struct wd_sched *sc
 	if (ret < 0)
 		return ret;
 
+	wd_comp_setting.config.alg_name = "zlib gzip deflate lz77_zstd lz4 lz77_only";
 	ret = wd_init_ctx_config(&wd_comp_setting.config, config);
 	if (ret < 0)
 		return ret;
@@ -297,7 +303,7 @@ int wd_comp_init2_(char *alg, __u32 sched_type, int task_type, struct wd_ctx_par
 			goto out_unbind_drv;
 		}
 
-		wd_comp_init_attrs.alg = alg;
+		(void)strcpy(wd_comp_init_attrs.alg, alg);
 		wd_comp_init_attrs.sched_type = sched_type;
 		wd_comp_init_attrs.driver = wd_comp_setting.driver;
 		wd_comp_init_attrs.ctx_params = &comp_ctx_params;
@@ -343,7 +349,6 @@ void wd_comp_uninit2(void)
 	wd_alg_attrs_uninit(&wd_comp_init_attrs);
 	wd_alg_drv_unbind(wd_comp_setting.driver);
 	wd_comp_close_driver(WD_TYPE_V2);
-	wd_comp_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_comp_setting.status);
 }
 
@@ -355,8 +360,8 @@ struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag)
 int wd_comp_poll_ctx(__u32 idx, __u32 expt, __u32 *count)
 {
 	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	struct wd_comp_msg resp_msg = {0};
 	struct wd_ctx_internal *ctx;
-	struct wd_comp_msg resp_msg;
 	struct wd_comp_msg *msg;
 	struct wd_comp_req *req;
 	__u64 recv_count = 0;
@@ -434,6 +439,24 @@ static int wd_comp_check_sess_params(struct wd_comp_sess_setup *setup)
 	return WD_SUCCESS;
 }
 
+static int wd_alloc_ctx_buf(struct wd_mm_ops *mm_ops, struct wd_comp_sess *sess)
+{
+
+	sess->ctx_buf = mm_ops->alloc(mm_ops->usr, HW_CTX_SIZE);
+	if (!sess->ctx_buf)
+		return -WD_ENOMEM;
+
+	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	return WD_SUCCESS;
+}
+
+static void wd_free_ctx_buf(struct wd_mm_ops *mm_ops, struct wd_comp_sess *sess)
+{
+	mm_ops->free(mm_ops->usr, sess->ctx_buf);
+	sess->ctx_buf = NULL;
+}
+
 handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 {
 	struct wd_comp_sess *sess;
@@ -450,14 +473,24 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	if (!sess)
 		return (handle_t)0;
 
-	sess->ctx_buf = calloc(1, HW_CTX_SIZE);
-	if (!sess->ctx_buf)
+	/* Memory type set */
+	ret = wd_mem_ops_init(wd_comp_setting.config.ctxs[0].ctx, &setup->mm_ops, setup->mm_type);
+	if (ret) {
+		WD_ERR("failed to init memory ops!\n");
+		goto sess_err;
+	}
+
+	ret = wd_alloc_ctx_buf(&setup->mm_ops, sess);
+	if (ret)
 		goto sess_err;
 
 	sess->alg_type = setup->alg_type;
 	sess->comp_lv = setup->comp_lv;
 	sess->win_sz = setup->win_sz;
 	sess->stream_pos = WD_COMP_STREAM_NEW;
+
+	sess->mm_type = setup->mm_type;
+	memcpy(&sess->mm_ops, &setup->mm_ops, sizeof(struct wd_mm_ops));
 
 	/* Some simple scheduler don't need scheduling parameters */
 	sess->sched_key = (void *)wd_comp_setting.sched.sched_init(
@@ -470,7 +503,7 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 	return (handle_t)sess;
 
 sched_err:
-	free(sess->ctx_buf);
+	wd_free_ctx_buf(&setup->mm_ops, sess);
 sess_err:
 	free(sess);
 	return (handle_t)0;
@@ -484,7 +517,7 @@ void wd_comp_free_sess(handle_t h_sess)
 		return;
 
 	if (sess->ctx_buf)
-		free(sess->ctx_buf);
+		wd_free_ctx_buf(&sess->mm_ops, sess);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -502,7 +535,9 @@ int wd_comp_reset_sess(handle_t h_sess)
 	}
 
 	sess->stream_pos = WD_COMP_STREAM_NEW;
-	memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	if (sess->ctx_buf)
+		memset(sess->ctx_buf, 0, HW_CTX_SIZE);
 
 	return 0;
 }
@@ -517,10 +552,54 @@ static void fill_comp_msg(struct wd_comp_sess *sess, struct wd_comp_msg *msg,
 	msg->win_sz = sess->win_sz;
 	msg->avail_out = req->dst_len;
 
+	msg->mm_type = sess->mm_type;
+	msg->mm_ops = &sess->mm_ops;
+
 	msg->req.last = 1;
 }
 
-static int wd_comp_check_buffer(struct wd_comp_req *req)
+static int wd_check_alg_buff_size(struct wd_comp_req *req, struct wd_comp_sess *sess)
+{
+	if (!req->dst_len) {
+		WD_ERR("invalid: dst_len is 0!\n");
+		return -WD_EINVAL;
+	}
+
+	/*
+	 * Only the first package needs to be checked,
+	 * the middle and last packages do not need to be checked
+	 */
+	if (sess->stream_pos != WD_COMP_STREAM_NEW)
+		return 0;
+
+	if (sess->alg_type == WD_ZLIB) {
+		if (req->dst_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: zlib dst_len(%u) is too small!\n", req->dst_len);
+			return -WD_EINVAL;
+		}
+
+		if (req->src_len <= WD_ZLIB_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: zlib src_len(%u) is too small!\n", req->src_len);
+			return -WD_EINVAL;
+		}
+	}
+
+	if (sess->alg_type == WD_GZIP) {
+		if (req->dst_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_COMPRESS) {
+			WD_ERR("invalid: gzip dst_len(%u) is too small!\n", req->dst_len);
+			return -WD_EINVAL;
+		}
+
+		if (req->src_len <= WD_GZIP_HEADER_SZ && req->op_type == WD_DIR_DECOMPRESS) {
+			WD_ERR("invalid: gzip src_len(%u) is too small!\n", req->src_len);
+			return -WD_EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int wd_comp_check_buffer(struct wd_comp_req *req, struct wd_comp_sess *sess)
 {
 	if (req->data_fmt == WD_FLAT_BUF) {
 		if (unlikely(!req->src || !req->dst)) {
@@ -534,12 +613,7 @@ static int wd_comp_check_buffer(struct wd_comp_req *req)
 		}
 	}
 
-	if (!req->dst_len) {
-		WD_ERR("invalid: dst_len is NULL!\n");
-		return -WD_EINVAL;
-	}
-
-	return 0;
+	return wd_check_alg_buff_size(req, sess);
 }
 
 static int wd_comp_check_params(struct wd_comp_sess *sess,
@@ -558,7 +632,7 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 		return -WD_EINVAL;
 	}
 
-	ret = wd_comp_check_buffer(req);
+	ret = wd_comp_check_buffer(req, sess);
 	if (unlikely(ret))
 		return ret;
 
@@ -688,6 +762,10 @@ int wd_do_comp_sync2(handle_t h_sess, struct wd_comp_req *req)
 
 		ret = wd_do_comp_strm(h_sess, &strm_req);
 		if (unlikely(ret < 0 || strm_req.status == WD_IN_EPARA)) {
+			req->status = strm_req.status;
+			if (!ret)
+				ret = -WD_EINVAL;
+
 			WD_ERR("wd comp, invalid or incomplete data! ret = %d, status = %u!\n",
 			       ret, strm_req.status);
 			return ret;
@@ -784,7 +862,7 @@ static void wd_do_comp_strm_end_check(struct wd_comp_sess *sess,
 int wd_do_comp_strm(handle_t h_sess, struct wd_comp_req *req)
 {
 	struct wd_comp_sess *sess = (struct wd_comp_sess *)h_sess;
-	struct wd_comp_msg msg;
+	struct wd_comp_msg msg = {0};
 	__u32 src_len;
 	int ret;
 
@@ -868,7 +946,9 @@ int wd_do_comp_async(handle_t h_sess, struct wd_comp_req *req)
 
 	ret = wd_alg_driver_send(wd_comp_setting.driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
-		WD_ERR("wd comp send error, ret = %d!\n", ret);
+		if (ret != -WD_EBUSY)
+			WD_ERR("wd comp send error, ret = %d!\n", ret);
+
 		goto fail_with_msg;
 	}
 

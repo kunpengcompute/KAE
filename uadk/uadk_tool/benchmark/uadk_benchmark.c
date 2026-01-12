@@ -16,8 +16,6 @@
 #include "zip_uadk_benchmark.h"
 #include "zip_wd_benchmark.h"
 
-#include "trng_wd_benchmark.h"
-
 #define TABLE_SPACE_SIZE	8
 
 /*----------------------------------------head struct--------------------------------------------------------*/
@@ -70,6 +68,8 @@ static struct acc_alg_item alg_options[] = {
 	{"gzip",		"gzip",			GZIP},
 	{"deflate",		"deflate",		DEFLATE},
 	{"lz77_zstd",		"lz77_zstd",		LZ77_ZSTD},
+	{"lz4",			"lz4",			LZ4},
+	{"lz77_only",		"lz77_only",		LZ77_ONLY},
 	{"rsa",			"rsa-1024",		RSA_1024},
 	{"rsa",			"rsa-2048",		RSA_2048},
 	{"rsa",			"rsa-3072",		RSA_3072},
@@ -142,6 +142,8 @@ static struct acc_alg_item alg_options[] = {
 	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha256-hmac", AES_128_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-192-cbc-sha256-hmac", AES_192_CBC_SHA256_HMAC},
 	{"authenc(generic,cbc(aes))", "aes-256-cbc-sha256-hmac", AES_256_CBC_SHA256_HMAC},
+	{"authenc(generic,cbc(aes))", "aes-128-cbc-sha1-hmac", AES_128_CBC_SHA1_HMAC},
+	{"authenc(generic,cbc(sm4))", "sm4-cbc-sm3-hmac", SM4_CBC_SM3_HMAC},
 	{"ccm(sm4)",		"sm4-128-ccm",		SM4_128_CCM},
 	{"gcm(sm4)",		"sm4-128-gcm",		SM4_128_GCM},
 	{"sm3",			"sm3",			SM3_ALG},
@@ -153,7 +155,6 @@ static struct acc_alg_item alg_options[] = {
 	{"sha512",		"sha512",		SHA512_ALG},
 	{"sha512-224",		"sha512-224",		SHA512_224},
 	{"sha512-256",		"sha512-256",		SHA512_256},
-	{"trng",		"trng",			TRNG},
 	{"",			"",			ALG_MAX}
 };
 
@@ -197,6 +198,29 @@ int get_run_state(void)
 void set_run_state(int state)
 {
 	g_run_state = state;
+}
+
+int uadk_parse_dev_id(char *dev_name)
+{
+	char *last_dash = NULL;
+	char *endptr;
+	int dev_id;
+
+	if (!dev_name)
+		return -WD_EINVAL;
+
+	/* Find the last '-' in the string. */
+	last_dash = strrchr(dev_name, '-');
+	if (!last_dash || *(last_dash + 1) == '\0')
+		return -WD_EINVAL;
+
+	/* Parse the following number */
+	dev_id = strtol(last_dash + 1, &endptr, 10);
+	/* Check whether it is truly all digits */
+	if (*endptr != '\0' || dev_id < 0)
+		return -WD_EINVAL;
+
+	return dev_id;
 }
 
 static int get_alg_type(const char *alg_name)
@@ -284,39 +308,71 @@ int get_pid_cpu_time(u32 *ptime)
 	return 0;
 }
 
-static void alarm_end(int sig)
+static void alarm_end(int sig, siginfo_t *info, void *context)
 {
 	if (sig == SIGALRM) {
 		set_run_state(0);
 		alarm(0);
 	}
-	signal(SIGALRM, alarm_end);
-	alarm(1);
 }
 
 void time_start(u32 seconds)
 {
+	struct sigaction sa = {
+		.sa_sigaction = alarm_end,
+		.sa_flags = SA_SIGINFO | SA_RESETHAND
+	};
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGALRM, &sa, NULL);
+
 	set_run_state(1);
 	init_recv_data();
-	signal(SIGALRM, alarm_end);
+
 	alarm(seconds);
 }
 
 void get_rand_data(u8 *addr, u32 size)
 {
-	unsigned short rand_state[3] = {
-		(0xae >> 16) & 0xffff, 0xae & 0xffff, 0x330e};
-	static __thread u64 rand_seed = 0x330eabcd;
-	u64 rand48 = 0;
-	int i;
+	static __thread unsigned short rand_state[3] = {0};
+	static __thread int initialized = 0;
 
-	// only 32bit valid, other 32bit is zero
-	for (i = 0; i < size >> 3; i++) {
-		rand_state[0] = (u16)rand_seed;
-		rand_state[1] = (u16)(rand_seed >> 16);
-		rand48 = nrand48(rand_state);
-		*((u64 *)addr + i) = rand48;
-		rand_seed = rand48;
+	static const uint32_t LCG_A = 1664525U;
+	static const uint32_t LCG_C = 1013904223U;
+	u32 remainder = size & 0x7;
+	u32 num_u64 = size >> 3;
+	u64 rand48_result = 0;
+	u8 *remainder_addr;
+	u32 init_seed;
+	u32 i;
+
+	if (!initialized) {
+		/* Use the data address value as the initial seed for the random number */
+		init_seed = (u32)(uintptr_t)addr ^ 0x9e370001U;
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[0] = (u16)(init_seed & 0xFFFF);
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[1] = (u16)(init_seed & 0xFFFF);
+		init_seed = LCG_A * init_seed + LCG_C;
+		rand_state[2] = (u16)(init_seed & 0xFFFF);
+
+		initialized = 1;
+	}
+
+	for (i = 0; i < num_u64; i++) {
+		/* Use nrand48£¬it will auto update rand_state */
+		rand48_result = nrand48(rand_state);
+		 *((u64 *)addr + i) = rand48_result;
+	}
+
+	if (remainder > 0) {
+		rand48_result = nrand48(rand_state);
+
+		remainder_addr = addr + (num_u64 << 3);
+		remainder_addr[0] = (u8)(rand48_result);
+		if (remainder > 1)
+			remainder_addr[1] = (u8)(rand48_result >> 8);
+		if (remainder > 2)
+			remainder_addr[2] = (u8)(rand48_result >> 16);
 	}
 }
 
@@ -346,6 +402,15 @@ void segmentfault_handler(int sig)
 	exit(1);
 }
 
+void memset_buf(void *buf, size_t sz)
+{
+	char *ch = (char *)buf;
+	size_t i;
+
+	for (i = 0; i < sz; i++)
+		ch[i] = 0;
+}
+
 /*-------------------------------------main code------------------------------------------------------*/
 static void parse_alg_param(struct acc_option *option)
 {
@@ -370,6 +435,16 @@ static void parse_alg_param(struct acc_option *option)
 		option->acctype = ZIP_TYPE;
 		option->subtype = DEFAULT_TYPE;
 		break;
+	case LZ4:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz4");
+		option->acctype = ZIP_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
+	case LZ77_ONLY:
+		snprintf(option->algclass, MAX_ALG_NAME, "%s", "lz77_only");
+		option->acctype = ZIP_TYPE;
+		option->subtype = DEFAULT_TYPE;
+		break;
 	case SM2_ALG:
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "sm2");
 		option->acctype = HPRE_TYPE;
@@ -384,11 +459,6 @@ static void parse_alg_param(struct acc_option *option)
 		snprintf(option->algclass, MAX_ALG_NAME, "%s", "x448");
 		option->acctype = HPRE_TYPE;
 		option->subtype = X448_TYPE;
-		break;
-	case TRNG:
-		snprintf(option->algclass, MAX_ALG_NAME, "%s", "trng");
-		option->acctype = TRNG_TYPE;
-		option->subtype = DEFAULT_TYPE;
 		break;
 	default:
 		if (option->algtype <= RSA_4096_CRT) {
@@ -518,13 +588,6 @@ static int benchmark_run(struct acc_option *option)
 			ret = zip_wd_benchmark(option);
 		}
 		break;
-	case TRNG_TYPE:
-		if (option->modetype == SVA_MODE)
-			ACC_TST_PRT("TRNG not support sva mode..\n");
-		else if (option->modetype == NOSVA_MODE)
-			ret = trng_wd_benchmark(option);
-
-		break;
 	}
 
 	return ret;
@@ -635,7 +698,7 @@ int acc_default_case(struct acc_option *option)
 	return acc_benchmark_run(option);
 }
 
-static void print_help(void)
+void print_benchmark_help(void)
 {
 	ACC_TST_PRT("NAME\n");
 	ACC_TST_PRT("    benchmark: test UADK acc performance,etc\n");
@@ -718,6 +781,8 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 		{"complevel",	required_argument,	0, 16},
 		{"init2",	no_argument,		0, 17},
 		{"device",	required_argument,	0, 18},
+		{"memory",	required_argument,	0, 19},
+		{"sgl",		no_argument,		0, 20},
 		{0, 0, 0, 0}
 	};
 
@@ -728,7 +793,7 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 
 		switch (c) {
 		case 0:
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		case 1:
 			option->algtype = get_alg_type(optarg);
@@ -789,9 +854,15 @@ int acc_cmd_parse(int argc, char *argv[], struct acc_option *option)
 			}
 			strcpy(option->device, optarg);
 			break;
+		case 19:
+			option->mem_type = strtol(optarg, NULL, 0);
+			break;
+		case 20:
+			option->data_fmt = WD_SGL_BUF;
+			break;
 		default:
 			ACC_TST_PRT("invalid: bad input parameter!\n");
-			print_help();
+			print_benchmark_help();
 			goto to_exit;
 		}
 	}
@@ -862,6 +933,12 @@ int acc_option_convert(struct acc_option *option)
 
 	if (option->inittype == INIT2_TYPE && option->modetype != SVA_MODE) {
 		ACC_TST_PRT("uadk benchmark No-SVA mode can't use init2\n");
+		goto param_err;
+	}
+
+	/* Memory mode is only valid in SVA mode */
+	if (option->mem_type > UADK_PROXY) {
+		ACC_TST_PRT("uadk benchmark memory type set error!\n");
 		goto param_err;
 	}
 
