@@ -16,7 +16,7 @@
 #include <sys/syscall.h>
 #define gettid() syscall(SYS_gettid)
 
-#define KAE_CONFIG_FILE_NAME "/kaelz4.cnf"
+#define KAELZ4_CONFIG_FILE_NAME "/kaelz4.cnf"
 #define MAX_LEVEL_LEN         10
 #define MAX_CONFIG_LEN        512
 
@@ -137,7 +137,7 @@ static void kae_set_conf_debuglevel()
 {
     char *conf_path = kae_getenv(g_kaelz4_conf_env);
     unsigned int i = 0;
-    const char *filename = KAE_CONFIG_FILE_NAME;
+    const char *filename = KAELZ4_CONFIG_FILE_NAME;
     char *file_path = (char *)NULL;
     char *debuglev = (char *)NULL;
     if (conf_path == NULL || strlen(conf_path) > MAX_CONFIG_LEN) {

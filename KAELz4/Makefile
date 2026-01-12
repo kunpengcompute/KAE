@@ -108,6 +108,7 @@ install :
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	install -m 755 $(WORK_PATH)/include/kaelz4.h $(ENGINE_INSTALL_PATH)/include
+	install -m 755 $(WORK_PATH)/include/kaelz4_dev.h $(ENGINE_INSTALL_PATH)/include
 	install -m 755 $(WORK_PATH)/src/utils/kaelz4_log.h $(ENGINE_INSTALL_PATH)/include
 uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
@@ -115,6 +116,7 @@ uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/libkaelz4.a
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4_dev.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaelz4_log.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4.h
 	$(RM) $(ENGINE_INSTALL_PATH)/include/lz4frame.h

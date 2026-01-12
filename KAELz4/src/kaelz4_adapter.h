@@ -11,7 +11,7 @@
 #include <lz4frame.h>
 #include <lz4.h>
 #include "kaelz4_common.h"
-
+#include "kaelz4_dev.h"
 enum {
     HW_NONE,
     HW_V1,
@@ -75,7 +75,7 @@ typedef int (*compress_async_fn)(struct kaelz4_async_ctrl *ctrl, const struct ka
                                  lz4_async_callback callback, struct kaelz4_result *result,
                                  enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 
-int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode);
+int  kaelz4_init_v1(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config);
 void kaelz4_reset_v1(LZ4_CCtx* zc);
 void kaelz4_release_v1(LZ4_CCtx* zc);
 void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);
@@ -95,7 +95,7 @@ int kaelz4_async_is_thread_do_comp_full(struct kaelz4_async_ctrl *ctrl);
 struct kaelz4_async_ctrl *kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
                                             sw_decompress_fn sw_decompress, iova_map_fn usr_map);
 void kaelz4_async_deinit(void);
-int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map);
+int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map, const kaelz4_device_config_t *config);
 void kaelz4_async_instances_deinit(struct kaelz4_async_ctrl *ctrl);
 
 int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
