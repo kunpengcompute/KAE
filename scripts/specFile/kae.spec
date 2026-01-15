@@ -59,7 +59,9 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #engine
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1
-    chrpath -d %{kae_path}/kae_build/KAEOpensslEngine/lib/*
+    for file in %{kae_path}/kae_build/KAEOpensslEngine/lib/*.so*;do
+        [-f "$file" ] $$ chrpath -d "$file" 2>/dev/null || true
+    done
     cp -rf %{kae_path}/kae_build/KAEOpensslEngine/lib/*    ${RPM_BUILD_ROOT}/usr/local/lib/engines-1.1/
 
 #zlib

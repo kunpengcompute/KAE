@@ -152,7 +152,7 @@ int lz4_async_init(struct compress_ctx *ctx)
 {
     iova_map_fn map_func = ctx->enable_huge_page ? get_physical_address_wrapper : NULL;
     if (ctx->is_polling && ctx->compress_or_decompress) {
-        ctx->sess.kae_sess = KAELZ4_create_async_compress_session(map_func, &conf_numa);
+        ctx->sess.kae_sess = KAELZ4_create_async_compress_session(map_func, NULL);
     } else {
         LZ4_async_compress_init(map_func);
     }
