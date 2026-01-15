@@ -92,75 +92,25 @@ static int qm_get_vft(struct hisi_qm *qm, u32 *base)
 	return qp_num;
 }
 
-static int qm_get_xqc_regs(struct hisi_acc_vf_core_device *hisi_acc_vdev,
-			   struct acc_vf_data *vf_data)
+static void qm_xqc_reg_offsets(struct hisi_qm *qm,
+			   u32 *eqc_addr, u32 *aeqc_addr)
 {
-	struct hisi_qm *qm = &hisi_acc_vdev->vf_qm;
-	struct device *dev = &qm->pdev->dev;
-	u32 eqc_addr, aeqc_addr;
-	int ret;
+	struct hisi_acc_vf_core_device *hisi_acc_vdev =
+		container_of(qm, struct hisi_acc_vf_core_device, vf_qm);
 
-	if (qm->ver == QM_HW_V3) {
-		eqc_addr = QM_EQC_DW0;
-		aeqc_addr = QM_AEQC_DW0;
+	if (hisi_acc_vdev->drv_mode == HW_ACC_MIG_VF_CTRL) {
+		*eqc_addr = QM_EQC_VF_DW0;
+		*aeqc_addr = QM_AEQC_VF_DW0;
 	} else {
-		eqc_addr = QM_EQC_PF_DW0;
-		aeqc_addr = QM_AEQC_PF_DW0;
+		*eqc_addr = QM_EQC_PF_DW0;
+		*aeqc_addr = QM_AEQC_PF_DW0;
 	}
-
-	/* QM_EQC_DW has 7 regs */
-	ret = qm_read_regs(qm, eqc_addr, vf_data->qm_eqc_dw, 7);
-	if (ret) {
-		dev_err(dev, "failed to read QM_EQC_DW\n");
-		return ret;
-	}
-
-	/* QM_AEQC_DW has 7 regs */
-	ret = qm_read_regs(qm, aeqc_addr, vf_data->qm_aeqc_dw, 7);
-	if (ret) {
-		dev_err(dev, "failed to read QM_AEQC_DW\n");
-		return ret;
-	}
-
-	return 0;
-}
-
-static int qm_set_xqc_regs(struct hisi_acc_vf_core_device *hisi_acc_vdev,
-			   struct acc_vf_data *vf_data)
-{
-	struct hisi_qm *qm = &hisi_acc_vdev->vf_qm;
-	struct device *dev = &qm->pdev->dev;
-	u32 eqc_addr, aeqc_addr;
-	int ret;
-
-	if (qm->ver == QM_HW_V3) {
-		eqc_addr = QM_EQC_DW0;
-		aeqc_addr = QM_AEQC_DW0;
-	} else {
-		eqc_addr = QM_EQC_PF_DW0;
-		aeqc_addr = QM_AEQC_PF_DW0;
-	}
-
-	/* QM_EQC_DW has 7 regs */
-	ret = qm_write_regs(qm, eqc_addr, vf_data->qm_eqc_dw, 7);
-	if (ret) {
-		dev_err(dev, "failed to write QM_EQC_DW\n");
-		return ret;
-	}
-
-	/* QM_AEQC_DW has 7 regs */
-	ret = qm_write_regs(qm, aeqc_addr, vf_data->qm_aeqc_dw, 7);
-	if (ret) {
-		dev_err(dev, "failed to write QM_AEQC_DW\n");
-		return ret;
-	}
-
-	return 0;
 }
 
 static int qm_get_regs(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 {
 	struct device *dev = &qm->pdev->dev;
+	u32 eqc_addr, aeqc_addr;
 	int ret;
 
 	ret = qm_read_regs(qm, QM_VF_AEQ_INT_MASK, &vf_data->aeq_int_mask, 1);
@@ -200,12 +150,28 @@ static int qm_get_regs(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 		return ret;
 	}
 
+	qm_xqc_reg_offsets(qm, &eqc_addr, &aeqc_addr);
+	/* QM_EQC_DW has 7 regs */
+	ret = qm_read_regs(qm, eqc_addr, vf_data->qm_eqc_dw, 7);
+	if (ret) {
+		dev_err(dev, "failed to read QM_EQC_DW\n");
+		return ret;
+	}
+
+	/* QM_AEQC_DW has 7 regs */
+	ret = qm_read_regs(qm, aeqc_addr, vf_data->qm_aeqc_dw, 7);
+	if (ret) {
+		dev_err(dev, "failed to read QM_AEQC_DW\n");
+		return ret;
+	}
+
 	return 0;
 }
 
 static int qm_set_regs(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 {
 	struct device *dev = &qm->pdev->dev;
+	u32 eqc_addr, aeqc_addr;
 	int ret;
 
 	/* Check VF state */
@@ -254,6 +220,21 @@ static int qm_set_regs(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 	ret = qm_write_regs(qm, QM_PAGE_SIZE, &vf_data->page_size, 1);
 	if (ret) {
 		dev_err(dev, "failed to write QM_PAGE_SIZE\n");
+		return ret;
+	}
+
+	qm_xqc_reg_offsets(qm, &eqc_addr, &aeqc_addr);
+	/* QM_EQC_DW has 7 regs */
+	ret = qm_write_regs(qm, eqc_addr, vf_data->qm_eqc_dw, 7);
+	if (ret) {
+		dev_err(dev, "failed to write QM_EQC_DW\n");
+		return ret;
+	}
+
+	/* QM_AEQC_DW has 7 regs */
+	ret = qm_write_regs(qm, aeqc_addr, vf_data->qm_aeqc_dw, 7);
+	if (ret) {
+		dev_err(dev, "failed to write QM_AEQC_DW\n");
 		return ret;
 	}
 
@@ -430,7 +411,8 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 		dev_err(dev, "failed to match isolation state\n");
 		return -EINVAL;
 	}
-    ret = qm_write_regs(vf_qm, QM_VF_STATE, &vf_data->vf_qm_state, 1);
+
+	ret = qm_write_regs(vf_qm, QM_VF_STATE, &vf_data->vf_qm_state, 1);
 	if (ret) {
 		dev_err(dev, "failed to write QM_VF_STATE\n");
 		return ret;
@@ -445,6 +427,7 @@ static int vf_qm_get_match_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 				struct acc_vf_data *vf_data)
 {
 	struct hisi_qm *pf_qm = hisi_acc_vdev->pf_qm;
+	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
 	struct device *dev = &pf_qm->pdev->dev;
 	int vf_id = hisi_acc_vdev->vf_id;
 	int ret;
@@ -468,6 +451,13 @@ static int vf_qm_get_match_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	ret = qm_read_regs(pf_qm, QM_QUE_ISO_CFG_V, &vf_data->que_iso_cfg, 1);
 	if (ret) {
 		dev_err(dev, "failed to read QM_QUE_ISO_CFG_V!\n");
+		return ret;
+	}
+
+	/* Get VF driver insmod state */
+	ret = qm_read_regs(vf_qm, QM_VF_STATE, &vf_data->vf_qm_state, 1);
+	if (ret) {
+		dev_err(dev, "failed to read QM_VF_STATE!\n");
 		return ret;
 	}
 
@@ -522,10 +512,6 @@ static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 		dev_err(dev, "set VF regs failed\n");
 		return ret;
 	}
-
-	ret = qm_set_xqc_regs(hisi_acc_vdev, vf_data);
-	if (ret)
-		return ret;
 
 	ret = hisi_qm_mb_write(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
 	if (ret) {
@@ -593,10 +579,6 @@ static int vf_qm_state_save(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 
 	vf_data->vf_qm_state = QM_READY;
 	hisi_acc_vdev->vf_qm_state = vf_data->vf_qm_state;
-
-	ret = qm_get_xqc_regs(hisi_acc_vdev, vf_data);
-	if (ret)
-		return -EINVAL;
 
 	ret = vf_qm_read_data(vf_qm, vf_data);
 	if (ret)
@@ -746,6 +728,9 @@ static int hisi_acc_vf_load_state(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
 	struct hisi_acc_vf_migration_file *migf = hisi_acc_vdev->resuming_migf;
 	int ret;
+
+	if (hisi_acc_vdev->vf_qm_state != QM_READY)
+		return 0;
 
 	/* Recover data to VF */
 	ret = vf_qm_load_data(hisi_acc_vdev, migf);
@@ -1178,9 +1163,32 @@ hisi_acc_vfio_pci_get_device_state(struct vfio_device *vdev,
 	return 0;
 }
 
+static void hisi_acc_vf_pci_reset_prepare(struct pci_dev *pdev)
+{
+	struct hisi_acc_vf_core_device *hisi_acc_vdev = hisi_acc_drvdata(pdev);
+	struct hisi_qm *qm = hisi_acc_vdev->pf_qm;
+	struct device *dev = &qm->pdev->dev;
+	u32 delay = 0;
+
+	/* All reset requests need to be queued for processing */
+	while (test_and_set_bit(QM_RESETTING, &qm->misc_ctl)) {
+		msleep(++delay);
+		if (delay > QM_RESET_WAIT_TIMEOUT) {
+			dev_err(dev, "reset prepare failed\n");
+			return;
+		}
+	}
+
+	hisi_acc_vdev->set_reset_flag = true;
+}
+
 static void hisi_acc_vf_pci_aer_reset_done(struct pci_dev *pdev)
 {
 	struct hisi_acc_vf_core_device *hisi_acc_vdev = hisi_acc_drvdata(pdev);
+	struct hisi_qm *qm = hisi_acc_vdev->pf_qm;
+
+	if (hisi_acc_vdev->set_reset_flag)
+		clear_bit(QM_RESETTING, &qm->misc_ctl);
 
 	if (!hisi_acc_vdev->core_device.vdev.mig_ops)
 		return;
@@ -1196,8 +1204,23 @@ static int hisi_acc_vf_qm_init(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
 	struct hisi_qm *pf_qm = hisi_acc_vdev->pf_qm;
 	struct pci_dev *vf_dev = vdev->pdev;
+	u32 val;
 
-	if (pf_qm->ver == QM_HW_V3) {
+	val = readl(pf_qm->io_base + QM_MIG_REGION_SEL);
+	if (pf_qm->ver > QM_HW_V3 && (val & QM_MIG_REGION_EN))
+		hisi_acc_vdev->drv_mode = HW_ACC_MIG_PF_CTRL;
+	else
+		hisi_acc_vdev->drv_mode = HW_ACC_MIG_VF_CTRL;
+
+	if (hisi_acc_vdev->drv_mode == HW_ACC_MIG_PF_CTRL) {
+		/*
+		 * On hardware platforms greater than QM_HW_V3, the migration function
+		 * register is placed in the BAR2 configuration region of the PF,
+		 * and each VF device occupies 8KB of configuration space.
+		 */
+		vf_qm->io_base = pf_qm->io_base + QM_MIG_REGION_OFFSET +
+				 hisi_acc_vdev->vf_id * QM_MIG_REGION_SIZE;
+	} else {
 		/*
 		 * ACC VF dev BAR2 region consists of both functional register space
 		 * and migration control register space. For migration to work, we
@@ -1222,18 +1245,9 @@ static int hisi_acc_vf_qm_init(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 				pci_resource_len(vf_dev, VFIO_PCI_BAR2_REGION_INDEX));
 		if (!vf_qm->io_base)
 			return -EIO;
-
-		vf_qm->fun_type = QM_HW_VF;
-		vf_qm->ver = pf_qm->ver;
-	} else {
-		/*
-		 * In the new HW platform, the migration function register space is in BAR2 of PF,
-		 * and each VF occupies 8KB address space.
-		 */
-		vf_qm->io_base = pf_qm->io_base + QM_MIG_REGION_OFFSET +
-				hisi_acc_vdev->vf_id * QM_MIG_REGION_SIZE;
-		vf_qm->fun_type = QM_HW_PF;
 	}
+	vf_qm->fun_type = QM_HW_VF;
+	vf_qm->ver = pf_qm->ver;
 	vf_qm->pdev = vf_dev;
 	mutex_init(&vf_qm->mailbox_lock);
 
@@ -1277,23 +1291,18 @@ static size_t hisi_acc_get_resource_len(struct vfio_pci_core_device *vdev,
 			hisi_acc_drvdata(vdev->pdev);
 
 	/*
-	 * ACC VF dev 64KB BAR2 region consists of both functional
-	 * register space and migration control register space, each
-	 * uses 32KB BAR2 region, on the system with more than 64KB
-	 * page size, even if the migration control register space
-	 * is written by VM, it will only affects the VF.
-	 *
-	 * In order to support the live migration function in the
-	 * system with a page size above 64KB, the driver needs
-	 * to ensure that the VF region size is aligned with the
-	 * system page size.
-	 *
-	 * On the new hardware platform, the live migration control register
-	 * has been moved from VF to PF.
+	 * On the old HW_ACC_MIG_VF_CTRL mode device, the ACC VF device
+	 * BAR2 region encompasses both functional register space
+	 * and migration control register space.
+	 * only the functional region should be report to Guest.
 	 */
-	if (hisi_acc_vdev->pf_qm->ver == QM_HW_V3)
+	if (hisi_acc_vdev->drv_mode == HW_ACC_MIG_VF_CTRL)
 		return (pci_resource_len(vdev->pdev, index) >> 1);
-
+	/*
+	 * On the new HW device, the migration control register
+	 * has been moved to the PF device BAR2 region.
+	 * The VF device BAR2 is entirely functional register space.
+	 */
 	return pci_resource_len(vdev->pdev, index);
 }
 
@@ -1332,7 +1341,7 @@ static int hisi_acc_vfio_pci_mmap(struct vfio_device *core_vdev,
 		u64 req_len, pgoff, req_start;
 		resource_size_t end;
 
-		end = PAGE_ALIGN(hisi_acc_get_resource_len(vdev, index));
+		end = hisi_acc_get_resource_len(vdev, index);
 		req_len = vma->vm_end - vma->vm_start;
 		pgoff = vma->vm_pgoff &
 			((1U << (VFIO_PCI_OFFSET_SHIFT - PAGE_SHIFT)) - 1);
@@ -1549,6 +1558,7 @@ static int hisi_acc_vfio_pci_open_device(struct vfio_device *core_vdev)
 		}
 		hisi_acc_vdev->mig_state = VFIO_DEVICE_STATE_RUNNING;
 		hisi_acc_vdev->dev_opened = true;
+		hisi_acc_vdev->match_done = 0;
 		mutex_unlock(&hisi_acc_vdev->open_mutex);
 	}
 
@@ -1564,7 +1574,7 @@ static void hisi_acc_vfio_pci_close_device(struct vfio_device *core_vdev)
 	hisi_acc_vf_disable_fds(hisi_acc_vdev);
 	mutex_lock(&hisi_acc_vdev->open_mutex);
 	hisi_acc_vdev->dev_opened = false;
-	if (vf_qm->ver == QM_HW_V3)
+	if (hisi_acc_vdev->drv_mode == HW_ACC_MIG_VF_CTRL)
 		iounmap(vf_qm->io_base);
 	mutex_unlock(&hisi_acc_vdev->open_mutex);
 	vfio_pci_core_close_device(core_vdev);
@@ -1655,8 +1665,10 @@ static void hisi_acc_vfio_debug_init(struct hisi_acc_vf_core_device *hisi_acc_vd
 	}
 
 	migf = kzalloc(sizeof(*migf), GFP_KERNEL);
-	if (!migf)
+	if (!migf) {
+		dput(vfio_dev_migration);
 		return;
+	}
 	hisi_acc_vdev->debug_migf = migf;
 
 	vfio_hisi_acc = debugfs_create_dir("hisi_acc", vfio_dev_migration);
@@ -1666,6 +1678,8 @@ static void hisi_acc_vfio_debug_init(struct hisi_acc_vf_core_device *hisi_acc_vd
 				    hisi_acc_vf_migf_read);
 	debugfs_create_devm_seqfile(dev, "cmd_state", vfio_hisi_acc,
 				    hisi_acc_vf_debug_cmd);
+
+	dput(vfio_dev_migration);
 }
 
 static void hisi_acc_vf_debugfs_exit(struct hisi_acc_vf_core_device *hisi_acc_vdev)
@@ -1728,6 +1742,7 @@ static const struct pci_device_id hisi_acc_vfio_pci_table[] = {
 MODULE_DEVICE_TABLE(pci, hisi_acc_vfio_pci_table);
 
 static const struct pci_error_handlers hisi_acc_vf_err_handlers = {
+	.reset_prepare = hisi_acc_vf_pci_reset_prepare,
 	.reset_done = hisi_acc_vf_pci_aer_reset_done,
 	.error_detected = vfio_pci_core_aer_err_detected,
 };

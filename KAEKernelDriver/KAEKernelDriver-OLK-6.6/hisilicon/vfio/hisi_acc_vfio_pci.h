@@ -50,8 +50,10 @@
 #define QM_QUE_ISO_CFG_V	0x0030
 #define QM_PAGE_SIZE		0x0034
 
-#define QM_EQC_DW0		0X8000
-#define QM_AEQC_DW0		0X8020
+#define QM_EQC_VF_DW0		0X8000
+#define QM_AEQC_VF_DW0		0X8020
+#define QM_EQC_PF_DW0		0x1c00
+#define QM_AEQC_PF_DW0		0x1c20
 
 #define ACC_DRV_MAJOR_VER 1
 #define ACC_DRV_MINOR_VER 0
@@ -59,12 +61,23 @@
 #define ACC_DEV_MAGIC_V1	0XCDCDCDCDFEEDAACC
 #define ACC_DEV_MAGIC_V2	0xAACCFEEDDECADEDE
 
-#define QM_MIG_REGION_OFFSET	0x180000
-#define QM_MIG_REGION_SIZE	0x2000
+#define QM_RESET_WAIT_TIMEOUT  400
 
-#define QM_SUB_VERSION_ID	0x100210
-#define QM_EQC_PF_DW0	0x1c00
-#define QM_AEQC_PF_DW0	0x1c20
+#define QM_MIG_REGION_OFFSET           0x180000
+#define QM_MIG_REGION_SIZE             0x2000
+
+/**
+ * On HW_ACC_MIG_VF_CTRL mode, the configuration domain supporting live
+ * migration functionality is located in the latter 32KB of the VF's BAR2.
+ * The Guest is only provided with the first 32KB of the VF's BAR2.
+ * On HW_ACC_MIG_PF_CTRL mode, the configuration domain supporting live
+ * migration functionality is located in the PF's BAR2, and the entire 64KB
+ * of the VF's BAR2 is allocated to the Guest.
+ */
+enum hw_drv_mode {
+	HW_ACC_MIG_VF_CTRL = 0,
+	HW_ACC_MIG_PF_CTRL,
+};
 
 struct acc_vf_data {
 #define QM_MATCH_SIZE offsetofend(struct acc_vf_data, qm_rsv_state)
@@ -117,6 +130,7 @@ struct hisi_acc_vf_migration_file {
 struct hisi_acc_vf_core_device {
 	struct vfio_pci_core_device core_device;
 	u8 match_done;
+	bool set_reset_flag;
 	/*
 	 * io_base is only valid when dev_opened is true,
 	 * which is protected by open_mutex.
@@ -132,6 +146,7 @@ struct hisi_acc_vf_core_device {
 	struct pci_dev *vf_dev;
 	struct hisi_qm *pf_qm;
 	struct hisi_qm vf_qm;
+	enum hw_drv_mode drv_mode;
 	/*
 	 * vf_qm_state represents the QM_VF_STATE register value.
 	 * It is set by Guest driver for the ACC VF dev indicating
