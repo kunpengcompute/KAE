@@ -51,7 +51,7 @@ end:
      US_INFO("kaelz4 v%d inited!\n", g_platform);
 }
 
-int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode)
+int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config)
 {
     uadk_get_accel_platform();
 
@@ -61,7 +61,7 @@ int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode)
     case HW_NONE:
         break;
     case HW_V1:
-        ret = kaelz4_init_v1(zc, is_sgl, mode);
+        ret = kaelz4_init_v1(zc, is_sgl, mode, config);
         break;
     case HW_V2:
         ret = kaelz4_init_v2(zc);
@@ -556,7 +556,7 @@ int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, 
     return ret;
 }
 
-void *KAELZ4_create_async_compress_session(iova_map_fn usr_map)
+void *KAELZ4_create_async_compress_session(iova_map_fn usr_map, const kaelz4_device_config_t *config)
 {
     kaelz4_session *sess = (kaelz4_session *)kae_malloc(sizeof(kaelz4_session));
     int ret = 0;
@@ -571,7 +571,7 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map)
         free(sess);
         return NULL;
     }
-    ret = kaelz4_async_instances_init(&sess->ctrl, usr_map);
+    ret = kaelz4_async_instances_init(&sess->ctrl, usr_map, config);
     if (ret != 0) {
         kaelz4_task_queue_free(&sess->task_queue);
         free(sess);

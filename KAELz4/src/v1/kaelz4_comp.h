@@ -17,6 +17,7 @@
 #include <arm_neon.h>
 #include "kaelz4_ctx.h"
 #include "uadk/v1/wd_sgl.h"
+#include "kaelz4_dev.h"
 
 #define TOKEN_NUM_CONTROL 0 // 用于控制生成压缩块中三元组数目，来保证解压速度（对齐实际match length需+3）
 #define ML_BITS  4
@@ -112,6 +113,7 @@ struct kaelz4_async_ctrl {
     volatile int *stop_flag;
     iova_map_fn usr_map;
     int is_polling;
+    const kaelz4_device_config_t *config;
 };
 
 void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status);

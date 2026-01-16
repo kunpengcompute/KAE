@@ -1109,7 +1109,7 @@ void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl)
     }
 }
 
-int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map)
+int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map, const kaelz4_device_config_t *config)
 {
     LZ4_CCtx ctx_body;
 
@@ -1124,7 +1124,7 @@ int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr
     new_ctrl->usr_map = usr_map;
     new_ctrl->is_polling = TRUE;
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
-        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
+        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE, config) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             new_ctrl->kz_ctx[i] = NULL;
             goto free_kz_ctx;
         }
@@ -1289,7 +1289,7 @@ void kaelz4_hw_timeout_handle(struct kaelz4_async_ctrl *ctrl)
         if (ctrl->kz_ctx[i] != NULL) {
             continue;
         }
-        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE) != KAE_LZ4_SUCC) {
+        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE, ctrl->config) != KAE_LZ4_SUCC) {
             return;
         }
         ctrl->kz_ctx[i] = (kaelz4_ctx_t *)ctx_body.kaeConfig;
@@ -1326,7 +1326,7 @@ static int kaelz4_async_init_ctx(struct kaelz4_async_ctrl *ctrl, LZ4_CCtx *ctx_b
 
     if (unlikely(ctrl->kz_ctx[ctrl->ctx_index] == NULL)) {
         int is_sgl = (ctrl->usr_map != NULL) ? 1 : 0;
-        while (kaelz4_init(ctx_body, is_sgl, ASYNC_MODE) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
+        while (kaelz4_init(ctx_body, is_sgl, ASYNC_MODE, ctrl->config) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             struct timespec timeout;
             if (enter_polling == 0) {
                 get_time_out_spec(&timeout, &polling_timeout_10us);

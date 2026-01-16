@@ -253,7 +253,7 @@ void kaelz4_free_instance(void *arg)
 }
 
 __thread struct kaelz4_instance *g_cur_instance;
-kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode)
+kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
     kaelz4_ctx_t               *kz_ctx = NULL;
@@ -265,10 +265,11 @@ kaelz4_ctx_t* kaelz4_get_ctx(int alg_comp_type, int comp_optype, int is_sgl, ope
     }
 
     if (g_cur_instance == NULL) {
-        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
+        q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode, config);
         if (q_node == NULL) {
             kaelz4_queue_pool_check_and_release(qp, kaelz4_free_instance);
-            q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode);
+            q_node = kaelz4_get_node_from_pool(qp, alg_comp_type, comp_optype, is_sgl, mode, config);
+
             if (q_node == NULL) {
                 kae_free(g_cur_instance);
                 g_cur_instance = NULL;
