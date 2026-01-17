@@ -1063,6 +1063,8 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 #define KAE_LZ4_ALLOC_FAIL 5 # 内存资源申请失败
 #define KAE_LZ4_SET_FAIL 6 # 内部错误
 #define KAE_LZ4_HW_TIMEOUT_FAIL 7 # 硬件超时
+#define KAE_LZ4_DST_BUF_OVERFLOW 8 # 目标缓冲区溢出
+#define KAE_LZ4_TASK_QUEUE_FULL 9 # 任务队列已满
 ```
 
 ### 切软算场景：
