@@ -8,10 +8,12 @@
 #include <linux/slab.h>
 #include "../include_linux/uacce.h"
 #include <linux/wait.h>
+#include <linux/idr.h>
 
 static struct class *uacce_class;
 static dev_t uacce_devt;
-static DEFINE_XARRAY_ALLOC(uacce_xa);
+// static DEFINE_XARRAY_ALLOC(uacce_xa);
+static DEFINE_IDR(uacce_idr);
 static const struct file_operations uacce_fops;
 
 static struct uacce_qfile_region noiommu_ss_default_qfr = {
@@ -256,24 +258,24 @@ static long uacce_fops_compat_ioctl(struct file *filep,
 
 static int uacce_bind_queue(struct uacce_device *uacce, struct uacce_queue *q)
 {
-	u32 pasid;
-	struct iommu_sva *handle;
+	// u32 pasid;
+	// struct iommu_sva *handle;
 
-	if (!(uacce->flags & UACCE_DEV_SVA))
-		return 0;
+	// if (!(uacce->flags & UACCE_DEV_SVA))
+	// 	return 0;
 
-	handle = iommu_sva_bind_device(uacce->parent, current->mm, NULL);
-	if (IS_ERR(handle))
-		return PTR_ERR(handle);
+	// handle = iommu_sva_bind_device(uacce->parent, current->mm, NULL);
+	// if (IS_ERR(handle))
+	// 	return PTR_ERR(handle);
 
-	pasid = iommu_sva_get_pasid(handle);
-	if (pasid == IOMMU_PASID_INVALID) {
-		iommu_sva_unbind_device(handle);
-		return -ENODEV;
-	}
+	// pasid = iommu_sva_get_pasid(handle);
+	// if (pasid == IOMMU_PASID_INVALID) {
+	// 	iommu_sva_unbind_device(handle);
+	// 	return -ENODEV;
+	// }
 
-	q->handle = handle;
-	q->pasid = pasid;
+	// q->handle = handle;
+	// q->pasid = pasid;
 	return 0;
 }
 
@@ -281,7 +283,7 @@ static void uacce_unbind_queue(struct uacce_queue *q)
 {
 	if (!q->handle)
 		return;
-	iommu_sva_unbind_device(q->handle);
+	// iommu_sva_unbind_device(q->handle);
 	q->handle = NULL;
 }
 
@@ -291,9 +293,11 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	struct uacce_queue *q;
 	int ret;
 
-	uacce = xa_load(&uacce_xa, iminor(inode));
-	if (!uacce)
+	uacce = idr_find(&uacce_idr, iminor(inode));
+	if (!uacce) {
+		pr_err("fail to find uacce device!\n");
 		return -ENODEV;
+	}
 
 	q = kzalloc(sizeof(struct uacce_queue), GFP_KERNEL);
 	if (!q)
@@ -936,10 +940,10 @@ struct uacce_device *uacce_alloc(struct device *parent,
 	uacce->flags = flags;
 	uacce->ops = interface->ops;
 
-	ret = xa_alloc(&uacce_xa, &uacce->dev_id, uacce, xa_limit_32b,
-		       GFP_KERNEL);
+	ret = idr_alloc(&uacce_idr, uacce, 0, 0, GFP_KERNEL);
 	if (ret < 0)
 		goto err_with_uacce;
+	uacce->dev_id= ret;
 
 	INIT_LIST_HEAD(&uacce->queues);
 	mutex_init(&uacce->mutex);
@@ -1033,7 +1037,9 @@ void uacce_remove(struct uacce_device *uacce)
 
 	if (uacce->cdev)
 		cdev_device_del(uacce->cdev, &uacce->dev);
-	xa_erase(&uacce_xa, uacce->dev_id);
+	// xa_erase(&uacce_xa, uacce->dev_id);
+	idr_remove(&uacce_idr, uacce->dev_id);	
+
 	/*
 	 * uacce exists as long as there are open fds, but ops will be freed
 	 * now. Ensure that bugs cause NULL deref rather than use-after-free.

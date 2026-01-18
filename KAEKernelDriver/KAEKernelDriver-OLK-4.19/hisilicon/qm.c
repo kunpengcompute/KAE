@@ -1129,7 +1129,7 @@ static irqreturn_t qm_aeq_thread(int irq, void *data)
 		case QM_CQ_OVERFLOW:
 			dev_err(&qm->pdev->dev, "cq overflow, stop qp(%u)\n",
 				qp_id);
-			fallthrough;
+			// fallthrough;
 		case QM_CQE_ERROR:
 			qm_disable_qp(qm, qp_id);
 			break;

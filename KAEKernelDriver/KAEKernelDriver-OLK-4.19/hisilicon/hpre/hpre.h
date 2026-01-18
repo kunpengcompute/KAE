@@ -101,7 +101,7 @@ struct hpre_sqe {
 };
 
 struct hisi_qp *hpre_create_qp(u8 type);
-int hpre_algs_register(struct hisi_qm *qm);
-void hpre_algs_unregister(struct hisi_qm *qm);
+// int hpre_algs_register(struct hisi_qm *qm);
+// void hpre_algs_unregister(struct hisi_qm *qm);
 bool hpre_check_alg_support(struct hisi_qm *qm, u32 alg);
 #endif
