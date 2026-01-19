@@ -37,6 +37,10 @@ function build_check_OS_version()
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-5.4
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
+    elif [[ "$KERNEL_VERSION" == 4.19.* ]]; then
+        KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-4.19
+        KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae.spec
+        OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-1.1/ --enable-kae"
     else
 		echo "[KAE error]:unsupport kernel version $KERNEL_VERSION"
     fi
