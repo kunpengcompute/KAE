@@ -119,13 +119,16 @@ This package kae_driver library.
 /usr/local/lib/libwd.*
 /usr/local/lib/libwd_comp.*  
 /usr/local/lib/libwd_crypto.*
+/usr/local/lib/libwd_udma.*
+/usr/local/lib/libwd_dae.*
 /usr/local/lib/libhisi_hpre.*
 /usr/local/lib/libhisi_sec.* 
 /usr/local/lib/libhisi_zip.*
 /usr/local/lib/libhisi_dae.*
+/usr/local/lib/libhisi_udma.*
 /usr/local/lib/libisa_ce.*
 /usr/local/lib/libisa_sve.*
-/usr/local/lib/libwd_dae.*
+
 
 %defattr(644,root,root)
 /usr/include/uadk/*.h
@@ -140,16 +143,18 @@ modprobe -r hisi_hpre > /dev/null 2>&1 || true
 modprobe -r hisi_sec2 > /dev/null 2>&1 || true
 modprobe -r hisi_qm > /dev/null 2>&1 || true
 modprobe -r uacce > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_comp.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd.*           > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_comp.*      > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_crypto.*    > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_udma.*      > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*       > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_hpre.*    > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_sec.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_zip.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_dae.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_udma.*    > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*       > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*      > /dev/null 2>&1 || true
 
 echo "checking installed modules"
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
@@ -260,16 +265,18 @@ fi
 
 %postun driver
 /sbin/ldconfig
-rm -rf /usr/local/lib/libwd.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_comp.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_crypto.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_hpre.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd.*         > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_comp.*    > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_crypto.*  > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_udma.*    > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_hpre.*  > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
 rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_ce.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_sve.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_udma.*  > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*    > /dev/null 2>&1 || true
 
 rm -rf /lib/modules/%{kernel_version}/extra/uacce.ko > /dev/null 2>&1 || true
 rm -rf /lib/modules/%{kernel_version}/extra/hisi_qm.ko > /dev/null 2>&1 || true
