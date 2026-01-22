@@ -12,6 +12,9 @@ Algthm=()
 if [[ -d "/usr/local/kaelz4" ]]; then
     Algthm+=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77" "kaelz4async_lz77_frame")
 fi
+if [[ -d "/usr/local/kaezip" ]]; then
+    Algthm+=("kaezlib_deflate" "kaezlibasync_deflate")
+fi
 
 sh build.sh $buildParams
 
@@ -21,7 +24,7 @@ Polling=("1" "0")
 
 
 current_time=$(date +"%Y-%m-%d_%H-%M-%S")
-LogFile=kaelz4-function.log.$current_time
+LogFile=kae.log.$current_time
 testFilePath=../../../scripts/compressTestDataset
 passCnt=0
 failCnt=0

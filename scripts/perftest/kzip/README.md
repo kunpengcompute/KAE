@@ -6,12 +6,14 @@
 ```
 cd KAE
 # 安装 frame 相关头文件
-yum install lz4-devel
+yum install lz4-devel      (for openeuler OS)
+apt-get install liblz4-dev (for debian OS)
 # 覆盖安装本次新增异步接口相关头文件
 sh build.sh uadk
 sh build.sh lz4
+sh build.sh zlib
 ```
-2、打包 kzip
+2、编译 kzip
 ```
 # 在 scripts/perftest/kzip/ 目录中
 sh build.sh
@@ -42,6 +44,7 @@ modprobe hisi_zip perf_mode=1 uacce_mode=2 pf_q_num=256 #执行后观察KAE硬�
 ```shell
 export KAE_LZ4_WINTYPE=8
 export KAE_LZ4_COMP_TYPE=8
+export KAE_ZLIB_WINTYPE=8
 ```
 
 4、查看工具参数说明
@@ -60,6 +63,8 @@ kaelz4_frame: 同步lz4 frame格式压缩
 kaelz4async_block: 异步lz4 block格式压缩
 kaelz4async_frame: 异步lz4 frame格式压缩
 kaelz4async_lz77: 异步lz4 原始lz77_raw格式压缩
+kaezlib_deflate: 同步zlib deflate_raw格式压缩
+kaezlibasync_deflate: 异步zlib deflate_raw格式压缩
 ```
 - -d 处理压缩任务或解压任务
 default:null 默认压缩任务
@@ -95,7 +100,7 @@ default:null 默认压缩任务
 是否开启polling模式进行压缩。默认0不开启
 
 - -r crc32c校验处理
-是否携带crc32c校验值。默认0不携带
+是否携带crc32c校验值。默认0 不携带
 
 
 ## 使用限制
@@ -110,6 +115,7 @@ echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hu
 ```
 
 ## 测试命令
+
 polling模式lz77_raw格式转换为block格式压缩接口测试
 ```shell
 # 1、单IO时延数据
@@ -144,11 +150,31 @@ sh scripts/runPerf.sh -A kaelz4async_block -m 1 -n 20000 -s [4/8/16/32/64] -r 1 
 ```
 
 
-### 环境变量 KAE_ZIP_QUEUE_NODES_MASK 的使用说明：
+zlib下deflate_raw格式异步压缩接口测试：
 ```shell
-export KAE_ZIP_QUEUE_NODES_MASK=15  # 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
-export KAE_ZIP_QUEUE_NODES_MASK=12  # 十进制12 → 二进制 1100 → 使用NUMA 2,3
-export KAE_ZIP_QUEUE_NODES_MASK=11  # 十进制11 → 二进制 1011 → 使用NUMA 0,1,3
-export KAE_ZIP_QUEUE_NODES_MASK=7   # 十进制7  → 二进制 0111 → 使用NUMA 0,1,2
-export KAE_ZIP_QUEUE_NODES_MASK=5   # 十进制5  → 二进制 0101 → 使用NUMA 0,2
+# 1、单IO时延测试：等价串行流程，结果表示单个IO的压缩时延。
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 1 -p 1 -f [path to calgary.tar] 
+
+# 2、单核压缩能力测试：单线程加压，结果表示单线程能够提供的压缩带宽与时延。
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 4 -p 1 -f [path to calgary.tar] 
+
+# 3、单KAE能力测试：单线程继续加压，结果表示单个KAE能够提供的压缩带宽与时延。
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -r 1 -k 1 -i 8 -p 1 -f [path to calgary.tar] 
+```
+
+zlib下deflate_raw格式单个进程同时使用多个KAE的测试：
+```shell
+# 设置环境变量，以使用多个KAE。
+# 注意：跨numa使用KAE会影响性能。达到最优性能推荐当前进程使用自身所处CPU节点对应的numa上的KAE。
+# 以下测试命令将进程绑定到numa0上，并同时使用numa0和numa1对应的KAE。
+export KAE_ZIP_QUEUE_NODES_MASK=3  # 使用NUMA 0,1
+# 双KAE压缩解压能力测试
+sh scripts/runPerf.sh -A kaezlibasync_deflate -m 1 -n 20000 -s [4/8/16/32/64] -k 1 -i 64 -p 1 -e 2 -f [path to calgary.tar] 
+
+# 环境变量 KAE_ZIP_QUEUE_NODES_MASK 的使用说明：
+# export KAE_ZIP_QUEUE_NODES_MASK=15  # 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
+# export KAE_ZIP_QUEUE_NODES_MASK=12  # 十进制12 → 二进制 1100 → 使用NUMA 2,3
+# export KAE_ZIP_QUEUE_NODES_MASK=11  # 十进制11 → 二进制 1011 → 使用NUMA 0,1,3
+# export KAE_ZIP_QUEUE_NODES_MASK=7   # 十进制7  → 二进制 0111 → 使用NUMA 0,1,2
+# export KAE_ZIP_QUEUE_NODES_MASK=5   # 十进制5  → 二进制 0101 → 使用NUMA 0,2
 ```

@@ -55,7 +55,7 @@ while getopts "m:l:n:w:f:o:v:A:h:g:s:c:i:t:p:k:r:P:e:" opt; do
   esac
 done
 
-Alg=${Alg:=kaelz4}
+Alg=${Alg:=kaezip}
 multiProcess=${multiProcess:=1}
 fileChunk=${fileChunk:=0}
 loppTimes=${loppTimes:=1}
@@ -68,7 +68,7 @@ isTestPolling=${isTestPolling:=0}
 sess_nums=${sess_nums:=1}
 recordDelay=${recordDelay:=0}
 
-kae_algs=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77" "kaelz4async_lz77_frame")
+kae_algs=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77" "kaelz4async_lz77_frame"  "kaezlib_deflate" "kaezlibasync_deflate")
 
 if [[ " ${kae_algs[@]} " =~ " $Alg " ]]; then
   buildParams="kae"

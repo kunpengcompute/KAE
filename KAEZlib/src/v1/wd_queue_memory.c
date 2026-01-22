@@ -23,14 +23,44 @@
 #include <stdio.h>
 #include "wd_queue_memory.h"
 #include "kaezip_log.h"
+#include "uadk/v1/wd_sgl.h"
 #include "uadk/v1/wd_bmm.h"
 #include "uadk/v1/wd_comp.h"
 #include "kaezip_ctx.h"
 
 void kaezip_wd_free_queue(struct wd_queue* queue);
-struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype);
 
-struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype)
+#define ALL_NUMA_NODES 4
+static int g_numa_used_config_nodes[ALL_NUMA_NODES];
+static int g_numa_used_config_count = 0;
+
+/**
+ * 解析环境变量 KAE_ZIP_QUEUE_NODES_MASK 的 mask值。
+ * 解析方法：十进制转换为2进制，根据每一位的值，确认是否使用对应NUMA。
+ * 举例说明：
+ * export KAE_ZIP_QUEUE_NODES_MASK=15   // 十进制15 → 二进制 1111 → 使用NUMA 0,1,2,3
+ * export KAE_ZIP_QUEUE_NODES_MASK=12   // 十进制12 → 二进制 0011 → 使用NUMA 2,3
+ * export KAE_ZIP_QUEUE_NODES_MASK=3    // 十进制 3 → 二进制 0011 → 使用NUMA 0,1
+ */
+static void parse_numa_env_mask(int mask) {
+    g_numa_used_config_count = 0;
+    for (int i = 0; i < ALL_NUMA_NODES; ++i) {
+        if (mask & (1 << i)) {
+            g_numa_used_config_nodes[g_numa_used_config_count++] = i;
+        }
+    }
+}
+static int get_numa_mask(int mask) {
+    if (g_numa_used_config_count == 0) {
+        parse_numa_env_mask(mask);
+    }
+    static int numa_id = 0;
+    int nid = g_numa_used_config_nodes[numa_id++ % g_numa_used_config_count];
+    US_DEBUG("wd_queue use numa %d in this sess.\n", nid);
+    return 1 << nid;
+}
+
+struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype, int is_sgl, const device_config_t *config)
 {
     struct wd_queue* queue = (struct wd_queue *)kae_malloc(sizeof(struct wd_queue));
     if (queue == NULL) {
@@ -56,8 +86,32 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype)
     queue->capa.latency = 0;
     queue->capa.throughput = 0;
 
+    if (is_sgl)
+        queue->capa.priv.is_single_thread = 1;
+
+    char *queue_nodes = getenv("KAE_ZIP_QUEUE_NODES_MASK");
+    if (queue_nodes != NULL) {
+        int queue_nodes_all = atoi(queue_nodes);
+        int numa_mask = get_numa_mask(queue_nodes_all);
+        queue->node_mask = numa_mask;
+    }
+
     struct wcrypto_paras *priv = (struct wcrypto_paras *)&(queue->capa.priv);
     priv->direction = comp_optype;
+
+    /* request queue based on config */
+    if (config != NULL && config->policy != KAE_SELECT_AUTO) {
+        switch (config->policy) {
+            case KAE_SELECT_BY_DEV:
+                snprintf(queue->dev_path, PATH_STR_SIZE, "%s", config->param.dev->dev_name);
+                break;
+            case KAE_SELECT_BY_NUMA:
+                queue->node_mask = 1 << config->param.numa_node;
+                break;
+            default:
+                break;
+        }
+    }
     int ret = wd_request_queue(queue);
     if (ret) {
         US_ERR("request wd queue fail!errno:%d", ret);
@@ -69,6 +123,23 @@ struct wd_queue* kaezip_wd_new_queue(int comp_alg_type, int comp_optype)
     return queue;
 }
 
+void* kaezip_create_sgl_mempool(struct wd_queue *q)
+{
+    struct wd_sglpool_setup setup;
+
+    memset(&setup, 0, sizeof(setup));
+
+    setup.buf_size = COMP_BLOCK_SIZE;
+    setup.align_size = 64;
+    setup.sge_num_in_sgl = 1;
+    setup.buf_num_in_sgl = setup.sge_num_in_sgl;
+    setup.sgl_num = MAX_KAE_CTX_DEPTH;      // Zlib模式下，每个SGL output仅需要 1 段buf
+    setup.buf_num = setup.buf_num_in_sgl * setup.sgl_num + setup.sgl_num * 2 + 2;
+    void *mempool = wd_sglpool_create(q, &setup);
+
+    return mempool;
+}
+
 void kaezip_wd_free_queue(struct wd_queue* queue)
 {
     if (queue != NULL) {
@@ -76,22 +147,6 @@ void kaezip_wd_free_queue(struct wd_queue* queue)
         kae_free(queue);
         queue = NULL;
     }
-}
-
-void* kaezip_create_alg_wd_queue_mempool(struct wd_queue *q)
-{
-    unsigned int block_size = COMP_BLOCK_SIZE;
-    unsigned int block_num = COMP_BLOCK_NUM;
-    struct wd_blkpool_setup setup;
-
-    memset(&setup, 0, sizeof(setup));
-    setup.block_size = block_size;
-    setup.block_num = block_num;
-    setup.align_size = 64;   // align with 64
-
-    void *mempool = wd_blkpool_create(q, &setup);
-
-    return mempool;
 }
 
 void kaezip_wd_queue_mempool_destroy(void *pool)
@@ -122,6 +177,11 @@ void *kaezip_wd_alloc_blk(void *pool, size_t size)
 void kaezip_wd_free_blk(void *pool, void *blk)
 {
     return wd_free_blk(pool, blk);
+}
+
+static void kaezip_sgl_pool_destroy(void *pool)
+{
+    return wd_sglpool_destroy(pool);
 }
 
 KAE_QUEUE_POOL_HEAD_S* kaezip_init_queue_pool(int algtype)
@@ -155,14 +215,14 @@ KAE_QUEUE_POOL_HEAD_S* kaezip_init_queue_pool(int algtype)
     return kae_pool;
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type)
+static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type, int win_size, int is_sgl)
 {
     int i = 0;
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
 
     if ((pool_head->pool_use_num == 0) && (pool_head->next == NULL)) {
-        return queue_data_node;
+        return NULL;
     }
 
     while (temp_pool != NULL) {
@@ -172,17 +232,18 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
             }
 
             if (KAE_SPIN_TRYLOCK(temp_pool->kae_queue_pool[i].spinlock)) {
-                if (temp_pool->kae_queue_pool[i].node_data == NULL) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
-                if (temp_pool->kae_queue_pool[i].node_data->comp_alg_type != type) {
-                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
-                    continue;
-                }
-
                 queue_data_node = temp_pool->kae_queue_pool[i].node_data;
+                if (queue_data_node == NULL) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
+                if (queue_data_node->comp_alg_type != type || queue_data_node->is_sgl != is_sgl ||
+                    queue_data_node->win_size != win_size) {
+                    KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
+                    continue;
+                }
+
                 temp_pool->kae_queue_pool[i].node_data = NULL;
                 KAE_SPIN_UNLOCK(temp_pool->kae_queue_pool[i].spinlock);
 
@@ -194,10 +255,26 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_get_queue_data_from_list(KAE_QUEUE_POOL_HEA
         temp_pool = temp_pool->next;
     }
 
-    return queue_data_node;
+    return NULL;
 }
 
-static void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn)
+void* kaezip_create_alg_wd_queue_mempool(struct wd_queue *q, operation_mode mode)
+{
+    unsigned int block_size = mode == SYNC_MODE ? COMP_BLOCK_SIZE : ASYNC_COMP_BLOCK_SIZE;
+    unsigned int block_num = COMP_BLOCK_NUM * (mode == SYNC_MODE ? 1 : MAX_KAE_CTX_DEPTH);
+    struct wd_blkpool_setup setup;
+
+    memset(&setup, 0, sizeof(setup));
+    setup.block_size = block_size;
+    setup.block_num = block_num;
+    setup.align_size = 64;   // align with 64
+
+    void *mempool = wd_blkpool_create(q, &setup);
+
+    return mempool;
+}
+
+void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn)
 {
     if (queue_node != NULL) {
         if (release_fn != NULL && queue_node->priv_ctx != NULL) {
@@ -206,7 +283,11 @@ static void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_r
         }
 
         if (queue_node->kae_queue_mem_pool != NULL) {
-            kaezip_wd_queue_mempool_destroy(queue_node->kae_queue_mem_pool);
+            if (queue_node->is_sgl)
+                kaezip_sgl_pool_destroy(queue_node->kae_queue_mem_pool);
+            else
+                kaezip_wd_queue_mempool_destroy(queue_node->kae_queue_mem_pool);
+
             queue_node->kae_queue_mem_pool = NULL;
         }
         if (queue_node->kae_wd_queue != NULL) {
@@ -221,7 +302,8 @@ static void kaezip_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_r
     US_DEBUG("free wd queue success");
 }
 
-static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type)
+static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int comp_type, int win_size, int is_sgl, 
+                                                            const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
 
@@ -232,13 +314,19 @@ static KAE_QUEUE_DATA_NODE_S* kaezip_new_wd_queue_memory(int comp_alg_type, int 
     }
     memset(queue_node, 0, sizeof(KAE_QUEUE_DATA_NODE_S));
 
-    queue_node->kae_wd_queue = kaezip_wd_new_queue(comp_alg_type, comp_type);
+    queue_node->kae_wd_queue = kaezip_wd_new_queue(comp_alg_type, comp_type, is_sgl, config);
     if (queue_node->kae_wd_queue == NULL) {
         US_ERR("new wd queue fail");
         goto err;
     }
 
-    queue_node->kae_queue_mem_pool = kaezip_create_alg_wd_queue_mempool(queue_node->kae_wd_queue);
+    if (is_sgl) {
+        queue_node->kae_queue_mem_pool = kaezip_create_sgl_mempool(queue_node->kae_wd_queue);
+    } else {
+        queue_node->kae_queue_mem_pool = kaezip_create_alg_wd_queue_mempool(queue_node->kae_wd_queue, mode);
+    }
+    queue_node->is_sgl = is_sgl;
+    queue_node->win_size = win_size;
     if (queue_node->kae_queue_mem_pool == NULL) {
         US_ERR("request mempool fail!");
         goto err;
@@ -252,7 +340,8 @@ err:
     return NULL;
 }
 
-KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type)
+KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_head, int comp_alg_type, int comp_type, 
+                                                    int win_size, int is_sgl, const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S *queue_data_node = NULL;
 
@@ -261,9 +350,9 @@ KAE_QUEUE_DATA_NODE_S* kaezip_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S* pool_hea
         return NULL;
     }
 
-    queue_data_node = kaezip_get_queue_data_from_list(pool_head, comp_alg_type);
+    queue_data_node = kaezip_get_queue_data_from_list(pool_head, comp_alg_type, win_size, is_sgl);
     if (queue_data_node == NULL) {
-        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type);
+        queue_data_node = kaezip_new_wd_queue_memory(comp_alg_type, comp_type, win_size, is_sgl, config, mode);
     }
 
     return queue_data_node;
@@ -278,7 +367,7 @@ static void kaezip_set_pool_use_num(KAE_QUEUE_POOL_HEAD_S *pool, int set_num)
     (void)pthread_mutex_unlock(&pool->kae_queue_mutex);
 }
 
-int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NODE_S* node_data)
+int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NODE_S* node_data, kae_release_priv_ctx_cb release_fn)
 {
     int i = 0;
     KAE_QUEUE_POOL_HEAD_S *temp_pool = pool_head;
@@ -328,14 +417,8 @@ int kaezip_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA_NO
         }
     }
     /* if not added,free it */
-    kaezip_free_wd_queue_memory(node_data, kaezip_free_ctx);
+    kaezip_free_wd_queue_memory(node_data, release_fn);
     return 0;
-}
-
-void kaezip_queue_pool_reset(KAE_QUEUE_POOL_HEAD_S* pool_head)
-{
-    (void)pool_head;
-    return;
 }
 
 void kaezip_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_release_priv_ctx_cb release_fn)
@@ -441,3 +524,32 @@ void kaezip_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, kae_r
     return;
 }
 
+void *kaezip_dma_map_sgl(void *usr, void *va, size_t sz)
+{
+    return wd_sgl_iova_map(usr, va, sz);
+}
+
+void kaezip_dma_unmap_sgl(void *usr, void *va, void *dma, size_t sz)
+{
+    return wd_sgl_iova_unmap(usr, dma, va);
+}
+
+void *kaezip_wd_alloc_sgl(void *pool, size_t size)
+{
+    if (pool == NULL) {
+        US_ERR("mem pool empty!");
+        return NULL;
+    }
+
+    return wd_alloc_sgl(pool, size);
+}
+
+void kaezip_wd_free_sgl(void *pool, void *sgl)
+{
+    if (pool == NULL) {
+        US_ERR("mem pool empty!");
+        return;
+    }
+
+    return wd_free_sgl(pool, sgl);
+}

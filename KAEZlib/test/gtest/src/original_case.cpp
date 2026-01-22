@@ -17,7 +17,7 @@ extern "C" {
 using namespace testing;
 using namespace std;
 
-const int g_windowBitsArr[] = {-8, 15, 31};
+const int g_windowBitsArr[] = {-15, 15, 31};
 const string g_testfiles_name[] = {"itemdata", "ooffice", "osdb", "samba", "webster", "xml", "x-ray"};
 
 // 随机生成指定长度的数据
@@ -272,7 +272,7 @@ void* ZlibPthreadFunc(void *args)
 #ifdef KP920B
 TEST(ZlibTest, CompressAndDecompress_Deflate)
 {
-    common_test(-8, 6);
+    common_test(-15, 6);
 }
 #endif
 

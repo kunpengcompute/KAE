@@ -8,7 +8,7 @@
 #include "kaezip.h"
 #include "wd_comp.h"
 #include "kaezip_adapter.h"
-#include "kaezip_init.h"
+#include "v2/kaezip_init.h"
 #include "kaezip_comp.h"
 #include "kaezip_deflate.h"
 #include "kaezip_inflate.h"
@@ -28,7 +28,7 @@ static void uadk_get_accel_platform(void)
         return;
     }
     //	init log
-    kaezip_debug_init_log();
+    // kaezip_debug_init_log();
     //  check sva
     struct uacce_dev* dev = wd_get_accel_dev("zlib");
     if (dev) {
