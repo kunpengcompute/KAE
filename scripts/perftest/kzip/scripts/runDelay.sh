@@ -18,10 +18,14 @@ ThreadNum=("12" "8" "7" "6" "5" "4" "3" "2" "1")
 if [[ -d "/usr/local/kaelz4" ]]; then
     Algthm+=("kaelz4" "kaelz4_frame" "kaelz4async_block" "kaelz4async_frame" "kaelz4async_lz77" "kaelz4async_lz77_frame")
 fi
+if [[ -d "/usr/local/kaezip" ]]; then
+    Algthm+=("kaezlib_deflate" "kaezlibasync_deflate")
+fi
 
 sh build.sh $buildParams
 
-Datasets=("calgary")
+
+Datasets=("calgary" "silesia.tar")
 inflateNum=("1" "4" "8" "16" "64") # 单IO 单核测试
 BlockSize=("4" "8" "16" "32" "64")
 Multi=("1")
@@ -50,6 +54,7 @@ diffFile() {
     diffRes=$(diff $testFile $testFileOrigin)
     if [[ -n "$diffRes" ]] ; then
         echo "Error: 解压后数据与原始数据比对不通过！！"
+        exit 1
     else
         echo "Success: 测试通过 解压数据校验通过"
     fi

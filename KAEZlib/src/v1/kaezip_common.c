@@ -56,7 +56,6 @@ int kz_get_devices(void)
         return 1;
     }
 
-    kaezip_debug_init_log();
     uacce_dev = opendir("/sys/class/uacce");
     if (!uacce_dev) {
         US_WARN("No /sys/class/uacce directory or it cannot be opened");

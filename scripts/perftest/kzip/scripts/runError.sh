@@ -10,7 +10,9 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib/:/usr/local/kaezstd/lib/:/usr/local
 export KAE_LZ4_WINTYPE=8
 export KAE_LZ4_COMP_TYPE=8
 
-
+# 异常以及可靠性测试
+# 1、KAELz4异步接口在硬件队列资源消耗完时，自动切软算。
+# 2、KAELz4异步接口在KAE资源不可用时，自动切软算。
 
 uninstall_driver()
 {
@@ -52,13 +54,16 @@ do_compress_and_decompress_and_diff()
         local testFileOrigin=$2
         if [[ ! -f "$testFile" ]]; then
             echo "Error: 压缩异常!未成功压缩文件"
+            exit 1
         fi
         if [[ ! -f "$testFileOrigin" ]]; then
             echo "Error: 解压异常!未成功解压文件"
+            exit 1
         fi
         diffRes=$(diff $testFile $testFileOrigin)
         if [[ -n "$diffRes" ]] ; then
             echo "Error: 解压后数据与原始数据比对不通过！！"
+            exit 1
         else
             echo "Success: 测试通过 解压数据校验通过"
         fi

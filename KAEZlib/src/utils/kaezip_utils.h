@@ -40,6 +40,14 @@
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+
 #ifndef true
 #define true (0 == 0)
 #endif
@@ -48,10 +56,17 @@
 #define false (0 == 1)
 #endif
 
-#define KAEZIP_FAILED           (-1)
-#define KAEZIP_SUCCESS          (0)
+#define KAEZIP_FAILED              (-1)
+#define KAEZIP_SUCCESS             (0)
 #define KAEZIP_DRIVER_DO_TASK_NOW  (1)
 #define KAEZIP_SAVE_DATA_TO_BUFFER (2)
+
+#define COMP_BLOCK_NUM              (4)
+#define COMP_BLOCK_SIZE             (2 * 1024 * 1024)
+#define KAEZIP_STREAM_CHUNK_IN      ((COMP_BLOCK_SIZE) >> 3)  // change the input size would change the performace
+#define KAEZIP_STREAM_CHUNK_OUT     (COMP_BLOCK_SIZE)
+
+#define ASYNC_COMP_BLOCK_SIZE       (8 * 1024 * 1024)
 
 #define KAEZIP_RETURN_FAIL_IF(cond, mesg, ret) \
         if (unlikely(cond)) {\
@@ -75,6 +90,12 @@
             addr = NULL;    \
         }                   \
     } while (0)
+
+typedef   uint8_t BYTE;
+typedef   uint8_t U8;
+typedef  uint16_t U16;
+typedef  uint32_t U32;
+typedef  uint64_t U64;
 
 static inline void *kae_malloc(unsigned int size)
 {
@@ -138,6 +159,28 @@ static inline int kz_zlib_analy_alg(int windowbits, int *alg, int *windowsize, i
 	}
 
 	return 0;
+}
+
+#define NSEC_TO_SEC 1000000000L
+static inline void get_time_out_spec(struct timespec *start, struct timespec *polling_timeout)
+{
+    clock_gettime(CLOCK_MONOTONIC_RAW, start); /* Get current real time. */
+    start->tv_sec += polling_timeout->tv_sec;
+    start->tv_nsec += polling_timeout->tv_nsec;
+    start->tv_sec += start->tv_nsec / NSEC_TO_SEC;
+    start->tv_nsec = start->tv_nsec % NSEC_TO_SEC;
+}
+
+static inline int check_time_out(struct timespec *time)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now); /* Get current real time. */
+
+    if ((now.tv_sec < time->tv_sec) || (now.tv_sec == time->tv_sec && now.tv_nsec <= time->tv_nsec)) {
+        return 0;
+    }
+
+    return 1;
 }
 
 #endif

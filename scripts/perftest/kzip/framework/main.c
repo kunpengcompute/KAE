@@ -31,8 +31,8 @@
 int g_file_chunk_size = 0; // 测试分片大小。 默认 0kb 不分片
 int g_log_level = 0; // 打印日志级别。 0：不统计时延。 1:时延统计
 int g_cpu_threads_per_core = 1; // 是否开启超线程。 1: 未开启。 2:开启
-int g_enable_huge_pages = 1; // 是否使用内存大页
-int g_enable_polling_mode = 0; // 是否使用单线程polling模式
+int g_enable_huge_pages = 1;    // 是否使用内存大页
+int g_enable_polling_mode = 0;  // 是否使用单线程polling模式
 
 
 static uLong read_inputFile(struct compress_ctx *ctx, const char* fileName, void** input)
@@ -1225,7 +1225,7 @@ int main(int argc, char **argv)
                 strcpy(output_filename, optarg);
                 break;
             case 'P':
-                g_enable_huge_pages = 1;
+                g_enable_huge_pages = atoi(optarg);
                 break;
             case 'p':
                 g_enable_polling_mode = atoi(optarg);

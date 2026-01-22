@@ -37,7 +37,7 @@ LIBDIR += -L $(WORK_PATH)/test_tool_bins/gtest
 LIBS +=  -lgtest_main -lgtest -lz
 
 # The flags
-CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11 #-Wl,-rpath,/usr/local/kaezip/lib
+CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11
 LDFLAGS   += $(LIBDIR)
 LDFLAGS   += $(LIBS)
 LDFLAGS   += -Wl,-rpath,/usr/local/kaezip/lib

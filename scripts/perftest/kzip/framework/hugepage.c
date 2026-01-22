@@ -6,12 +6,31 @@
 #include <fcntl.h> // open O_RDONLY
 #include <unistd.h> // close lseek read
 
-#define HPAGE_SIZE (1024 * 1024 * 1024)  // 1GB大页
-#define PAGE_SHIFT 12
+// 大页大小配置（由Makefile传入）
+#ifndef HPAGE_SIZE_BYTES
+#define HPAGE_SIZE_BYTES (1024 * 1024 * 1024)  // 默认1GB
+#endif
+#define HPAGE_SIZE HPAGE_SIZE_BYTES
+
+// 页面大小配置（由Makefile传入）
+#ifndef PAGE_SHIFT
+#define PAGE_SHIFT 12  // 默认4KB
+#endif
 #define PAGE_SIZE (1UL << PAGE_SHIFT)
+
 #define PFN_MASK ((1UL << 55) - 1)
 #define HW_MAX_SGE_LEN 0x800000UL
-#define MAP_HUGE_1GB    (30 << MAP_HUGE_SHIFT)
+
+// 大页标志配置
+#ifdef CONFIG_512MB_HUGEPAGE
+#define MAP_HUGE_FLAG    (29 << MAP_HUGE_SHIFT)  // 512MB
+#define HUGE_PAGE_NAME   "512MB"
+#define HUGE_PAGE_PATH   "hugepages-524288kB"
+#else
+#define MAP_HUGE_FLAG    (30 << MAP_HUGE_SHIFT)  // 1GB
+#define HUGE_PAGE_NAME   "1GB"
+#define HUGE_PAGE_PATH   "hugepages-1048576kB"
+#endif
 
 struct cache_page_map {
     uint64_t *entries;
@@ -107,14 +126,14 @@ void *get_huge_pages(size_t total_size)
         NULL,
         total_size,
         PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_1GB,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_FLAG,
         -1, 0
     ); // 申请内存大页
 
     if (addr == MAP_FAILED) {
         fprintf(stderr, "申请内存大页失败。\n");
         fprintf(stderr, "系统可能没有足够的大页可用。\n");
-        fprintf(stderr, "请尝试分配更多大页: echo 10 | tee /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages\n");
+        fprintf(stderr, "请尝试分配更多大页: echo 10 | tee /sys/devices/system/node/node0/hugepages/%s/nr_hugepages\n", HUGE_PAGE_PATH);
         exit(EXIT_FAILURE);
     }
 

@@ -208,7 +208,9 @@ int kz_do_inflateInit(z_streamp strm, int alg_comp_type)
         return Z_OK;
     }
 
-    kaezip_ctx_t* kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_INFLATE, -1);
+    int win_size, alg;
+    (void)kz_zlib_analy_alg(-15, &alg, &win_size, -1);
+    kaezip_ctx_t* kaezip_ctx = kaezip_get_ctx(alg_comp_type, WCRYPTO_INFLATE, win_size, 0, NULL, SYNC_MODE);
     if (kaezip_ctx == NULL) {
         US_ERR("failed to get kaezip ctx, alg_comp_type %d!", alg_comp_type);
         setInflateKaezipCtx(strm, 0);

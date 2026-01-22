@@ -38,12 +38,10 @@ INCDIR += -I $(WORK_PATH)/
 INCDIR += -I $(WORK_PATH)/include
 INCDIR += -I $(WORK_PATH)/open_source/zlib-1.2.11
 INCDIR += -I ${WORK_PATH}/../uadk/include
-INCDIR += -I /usr/local/include/uadk/
-INCDIR += -I ${WORK_PATH}/../uadk
-INCDIR += -I ${WORK_PATH}/../
 INCDIR += -I ${WORK_PATH}/src/utils
 INCDIR += -I ${WORK_PATH}/src/v1
 INCDIR += -I ${WORK_PATH}/src/v2
+INCDIR += -I ${WORK_PATH}/../kae_build/head/
 
 # Include Libs.
 LIBDIR += -L/usr/lib64
@@ -56,7 +54,7 @@ LIBS := -lwd -lwd_comp -pthread
 LIBS += -lc_nonshared
 
 # The flags
-CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared
+CFLAGS    := -Wall -Werror -fstack-protector-all -fPIC -D_GNU_SOURCE -shared -O2 -march=armv8.2-a+crypto
 LDFLAGS   := $(LIBDIR)
 LDFLAGS   += $(LIBS) 
 LDFLAGS   += -Wl,-z,relro,-z,now,-z,noexecstack  #safe link option
@@ -72,7 +70,12 @@ OBJS    = $(foreach x,$(SRCEXTS), \
 
 .PHONY : all objs clean cleanall rebuild
 
-all : $(TARGET)
+all : $(TARGET) symlinks
+
+symlinks : $(TARGET)
+	@echo Creating symbolic links
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK)
+	$(SILENCE) $(LN) $(TARGET) $(SOFTLINK).0
 
 # Rules for creating the dependency files (.d).
 %.d : %.c
@@ -91,6 +94,7 @@ rebuild: clean all
 
 clean :
 	@-$(RM) *.d *.a *.so *.symbol $(TARGET)
+	@-$(RM) $(SOFTLINK) $(SOFTLINK).0
 	@-$(RM)
 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;
 	@echo all clean
@@ -102,10 +106,12 @@ install :
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(LN) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)  $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	install -m 755 $(WORK_PATH)/include/kaezip.h $(ENGINE_INSTALL_PATH)/include
+	install -m 755 $(WORK_PATH)/include/kaezip_dev.h $(ENGINE_INSTALL_PATH)/include
 uninstall :
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK)
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(SOFTLINK).0
 	$(RM) $(ENGINE_INSTALL_PATH)/lib/$(TARGET)
 	$(RM) $(ENGINE_INSTALL_PATH)/include/kaezip.h
+	$(RM) $(ENGINE_INSTALL_PATH)/include/kaezip_dev.h
 	$(RM) /var/log/kaezip.log
 	$(RM) /var/log/kaezip.log.old

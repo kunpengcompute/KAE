@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include "kaezip_log.h"
 #include "kaezip_cpucheck.h"
 
 static int g_kaezlibInitialized = 0;
@@ -36,6 +37,8 @@ HIDDEN_API void CONSTRUCTOR KaeZlibInit(void)
     if (g_kaezlibInitialized != 0) {
         return;
     }
+    // init log module
+    kaezip_debug_init_log();
 
     if (KaeZlibDetect() == CPU_UNKNOW) {
         fprintf(stderr, "KAEZlib is running into an error, please check CPU ID.\n");
