@@ -133,7 +133,6 @@ function build_rpm()
     cp -r "$KAE_OPENSSL_DIR"/src/.libs/*.so* "$KAE_BUILD/KAEOpensslEngine/lib"
 
 
-
     # 编译 zlib
     cd "$KAE_ZLIB_DIR"
     bash setup.sh devbuild KAE2
@@ -192,13 +191,16 @@ function build_rpm()
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/lib/liblz4.a "$KAE_BUILD/kaelz4/lib"
 
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/programs/lz4 "$KAE_BUILD/kaelz4/bin"
-
-
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/lib/*.h "$KAE_BUILD/kaelz4/include"
     cp "$KAE_LZ4_DIR"/include/*.h "$KAE_BUILD/kaelz4/include"
     cp "$KAE_LZ4_DIR"/src/utils/kaelz4_log.h "$KAE_BUILD/kaelz4/include"
-
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/programs/lz4.1 "$KAE_BUILD/kaelz4/share/man/man1"
+
+    # 编译kaesnappy
+    cd "${SRC_PATH}/KAESnappy"
+    bash build.sh devbuild
+    
+
 }
 
 # Main execution logic

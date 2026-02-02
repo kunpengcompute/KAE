@@ -12,26 +12,28 @@ function build_all_components()
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zlib
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh gzip
     if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
-        echo "this cpu not support kaezstd and kaelz4."
+        echo "this cpu not support kaezstd, kaelz4 and kaesnappy."
     else
         bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zstd
         bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh lz4
+        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh snappy
     fi
 }
 
 function clear_all_components()
 {
-    bash ${SCRIPT_DIR}/scripts/buildScript/build_driver.sh driver clean || true  
-    bash ${SCRIPT_DIR}/scripts/buildScript/build_uadk.sh uadk clean   || true 
-    bash ${SCRIPT_DIR}/scripts/buildScript/build_engine.sh engine clean || true  
-    bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zlib clean   || true  
-    bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh gzip clean   || true
+    bash ${SCRIPT_DIR}/scripts/buildScript/build_driver.sh driver clean     || true  
+    bash ${SCRIPT_DIR}/scripts/buildScript/build_uadk.sh uadk clean         || true 
+    bash ${SCRIPT_DIR}/scripts/buildScript/build_engine.sh engine clean     || true  
+    bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zlib clean  || true  
+    bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh gzip clean  || true
  
     if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
-        echo "this cpu not support kaezstd and kaelz4."
+        echo "this cpu not support kaezstd, kaelz4 and kaesnappy."
     else
-        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zstd clean || true  
-        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh lz4 clean  || true
+        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zstd clean   || true  
+        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh lz4 clean    || true
+        bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh snappy clean || true
     fi
 }
 
@@ -77,7 +79,10 @@ Commands:
     zstd clean              Uninstall KAE-accelerated zstd
     gzip                    Install KAE-accelerated gzip
     gzip clean              Uninstall KAE-accelerated gzip
-
+    lz4                     Install KAE-accelerated lz4
+    lz4 clean               Uninstall KAE-accelerated lz4
+    snappy                  Install KAE-accelerated snappy
+    snappy clean            Uninstall KAE-accelerated snappy
 EOF
 }
 
@@ -99,7 +104,7 @@ main() {
         "engine"|"engine_asm"|"engine3"|"engine3_asm"|"engine_gmssl"|"engine3_tongsuo"|"engine_boringssl")  
             bash ${SCRIPT_DIR}/scripts/buildScript/build_engine.sh "$@"
             ;;
-        "zlib"|"zstd"|"lz4"|"gzip")  
+        "zlib"|"zstd"|"lz4"|"gzip"|"snappy")  
             bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh "$@"
             ;;  
         "rpm")  
