@@ -57,6 +57,15 @@ struct wd_queue* kaesnappy_wd_new_queue(int comp_alg_type, int comp_optype)
     return queue;
 }
 
+void kaesnappy_wd_free_queue(struct wd_queue* queue)
+{
+    if (queue != NULL) {
+        wd_release_queue(queue);
+        kae_free(queue);
+        queue = NULL;
+    }
+}
+
 void* kaesnappy_create_alg_wd_queue_mempool(struct wd_queue *q)
 {
     unsigned int block_size = COMP_BLOCK_SIZE;
@@ -71,6 +80,11 @@ void* kaesnappy_create_alg_wd_queue_mempool(struct wd_queue *q)
     void *mempool = wd_blkpool_create(q, &setup);
 
     return mempool;
+}
+
+void kaesnappy_wd_queue_mempool_destroy(void *pool)
+{
+    return wd_blkpool_destroy(pool);
 }
 
 void *kaesnappy_dma_map(void *usr, void *va, size_t sz)
@@ -171,6 +185,28 @@ static KAE_QUEUE_DATA_NODE_S* kaesnappy_get_queue_data_from_list(KAE_QUEUE_POOL_
     return queue_data_node;
 }
 
+void kaesnappy_free_wd_queue_memory(KAE_QUEUE_DATA_NODE_S *queue_node, kae_release_priv_ctx_cb release_fn)
+{
+    if (queue_node != NULL) {
+        if (release_fn != NULL && queue_node->priv_ctx != NULL) {
+            release_fn(queue_node->priv_ctx);
+            queue_node->priv_ctx = NULL;
+        }
+        if (queue_node->kae_queue_mem_pool != NULL) {
+            kaesnappy_wd_queue_mempool_destroy(queue_node->kae_queue_mem_pool);
+            queue_node->kae_queue_mem_pool = NULL;
+        }
+        if (queue_node->kae_wd_queue != NULL) {
+            kaesnappy_wd_free_queue(queue_node->kae_wd_queue);
+            queue_node->kae_wd_queue = NULL;
+        }
+        kae_free(queue_node);
+        queue_node = NULL;
+    }
+
+    US_DEBUG("free wd queue success");
+}
+
 static KAE_QUEUE_DATA_NODE_S* kaesnappy_new_wd_queue_memory(int comp_alg_type, int comp_type)
 {
     KAE_QUEUE_DATA_NODE_S *queue_node = NULL;
@@ -198,6 +234,7 @@ static KAE_QUEUE_DATA_NODE_S* kaesnappy_new_wd_queue_memory(int comp_alg_type, i
     return queue_node;
 
 err:
+    kaesnappy_free_wd_queue_memory(queue_node, NULL);
     return NULL;
 }
 
