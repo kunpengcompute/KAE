@@ -1,0 +1,7 @@
+This repository uses 2 different licenses:
+- All files in the open_source/ directory (including the Snappy source code archive and patched Snappy code generated during compilation) use the licensing terms of the upstream Google Snappy project (primarily the 3-clause BSD License), as specified in the upstream Snappy COPYING file.
+- All other files use the Apache License 2.0.
+
+This model is selected to emphasize that
+files in the include/ and src/ directories are our original implementation for hardware-optimized Snappy integration, 
+while files in the open_source/ directory retain upstream Snappy's licensing to comply with its original terms.

@@ -54,6 +54,19 @@ function gzip_clean()
     bash build.sh uninstall
 }
 
+function build_snappy()
+{
+    cd ${SRC_PATH}/KAESnappy
+    bash build.sh install
+}
+
+function snappy_clean()
+{
+    cd ${SRC_PATH}/KAESnappy
+    bash build.sh uninstall
+    rm -rf /usr/local/kaesnappy/
+}
+
 # Main execution logic
 check_environment
 build_check_OS_version
@@ -98,8 +111,19 @@ case "$ACTION" in
             build_gzip
         fi  
         ;;
+    "snappy")
+        if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+            echo "This CPU does not support snappy."  
+        else
+            if [ "$OPTION" = "clean" ]; then  
+                snappy_clean
+            else  
+                build_snappy
+            fi  
+        fi
+        ;;
     *)
-        echo "Usage: $0 {zlib|zstd|lz4|gzip} [clean]"
+        echo "Usage: $0 {zlib|zstd|lz4|gzip|snappy} [clean]"
         exit 1
         ;;
 esac
