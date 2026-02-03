@@ -67,7 +67,7 @@
 
 #define kae_free(addr)      \
     do {                    \
-        if (addr != NULL) { \
+        if ((addr) != NULL) { \
             free(addr);     \
             addr = NULL;    \
         }                   \

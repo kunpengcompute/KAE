@@ -29,8 +29,8 @@
 #define RUN_BITS (8-ML_BITS)
 #define RUN_MASK ((1U<<RUN_BITS)-1)
 #define MFLIMIT       12
-#define KAE_SNAPPY_REBUILD_FAIL -257
-#define KAE_SNAPPY_SW_RETURN_0_FAIL -256
+#define KAE_SNAPPY_REBUILD_FAIL (-257)
+#define KAE_SNAPPY_SW_RETURN_0_FAIL (-256)
 
 #define HARDWARE_BLOCK_SIZE (64 * 1024) // 硬件支持的最大压缩块大小
 

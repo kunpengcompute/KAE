@@ -283,7 +283,6 @@ void kaesnappy_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S* pool_head, ka
         error = pthread_mutex_lock(&cur_pool->destroy_mutex);
         if (error != 0) {
             cur_pool = cur_pool->next;
-            (void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
             continue;
         }
         if (cur_pool->kae_queue_pool == NULL) {

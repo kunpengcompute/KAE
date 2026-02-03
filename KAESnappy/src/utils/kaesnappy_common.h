@@ -20,7 +20,7 @@
 #define CONF_KAESNAPPY
 
 #define KAE_SNAPPY_PROCESS_IDLE 0
-#define KAE_SNAPPY_PROCESS_HW_BUSY -1
+#define KAE_SNAPPY_PROCESS_HW_BUSY (-1)
 
 enum kae_snappy_async_data_format {
     KAESNAPPY_ASYNC_SMALL_BLOCK = 0,
