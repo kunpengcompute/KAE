@@ -41,6 +41,7 @@ function Dev_Build_kaezstd()
 
     cd -
     make -j KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAEZSTDPATH=${SRC_PATH}
+    make PREFIX="${SRC_PATH}/../kae_build/kaezstd" install
     echo "build zstd success"
 }
 

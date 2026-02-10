@@ -1,6 +1,10 @@
+#!/bin/bash
 set -e
 SRC_PATH=$(pwd)
 TARGET_DIR="/usr/local/kaegzip"
+
+KAE_BUILD_HEAD=${SRC_PATH}/../kae_build/head
+UADK_LIB=${SRC_PATH}/../kae_build/uadk/lib
 
 function install_gzip()
 {
@@ -29,6 +33,26 @@ function install_gzip()
     echo "install kaegzip success"
 }
 
+function dev_build_kaegzip()
+{
+    cd "${SRC_PATH}"/open_source
+    rm -rf gzip-1.13
+    tar -zxvf gzip-1.13.tar.gz
+    cd "${SRC_PATH}"/open_source/gzip-1.13/
+
+    patch -Np1 < ../../patch/kaegzip_for_gzip-1.13.patch
+
+    chmod +x configure
+    chmod +x ./build-aux/git-version-gen
+
+    LIBS="-lwd -lz -lkaezip" \
+    CFLAGS="-O2 -I${KAE_BUILD_HEAD}/uadk" \
+    LDFLAGS="-L${UADK_LIB} -L${SRC_PATH}/../kae_build/kaezip/lib \
+             -Wl,-rpath=/usr/local/kaezip/lib:/usr/local/lib:${SRC_PATH}/../kae_build/kaezip/lib:${UADK_LIB}" \
+    ./configure
+    make
+}
+
 function uninstall_gzip()
 {
     cd "${SRC_PATH}"/open_source/gzip-1.13/
@@ -55,6 +79,9 @@ function Operate()
             ;;
         uninstall)
             uninstall_gzip
+            ;;
+        devbuild)
+            dev_build_kaegzip
             ;;
     esac
 }

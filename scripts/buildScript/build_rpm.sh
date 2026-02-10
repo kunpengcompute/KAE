@@ -120,7 +120,6 @@ function build_rpm()
     mkdir -p "$KAE_BUILD/lib"
     cp "${KAE_UADK_DIR}"/.libs/*.so* "$KAE_BUILD/lib"
 
-
     # 编译openssl
     cd "$KAE_OPENSSL_DIR"
     export PKG_CONFIG_PATH="$KAE_BUILD/uadk/pkgconfig"
@@ -132,7 +131,6 @@ function build_rpm()
     mkdir -p "$KAE_BUILD/KAEOpensslEngine/lib"
     cp -r "$KAE_OPENSSL_DIR"/src/.libs/*.so* "$KAE_BUILD/KAEOpensslEngine/lib"
 
-
     # 编译 zlib
     cd "$KAE_ZLIB_DIR"
     bash setup.sh devbuild KAE2
@@ -143,39 +141,30 @@ function build_rpm()
     mkdir -p "$KAE_BUILD/kaezip/lib/pkgconfig"
     mkdir -p "$KAE_BUILD/kaezip/share/man/man3"
 
-    cp "$KAE_ZLIB_DIR"/lib* "$KAE_BUILD/kaezip/lib"
-    cp "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/lib* "$KAE_BUILD/kaezip/lib"
+    cp -a "$KAE_ZLIB_DIR"/lib* "$KAE_BUILD/kaezip/lib"
+    cp -a "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/lib* "$KAE_BUILD/kaezip/lib"
     cp "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/zlib.pc "$KAE_BUILD/kaezip/lib/pkgconfig"
     cp "$KAE_ZLIB_DIR"/include/*.h "$KAE_BUILD/kaezip/include"
     cp "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/zlib.h "$KAE_BUILD/kaezip/include"
     cp "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/zconf.h "$KAE_BUILD/kaezip/include"
     cp "$KAE_ZLIB_DIR"/open_source/zlib-1.2.11/zlib.3 "$KAE_BUILD/kaezip/share/man/man3"
 
+    # 编译 gzip
+    cd "$KAE_GZIP_DIR"
+    bash build.sh devbuild
+
+    mkdir -p "$KAE_BUILD/kaegzip"
+    cp "$KAE_GZIP_DIR"/open_source/gzip-1.13/gzip "$KAE_BUILD/kaegzip"
 
     # 编译 zstd
     cd "$KAE_ZSTD_DIR"
+    mkdir -p "$KAE_BUILD/kaezstd/lib/"
+    mkdir -p "$KAE_BUILD/kaezstd/include"
+
     bash build.sh devbuild
 
-    mkdir -p "$KAE_BUILD/kaezstd/lib/pkgconfig"
-    mkdir -p "$KAE_BUILD/kaezstd/bin"
-    mkdir -p "$KAE_BUILD/kaezstd/include"
-    mkdir -p "$KAE_BUILD/kaezstd/share/man/man1"
-
-    cp "$KAE_ZSTD_DIR"/lib* "$KAE_BUILD/kaezstd/lib"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/lib/libzstd.so* "$KAE_BUILD/kaezstd/lib"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/lib/libzstd.a "$KAE_BUILD/kaezstd/lib"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/lib/libzstd.pc "$KAE_BUILD/kaezstd/lib/pkgconfig"
-
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstd "$KAE_BUILD/kaezstd/bin"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstdgrep "$KAE_BUILD/kaezstd/bin"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstdless "$KAE_BUILD/kaezstd/bin"
-
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/lib/*.h "$KAE_BUILD/kaezstd/include"
+    cp -a "$KAE_ZSTD_DIR"/lib* "$KAE_BUILD/kaezstd/lib"
     cp "$KAE_ZSTD_DIR"/include/*.h "$KAE_BUILD/kaezstd/include"
-
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstd.1 "$KAE_BUILD/kaezstd/share/man/man1"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstdgrep.1 "$KAE_BUILD/kaezstd/share/man/man1"
-    cp "$KAE_ZSTD_DIR"/open_source/zstd/programs/zstdless.1 "$KAE_BUILD/kaezstd/share/man/man1"
 
     # 编译 lz4
     cd "${SRC_PATH}/KAELz4"
@@ -186,8 +175,8 @@ function build_rpm()
     mkdir -p "$KAE_BUILD/kaelz4/include"
     mkdir -p "$KAE_BUILD/kaelz4/share/man/man1"
 
-    cp "$KAE_LZ4_DIR"/lib* "$KAE_BUILD/kaelz4/lib"
-    cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/lib/liblz4.so* "$KAE_BUILD/kaelz4/lib"
+    cp -a "$KAE_LZ4_DIR"/lib* "$KAE_BUILD/kaelz4/lib"
+    cp -a "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/lib/liblz4.so* "$KAE_BUILD/kaelz4/lib"
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/lib/liblz4.a "$KAE_BUILD/kaelz4/lib"
 
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/programs/lz4 "$KAE_BUILD/kaelz4/bin"
@@ -196,11 +185,15 @@ function build_rpm()
     cp "$KAE_LZ4_DIR"/src/utils/kaelz4_log.h "$KAE_BUILD/kaelz4/include"
     cp "$KAE_LZ4_DIR"/open_source/lz4-1.9.4/programs/lz4.1 "$KAE_BUILD/kaelz4/share/man/man1"
 
-    # 编译kaesnappy
+    # 编译 kaesnappy
     cd "${SRC_PATH}/KAESnappy"
+    mkdir -p "$KAE_BUILD/kaesnappy/lib"
+    mkdir -p "$KAE_BUILD/kaesnappy/include"
     bash build.sh devbuild
-    
 
+    cp -a "$KAE_SNAPPY_DIR"/lib* "$KAE_BUILD/kaesnappy/lib"
+    cp "$KAE_SNAPPY_DIR"/include/kaesnappy.h "$KAE_BUILD/kaesnappy/include"
+    cp "$KAE_SNAPPY_DIR"/src/utils/kaesnappy_log.h "$KAE_BUILD/kaesnappy/include"
 }
 
 # Main execution logic

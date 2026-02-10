@@ -3,7 +3,6 @@
 # @rem Copyright © Huawei Technologies Co., Ltd. 2010-2024. All rights reserved.
 # @rem Description: build script
 set -e
-#set -x
 SRC_PATH=$(pwd)
 BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
 
@@ -46,8 +45,14 @@ function Dev_Build_kaesnappy()
     mkdir build && cd build
     cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=ON
+    -DBUILD_SHARED_LIBS=ON \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DKAESNAPPY_LIB_DIR="${SRC_PATH}" \
+    -DKAEBUILDPATH="${SRC_PATH}/../kae_build/" \
+    -DCMAKE_INSTALL_PREFIX="${SRC_PATH}/../kae_build/kaesnappy" \
+    -DKAESNAPPY_INCLUDE_DIR="${SRC_PATH}/include/;${SRC_PATH}/src/utils/"
     make -j
+    make install
     echo "build snappy success"
 }
 
