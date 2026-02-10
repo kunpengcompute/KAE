@@ -1,6 +1,6 @@
 diff -Naur zstd-1.5.4/lib/compress/clevels.h zstd/lib/compress/clevels.h
 --- zstd-1.5.4/lib/compress/clevels.h	2023-02-10 08:41:50.000000000 +0800
-+++ zstd/lib/compress/clevels.h	2025-08-18 21:50:50.105008530 +0800
++++ zstd/lib/compress/clevels.h	2026-01-07 18:06:19.899002580 +0800
 @@ -30,7 +30,8 @@
      { 20, 15, 16,  1,  6,  0, ZSTD_fast    },  /* level  2 */
      { 21, 16, 17,  1,  5,  0, ZSTD_dfast   },  /* level  3 */
@@ -23,7 +23,7 @@ diff -Naur zstd-1.5.4/lib/compress/clevels.h zstd/lib/compress/clevels.h
      { 17, 16, 17,  4,  4,  8, ZSTD_lazy2   },  /* level  8 */
 diff -Naur zstd-1.5.4/lib/compress/zstd_lazy.c zstd/lib/compress/zstd_lazy.c
 --- zstd-1.5.4/lib/compress/zstd_lazy.c	2023-02-10 08:41:50.000000000 +0800
-+++ zstd/lib/compress/zstd_lazy.c	2025-08-18 21:50:50.105008530 +0800
++++ zstd/lib/compress/zstd_lazy.c	2026-01-07 18:06:19.899002580 +0800
 @@ -1212,6 +1212,7 @@
          ZSTD_VecMask matches = ZSTD_row_getMatchMask(tagRow, (BYTE)tag, headGrouped, rowEntries);
  
@@ -34,7 +34,7 @@ diff -Naur zstd-1.5.4/lib/compress/zstd_lazy.c zstd/lib/compress/zstd_lazy.c
              U32 const matchIndex = row[matchPos];
 diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_decompress.c
 --- zstd-1.5.4/lib/decompress/huf_decompress.c	2023-02-10 08:41:50.000000000 +0800
-+++ zstd/lib/decompress/huf_decompress.c	2025-08-18 21:50:50.105008530 +0800
++++ zstd/lib/decompress/huf_decompress.c	2026-01-07 18:11:07.475002580 +0800
 @@ -15,6 +15,9 @@
  /* **************************************************************
  *  Dependencies
@@ -187,7 +187,7 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
  FORCE_INLINE_TEMPLATE BYTE
  HUF_decodeSymbolX1(BIT_DStream_t* Dstream, const HUF_DEltX1* dt, const U32 dtLog)
  {
-@@ -843,9 +974,110 @@
+@@ -843,9 +974,124 @@
  
  HUF_DGEN(HUF_decompress1X1_usingDTable_internal)
  
@@ -208,9 +208,6 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
 +}
 +
 +inline static void HUF_decompress4X1_usingDTable_ver2 (U8 *dst, size_t dst_size, const U8 *src, size_t src_size, const HUF_DTable* huf_dtable) {
-+    U8 backup [16];
-+    MEM_COPY16B(backup, (dst+dst_size));      // 保存 (dst+dst_size) 开始的 16B，避免 wildcopy 的篡改
-+
 +    typedef struct { U8 n_bit; U8 symb; } HUF_item;
 +
 +    const HUF_item * dtable = (const HUF_item*)(huf_dtable + 1);
@@ -220,13 +217,17 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
 +    #define HUF4X1_DECJ(k,j) { HUF_item item=dtable[(d[k]>>table_sft)];  d[k]<<=item.n_bit;    op[k][j]=item.symb; }
 +    #define HUF4X1_DECK(k)   { HUF_item item=dtable[(d[k]>>table_sft)];  d[k]<<=item.n_bit;  *(op[k]++)=item.symb; }
 +
-+    const U32 u = ((dst_size+3) >> 2);
-+    const U32 y = u / 5;
-+    const U32 z = u - y*5;
++    //assert(dst_size >= 6);            // dst_size 是需要解压的字节数量（不一定是4的倍数）
++                                        // 根据zstd协议，把 dst_size 基本等分为4个 sub-stream，前3个 sub-stream长度=u=dst_size/4(向上取整)，第四个sub-stream长度=dst_size-3*u
++    const U32 u = ((dst_size+3) >> 2);  // u = 前三个substream长度 
++    const U32 w = dst_size - 3*u;       // w = 最后一个substream长度，w一定小于等于u
++    //assert(u >= w);
++
 +    U8* op1 = (U8*)dst;
 +    U8* op2 = op1 + u;
 +    U8* op3 = op2 + u;
 +    U8* op4 = op3 + u;
++
 +    const U8 *ip1 = ((U8*)src) + 6 + ((const U16*)src)[0] - 8;
 +    const U8 *ip2 = ip1            + ((const U16*)src)[1];
 +    const U8 *ip3 = ip2            + ((const U16*)src)[2];
@@ -241,7 +242,7 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
 +        d[k] <<= (8 - highbit_u9(ip[k][7]));
 +    }
 +    
-+    for (U32 i=0; i<y; i++) {
++    for (U32 i=0; i<(w/5); i++) {   // 最后一个substream长度/5，也即主循环次数，每个循环体会对每个sub-stream解压出5byte
 +        HUF4X1_DECJ(0, 0);
 +        HUF4X1_DECJ(1, 0);
 +        HUF4X1_DECJ(2, 0);
@@ -272,14 +273,27 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
 +        HUF4X1_RELD(3);
 +    }
 +
-+    for (U32 i=0; i<z; i++) {
++    for (U32 i=0; i<(w-((w/5)*5)); i++) {  // 凑不够整5，末尾循环的次数，每个循环体会对每个substream解压出1byte
 +        HUF4X1_DECK(0);
 +        HUF4X1_DECK(1);
 +        HUF4X1_DECK(2);
 +        HUF4X1_DECK(3);
 +    }
++    
++    if (u > w) {
++        HUF4X1_RELD(0);
++        HUF4X1_RELD(1);
++        HUF4X1_RELD(2);
++        for (U32 i=0; i<(u-w); i++) {  // 末尾循环的次数，第四个substream已经结束，单独对前三个substream做解压
++            HUF4X1_DECK(0);
++            HUF4X1_DECK(1);
++            HUF4X1_DECK(2);
++        }
++    }
 +
-+    MEM_COPY16B((dst+dst_size), backup);      // 恢复 (dst+dst_size) 开始的 16B，避免 wildcopy 的篡改
++    #undef HUF4X1_RELD
++    #undef HUF4X1_DECJ
++    #undef HUF4X1_DECK
 +}
 +
 +#endif
@@ -298,7 +312,7 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
      HUF_DecompressUsingDTableFn fallbackFn = HUF_decompress4X1_usingDTable_internal_default;
      HUF_DecompressFastLoopFn loopFn = HUF_decompress4X1_usingDTable_internal_fast_c_loop;
  
-@@ -1775,7 +2007,7 @@
+@@ -1775,7 +2021,7 @@
          U32 const DTime0 = algoTime[Q][0].tableTime + (algoTime[Q][0].decode256Time * D256);
          U32 DTime1 = algoTime[Q][1].tableTime + (algoTime[Q][1].decode256Time * D256);
          DTime1 += DTime1 >> 5;  /* small advantage to algorithm using less memory, to reduce cache eviction */
@@ -309,7 +323,7 @@ diff -Naur zstd-1.5.4/lib/decompress/huf_decompress.c zstd/lib/decompress/huf_de
  }
 diff -Naur zstd-1.5.4/lib/decompress/zstd_decompress_block_aarch64.S zstd/lib/decompress/zstd_decompress_block_aarch64.S
 --- zstd-1.5.4/lib/decompress/zstd_decompress_block_aarch64.S	1970-01-01 08:00:00.000000000 +0800
-+++ zstd/lib/decompress/zstd_decompress_block_aarch64.S	2025-08-18 21:50:50.105008530 +0800
++++ zstd/lib/decompress/zstd_decompress_block_aarch64.S	2026-01-07 18:06:19.903002580 +0800
 @@ -0,0 +1,7827 @@
 +	.arch armv8-a
 +	.file	"zstd_decompress_block.c"
@@ -8139,9 +8153,9 @@ diff -Naur zstd-1.5.4/lib/decompress/zstd_decompress_block_aarch64.S zstd/lib/de
 +	.ident	"GCC: (GNU) 10.3.1"
 +	.section	.note.GNU-stack,"",@progbits
 diff -Naur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
---- zstd-1.5.4/lib/libzstd.mk	2023-02-10 08:41:50.000000000 +0800
-+++ zstd/lib/libzstd.mk	2025-08-18 21:50:50.105008530 +0800
-@@ -142,6 +142,16 @@
+--- zstd-1.5.4/lib/libzstd.mk	2026-01-07 18:04:54.895002580 +0800
++++ zstd/lib/libzstd.mk	2026-01-07 18:06:19.903002580 +0800
+@@ -147,6 +147,16 @@
  
  ZSTD_DECOMPRESS_AMD64_ASM_FILES := $(sort $(wildcard $(LIBZSTD)/decompress/*_amd64.S))
  
@@ -8160,7 +8174,7 @@ diff -Naur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
  else
 diff -Naur zstd-1.5.4/lib/Makefile zstd/lib/Makefile
 --- zstd-1.5.4/lib/Makefile	2023-02-10 08:41:50.000000000 +0800
-+++ zstd/lib/Makefile	2025-08-18 23:33:22.281008530 +0800
++++ zstd/lib/Makefile	2026-01-07 18:06:19.903002580 +0800
 @@ -138,7 +138,7 @@
  LIBZSTD = libzstd.$(SHARED_EXT_VER)
  .PHONY: $(LIBZSTD)  # must be run every time

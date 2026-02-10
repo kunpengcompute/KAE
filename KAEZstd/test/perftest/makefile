@@ -26,9 +26,9 @@ endif
 # 默认目标
 all: $(TARGETS)
 
-# KA-EZSTD版本：使用KA-EZSTD库并设置rpath
+# KAEZSTD版本：使用KAEZSTD库并设置rpath
 kaezstd_perf: $(SRC)
-	@echo "Building $@ (with KA-EZSTD)..."
+	@echo "Building $@ (with KAEZSTD)..."
 	$(Q)$(CC) $(CFLAGS) $(INCDIR) -DUSE_KAEZSTD -o $@ $< \
 		$(LIBDIR) -Wl,-rpath,$(KAEDIR)/lib $(KAE_LIBS)
 
@@ -37,19 +37,19 @@ zstd_perf: $(SRC)
 	@echo "Building $@ (with system ZSTD)..."
 	$(Q)$(CC) $(CFLAGS) -Wl,-rpath,/usr/local/lib $(INCDIR) -o $@ $< $(SYS_LIBS)
 
-# 检查KA-EZSTD库是否存在
+# 检查KAEZSTD库是否存在
 check-kae:
-	@echo "Checking KA-EZSTD installation..."
+	@echo "Checking KAEZSTD installation..."
 	@if [ ! -d "$(KAEDIR)" ]; then \
-		echo "Error: KA-EZSTD not found at $(KAEDIR)"; \
+		echo "Error: KAEZSTD not found at $(KAEDIR)"; \
 		echo "Please install it first: make install-kae"; \
 		exit 1; \
 	fi
-	@echo "KA-EZSTD found at $(KAEDIR)"
+	@echo "KAEZSTD found at $(KAEDIR)"
 
-# 安装KA-EZSTD的模拟目标（实际需要您手动安装）
+# 安装KAEZSTD的模拟目标（实际需要您手动安装）
 install-kae:
-	@echo "Please install KA-EZSTD manually:"
+	@echo "Please install KAEZSTD manually:"
 	@echo "1. Download from the appropriate source"
 	@echo "2. Build and install to $(KAEDIR)"
 	@echo "3. Run 'make check-kae' to verify"
@@ -62,9 +62,9 @@ clean:
 help:
 	@echo "可用目标:"
 	@echo "  make all               - 构建所有目标 (默认)"
-	@echo "  make kaezstd_perf      - 构建KA-EZSTD版本"
+	@echo "  make kaezstd_perf      - 构建KAEZSTD版本"
 	@echo "  make zstd_perf         - 构建系统ZSTD版本"
-	@echo "  make check-kae         - 检查KA-EZSTD安装"
+	@echo "  make check-kae         - 检查KAEZSTD安装"
 	@echo "  make clean             - 清理构建文件"
 	@echo "  make help              - 显示此帮助"
 	@echo ""
@@ -74,7 +74,7 @@ help:
 
 # 测试运行目标
 test: $(TARGETS)
-	@echo "=== 测试KA-EZSTD版本 ==="
+	@echo "=== 测试KAEZSTD版本 ==="
 	@-./kaezstd_perf --help 2>/dev/null || echo "运行失败，可能需要设置LD_LIBRARY_PATH"
 	@echo ""
 	@echo "=== 测试系统ZSTD版本 ==="
