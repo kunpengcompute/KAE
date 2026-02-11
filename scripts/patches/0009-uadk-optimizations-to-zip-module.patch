@@ -1,0 +1,98 @@
+diff -urN a/uadk/drv/hisi_comp.c b/uadk/drv/hisi_comp.c
+--- a/uadk/drv/hisi_comp.c	2026-02-10 11:15:54.229347250 +0800
++++ b/uadk/drv/hisi_comp.c	2026-02-10 11:15:59.841347250 +0800
+@@ -859,9 +859,11 @@
+ 	}
+ 
+ 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
++		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
++		     ZSTD_LIT_RESV_SIZE)) {
+ 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+-		       out_size, PRICE_MIN_OUT_SIZE + lits_size);
++		       out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
++		       ZSTD_LIT_RESV_SIZE + lits_size);
+ 		return -WD_EINVAL;
+ 	}
+ 
+@@ -885,8 +887,8 @@
+ 	__u32 lits_size = in_size + ZSTD_LIT_RESV_SIZE;
+ 	__u32 seq_avail_out = out_size - lits_size;
+ 
+-	/* lits_size need to be less than 8M when use pbuffer */
+-	if (unlikely(lits_size > HZ_MAX_SIZE)) {
++	/* in_size need to be less than 8M minus the literal calculation reserved space */
++	if (unlikely(in_size > HZ_MAX_SIZE - ZSTD_LIT_RESV_SIZE)) {
+ 		WD_ERR("invalid: in_len(%u) of lz77_only is out of range!\n", in_size);
+ 		return -WD_EINVAL;
+ 	}
+@@ -1030,9 +1032,11 @@
+ 	}
+ 
+ 	if (unlikely(msg->stream_mode == WD_COMP_STATEFUL && msg->comp_lv == WD_COMP_L9 &&
+-		     seq_avail_out <= PRICE_MIN_OUT_SIZE)) {
++		     seq_avail_out <= PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
++		     ZSTD_LIT_RESV_SIZE)) {
+ 		WD_ERR("invalid: out_len(%u) not enough, %u bytes are minimum in price mode!\n",
+-			out_size, PRICE_MIN_OUT_SIZE + lits_size);
++			out_size, PRICE_MIN_OUT_SIZE + ZSTD_FREQ_DATA_SIZE +
++			ZSTD_LIT_RESV_SIZE + lits_size);
+ 		return -WD_EINVAL;
+ 	}
+ 
+@@ -1050,7 +1054,7 @@
+ 	 * the dfx information. The literals and sequences data need to be written
+ 	 * to an independent sgl splited from list_dst.
+ 	 */
+-	if (unlikely(lits_size < in_size + ZSTD_LIT_RESV_SIZE)) {
++	if (unlikely(lits_size < (__u64)in_size + ZSTD_LIT_RESV_SIZE)) {
+ 		WD_ERR("invalid: output is not enough for literals, at least %u bytes!\n",
+ 		       ZSTD_LIT_RESV_SIZE + lits_size);
+ 		return -WD_EINVAL;
+@@ -1652,7 +1656,7 @@
+ 	recv_msg->req.status = 0;
+ 
+ 	if (unlikely(status != 0 && status != HZ_NEGACOMPRESS &&
+-		     status != HZ_CRC_ERR && status != HZ_DECOMP_END)) {
++		     status != HZ_DECOMP_END)) {
+ 		if (status == ERR_DSTLEN_OUT)
+ 			WD_DEBUG("bad request(ctx_st=0x%x, status=0x%x, algorithm type=%u)!\n",
+ 				ctx_st, status, type);
+diff -urN a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
+--- a/uadk/v1/drv/hisi_zip_udrv.c	2026-02-10 11:15:54.233347250 +0800
++++ b/uadk/v1/drv/hisi_zip_udrv.c	2026-02-10 11:15:59.845347250 +0800
+@@ -502,6 +502,11 @@
+ 		return -WD_EINVAL;
+ 	}
+ 
++	if (unlikely(!msg->avail_out)) {
++		WD_ERR("The avai_out is error (%u)!\n", msg->avail_out);
++		return -WD_EINVAL;
++	}
++
+ 	if (unlikely(msg->data_fmt != WD_SGL_BUF &&
+ 		     msg->avail_out > MAX_BUFFER_SIZE)) {
+ 		WD_ERR("warning: avail_out is out of range (%u), will set 8MB size max!\n",
+diff -urN a/uadk/v1/wd_comp.c b/uadk/v1/wd_comp.c
+--- a/uadk/v1/wd_comp.c	2026-02-10 11:15:54.237347250 +0800
++++ b/uadk/v1/wd_comp.c	2026-02-10 11:15:59.845347250 +0800
+@@ -54,6 +54,10 @@
+ 	msg->checksum = opdata->checksum;
+ 	msg->tag = ctx->ctx_id;
+ 	msg->status = 0;
++
++	if (msg->stream_mode == WCRYPTO_COMP_STATEFUL &&
++	    opdata->stream_pos == WCRYPTO_COMP_STREAM_NEW && ctx->ctx_buf)
++		memset(ctx->ctx_buf, 0, MAX_CTX_RSV_SIZE);
+ }
+ 
+ static int ctx_params_check(struct wd_queue *q, struct wcrypto_comp_ctx_setup *setup)
+@@ -94,7 +98,7 @@
+ 		return -WD_EINVAL;
+ 	}
+ 
+-	if (setup->stream_mode > WCRYPTO_FINISH) {
++	if (setup->stream_mode > WCRYPTO_COMP_STATEFUL) {
+ 		WD_ERR("err: stream_mode is invalid!\n");
+ 		return -WD_EINVAL;
+ 	}
