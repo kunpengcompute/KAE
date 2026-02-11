@@ -9,6 +9,12 @@
 #include "../include_linux/uacce.h"
 #include <linux/wait.h>
 
+#ifdef  MAX_PAGE_ORDER
+#define UACCE_ORDER MAX_PAGE_ORDER
+#else
+#define UACCE_ORDER MAX_ORDER
+#endif
+
 static dev_t uacce_devt;
 static DEFINE_XARRAY_ALLOC(uacce_xa);
 static const struct file_operations uacce_fops;
@@ -453,7 +459,7 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 {
 	struct uacce_qfile_region *qfr = q->qfrs[UACCE_QFRT_SS];
 	unsigned long size = vma->vm_end - vma->vm_start;
-	unsigned long max_size = PAGE_SIZE << MAX_ORDER;
+	unsigned long max_size = PAGE_SIZE << UACCE_ORDER;
 	struct device *pdev = q->uacce->parent;
 	struct uacce_device *uacce = q->uacce;
 	unsigned long start = vma->vm_start;

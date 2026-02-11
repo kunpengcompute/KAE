@@ -11,6 +11,12 @@
 #define HISI_ACC_SGL_ALIGN_SIZE		64
 #define HISI_ACC_MEM_BLOCK_NR		5
 
+#ifdef  MAX_PAGE_ORDER
+#define UACCE_ORDER MAX_PAGE_ORDER
+#else
+#define UACCE_ORDER MAX_ORDER
+#endif
+
 struct acc_hw_sge {
 	dma_addr_t buf;
 	void *page_ctrl;
@@ -73,8 +79,8 @@ struct hisi_acc_sgl_pool *hisi_acc_create_sgl_pool(struct device *dev,
 	 * the pool may allocate a block of memory of size PAGE_SIZE * 2^MAX_ORDER,
 	 * block size may exceed 2^31 on ia64, so the max of block size is 2^31
 	 */
-	block_size = 1 << (PAGE_SHIFT + MAX_ORDER < 32 ?
-			   PAGE_SHIFT + MAX_ORDER : 31);
+	block_size = 1 << (PAGE_SHIFT + UACCE_ORDER < 32 ?
+			   PAGE_SHIFT + UACCE_ORDER : 31);
 	sgl_num_per_block = block_size / sgl_size;
 	block_num = count / sgl_num_per_block;
 	remain_sgl = count % sgl_num_per_block;
