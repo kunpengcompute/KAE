@@ -22,7 +22,11 @@
 #include "sec_digests_soft.h"
 #include "../../utils/engine_opensslerr.h"
 #include "../../../utils/engine_log.h"
-
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#ifndef EVP_MD_CTX_md_data(ctx)
+#define EVP_MD_CTX_md_data(ctx) EVP_MD_CTX_get0_md_data(ctx)
+#endif
+#endif
 static int sec_digests_soft_md(sec_digest_priv_t *priv)
 {
 	int app_datasize = 0;
