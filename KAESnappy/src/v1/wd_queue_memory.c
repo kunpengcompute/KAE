@@ -296,8 +296,10 @@ int kaesnappy_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S* pool_head,  KAE_QUEUE_DATA
                 }
             }
         }
+        temp_pool = temp_pool->next;
     }
     /* if not added,free it */
+    kaesnappy_free_wd_queue_memory(node_data, release_fn);
     return 0;
 }
 

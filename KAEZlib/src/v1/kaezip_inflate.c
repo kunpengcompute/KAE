@@ -250,7 +250,7 @@ static int kz_check_ifzlib(z_streamp strm)
 
 int kz_getAutoInflateAlgType(z_streamp strm)
 {
-    if (strm->next_in == NULL || strm->avail_in == 0) {
+    if (strm->next_in == NULL || strm->avail_in < 2) {
         return WCRYPTO_NONE;
     }
 
