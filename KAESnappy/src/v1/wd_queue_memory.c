@@ -115,6 +115,7 @@ void kaesnappy_wd_free_blk(void *pool, void *blk)
 KAE_QUEUE_POOL_HEAD_S* kaesnappy_init_queue_pool(int algtype)
 {
     KAE_QUEUE_POOL_HEAD_S *kae_pool = NULL;
+    int ret;
 
     kae_pool = (KAE_QUEUE_POOL_HEAD_S *)kae_malloc(sizeof(KAE_QUEUE_POOL_HEAD_S));
     if (kae_pool == NULL) {
@@ -132,15 +133,31 @@ KAE_QUEUE_POOL_HEAD_S* kaesnappy_init_queue_pool(int algtype)
         kae_malloc(KAE_QUEUE_POOL_MAX_SIZE * sizeof(KAE_QUEUE_POOL_NODE_S));
     if (kae_pool->kae_queue_pool == NULL) {
         US_ERR("malloc failed");
-        kae_free(kae_pool);
-        return NULL;
+        goto err_free_pool;
     }
     memset(kae_pool->kae_queue_pool, 0, KAE_QUEUE_POOL_MAX_SIZE * sizeof(KAE_QUEUE_POOL_NODE_S));
 
-    pthread_mutex_init(&kae_pool->kae_queue_mutex, NULL);
-    pthread_mutex_init(&kae_pool->destroy_mutex, NULL);
+    ret = pthread_mutex_init(&kae_pool->kae_queue_mutex, NULL);
+    if (ret != 0) {
+        US_ERR("init kae_queue_mutex fail! ret=%d", ret);
+        goto err_free_queue_pool;
+    }
+
+    ret = pthread_mutex_init(&kae_pool->destroy_mutex, NULL);
+    if (ret != 0) {
+        US_ERR("init destroy_mutex fail! ret=%d", ret);
+        goto err_destroy_kae_queue_mutex;
+    }
 
     return kae_pool;
+
+err_destroy_kae_queue_mutex:
+    pthread_mutex_destroy(&kae_pool->kae_queue_mutex);
+err_free_queue_pool:
+    kae_free(kae_pool->kae_queue_pool);
+err_free_pool:
+    kae_free(kae_pool);
+    return NULL;
 }
 
 static KAE_QUEUE_DATA_NODE_S* kaesnappy_get_queue_data_from_list(KAE_QUEUE_POOL_HEAD_S* pool_head, int type)
