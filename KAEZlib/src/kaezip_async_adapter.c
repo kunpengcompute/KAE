@@ -58,6 +58,8 @@ static void kaezip_dequeue_process(struct kaezip_async_ctrl *ctrl, kaezip_task_q
 
 static int kaezip_task_queue_init(kaezip_task_queue *task_queue, int index)
 {
+    int ret;
+
     task_queue->tasks = malloc(KAEZLIB_TASK_QUEUE_DEPTH * sizeof(kaezip_async_task_t));
     if (task_queue->tasks == NULL) {
         return KAE_ZLIB_ALLOC_FAIL;
@@ -69,11 +71,28 @@ static int kaezip_task_queue_init(kaezip_task_queue *task_queue, int index)
     for (int i = 0; i < KAEZLIB_TASK_QUEUE_DEPTH; i++) {
         atomic_store_explicit(&task_queue->tasks[i].ready, false, memory_order_release);
     }
-    pthread_mutex_init(&task_queue->mutex, NULL);
-    pthread_cond_init(&task_queue->cond, NULL);
+
+    ret = pthread_mutex_init(&task_queue->mutex, NULL);
+    if (ret != 0) {
+        US_ERR("init task_queue mutex fail! ret=%d", ret);
+        goto err_free_tasks;
+    }
+
+    ret = pthread_cond_init(&task_queue->cond, NULL);
+    if (ret != 0) {
+        US_ERR("init task_queue cond fail! ret=%d", ret);
+        goto err_destroy_mutex;
+    }
 
     task_queue->is_polling = TRUE;
     return KAE_ZLIB_SUCC;
+
+err_destroy_mutex:
+    pthread_mutex_destroy(&task_queue->mutex);
+err_free_tasks:
+    free(task_queue->tasks);
+    task_queue->tasks = NULL;
+    return KAE_ZLIB_INIT_FAIL;
 }
 
 static void kaezip_task_queue_free(kaezip_task_queue *task_queue)
@@ -91,6 +110,7 @@ static void kaezip_task_queue_free(kaezip_task_queue *task_queue)
         pthread_join(task_queue->worker_thread, NULL);
     }
 
+    pthread_cond_destroy(&task_queue->cond);
     pthread_mutex_destroy(&task_queue->mutex);
 
     free(task_queue->tasks);
