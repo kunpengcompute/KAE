@@ -364,7 +364,7 @@ static void check_results(struct my_custom_data *my_data) {
         if(g_inflate_type == 0) {
             printf("Test Success for zlib deflate raw with async deflate and sync inflate.\n");
         } else {
-            printf("Test Success for zlib deflate raw wuth async deflate and async inflate.\n");
+            printf("Test Success for zlib deflate raw with async deflate and async inflate.\n");
         }
     } else {
         printf("Test Error:Decompressed data does not match the original data.\n");
@@ -552,15 +552,20 @@ int main()
 }
 ```
 
-编译测试命令：
+编译命令：
 ```shell
 # 注意：需修改demo代码中真实测试文件 TEST_FILE_PATH 的路径为合法路径
 gcc main.c  -I/usr/local/kaezip/include -L/usr/local/kaezip/lib -lz -lkaezip -o kaezlib_deflate_async_test
+```
+运行测试文件
+```
 export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 ./kaezlib_deflate_async_test
-# 输出：
+```
+输出结果如下：
+```
 # Test Success for zlib deflate raw with async deflate and sync inflate.
-# Test Success for zlib deflate raw wuth async deflate and async inflate.
+# Test Success for zlib deflate raw with async deflate and async inflate.
 ```
 ### API测试工具
 可使用kzip工具对异步API进行功能和性能测试，该部分内容请参见 `scripts/perftest/kzip/README.md`
