@@ -70,9 +70,9 @@ TEST(functest_version, kaezstd_version)
     int ret = kaezstd_get_version(&ver);
     EXPECT_EQ(ret, 0);
     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
-    EXPECT_STREQ(ver.productVersion, "23.0.RC2");
+    EXPECT_STREQ(ver.productVersion, "26.0.0");
     EXPECT_STREQ(ver.componentName, "KAEZstd");
-    EXPECT_STREQ(ver.componentVersion, "2.0.4");
+    EXPECT_STREQ(ver.componentVersion, "2.1.0");
 }
 
 // 主函数

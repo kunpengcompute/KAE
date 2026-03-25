@@ -1,4 +1,4 @@
-VERSION = 2:0:4
+VERSION = 2:1:0
 ACLOCAL_AMFLAGS = -I m4
 AUTOMAKE_OPTIONS = subdir-objects
 

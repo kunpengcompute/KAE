@@ -76,7 +76,7 @@ diff -Naru gzip-1.13-gnu/gzip.c gzip-1.13/gzip.c
 + "",
 + "With no FILE, or when FILE is -, read standard input.",
 + "",
-+ "Report bugs to <https://gitee.com/kunpengcompute/KAE>",
++ "Report bugs to <https://gitcode.com/boostkit/KAE>",
 +  0};
 +
 +    /* Only In Kunpeng 920Pro, display the --fast and --best */
@@ -117,7 +117,7 @@ diff -Naru gzip-1.13-gnu/gzip.c gzip-1.13/gzip.c
   "With no FILE, or when FILE is -, read standard input.",
   "",
 - "Report bugs to <bug-gzip@gnu.org>.",
-+ "Report bugs to <https://gitee.com/kunpengcompute/KAE>",
++ "Report bugs to <https://gitcode.com/boostkit/KAE>",
    0};
 -    char const *const *p = help_msg;
 +    char const *const *p = (checkCpu() == CPU_HISILICOM_V2) ? help_msg_920Pro : help_msg;

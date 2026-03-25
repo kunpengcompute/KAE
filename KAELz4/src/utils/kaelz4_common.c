@@ -36,9 +36,9 @@ int kaelz4_get_version(KAELz4Version* ver)
         return KAE_LZ4_INVAL_PARA;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "23.0.RC2");
+    versionCpy(ver->productVersion, "26.0.0");
     versionCpy(ver->componentName, "KAELz4");
-    versionCpy(ver->componentVersion, "2.0.4");
+    versionCpy(ver->componentVersion, "2.1.0");
     return KAE_LZ4_SUCC;
 }
 

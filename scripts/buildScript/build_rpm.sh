@@ -210,7 +210,7 @@ case "$ACTION" in
     "rpmpack")  
         rm -rf /root/rpmbuild/SOURCES/kae* /root/rpmbuild/RPMS/aarch64/kae-* "$KAE_BUILD"
         mkdir -p "$KAE_BUILD" /root/rpmbuild/SOURCES  
-        tar -zcvf /root/rpmbuild/SOURCES/kae-2.0.4.tar.gz .  
+        tar -zcvf /root/rpmbuild/SOURCES/kae-2.1.0.tar.gz .  
         rpmbuild -bb $KAE_SPEC_FILE  
         cp /root/rpmbuild/RPMS/aarch64/kae* "$KAE_BUILD"  
         ;;
