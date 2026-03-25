@@ -234,7 +234,7 @@ diff -Nur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
  
 +KAEZSTD_CFLAGS=-I/usr/local/kaezstd/include -I$(KAEZSTDPATH)/include -I. -I../lib -DCONF_KAEZSTD
-+KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.0.4
++KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.1.0
 +CFLAGS+=$(KAEZSTD_CFLAGS)
 +LDFLAGS+=$(KAEZSTD_LDFLAGS)
 +

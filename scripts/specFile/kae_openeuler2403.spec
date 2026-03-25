@@ -1,7 +1,7 @@
 Name:          kae
 Summary:       Huawei Kunpeng Accelerator Engine
-Version:       2.0.4
-Release:       2
+Version:       2.1.0
+Release:       1
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
 ExclusiveOS:   linux
@@ -448,6 +448,9 @@ echo "openssl engine uninstalled"
 /sbin/ldconfig
 
 %changelog
+* Wed Mar 25 2026 yuzhihuan <yuzhihuan@huawei.com> 2.1.0-1
+- Update KAE algorithm library versions from 2.0.4 to 2.1.0
+
 * Mon Feb 9 2026 yuzhihuan <yuzhihuan@huawei.com> 2.0.4-2
 - Add RPM build support for kaesnappy and kaegzip module
 

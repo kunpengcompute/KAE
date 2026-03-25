@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaelz4
 CC=gcc
 
 LIBNAME := libkaelz4.so
-VERSION = 2.0.4
+VERSION = 2.1.0
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = libkaelz4.so
 

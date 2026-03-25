@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaezstd
 CC=gcc
 
 LIBNAME := libkaezstd.so
-VERSION = 2.0.4
+VERSION = 2.1.0
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = libkaezstd.so
 

@@ -130,8 +130,8 @@ int kaezlib_get_version(KAEZlibVersion* ver)
         return 1;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "24.0.0");
+    versionCpy(ver->productVersion, "26.0.0");
     versionCpy(ver->componentName, "KAEZlib");
-    versionCpy(ver->componentVersion, "2.0.4");
+    versionCpy(ver->componentVersion, "2.1.0");
     return 0;
 }
