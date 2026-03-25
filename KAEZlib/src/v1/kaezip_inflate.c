@@ -83,6 +83,17 @@ static int kaezip_check_strm_truely_end(z_streamp strm)
     return KAEZIP_SUCCESS;
 }
 
+static inline int kaezip_inflate_need_append_loop(z_streamp strm, const kaezip_ctx_t *kaezip_ctx)
+{   
+    /*
+    * kaezip_ctx->status == KAEZIP_DECOMP_NO_CRC indicates that the decompression payload has ended,
+    * but the trailer CRC check data has not been fully transferred to the hardware. 
+    * In this case, the hardware only verifies the trailer bytes (without generating any output data), 
+    * so we need to continue the process if avail_in != 0, even if avail_out is 0.
+    */
+    return (kaezip_ctx->status == KAEZIP_DECOMP_NO_CRC && strm->avail_in != 0) || kaezip_ctx->status == KAEZIP_DECOMP_BLK_NOSTART;
+}
+
 int ZEXPORT kz_inflate_v1(z_streamp strm, int flush)
 {
     int ret = -1;
@@ -109,7 +120,7 @@ int ZEXPORT kz_inflate_v1(z_streamp strm, int flush)
             (void)kaezip_check_strm_truely_end(strm);
             return Z_STREAM_END;
         }
-    } while (strm->avail_out != 0 && strm->avail_in != 0);
+    } while ((strm->avail_out != 0 && strm->avail_in != 0) || kaezip_inflate_need_append_loop(strm, kaezip_ctx));
 
     // when test on rpm -i src.rpm, the strm may end with not true ended
     (void)kaezip_check_strm_truely_end(strm);
