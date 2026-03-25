@@ -359,6 +359,16 @@ void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
             case WD_VERIFY_ERR:
                 kz_ctx->status = KAEZIP_DECOMP_VERIFY_ERR;
                 break;
+            case WCRYPTO_DECOMP_NO_CRC:
+                kz_ctx->status = (kz_ctx->remain == 0 ?
+                    KAEZIP_DECOMP_NO_CRC :
+                    KAEZIP_DECOMP_NO_CRC_BUT_DATAREMAIN);
+                break;
+            case WCRYPTO_DECOMP_BLK_NOSTART:
+                kz_ctx->status = (kz_ctx->remain == 0 ?
+                    KAEZIP_DECOMP_BLK_NOSTART :
+                    KAEZIP_DECOMP_BLK_NOSTART_BUT_DATAREMAIN);
+                break;
             default:
                 kz_ctx->status = KAEZIP_DECOMP_DOING;
                 break;
@@ -442,6 +452,17 @@ static void kaezip_state_machine_trans(kaezip_ctx_t *kz_ctx)
             case KAEZIP_DECOMP_END_BUT_DATAREMAIN: // fall-through, trans to next state
                 kz_ctx->status = (kz_ctx->remain == 0 ? KAEZIP_DECOMP_END : KAEZIP_DECOMP_END_BUT_DATAREMAIN);
             case KAEZIP_DECOMP_END:
+            case KAEZIP_DECOMP_NO_CRC:
+                break;
+            case KAEZIP_DECOMP_NO_CRC_BUT_DATAREMAIN:
+                kz_ctx->status = (kz_ctx->remain == 0 ? 
+                    KAEZIP_DECOMP_NO_CRC : 
+                    KAEZIP_DECOMP_NO_CRC_BUT_DATAREMAIN);
+                break;
+            case KAEZIP_DECOMP_BLK_NOSTART_BUT_DATAREMAIN:
+                kz_ctx->status = (kz_ctx->remain == 0 ? 
+                    KAEZIP_DECOMP_BLK_NOSTART : 
+                    KAEZIP_DECOMP_BLK_NOSTART_BUT_DATAREMAIN);
                 break;
             case KAEZIP_DECOMP_VERIFY_ERR:
                 US_ERR("kaezip inflate verify err");
