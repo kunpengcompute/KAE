@@ -21,11 +21,11 @@ typedef enum {
 } device_select_policy_t;
 
 struct zip_dev {
-	int numa_id;                  // 所属 NUMA 节点
-	char dev_name[256];           // hisi_zip-*
-    char dev_root[MAX_STR_SIZE];  // /sys/class/uacce/hizi_zip-*
-    unsigned int hw_id;           // 硬件 ID ( - 后面的数字，如 hisi_zip-8)
-    unsigned int dev_id;          // 逻辑 ID ( 0,1,2...)
+	int numa_id;                         // 所属 NUMA 节点
+	char dev_name[MAX_STR_SIZE >> 1];    // hisi_zip-*
+    char dev_root[MAX_STR_SIZE];         // /sys/class/uacce/hizi_zip-*
+    unsigned int hw_id;                  // 硬件 ID ( eg: 8 for hisi_zip-8)
+    unsigned int dev_id;                 // 逻辑 ID ( 0,1,2...)
 };
 
 typedef struct {

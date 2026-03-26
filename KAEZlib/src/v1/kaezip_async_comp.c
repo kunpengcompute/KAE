@@ -1003,8 +1003,8 @@ int scan_hisi_zip_devices(struct zip_dev *g_devices, unsigned int *g_dev_count)
         temp_devs[count].hw_id = hw_id;
 
         // 保存设备名称及完整路径
-        snprintf(temp_devs[count].dev_name, MAX_STR_SIZE, "%s", entry->d_name);
-        snprintf(temp_devs[count].dev_root, MAX_STR_SIZE, "%s/%s", UACCE_CLASS_PATH, entry->d_name);
+        snprintf(temp_devs[count].dev_name, sizeof(temp_devs[count].dev_name), "%s", entry->d_name);
+        snprintf(temp_devs[count].dev_root, sizeof(temp_devs[count].dev_root), "%s/%s", UACCE_CLASS_PATH, entry->d_name);
 
         // 保存设备 numa_id
         char dev_path[MAX_STR_SIZE];
