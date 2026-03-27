@@ -20,6 +20,7 @@ Autoprov: no
 %define kae_uadk_path    %{_builddir}/%{name}-%{version}/uadk
 %define zlib_version     1.2.11
 %define zstd_version     1.5.2
+%{!?kae_allow_non_kunpeng:%global kae_allow_non_kunpeng 0}
 
 %description
 This package contains the Huawei Hisilicon Zip and Openssl Accelerator Engine.
@@ -35,7 +36,7 @@ if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" !=
 fi
 
 %build
-sh build.sh rpm
+KAE_ALLOW_NON_KUNPENG_BUILD=%{kae_allow_non_kunpeng} sh build.sh rpm
 
 
 %install

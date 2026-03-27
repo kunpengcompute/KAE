@@ -124,9 +124,28 @@ function check_environment()
         kae_warn "/proc/cpuinfo not available; skip Kunpeng CPU check"
         return 0
     fi
-    IMPLEMENTER=$(grep "CPU implementer" /proc/cpuinfo | awk 'NR==1{printf $4}')
-    CPUPART=$(grep "CPU part" /proc/cpuinfo | awk 'NR==1{printf $4}')
+    # Use awk directly (without grep|awk pipe) to avoid silent exit under set -e/pipefail
+    IMPLEMENTER=$(awk -F: '/^CPU implementer/{gsub(/^[[:space:]]+/, "", $2); print $2; exit}' /proc/cpuinfo)
+    CPUPART=$(awk -F: '/^CPU part/{gsub(/^[[:space:]]+/, "", $2); print $2; exit}' /proc/cpuinfo)
     if [ "${IMPLEMENTER}" != "0x48" ]; then
-        kae_die "Only supported on Kunpeng CPUs (implementer 0x48); got ${IMPLEMENTER:-unknown}"
+        if [ "${KAE_ALLOW_NON_KUNPENG_BUILD:-0}" = "1" ]; then
+            kae_warn "Non-Kunpeng build override enabled by KAE_ALLOW_NON_KUNPENG_BUILD=1; detected implementer=${IMPLEMENTER:-unknown}, part=${CPUPART:-unknown}"
+            return 0
+        fi
+        kae_die "Only supported on Kunpeng CPUs (implementer 0x48); got ${IMPLEMENTER:-unknown}. Set KAE_ALLOW_NON_KUNPENG_BUILD=1 to override for build scenarios."
     fi
+}
+
+function kae_is_zip_optional_component_unsupported_cpu()
+{
+    # When override is enabled, skip all CPU-model based build gating.
+    if [ "${KAE_ALLOW_NON_KUNPENG_BUILD:-0}" = "1" ]; then
+        return 1
+    fi
+
+    if [ "${IMPLEMENTER}" = "0x48" ] && [ "${CPUPART}" = "0xd01" ]; then
+        return 0
+    fi
+
+    return 1
 }

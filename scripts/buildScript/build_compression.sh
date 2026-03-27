@@ -83,7 +83,7 @@ case "$ACTION" in
         fi  
         ;;  
     "zstd")  
-        if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+        if kae_is_zip_optional_component_unsupported_cpu; then  
             echo "This CPU does not support zstd."  
         else  
             if [ "$OPTION" = "clean" ]; then  
@@ -94,7 +94,7 @@ case "$ACTION" in
         fi  
         ;;  
     "lz4")  
-        if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+        if kae_is_zip_optional_component_unsupported_cpu; then  
             echo "This CPU does not support lz4."  
         else  
             if [ "$OPTION" = "clean" ]; then  
@@ -112,7 +112,7 @@ case "$ACTION" in
         fi  
         ;;
     "snappy")
-        if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ]; then  
+        if kae_is_zip_optional_component_unsupported_cpu; then  
             echo "This CPU does not support snappy."  
         else
             if [ "$OPTION" = "clean" ]; then  
