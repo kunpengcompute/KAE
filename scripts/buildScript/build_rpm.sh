@@ -211,7 +211,7 @@ case "$ACTION" in
         rm -rf /root/rpmbuild/SOURCES/kae* /root/rpmbuild/RPMS/aarch64/kae-* "$KAE_BUILD"
         mkdir -p "$KAE_BUILD" /root/rpmbuild/SOURCES  
         tar -zcvf /root/rpmbuild/SOURCES/kae-2.1.0.tar.gz .  
-        rpmbuild -bb $KAE_SPEC_FILE  
+        rpmbuild -bb "$KAE_SPEC_FILE" --define "kae_allow_non_kunpeng ${KAE_ALLOW_NON_KUNPENG_BUILD:-0}"  
         cp /root/rpmbuild/RPMS/aarch64/kae* "$KAE_BUILD"  
         ;;
     "all_sva")

@@ -11,7 +11,7 @@ function build_all_components()
     bash ${SCRIPT_DIR}/scripts/buildScript/build_engine.sh engine
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zlib
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh gzip
-    if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
+    if kae_is_zip_optional_component_unsupported_cpu; then
         echo "this cpu not support kaezstd, kaelz4 and kaesnappy."
     else
         bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zstd
@@ -28,7 +28,7 @@ function clear_all_components()
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zlib clean  || true  
     bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh gzip clean  || true
  
-    if [ "${IMPLEMENTER}-${CPUPART}" == "0x48-0xd01" ];then
+    if kae_is_zip_optional_component_unsupported_cpu; then
         echo "this cpu not support kaezstd, kaelz4 and kaesnappy."
     else
         bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh zstd clean   || true  
@@ -88,8 +88,8 @@ EOF
 
 main() {  
     check_environment  
-    build_check_OS_version  
-    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    build_check_OS_version
+    export LD_LIBRARY_PATH=/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
     
     case "$1" in  
         "all")  

@@ -61,7 +61,6 @@ function Build_kaezip()
 
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
     ./configure  --prefix=/usr/local/kaezip
-    export LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
     make KAEBUILDPATH=${SRC_PATH}/../kae_build KAEZLIBPATH=${SRC_PATH}
     echo "build zlib success"
 }
