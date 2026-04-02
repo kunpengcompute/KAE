@@ -353,7 +353,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x. 1 root root     961 Aug 22 17:23 /usr/local/lib/libwd_comp.la
         lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so -> libwd_comp.so.2.5.0
         lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so.2 -> libwd_comp.so.2.5.0
@@ -433,7 +433,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
     回显信息如下，表示安装成功。
 
-    ```
+    ```text
     total 5644
     -rw-r--r--. 1 root root 3846524 Aug 22 17:28 kae.a
     -rwxr-xr-x. 1 root root     995 Aug 22 17:28 kae.la
@@ -463,7 +463,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         lrwxrwxrwx. 1 root root     40 Aug 29 10:20 libkaezip.so -> /usr/local/kaezip/lib/libkaezip.so.2.0.0
         lrwxrwxrwx. 1 root root     40 Aug 29 10:20 libkaezip.so.0 -> /usr/local/kaezip/lib/libkaezip.so.2.0.0
         -rwxr-xr-x. 1 root root 148096 Aug 29 10:20 libkaezip.so.2.0.0
@@ -490,7 +490,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         [root@localhost /]# ldd /usr/local/kaegzip/gzip 
          linux-vdso.so.1 (0x0000ffff7fbc1000)
          libz.so.1 => /usr/local/kaezip/lib/libz.so.1 (0x0000ffff7fb50000)
@@ -519,7 +519,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x. 1 root root  82688 Aug 29 10:40 libkaezstd.a
         lrwxrwxrwx. 1 root root     42 Aug 29 10:40 libkaezstd.so -> /usr/local/kaezstd/lib/libkaezstd.so.2.0.0
         lrwxrwxrwx. 1 root root     42 Aug 29 10:40 libkaezstd.so.0 -> /usr/local/kaezstd/lib/libkaezstd.so.2.0.0
@@ -548,7 +548,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x 1 root root 208716 Oct 24 14:26 libkaelz4.a
         lrwxrwxrwx 1 root root     40 Oct 24 14:26 libkaelz4.so -> /usr/local/kaelz4/lib/libkaelz4.so.1.0.0
         lrwxrwxrwx 1 root root     40 Oct 24 14:26 libkaelz4.so.0 -> /usr/local/kaelz4/lib/libkaelz4.so.1.0.0
@@ -577,7 +577,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x 1 root root 142918 Oct 24 14:26 libkaessnappy.a
         lrwxrwxrwx 1 root root     46 Oct 24 14:26 libkaesnappy.so -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
         lrwxrwxrwx 1 root root     46 Oct 24 14:26 libkaesnappy.so.0 -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
@@ -755,7 +755,8 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
 
     >![](public_sys-resources/icon-note.gif) **说明：** 
     >若安装驱动或重启设备后查询不到设备文件，可能是操作系统自带加速驱动导致，可以卸载驱动后重新加载；或在启动脚本rc.local中加上重新加载驱动命令，以确保重启设备后能正常加载加速器驱动。以下命令以hisi\_sec2为例重新加载：
-    >```
+    >
+    >```shell
     >rmmod hisi_sec2
     >modprobe hisi_sec2
     >```

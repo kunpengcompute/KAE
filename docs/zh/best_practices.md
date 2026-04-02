@@ -311,7 +311,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```
+    ```text
     NAME           MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
     loop0            7:0    0   5.5G  1 loop  /os_lhl
     sda              8:0    0   2.2T  0 disk
