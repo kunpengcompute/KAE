@@ -35,7 +35,7 @@
 >
 >a：openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
 >
->b：历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。RPM包名称使用OS命名，请根据实际使用的OS选择合适的软件包。例如：openeuler22.03\_sp1.zip为适配openEuler 22.03 LTS SP1的RPM安装包。
+>b：历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。
 
 **其他要求<a name="section0733155717512"></a>**
 
@@ -45,17 +45,14 @@
 
 ### 获取License
 
-由于KAE是针对硬件的加速解决方案，因此安装前请确正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
+由于KAE是针对硬件的加速解决方案，因此安装KAE前请确正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >
 >- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
 >- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-1. License申请和安装操作，请根据实际场景选择对应的文档。
-     
-    * 《[华为服务器 iBMC 许可证书 使用指导 (渠道版)](https://support.huawei.com/enterprise/zh/doc/EDOC1100068123)》
-    * 《[华为服务器 iBMC 许可证书 使用指导书 (客户版)](https://support.huawei.com/enterprise/zh/doc/EDOC1100068122)》
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
 
 2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
 

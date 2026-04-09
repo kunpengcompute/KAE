@@ -290,7 +290,7 @@ KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解�
 
 ## 环境部署
 
-由于KAE是针对硬件的加速解决方案，因此安装前请正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
+由于KAE是针对硬件的加速解决方案，因此安装KAE前请正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
 
 **安装License<a name="section8301973474"></a>**
 
@@ -299,11 +299,8 @@ KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解�
 >- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
 >- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-1. License申请和安装操作，请根据实际场景选择对应的文档。
-     
-    * 《[华为服务器 iBMC 许可证书 使用指导 (渠道版)](https://support.huawei.com/enterprise/zh/doc/EDOC1100068123)》
-    * 《[华为服务器 iBMC 许可证书 使用指导书 (客户版)](https://support.huawei.com/enterprise/zh/doc/EDOC1100068122)》
-    
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+
 2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
 
     >![](public_sys-resources/icon-note.gif) **说明：** 
