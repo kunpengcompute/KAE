@@ -1,6 +1,6 @@
-# KAE鲲鹏加速引擎介绍<a name="ZH-CN_TOPIC_0000002545716239"></a>
+# KAE鲲鹏加速引擎介绍
 
-## 最新消息<a name="ZH-CN_TOPIC_0000002514076356"></a>
+## 最新消息
 
 - \[2026.03.20\]： KAEZlib加速压缩库新增支持异步模式；KAE2.0解压缩模块新增适配Snappy硬加速。
 - \[2025.12.30\]：KAE2.0新增支持鲲鹏950处理器；KAELz4加速压缩库异步接口新增支持polling模式。
@@ -11,16 +11,16 @@
 - \[2024.03.21\]：新增使用Java调用KAE内容，详细请参见最佳实践。
 - \[2024.02.22\]：发布KAE2.0版本，适配鲲鹏920新型号处理器和5.10内核版本。
 
-## 项目简介<a name="ZH-CN_TOPIC_0000002515528210"></a>
+## 项目简介
 
-### 简介<a name="ZH-CN_TOPIC_0000002547064999"></a>
+### 简介
 
 KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解决方案。通过专用硬件加速单元与优化指令集，KAE能够实现数据压缩/解压缩、对称/非对称加解密、数字签名等操作的硬件卸载，对应用层屏蔽了其内部实现细节。KAE兼容OpenSSL、Tongsuo、BoringSSL、Zlib、ZSTD、LZ4、Snappy等标准接口，用户无需修改业务代码即可快速集成，极大地降低了迁移成本与风险，为分布式存储、Web服务、数据库等场景提供高性能、低成本的加速方案，助力企业提升业务效率、降低成本并保障安全合规。KAE核心模块包括：
 
 - KAE加解密，使用鲲鹏硬加速模块实现RSA/SM2/SM3/SM4/DH/MD5/AES算法，结合无损用户态驱动框架，提供高性能对称加解密、非对称加解密算法能力，兼容OpenSSL 1.1.1x、OpenSSL 3.0.x系列版本、Tongsuo 8.4.0、BoringSSL，支持同步和异步机制，用于加速SSL（Secure Sockets Layer，安全套接字层）/TLS（Transport Layer Security，传输层安全协议）应用。
 - KAE解压缩，使用鲲鹏硬加速模块实现deflate、lz77\_zstd、lz77\_lz4、lz77\_snappy算法，结合无损用户态驱动框架，提供高性能Gzip/zlib格式压缩接口、ZSTD库标准接口、LZ4库标准接口、Snappy库标准接口，用于加速数据压缩和解压，可以显著降低处理器消耗，提高处理器效率。
 
-### 软件架构<a name="ZH-CN_TOPIC_0000002545716219"></a>
+### 软件架构
 
 鲲鹏加速引擎软件架构如[**图 1** 软件架构](#软件架构)所示。
 
@@ -43,7 +43,7 @@ KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器
 |KAE|鲲鹏加速器引擎，是基于鲲鹏920系列处理器提供的硬件加速解决方案。|
 
 
-### 算法支持与规格<a name="ZH-CN_TOPIC_0000002545676205"></a>
+### 算法支持与规格
 
 详细介绍KAE加解密模块及KAE解压缩模块（含KAEZlib、KAEZstd、KAELz4、KAESnappy）所支持的算法与模型，并列出各算法兼容的处理器型号。
 
@@ -141,11 +141,12 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 
 
 >![](docs/figures/icon-note.gif) **说明：** 
+>
 >√：表示支持；x：表示不支持。<br>
 >a：对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。<br>
 >b：ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
 
-## 目录结构<a name="ZH-CN_TOPIC_0000002545676223"></a>
+## 目录结构
 
 项目全量目录层级介绍如下：
 
@@ -220,17 +221,17 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 └── env.check.sh                                             # 环境检测脚本
 ```
 
-## 版本说明<a name="ZH-CN_TOPIC_0000002545716205"></a>
+## 版本说明
 
 KAE包含KAE1.0与KAE2.0两个代码分支版本，本节主要介绍两个版本差异和特性变更说明。
 
 **版本介绍<a name="section10131916143616"></a>**
 
-KAE是一款基于鲲鹏处理器研发的加速器，采用了两套驱动框架，分别是WD（Warpdriver）驱动框架和UADK（User Space Accelerator Development Kit）框架。由于不同内核的差异，KAE存在两套代码用于支持不同的内核代码，分别是KAE1.0和KAE2.0两个代码分支。两者差别如[**表 3** KAE代码分支差别](#KAE代码分支差别)所示。
+KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解决方案，采用了两套驱动框架，分别是WD（Warpdriver）驱动框架和UADK（User Space Accelerator Development Kit）框架。由于不同内核的差异，KAE存在两套代码用于支持不同的内核代码，分别是KAE1.0和KAE2.0两个代码分支。两者差别如[**表 3** KAE代码分支差别](#KAE代码分支差别)所示。
 
 **表 3** KAE代码分支差别<a id="KAE代码分支差别"></a>
 
-<table><thead align="left"><tr id="row1282443814467"><th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.1"><p id="p1682563815463"><a name="p1682563815463"></a><a name="p1682563815463"></a>内核版本<sup id="sup714911196507"><a name="sup714911196507"></a><a name="sup714911196507"></a>[1]</sup></p>
+<table><thead align="left"><tr id="row1282443814467"><th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.1"><p id="p1682563815463"><a name="p1682563815463"></a><a name="p1682563815463"></a>内核版本</p>
 </th>
 <th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.2"><p id="p19825438174616"><a name="p19825438174616"></a><a name="p19825438174616"></a>设备形态</p>
 </th>
@@ -242,7 +243,7 @@ KAE是一款基于鲲鹏处理器研发的加速器，采用了两套驱动框�
 </thead>
 <tbody><tr id="row182593854618"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p108255381469"><a name="p108255381469"></a><a name="p108255381469"></a>4.19</p>
 </td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p158251382464"><a name="p158251382464"></a><a name="p158251382464"></a>920/920X<sup id="sup1855193634913"><a name="sup1855193634913"></a><a name="sup1855193634913"></a>[2]</sup></p>
+<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p158251382464"><a name="p158251382464"></a><a name="p158251382464"></a>920/920X</p>
 </td>
 <td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p882543811469"><a name="p882543811469"></a><a name="p882543811469"></a>YES</p>
 </td>
@@ -289,56 +290,62 @@ KAE是一款基于鲲鹏处理器研发的加速器，采用了两套驱动框�
 
 ## 环境部署
 
-请根据鲲鹏处理器型号及内核版本选择适合的KAE代码分支进行安装，安装前需要确定环境信息，并提前安装相应的License。
+由于KAE是针对硬件的加速解决方案，因此安装KAE前请正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
 
 **安装License<a name="section8301973474"></a>**
 
-- 安装KAE之前需要先安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。TaiShan K系列服务器KAE已默认开启，无需申请License。 鲲鹏920新型号处理器机型在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE。具体License申请使用操作请参见《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
-- License安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
+>![](public_sys-resources/icon-note.gif) **说明：** 
+>
+>- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
+>- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-    >![](docs/figures/icon-note.gif) **说明：** 
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+
+2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
+
+    >![](public_sys-resources/icon-note.gif) **说明：** 
     >不同的操作系统**lspci**查到的加速器描述信息可能不同，除了通过关键字进行过滤，用户还可以查看是否存在HPRE/SEC/ZIP等具体型号加速器的sbdf号信息。
 
     1. 查看是否存在高性能RSA加速引擎HPRE。
 
-        ```
+        ```shell
         lspci | grep HPRE
         ```
 
         回显如下所示，说明HPRE存在。
 
-        ```
+        ```text
         79:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         b9:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         ```
 
     2. 查看是否存在安全加速引擎SEC。
 
-        ```
+        ```shell
         lspci | grep SEC
         ```
 
-        回显如下所示，说明SEC存在。
+        回显如下信息，说明SEC存在。
 
-        ```
+        ```text
         76:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         b6:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         ```
 
     3. 查看是否存在压缩加速引擎ZIP。
 
-        ```
+        ```shell
         lspci | grep ZIP
         ```
 
         回显如下所示，说明ZIP存在。
 
-        ```
+        ```text
         75:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         b5:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         ```
 
-若执行以上命令后没有任何回显信息打印，说明操作系统中没有KAE加速器设备，请检查License是否安装成功。
+    若执行以上命令后没有任何回显信息打印，说明操作系统中没有KAE加速器设备，请检查License是否安装成功。
 
 **安装KAE<a name="section3745131824710"></a>**
 
@@ -388,12 +395,12 @@ KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参�
   
   > 若容器场景，每个设备虚拟出的VF，也是和PF共享1024个instance，也就是PF+VF的instance最大为1024
 
-## 快速入门<a name="ZH-CN_TOPIC_0000002514076324"></a>
+## 快速入门
 
 安装KAE后如何快速验证KAE加速引擎是否生效，性能是否提升，具体请参见[《快速入门》](./docs/zh/quick_start.md)。
 
 
-## 文档<a name="ZH-CN_TOPIC_0000002546928135"></a>
+## 文档
 
 |资源名称|资源简介|
 |--|--|
@@ -405,7 +412,7 @@ KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参�
 |[FAQ](docs/zh/faq.md)|提供KAE安装、使用过程的常见问题和解决方法。|
 
 
-## 免责声明<a name="ZH-CN_TOPIC_0000002545676233"></a>
+## 免责声明
 
 **致KAE使用者**
 
@@ -423,14 +430,14 @@ KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参�
 如果您不希望您的数据集等信息在KAE中被提及，或希望更新KAE中有关的描述，请在GitCode提交issue，我们将根据您的issue要求删除或更新您相关描述。衷心感谢您对KAE的理解和贡献。
 
 
-## License<a name="ZH-CN_TOPIC_0000002514076330"></a>
+## License
 
 KAE产品的使用许可证，具体请参见[LICENSE](https://gitcode.com/boostkit/KAE/blob/kae2/LICENSE)文件。
 
 KAE docs目录下的文档适用CC-BY 4.0许可证，具体请参见[LICENSE](https://gitcode.com/boostkit/KAE/blob/kae2/docs/LICENSE)文件。
 
 
-## 贡献声明<a name="ZH-CN_TOPIC_0000002545676213"></a>
+## 贡献声明
 
 如果使用过程中有任何问题，或者需要反馈特性需求和bug报告，可以提交Issue联系我们，具体贡献方法可参考[这里](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md)。
 
@@ -450,12 +457,12 @@ KAE docs目录下的文档适用CC-BY 4.0许可证，具体请参见[LICENSE](ht
     9. 审核和测试通过后，CI会将您的PR合并入到项目的主干分支。
 
 
-## 建议与交流<a name="ZH-CN_TOPIC_0000002514236246"></a>
+## 建议与交流
 
 欢迎大家为社区做贡献。如果有任何疑问或建议，请提交[Issues](https://gitcode.com/boostkit/community/blob/master/docs/contributor/issue-submit.md)，我们会尽快回复。感谢您的支持。
 
 
-## 致谢<a name="ZH-CN_TOPIC_0000002545716215"></a>
+## 致谢
 
 KAE由华为公司的下列部门联合贡献：
 

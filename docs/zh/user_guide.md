@@ -1,8 +1,8 @@
-# 用户指南<a name="ZH-CN_TOPIC_0000002516017768"></a>
+# 用户指南
 
-## 使用KAE加解密库<a name="ZH-CN_TOPIC_0000002515434272"></a>
+## 使用KAE加解密库
 
-### 通过ENGINE\_by\_id函数调用KAE加解密库<a name="ZH-CN_TOPIC_0000002547114101"></a>
+### 通过ENGINE\_by\_id函数调用KAE加解密库
 
 当用户需要使用C语言调用KAE时，可以通过ENGINE\_by\_id函数来获取KAE句柄后再使能相应的算法。本节提供的仅是使用示例代码，使用过程中请根据实际业务需求进行配置修改。
 
@@ -50,8 +50,7 @@ int ENGINE_set_default(ENGINE *e, unsigned int flags);
 
 更多使用API方法请访问[OpenSSL官网](https://www.openssl.org/docs/manpages.html)。
 
-
-### 通过OpenSSL/Tongsuo配置文件openssl.cnf调用KAE加解密库<a name="ZH-CN_TOPIC_0000002515434274"></a>
+### 通过OpenSSL/Tongsuo配置文件openssl.cnf调用KAE加解密库
 
 当需要使用OpenSSL配置文件调用KAE时，需要在配置文件openssl.cnf中添加KAE相关配置参数。通过配置文件方式使用KAE，可以使用户的APP在较小的修改量的情况下使用加速器功能。
 
@@ -127,11 +126,9 @@ int main(int argc, char **argv)
 }
 ```
 
-当需要使用OpenSSL配置文件调用KAE时，需要在配置文件openssl.cnf中添加KAE相关配置参数。通过配置文件方式使用KAE，可以使用户的APP在较小的修改量的情况下使用加速器功能。
+### 通过BoringSSL调用KAE加解密库
 
-### 通过BoringSSL调用KAE加解密库<a name="ZH-CN_TOPIC_0000002515594190"></a>
-
-#### 调用方案<a name="ZH-CN_TOPIC_0000002515594198"></a>
+#### 调用方案
 
 KAE支持使用BoringSSL调用，提供两种调用方案。方案一：用户在业务代码中调用API接口；方案二：修改BoringSSL源码，合入相关补丁。本章节对两种方案原理进行详细介绍。
 
@@ -163,9 +160,7 @@ RSA私钥加密、私钥解密的接口兼容性如下：
 - RSA\_new\(\)：默认使用KAE。
 - RSA\_new\_method\(\)：将KAE作为输入参数，可以调用到KAE。
 
-KAE支持使用BoringSSL调用，提供两种调用方案。方案一：用户在业务代码中调用API接口；方案二：修改BoringSSL源码，合入相关补丁。本章节对两种方案原理进行详细介绍。
-
-#### 调用示例<a name="ZH-CN_TOPIC_0000002547114093"></a>
+#### 调用示例
 
 使用BoringSSL调用KAE前需要先安装KAE，再进行BoringSSL编译，随后选择调用方案进行调用。本章节提供两种调用方式的调用示例。
 
@@ -363,9 +358,9 @@ sh build.sh engine_boringssl /opt/boringssl
 
         可以看到使用合入patch之后的BoringSSL的RSA算法时，RSA 2048 signing性能为3245.2 ops/sec，RSA 3072 signing性能为1195.4 ops/sec，RSA 4096 signing性能为541.9 ops/sec，性能有明显提升 。
 
-## 使用KAE压缩库<a name="ZH-CN_TOPIC_0000002515594212"></a>
+## 使用KAE压缩库
 
-### 调用KAEZlib加速库<a name="ZH-CN_TOPIC_0000002515434294"></a>
+### 调用KAEZlib加速库
 
 本节提供分布式存储场景下KAEZlib加速压缩库的使用方法。
 
@@ -387,7 +382,7 @@ sh build.sh engine_boringssl /opt/boringssl
 
 若需要使用KAEZlib的异步接口，请参考KAEZlib目录下的[README](../../KAEZlib/README.md)。
 
-### 调用KAEZstd加速库<a name="ZH-CN_TOPIC_0000002515434306"></a>
+### 调用KAEZstd加速库
 
 本节提供KAEZstd加速压缩库的使用方法。
 
@@ -429,7 +424,7 @@ sh build.sh engine_boringssl /opt/boringssl
         /usr/local/kaezstd/bin/zstd -d -f compressed_file -o decompressed_file
         ```
 
-### 调用KAELz4加速库<a name="ZH-CN_TOPIC_0000002515434298"></a>
+### 调用KAELz4加速库
 
 **同步接口的使用<a name="section47033483288"></a>**
 
@@ -664,7 +659,7 @@ KAELz4异步接口当前支持2种模式，polling模式压缩接口、非pollin
     Test Success.
     ```
 
-### 调用KAESnappy加速库<a name="ZH-CN_TOPIC_0000002515434306"></a>
+### 调用KAESnappy加速库
 
 - 本节提供通过lib库调用KAESnappy加速压缩库的使用方法。
 
@@ -682,9 +677,9 @@ KAELz4异步接口当前支持2种模式，polling模式压缩接口、非pollin
         export LD_LIBRARY_PATH=/usr/local/kaesnappy/lib:$LD_LIBRARY_PATH
         ```
 
-## 维护KAE<a name="ZH-CN_TOPIC_0000002547114107"></a>
+## 维护KAE
 
-### 查询KAE日志<a name="ZH-CN_TOPIC_0000002515434302"></a>
+### 查询KAE日志
 
 掌握日志查询方法以便您在遇到故障时对故障根因进行准确定位和分析。
 
@@ -700,5 +695,3 @@ KAE涉及日志信息如[**表 1** 日志信息](#日志信息)所示。
 |/var/log/|kaelz4.log|KAELz4加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAELZ4_CONF_ENV=/var/log/```，在/var/log/下创建kaelz4.cnf文件。并在kaelz4.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
 |/var/log/|kaesnappy.log|KAESnappy加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAESNAPPY_CONF_ENV=/var/log/```，在/var/log/下创建kaesnappy.cnf文件。并在kaesnappy.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
 |/var/log/|message/syslog|CentOS，SUSE，Euler等OS内核日志路径为/var/log/message。Ubuntu等OS内核日志路径为/var/log/syslog。或通过dmesg > /var/log/dmesg.log日志收集内核相关日志，包含驱动及内核态日志。|
-
-掌握日志查询方法以便您在遇到故障时对故障根因进行准确定位和分析。

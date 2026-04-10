@@ -1,6 +1,6 @@
-# 最佳实践<a name="ZH-CN_TOPIC_0000002547657615"></a>
+# 最佳实践
 
-## 简介<a name="ZH-CN_TOPIC_0000002546796243"></a>
+## 简介
 
 本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些通用的使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
 
@@ -17,9 +17,9 @@
 
 本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些通用的使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
 
-## 加解密库<a name="ZH-CN_TOPIC_0000002515116390"></a>
+## 加解密库
 
-### KAE加速Nginx应用<a name="ZH-CN_TOPIC_0000002515276318"></a>
+### KAE加速Nginx应用
 
 本节提供Web场景下KAE如何使能Nginx加速的使用案例和方法。
 
@@ -109,7 +109,7 @@
 
 本节提供Web场景下KAE如何使能Nginx加速的使用案例和方法。
 
-### 使用KAE提升SM4-XTS算法性能<a name="ZH-CN_TOPIC_0000002546796251"></a>
+### 使用KAE提升SM4-XTS算法性能
 
 KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
 
@@ -311,7 +311,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```
+    ```text
     NAME           MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
     loop0            7:0    0   5.5G  1 loop  /os_lhl
     sda              8:0    0   2.2T  0 disk
@@ -349,7 +349,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
 KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
 
-### MD5硬件加速调优<a name="ZH-CN_TOPIC_0000002546796249"></a>
+### MD5硬件加速调优
 
 支持RGW（RADOS gateway，可扩展对象存储网关）在写对象时的MD5计算过程中使用KAE，加速RGW摘要计算。
 
@@ -357,9 +357,9 @@ KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模�
 
 支持RGW（RADOS gateway，可扩展对象存储网关）在写对象时的MD5计算过程中使用KAE，加速RGW摘要计算。
 
-## 压缩库<a name="ZH-CN_TOPIC_0000002515116384"></a>
+## 压缩库
 
-### Ceph调用KAEZlib压缩库<a name="ZH-CN_TOPIC_0000002546796247"></a>
+### Ceph调用KAEZlib压缩库
 
 将Ceph程序中的zlib压缩过程交由KAE硬件加速引擎处理，能最大化CPU处理OSD进程的能力，发挥硬件最大性能。本节提供Ceph调用KAEZlib加速压缩库的使用案例和方法。
 
@@ -371,7 +371,7 @@ KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模�
 
 将Ceph程序中的zlib压缩过程交由KAE硬件加速引擎处理，能最大化CPU处理OSD进程的能力，发挥硬件最大性能。本节提供Ceph调用KAEZlib加速压缩库的使用案例和方法。
 
-### RocksDB调用KAEZstd压缩库<a name="ZH-CN_TOPIC_0000002546836237"></a>
+### RocksDB调用KAEZstd压缩库
 
 RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可以对其压缩过程进行加速。本节提供RocksDB调用KAEZstd加速压缩库的使用案例和方法。
 
@@ -379,7 +379,7 @@ RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可�
 
 RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可以对其压缩过程进行加速。本节提供RocksDB调用KAEZstd加速压缩库的使用案例和方法。
 
-### MySQL调用KAEZstd压缩库<a name="ZH-CN_TOPIC_0000002546796241"></a>
+### MySQL调用KAEZstd压缩库
 
 KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZSTD相关压缩解压缩算法。本节提供MySQL调用KAEZstd加速压缩库的使用案例和方法。
 
@@ -390,7 +390,7 @@ KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZS
 
 KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZSTD相关压缩解压缩算法。本节提供MySQL调用KAEZstd加速压缩库的使用案例和方法。
 
-### Kafka使能KAELz4压缩库<a name="ZH-CN_TOPIC_0000002546836235"></a>
+### Kafka使能KAELz4压缩库
 
 通过使能鲲鹏加速库LZ4压缩算法，使Kafka在使用LZ4压缩格式时，性能得到提升。本节提供Kafka使能KAELz4加速压缩库的使用案例和方法。
 
@@ -398,17 +398,17 @@ KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZS
 
 通过使能鲲鹏加速库LZ4压缩算法，使Kafka在使用LZ4压缩格式时，性能得到提升。本节提供Kafka使能KAELz4加速压缩库的使用案例和方法。
 
-### KAEZlib异步解压缩接口调用示例<a name="ZH-CN_TOPIC_0000002515116394"></a>
+### KAEZlib异步解压缩接口调用示例
 
 参见KAEZlib README中关于[异步接口及其使用方式的介绍](../../KAEZlib/README.md#异步接口)。
 
-### KAELz4异步压缩接口调用示例<a name="ZH-CN_TOPIC_0000002515276324"></a>
+### KAELz4异步压缩接口调用示例
 
 参见KAELz4 README中关于[异步接口及其使用方式的介绍](../../KAELz4/README.md#kaelz4-异步压缩接口用户使用指南)。
 
-## 通用类<a name="ZH-CN_TOPIC_0000002515276326"></a>
+## 通用类
 
-### KAE在KVM虚拟机中的使用<a name="ZH-CN_TOPIC_0000002515116392"></a>
+### KAE在KVM虚拟机中的使用
 
 KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前要求HostOS上已经建立虚拟机，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
@@ -527,7 +527,7 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
 
 KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前要求HostOS上已经建立虚拟机，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
-### KAE在Docker中的使用<a name="ZH-CN_TOPIC_0000002515276320"></a>
+### KAE在Docker中的使用
 
 KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
@@ -575,6 +575,6 @@ KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器�
 
 KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
-### 使用Java调用KAE<a name="ZH-CN_TOPIC_0000002515276316"></a>
+### 使用Java调用KAE
 
 如需实现使用Java调用KAE的功能，请使用毕昇JDK的KAE Provider特性，调用方式请参见《[BishengJDK-8 KAE Provider用户使用手册](https://atomgit.com/openeuler/bishengjdk-8/wiki/KAE_Provider%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8C.md)》或《[BishengJDK-11 KAE Provider用户使用手册](https://atomgit.com/openeuler/bishengjdk-11/wiki/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3%2FKAE_Provider%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8C.md)》。

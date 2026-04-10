@@ -1,8 +1,8 @@
-# 安装指南<a name="ZH-CN_TOPIC_0000002516016598"></a>
+# 安装指南
 
-## 环境部署<a name="ZH-CN_TOPIC_0000002547111397"></a>
+## 环境部署
 
-### 环境要求<a name="ZH-CN_TOPIC_0000002547111379"></a>
+### 环境要求
 
 安装前请确保使用的环境满足KAE支持的已验证软硬件环境。请仔细阅读本章节内容了解适配信息。
 
@@ -12,14 +12,14 @@
 
 |项目|说明|
 |--|--|
-|服务器|鲲鹏服务器（开启KAE功能）a|
+|服务器|鲲鹏服务器（开启KAE功能）|
 |处理器|鲲鹏920处理器、鲲鹏920新型号处理器b、鲲鹏950处理器c|
 |iBMC|V365及以上版本|
 |BIOS|V105及以上版本|
 
 >![](public_sys-resources/icon-note.gif) **说明：** <br>
 >a：非虚拟化场景使用加速器建议关闭SMMU，开启SMMU会影响加速器性能，具体操作请参见《[BIOS 参数参考（鲲鹏920处理器）](https://support.huawei.com/enterprise/zh/doc/EDOC1100088653/ca8d53c6)》。<br>
->b：KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器及950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见[README](../../README.md#算法支持与规格)。<br>
+>b：KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器及鲲鹏950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见[README](../../README.md#算法支持与规格)。<br>
 >c：鲲鹏950处理器仅支持使用KAE2.0。
 
 **软件包的获取与已验证环境<a name="section1796432494313"></a>**
@@ -29,11 +29,13 @@
 |软件包类型|适配的OS|适配的OpenSSL版本|获取方式|
 |--|--|--|--|
 |源码包|openEuler 22.03 LTS SP1/SP2/SP3/SP4aEulerOS-V2.0 SP12TencentOS 5.4|OpenSSL 1.1.1x系列OpenSSL 3.0.x系列Tongsuo 8.4.0BoringSSL|[获取链接](https://gitcode.com/boostkit/KAE)|
-|RPM包|openEuler 22.03 LTS SP1/SP2/SP3/SP4a|OpenSSL 1.1.1x系列|[获取链接](https://gitcode.com/boostkit/KAE/releases)(若KAE代码仓没有相应OS的RPM，请参见方式二：RPM包安装制作RPM包。)|
+|RPM包|openEuler 22.03 LTS SP1/SP2/SP3/SP4a|OpenSSL 1.1.1x系列|[获取链接](https://gitcode.com/boostkit/KAE/releases)<br>若KAE代码仓没有相应OS的RPM，请参见[方式二：RPM包安装制作RPM包](#方式二rpm包安装)。|
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
+>
 >a：openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
->注：历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。RPM包名称使用OS命名，请根据实际使用的OS选择合适的软件包。例如：openeuler22.03\_sp1.zip为适配openEuler 22.03 LTS SP1的RPM安装包。
+>
+>b：历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。
 
 **其他要求<a name="section0733155717512"></a>**
 
@@ -41,16 +43,17 @@
 - KAE安装权限：root账户。
 - KAE使用权限：root账户与非root账户。
 
-### 获取License<a name="ZH-CN_TOPIC_0000002515431566"></a>
+### 获取License
 
-安装前请确保使用的环境满足KAE支持的软硬件环境，并且正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
+由于KAE是针对硬件的加速解决方案，因此安装KAE前请确正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >
 >- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
 >- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-1. License申请和安装操作请参见《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+
 2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
 
     >![](public_sys-resources/icon-note.gif) **说明：** 
@@ -97,7 +100,7 @@
 
     若执行以上命令后没有任何回显信息打印，说明操作系统中没有KAE加速器设备，请检查License是否安装成功。
 
-### 安装OpenSSL/Tongsuo<a name="ZH-CN_TOPIC_0000002515431570"></a>
+### 安装OpenSSL/Tongsuo
 
 KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模块前请正确安装OpenSSL。OpenSSL版本要求为1.1.1x系列、3.0.x系列或Tongsuo 8.4.0。
 
@@ -209,7 +212,7 @@ KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模�
     OpenSSL 1.1.1a 20 Nov 2018 
     ```
 
-## 安装方式说明<a name="ZH-CN_TOPIC_0000002547111387"></a>
+## 安装方式说明
 
 KAE2.0支持源码安装和RPM包安装两种方式，安装前请根据实际使用操作系统选择合适的安装方式。
 
@@ -220,10 +223,9 @@ KAE2.0支持源码安装和RPM包安装两种方式，安装前请根据实际�
 |源码安装|使用build.sh脚本进行安装。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12TencentOS 5.4|优点：支持修改源码进行编译及安装。缺点：操作复杂，需要做一些额外的配置。|
 |RPM安装|为了方便用户使用，华为提供了部分商用OS的RPM安装包。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12|优点：安装后可以直接使用，不需要做编译及安装等操作。缺点：支持范围有限，仅适用于指定的操作系统。|
 
+## 方式一：源码安装
 
-## 方式一：源码安装<a name="ZH-CN_TOPIC_0000002547111393"></a>
-
-KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEngine引擎和KAEZlib、KAEZstd、KAELz4模块，其中KAEKernelDriver内核驱动与UADK为必选项，其他模块按实际需求选择安装。若需要升级KAE版本，请先卸载旧版本再进行新版本的安装。
+KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEngine引擎和KAEZlib、KAEZstd、KAELz4模块，其中KAEKernelDriver内核驱动与UADK为必选项，其他模块按实际需求选择安装。若需要升级KAE版本，请先参见[卸载KAE](#卸载kae)章节卸载旧版本再进行新版本的安装。
 
 **前提条件<a name="section14710172717351"></a>**
 
@@ -348,7 +350,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x. 1 root root     961 Aug 22 17:23 /usr/local/lib/libwd_comp.la
         lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so -> libwd_comp.so.2.5.0
         lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so.2 -> libwd_comp.so.2.5.0
@@ -428,7 +430,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
     回显信息如下，表示安装成功。
 
-    ```
+    ```text
     total 5644
     -rw-r--r--. 1 root root 3846524 Aug 22 17:28 kae.a
     -rwxr-xr-x. 1 root root     995 Aug 22 17:28 kae.la
@@ -458,7 +460,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         lrwxrwxrwx. 1 root root     40 Aug 29 10:20 libkaezip.so -> /usr/local/kaezip/lib/libkaezip.so.2.0.0
         lrwxrwxrwx. 1 root root     40 Aug 29 10:20 libkaezip.so.0 -> /usr/local/kaezip/lib/libkaezip.so.2.0.0
         -rwxr-xr-x. 1 root root 148096 Aug 29 10:20 libkaezip.so.2.0.0
@@ -485,7 +487,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         [root@localhost /]# ldd /usr/local/kaegzip/gzip 
          linux-vdso.so.1 (0x0000ffff7fbc1000)
          libz.so.1 => /usr/local/kaezip/lib/libz.so.1 (0x0000ffff7fb50000)
@@ -514,7 +516,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x. 1 root root  82688 Aug 29 10:40 libkaezstd.a
         lrwxrwxrwx. 1 root root     42 Aug 29 10:40 libkaezstd.so -> /usr/local/kaezstd/lib/libkaezstd.so.2.0.0
         lrwxrwxrwx. 1 root root     42 Aug 29 10:40 libkaezstd.so.0 -> /usr/local/kaezstd/lib/libkaezstd.so.2.0.0
@@ -543,7 +545,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x 1 root root 208716 Oct 24 14:26 libkaelz4.a
         lrwxrwxrwx 1 root root     40 Oct 24 14:26 libkaelz4.so -> /usr/local/kaelz4/lib/libkaelz4.so.1.0.0
         lrwxrwxrwx 1 root root     40 Oct 24 14:26 libkaelz4.so.0 -> /usr/local/kaelz4/lib/libkaelz4.so.1.0.0
@@ -572,7 +574,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
         回显信息如下所示，表示安装成功。
 
-        ```
+        ```text
         -rwxr-xr-x 1 root root 142918 Oct 24 14:26 libkaessnappy.a
         lrwxrwxrwx 1 root root     46 Oct 24 14:26 libkaesnappy.so -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
         lrwxrwxrwx 1 root root     46 Oct 24 14:26 libkaesnappy.so.0 -> /usr/local/kaesnappy/lib/libkaesnappy.so.2.0.4
@@ -671,7 +673,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
      libnuma.so.1 => /usr/lib64/libnuma.so.1 (0x0000ffff84809000)
     ```
 
-## 方式二：RPM包安装<a name="ZH-CN_TOPIC_0000002515431544"></a>
+## 方式二：RPM包安装
 
 KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密算法需要安装kae-driver和kae-openssl，使用KAEzip相关算法需要安装kae-driver和kae-zip。推荐使用源码的方式来安装KAE2.0，如需在openEuler以外的其他OS上通过RPM包方式安装KAE2.0，则需要通过源码制作RPM包再安装。若需要升级KAE版本，请先卸载旧版本再进行新版本的安装。
 
@@ -750,7 +752,8 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
 
     >![](public_sys-resources/icon-note.gif) **说明：** 
     >若安装驱动或重启设备后查询不到设备文件，可能是操作系统自带加速驱动导致，可以卸载驱动后重新加载；或在启动脚本rc.local中加上重新加载驱动命令，以确保重启设备后能正常加载加速器驱动。以下命令以hisi\_sec2为例重新加载：
-    >```
+    >
+    >```shell
     >rmmod hisi_sec2
     >modprobe hisi_sec2
     >```
@@ -1000,9 +1003,9 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
      libnuma.so.1 => /usr/lib64/libnuma.so.1 (0x0000ffff84809000)
     ```
 
-## 安装后测试<a name="ZH-CN_TOPIC_0000002547111413"></a>
+## 安装后测试
 
-### KAE加解密库测试<a name="ZH-CN_TOPIC_0000002547191397"></a>
+### KAE加解密库测试
 
 用户可以通过本节提供的命令测试RSA同步/异步模式、SM3模式、SM4 CBC模式和AES CBC异步模式下调用KAE加解密库前后的性能提升效果。
 
@@ -1211,7 +1214,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 >- AES仅支持数据长度为256KB及以下的异步操作。
 >- 使用KAE加速后AES算法在输入数据块为100KB大小时，性能从1123328.00k/s提升到3996774.40k/s。
 
-### KAEZlib压缩库测试<a name="ZH-CN_TOPIC_0000002515591478"></a>
+### KAEZlib压缩库测试
 
 用户安装KAEZlib后，可以通过本节提供的操作步骤测试压缩库功能和性能。
 
@@ -1462,7 +1465,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
 6. 关于异步接口的使用及测试，参见KAEZlib目录的[README](../../KAEZlib/README.md)。
 
-### KAEZstd压缩库测试<a name="ZH-CN_TOPIC_0000002515591456"></a>
+### KAEZstd压缩库测试
 
 用户安装KAEZstd库后，可以通过本节提供的操作步骤测试KAEZstd压缩库功能和性能。
 
@@ -1504,7 +1507,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
         可以看到压缩速度从201.7MB/s提升到了438.5MB/s，压缩性能明显提升。
 
-### KAELz4压缩库测试<a name="ZH-CN_TOPIC_0000002515591486"></a>
+### KAELz4压缩库测试
 
 用户安装KAELz4库后，可以通过本节提供的操作步骤测试KAELz4压缩库功能和性能。
 
@@ -1688,7 +1691,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
         compress_size is 497489513676B = 474442.969MB, compress_rate is 1.765
         ```
 
-### KAESnappy压缩库测试<a name="ZH-CN_TOPIC_0000002515591486"></a>
+### KAESnappy压缩库测试
 
 用户安装KAESnappy库后，可以通过本节提供的操作步骤测试KAESnappy压缩库性能。
 
@@ -1780,7 +1783,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
         done... (cIters=1 dIters=1 cTime=1.0 dTime=2.0 chunkSize=8KB cSpeed=0MB)
         ```
 
-## 卸载KAE<a name="ZH-CN_TOPIC_0000002547203993"></a>
+## 卸载KAE
 
 用户不再使用KAE，或需要进行新版本KAE的安装时，请参考本节内容卸载KAE。
 

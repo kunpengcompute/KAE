@@ -11,7 +11,7 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 ### 接口使用demo
 直接编写标准zlib压缩代码即可，可参考测试文件： ```KAEZlib/test/perftest/kaezip_perf.c```
 
-功能及性能测试步骤可以参见[鲲鹏社区文档](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/kae/usermanual/kunpengaccel_06_0020.html)。
+功能及性能测试步骤可以参见[安装指南](./../docs/zh/installation_guide.md)。
 
 ## 异步接口
 

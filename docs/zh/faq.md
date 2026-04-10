@@ -1,8 +1,8 @@
-# 常见问题<a name="ZH-CN_TOPIC_0000002516177736"></a>
+# 常见问题
 
-## 硬件相关<a name="ZH-CN_TOPIC_0000002546836277"></a>
+## 硬件相关
 
-### 加速器对BIOS和iBMC的版本有没有要求，支持哪个版本？<a name="ZH-CN_TOPIC_0000002546836283"></a>
+### 加速器对BIOS和iBMC的版本有没有要求，支持哪个版本？
 
 **问题<a name="section188741043123519"></a>**
 
@@ -13,7 +13,7 @@
 - iBMC版本：V365及以上
 - BIOS版本：V105及以上
 
-### 安装加速器是否需要先安装License，以及License怎么获取？<a name="ZH-CN_TOPIC_0000002515116444"></a>
+### 安装加速器是否需要先安装License，以及License怎么获取？
 
 **问题<a name="section76749596402"></a>**
 
@@ -41,7 +41,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 |临时License|60天|从ESDP平台申请功能和资源数量自由选择|售前拓展、品牌展览、外部测试工程交付调测、网上事故恢复|
 |商用License|永久|从ESDP平台申请功能与资源数量与合同一致|全量功能使用ESN变更产品整改货物反馈|
 
-### 如何查看设备上的ESN号？<a name="ZH-CN_TOPIC_0000002515116448"></a>
+### 如何查看设备上的ESN号？
 
 **问题<a name="section18240164145513"></a>**
 
@@ -53,9 +53,9 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 ![](figures/zh-cn_image_0000002546836291.png)
 
-## License相关<a name="ZH-CN_TOPIC_0000002546836275"></a>
+## License相关
 
-### 如何验证License有没有使能鲲鹏加速引擎硬件设备？<a name="ZH-CN_TOPIC_0000002515276362"></a>
+### 如何验证License有没有使能鲲鹏加速引擎硬件设备？
 
 **问题<a name="section989811482218"></a>**
 
@@ -77,7 +77,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
     ![](figures/zh-cn_image_0000002515276392.png)
 
-### 安装License时提示校验失败<a name="ZH-CN_TOPIC_0000002515276366"></a>
+### 安装License时提示校验失败
 
 **问题现象描述<a name="zh-cn_topic_0000001217022677_section3941254"></a>**
 
@@ -102,7 +102,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 如果是这种情况，请通过[华为运营商业务网站](https://support.huawei.com/carrier/navi?coltype=software#col=software&path=PBI1-21430725/PBI1-21430756/PBI1-21431670/PBI1-251366796)或[华为企业业务网站](https://support.huawei.com/enterprise/zh/category/arm-based-pid-1548148188432?submodel=software)，找到自己的服务器型号，下载最新的iBMC安装包，升级即可。
 
-### 使能KAE过程中成功加载许可证后，进入系统找不到SEC设备的解决方法<a name="ZH-CN_TOPIC_0000002546836271"></a>
+### 使能KAE过程中成功加载许可证后，进入系统找不到SEC设备的解决方法
 
 **问题现象描述<a name="zh-cn_topic_0000001721633562_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -124,9 +124,9 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 在开启TEE功能的服务器上关闭TEE功能。请进入服务器BIOS，选择“Advanced \> TEE Config“，设置为“Disable“，即可关闭TEE功能，详细操作请参见《机密计算TrustZone 特性指南》中“[配置BIOS](https://www.hikunpeng.com/document/detail/zh/kunpengcctrustzone/trustzone/fg/kunpengtrustzone_20_0019.html#ZH-CN_TOPIC_0000002258299325__section132520219345)”相关内容。
 
-## 安装KAE相关<a name="ZH-CN_TOPIC_0000002546796299"></a>
+## 安装KAE相关
 
-### 如何获取鲲鹏加速引擎软件包？<a name="ZH-CN_TOPIC_0000002546836289"></a>
+### 如何获取鲲鹏加速引擎软件包？
 
 **问题<a name="section63626415588"></a>**
 
@@ -137,7 +137,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 - 请从[Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae2)下载鲲鹏加速引擎2.0软件包。
 - 请从[Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae1)下载鲲鹏加速引擎1.0软件包。
 
-### 如何安装和升级鲲鹏加速引擎？<a name="ZH-CN_TOPIC_0000002546796283"></a>
+### 如何安装和升级鲲鹏加速引擎？
 
 **问题<a name="section382213371104"></a>**
 
@@ -161,7 +161,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
   
      解决办法：鲲鹏920处理器申请License安装；鲲鹏920新型号处理器更新免License版本BIOS。
 
-### 使用源码方式编译KAE时提示cannot create regular file的解决方法<a name="ZH-CN_TOPIC_0000002515116430"></a>
+### 使用源码方式编译KAE时提示cannot create regular file的解决方法
 
 **问题现象描述<a name="zh-cn_topic_0000001216544209_section3941254"></a>**
 
@@ -204,7 +204,7 @@ rpm -qa | grep kernel-devel
     yum install kernel-devel-$(uname -r)
     ```
 
-### 源码编译安装鲲鹏加速引擎时，找不到engine.h文件<a name="ZH-CN_TOPIC_0000002546796281"></a>
+### 源码编译安装鲲鹏加速引擎时，找不到engine.h文件
 
 **问题现象描述<a name="zh-cn_topic_0000001217022679_section3941254"></a>**
 
@@ -239,7 +239,7 @@ rpm -qa | grep kernel-devel
 
     若有engine.h文件所在目录显示则添加成功。
 
-### RPM方式安装鲲鹏加速引擎时提示no such device的解决办法<a name="ZH-CN_TOPIC_0000002515276356"></a>
+### RPM方式安装鲲鹏加速引擎时提示no such device的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000001171624344_section3941254"></a>**
 
@@ -255,7 +255,7 @@ rpm -qa | grep kernel-devel
 
 正确安装有效的License。License的获取和安装步骤请参见《安装指南》中“环境部署”章节的“[获取License](./installation_guide.md#获取license)”部分。
 
-### EulerOS 2.8默认安装的OpenSSL 1.1.1c版本使用加速器失败，提示找不到符号<a name="ZH-CN_TOPIC_0000002515116440"></a>
+### EulerOS 2.8默认安装的OpenSSL 1.1.1c版本使用加速器失败，提示找不到符号
 
 **问题现象描述<a name="zh-cn_topic_0000001171464370_section3941254"></a>**
 
@@ -269,7 +269,7 @@ EulerOS 2.8默认安装的OpenSSL 1.1.1c版本未开启国密算法功能（通�
 
 用户需要重新下载OpenSSL版本进行编译安装，不需要在编译前的配置时加上OPENSSL\_NO\_SM4宏，请参见《安装指南》中的“[安装OpenSSL/Tongsuo](./installation_guide.md#安装openssltongsuo)”章节进行安装即可。
 
-### 升级openEuler系统的OpenSSL版本到1.1.1e，导致SSH连接不上<a name="ZH-CN_TOPIC_0000002515116438"></a>
+### 升级openEuler系统的OpenSSL版本到1.1.1e，导致SSH连接不上
 
 **问题现象描述<a name="zh-cn_topic_0000001216944169_section3941254"></a>**
 
@@ -569,7 +569,7 @@ find / -name "openssl.cnf"
 
             硬算队列完全没有消耗的情况下回显结果是“256  256”，上述回显结果是“255  256”，说明已经消耗掉了一个硬算队列，则整个安装是成功的，您可以开始用鲲鹏加速引擎了。
 
-### 源码编译安装KAE内核驱动时失败的解决办法<a name="ZH-CN_TOPIC_0000002515116446"></a>
+### 源码编译安装KAE内核驱动时失败的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000001840968873_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -585,7 +585,7 @@ find / -name "openssl.cnf"
 
 请在“/kae\_driver/hisilicon/sec/Makefile“目录下的makefile文件中删除第二行，再重新执行编译命令。
 
-### 使用wrk工具测试Nginx+KAE性能未得到提升<a name="ZH-CN_TOPIC_0000002515276364"></a>
+### 使用wrk工具测试Nginx+KAE性能未得到提升
 
 **问题现象描述<a name="section0325446598"></a>**
 
@@ -604,7 +604,7 @@ find / -name "openssl.cnf"
 
 KAE对握手阶段的RSA算法进行加速，如果压测工具采用了TLS重连，则看不到加速效果，此时建议使用其他压测工具，如httpress工具。
 
-### 升级加速器驱动失败的解决办法<a name="ZH-CN_TOPIC_0000002546836279"></a>
+### 升级加速器驱动失败的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000002293564954_section0747162541710"></a>**
 
@@ -618,7 +618,7 @@ KAE对握手阶段的RSA算法进行加速，如果压测工具采用了TLS重�
 
 升级加速器驱动版本后，通过执行**dracut --force**命令重新更新initramfs文件系统。
 
-### 操作系统安装完OpenSSL新版本后提示相关接口符号未找到<a name="ZH-CN_TOPIC_0000002515276360"></a>
+### 操作系统安装完OpenSSL新版本后提示相关接口符号未找到
 
 **问题现象描述<a name="zh-cn_topic_0000002327644537_section6238163892516"></a>**
 
@@ -666,9 +666,9 @@ make install
     make install
     ```
 
-## 验证KAE相关<a name="ZH-CN_TOPIC_0000002515116432"></a>
+## 验证KAE相关
 
-### 如何获取鲲鹏加速引擎性能数据？<a name="ZH-CN_TOPIC_0000002515116434"></a>
+### 如何获取鲲鹏加速引擎性能数据？
 
 **问题<a name="section18596175620576"></a>**
 
@@ -678,7 +678,7 @@ make install
 
 鲲鹏加速器引擎的性能数据经过内部决策不能对外发布，只做内部参考。如果是公司内部门，请说明获取加速器性能数据的目的，我们会根据需要提供部分性能数据和对应的测试方法。
 
-### 如何知道自己写的程序有没有调用到鲲鹏加速引擎？<a name="ZH-CN_TOPIC_0000002515276368"></a>
+### 如何知道自己写的程序有没有调用到鲲鹏加速引擎？
 
 **问题<a name="section9821201471713"></a>**
 
@@ -700,7 +700,7 @@ make install
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >在加速器安装完之后并不是每个机器上的驱动设备编号都一样，此处只是举例说明。
 
-### 使用openssl req -new -x509命令生成证书失败<a name="ZH-CN_TOPIC_0000002546796289"></a>
+### 使用openssl req -new -x509命令生成证书失败
 
 **问题现象描述<a name="zh-cn_topic_0000001217022681_section3941254"></a>**
 
@@ -761,7 +761,7 @@ make install
 
     此时可正常使用生成证书功能。
 
-### 使用OpenSSL命令调用KAE测试RSA性能，发现性能并没有提升<a name="ZH-CN_TOPIC_0000002546796293"></a>
+### 使用OpenSSL命令调用KAE测试RSA性能，发现性能并没有提升
 
 **问题现象描述<a name="zh-cn_topic_0000001769473497_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -812,7 +812,7 @@ make install
     - 当启用KAE硬件加密时可在加密区相关程序运行时，通过观察加速队列的使用情况来确认加密情况，如KAE使能成功，可通过**cat /sys/class/uacce/hisi\_sec-1/attrs/available\_instances**查看队列消耗。
     - 当采用软加密（OpenSSL）时可在加密区相关程序运行时，观察是否有相关的热点函数来确认加密情况**。**通过执行**perf top**命令查看是否存在libcrypto.so.1.1，如果存在libcrypto.so.1.1则说明是采用的软加密。如果需要采用KAE硬件加密，则建议采用源码编译的方式重新编译KAE后，再次执行KAE使能和测试。
 
-### 虚拟机上安装配置KAE后未生效的解决办法<a name="ZH-CN_TOPIC_0000002546796297"></a>
+### 虚拟机上安装配置KAE后未生效的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -832,7 +832,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
 参考hisi\_sec设备的虚拟化配置步骤配置方式hisi\_hpre和hisi\_zip设备。详细操作步骤请参见《最佳实践》中的“[KAE在KVM虚拟机中的使用](./best_practices.md#kae在kvm虚拟机中的使用)”章节。
 
-### 使用openssl.cnf调用KAE前后没有性能变化<a name="ZH-CN_TOPIC_0000002515276358"></a>
+### 使用openssl.cnf调用KAE前后没有性能变化
 
 **问题现象描述<a name="zh-cn_topic_0000001769473497_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -874,7 +874,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
     使用鲲鹏920 7260处理器时调用KAE前性能大约为750sign/s，调用KAE后性能大约为3000sign/s，可以看到调用KAE前后性能得到了提升。
 
-### 程序调用KAE时提示wd pool无法初始化<a name="ZH-CN_TOPIC_0000002546836281"></a>
+### 程序调用KAE时提示wd pool无法初始化
 
 **问题现象描述<a name="section0325446598"></a>**
 
@@ -892,7 +892,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
 如果关闭SMMU使用KAE，需要保证CMA内存空间充足；否则建议开启SMMU，开启方式请参见[配置BIOS](https://www.hikunpeng.com/document/detail/zh/kunpengcpfs/ecosystemEnable/QEMU-KVM/kunpengkvm_03_0019.html)。
 
-### KAE初始化失败的解决办法<a name="ZH-CN_TOPIC_0000002546836273"></a>
+### KAE初始化失败的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000002327644517_section189811511193010"></a>**
 
@@ -973,7 +973,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
         export OPENSSL_ENGINES=/usr/local/lib/engines-3.0
         ```
 
-### 安装完加速引擎之后，查找不到加速器设备<a name="ZH-CN_TOPIC_0000002546796287"></a>
+### 安装完加速引擎之后，查找不到加速器设备
 
 **问题现象描述<a name="zh-cn_topic_0000002327644549_section14808174319516"></a>**
 
@@ -1066,7 +1066,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
     - 确认是否已正确导入加速器许可证，若未导入，请参见《[TaiShan 机架服务器 iBMC \(V300及以上\) 用户指南](https://support.huawei.com/enterprise/zh/doc/EDOC1100048792/ba20dd15)》中“许可证管理”章节，导入加速器许可证。导入加速器许可证之后，需要掉电重启iBMC，使能License。
     - 确认iBMC和BIOS版本是否支持加速器特性，支持KAE需要BIOS版本高于1.05版本，iBMC版本高于3.65版本。
 
-### Ceph使用KAEzip对大于4MB文件压缩报错问题<a name="ZH-CN_TOPIC_0000002546796291"></a>
+### Ceph使用KAEzip对大于4MB文件压缩报错问题
 
 **问题现象描述<a name="zh-cn_topic_0000002270266173_zh-cn_topic_0000001216722055_section3941254"></a>**
 
@@ -1137,8 +1137,7 @@ Ceph对象存储，测试zlib硬算压缩率，使用超过4MB的文件进行测
 
 该问题在KAE 1.3.10及以下版本存在，在1.3.11版本已经修复（2021年5月20日已经发布），请将KAEzip软件包升级到1.3.11版本。
 
-
-### 测试KAE解压缩性能时提示没有权限获取相关设备资源的解决办法<a name="ZH-CN_TOPIC_0000002515116450"></a>
+### 测试KAE解压缩性能时提示没有权限获取相关设备资源的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000002235226834_zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -1187,7 +1186,7 @@ ll | grep hisi
 
     ![](figures/zh-cn_image_0000002515276390.png)
 
-### 查看zlib库加速引擎是否生效时提示部分库找不到的解决办法<a name="ZH-CN_TOPIC_0000002546836287"></a>
+### 查看zlib库加速引擎是否生效时提示部分库找不到的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000002270146217_zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -1220,7 +1219,7 @@ ll | grep hisi
 
     重新查看zlib加速库是否链接到动态库时成功。
 
-### 毕昇JDK下使用KAEzip特性解压数据时提示“gzip header append\_info\_sz is 0”<a name="ZH-CN_TOPIC_0000002546836285"></a>
+### 毕昇JDK下使用KAEzip特性解压数据时提示“gzip header append\_info\_sz is 0”
 
 **问题现象描述<a name="zh-cn_topic_0000002270146249_zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -1242,7 +1241,7 @@ KAEzip压缩后的文件格式与Gzip文件格式不一致，导致文件无法�
 
 KAE最新版本[获取链接](https://gitcode.com/boostkit/KAE)。
 
-### 关于KAEGzip工具对于尾部长度字段处理逻辑的说明<a name="ZH-CN_TOPIC_0000002515276372"></a>
+### 关于KAEGzip工具对于尾部长度字段处理逻辑的说明
 
 **问题现象描述<a name="zh-cn_topic_0000002235067006_zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
@@ -1260,7 +1259,7 @@ Gzip工具会因为长度字段被篡改而产生报错，KAEGzip工具则会正
 
 Gzip在解压过程中会对长度字段进行校验，但由于当前硬件及驱动未实现对长度字段进行校验的功能，故而KAEGzip在该场景下采取了不同的处理逻辑，即对于完整且符合标准协议的核心数据段，正常解压出符合协议的正确原始数据。
 
-### 关于KAEZlib块解压接口异常使用场景说明<a name="ZH-CN_TOPIC_0000002546796295"></a>
+### 关于KAEZlib块解压接口异常使用场景说明
 
 KAEZlib模块提供了与zlib开源库兼容的部分压缩与解压缩接口。这包括用于流式处理的deflate/inflate接口，以及用于块式处理的compress/uncompress接口。
 
