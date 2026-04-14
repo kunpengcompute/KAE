@@ -86,10 +86,12 @@ static int kaezip_check_strm_truely_end(z_streamp strm)
 static inline int kaezip_inflate_need_append_loop(z_streamp strm, const kaezip_ctx_t *kaezip_ctx)
 {   
     /*
-    * kaezip_ctx->status == KAEZIP_DECOMP_NO_CRC indicates that the decompression payload has ended,
-    * but the trailer CRC check data has not been fully transferred to the hardware. 
-    * In this case, the hardware only verifies the trailer bytes (without generating any output data), 
-    * so we need to continue the process if avail_in != 0, even if avail_out is 0.
+    * KAEZIP_DECOMP_NO_CRC indicates that the payload has ended, but the trailer
+    * CRC bytes still need to be transferred to the hardware. In this case, we
+    * should continue when avail_in != 0, even if avail_out is 0.
+    * KAEZIP_DECOMP_BLK_NOSTART indicates that the current block has not started
+    * on the hardware yet, so inflate needs another append-loop iteration to
+    * submit data to the UADK driver again.
     */
     return (kaezip_ctx->status == KAEZIP_DECOMP_NO_CRC && strm->avail_in != 0) || kaezip_ctx->status == KAEZIP_DECOMP_BLK_NOSTART;
 }
