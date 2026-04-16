@@ -330,7 +330,11 @@ int kaezip_driver_do_decomp(kaezip_ctx_t *kaezip_ctx)
         return kaezip_get_remain_data(kaezip_ctx);
     }
 
-    if (kaezip_ctx->in_len == 0) {
+    /*
+     * KAEZIP_DECOMP_BLK_NOSTART still requires another request to the UADK
+     * driver, so zero-length input cannot be treated as completion here.
+     */
+    if (kaezip_ctx->in_len == 0 && kaezip_ctx->status != KAEZIP_DECOMP_BLK_NOSTART) {
         US_DEBUG("kaezip do comp impl success, for input len zero, comp type : inflate");
         return KAEZIP_SUCCESS;
     }
