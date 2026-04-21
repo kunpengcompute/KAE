@@ -1,7 +1,7 @@
 Name:          kae
 Summary:       Huawei Kunpeng Accelerator Engine
 Version:       2.1.0
-Release:       1
+Release:       2
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
 ExclusiveOS:   linux
@@ -115,6 +115,7 @@ rm -rf ${RPM_BUILD_ROOT}
 Summary: KAE Driver Package
 Autoreq: no
 Autoprov: no
+Conflicts: libwd
 
 %description driver
 This package kae_driver library.
@@ -122,7 +123,7 @@ This package kae_driver library.
 %files driver
 %defattr(644,root,root)
 /lib/modules/%{kernel_version}/extra/*.ko
-%config(noreplace) /etc/modprobe.d/*.conf
+/etc/modprobe.d/*.conf
 
 %defattr(755,root,root)
 /usr/local/lib/libwd.*
@@ -190,6 +191,16 @@ echo "installing driver..."
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
+    running_kver=$(uname -r)
+    build_kver=%{kernel_version}
+    if [ "${KAE_USE_RUNNING_KERNEL}" = "1" ] && [ "${running_kver}" != "${build_kver}" ]; then
+        mkdir -p "/lib/modules/${running_kver}/extra"
+        ln -snf "/lib/modules/${build_kver}/extra/uacce.ko"     "/lib/modules/${running_kver}/extra/uacce.ko"
+        ln -snf "/lib/modules/${build_kver}/extra/hisi_qm.ko"   "/lib/modules/${running_kver}/extra/hisi_qm.ko"
+        ln -snf "/lib/modules/${build_kver}/extra/hisi_sec2.ko" "/lib/modules/${running_kver}/extra/hisi_sec2.ko"
+        ln -snf "/lib/modules/${build_kver}/extra/hisi_hpre.ko" "/lib/modules/${running_kver}/extra/hisi_hpre.ko"
+        ln -snf "/lib/modules/${build_kver}/extra/hisi_zip.ko"  "/lib/modules/${running_kver}/extra/hisi_zip.ko"
+    fi
     depmod -a
     modprobe uacce
     modprobe hisi_qm
@@ -274,56 +285,57 @@ fi
 
 %postun driver
 /sbin/ldconfig
-rm -rf /usr/local/lib/libwd.*         > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_comp.*    > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_crypto.*  > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_udma.*    > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_dae.*     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_hpre.*  > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_udma.*  > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_ce.*     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_sve.*    > /dev/null 2>&1 || true
+if [ "$1" = "0" ] ; then  #0: uninstall
+    build_kver=%{kernel_version}
+    changed_kvers="${build_kver}"
 
-rm -rf /lib/modules/%{kernel_version}/extra/uacce.ko     > /dev/null 2>&1 || true
-rm -rf /lib/modules/%{kernel_version}/extra/hisi_qm.ko   > /dev/null 2>&1 || true
-rm -rf /lib/modules/%{kernel_version}/extra/hisi_sec2.ko > /dev/null 2>&1 || true
-rm -rf /lib/modules/%{kernel_version}/extra/hisi_hpre.ko > /dev/null 2>&1 || true
-rm -rf /lib/modules/%{kernel_version}/extra/hisi_zip.ko  > /dev/null 2>&1 || true
-rm -rf /etc/modprobe.d/hisi_sec2.conf                    > /dev/null 2>&1 || true
-rm -rf /etc/modprobe.d/hisi_hpre.conf                    > /dev/null 2>&1 || true
-rm -rf /etc/modprobe.d/hisi_zip.conf                     > /dev/null 2>&1 || true
+    for link in $(find /lib/modules -path '*/extra/*.ko' -type l 2>/dev/null); do
+        target=$(readlink "$link")
+        case "$target" in
+            "/lib/modules/${build_kver}/extra/"*)
+                rm -f "$link" > /dev/null 2>&1 || true
+                kver=$(echo "$link" | sed -n 's#^/lib/modules/\([^/]*\)/extra/.*#\1#p')
+                case " ${changed_kvers} " in
+                    *" ${kver} "*) ;;
+                    *) changed_kvers="${changed_kvers} ${kver}" ;;
+                esac
+                ;;
+        esac
+    done
 
+fi
 
 if [ "$1" = "0" ] ; then  #0: uninstall
-    /sbin/depmod -a > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd.*         > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_comp.*    > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_crypto.*  > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_udma.*    > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_dae.*     > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_hpre.*  > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_udma.*  > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libisa_ce.*     > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libisa_sve.*    > /dev/null 2>&1 || true
+fi
+
+if [ "$1" = "0" ] ; then  #0: uninstall
+    rm -rf /lib/modules/%{kernel_version}/extra/uacce.ko     > /dev/null 2>&1 || true
+    rm -rf /lib/modules/%{kernel_version}/extra/hisi_qm.ko   > /dev/null 2>&1 || true
+    rm -rf /lib/modules/%{kernel_version}/extra/hisi_sec2.ko > /dev/null 2>&1 || true
+    rm -rf /lib/modules/%{kernel_version}/extra/hisi_hpre.ko > /dev/null 2>&1 || true
+    rm -rf /lib/modules/%{kernel_version}/extra/hisi_zip.ko  > /dev/null 2>&1 || true
+    rm -rf /etc/modprobe.d/hisi_sec2.conf                    > /dev/null 2>&1 || true
+    rm -rf /etc/modprobe.d/hisi_hpre.conf                    > /dev/null 2>&1 || true
+    rm -rf /etc/modprobe.d/hisi_zip.conf                     > /dev/null 2>&1 || true
+    for kver in ${changed_kvers}; do
+        /sbin/depmod -a "${kver}" > /dev/null 2>&1 || true
+    done
 fi
 echo "uacce modules uninstalled"
-
-if [ "$1" = "0" ] ; then  #0: uninstall
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_sec2.ko" | /sbin/weak-modules --remove-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_sec2 modules uninstalled"
-
-if [ "$1" = "0" ] ; then  #0: uninstall
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_hpre.ko" | /sbin/weak-modules --remove-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_hpre modules uninstalled"
-
-if [ "$1" = "0" ]; then  #0: uninstall
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_zip.ko" | /sbin/weak-modules --remove-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_zip modules uninstalled"
 
 
@@ -382,13 +394,12 @@ fi
 %preun zip
 echo "uninstalling zip-rpm"
 
-
 %postun zip
-rm -rf /usr/local/kaezip                > /dev/null 2>&1 || true
-rm -f  /var/log/kaezip.log*             > /dev/null 2>&1 || true
-rm -rf /usr/local/kaegzip               > /dev/null 2>&1 || true
+if [ "$1" = "0" ] ; then  #0: uninstall
+    rm -rf /usr/local/kaezip                > /dev/null 2>&1 || true
+    rm -f  /var/log/kaezip.log*             > /dev/null 2>&1 || true
+    rm -rf /usr/local/kaegzip               > /dev/null 2>&1 || true
 
-if [[ "$1" = "0" || "$1" = "1" ]] ; then
     implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     if [ "${implementer}-${part}" != "0x48-0xd01" ]; then
@@ -449,6 +460,9 @@ echo "openssl engine uninstalled"
 /sbin/ldconfig
 
 %changelog
+* Tue Apr 14 2026 yuzhihuan <yuzhihuan@huawei.com> 2.1.0-2
+- Update RPM spec to support optional running-kernel ko symlinks
+
 * Wed Mar 25 2026 yuzhihuan <yuzhihuan@huawei.com> 2.1.0-1
 - Update KAE algorithm library versions from 2.0.4 to 2.1.0
 
