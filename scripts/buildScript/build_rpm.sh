@@ -70,7 +70,7 @@ function build_rpm()
 
     # 编译 driver 
     cd "${KAE_KERNEL_DIR}"
-    make -j"$(kae_jobs)"
+    make KERNEL_VERSION_BY_BUILDENV="${KERNEL_VERSION_BY_BUILDENV}" -j"$(kae_jobs)"
 
     mkdir -p "$KAE_BUILD/driver"
     cp "${KAE_KERNEL_DIR}/hisilicon/sec2/hisi_sec2.ko" "$KAE_BUILD/driver"

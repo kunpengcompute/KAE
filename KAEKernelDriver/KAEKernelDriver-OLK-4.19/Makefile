@@ -1,4 +1,4 @@
-KERNEL_VERSION_BY_BUILDENV := `uname -r`
+KERNEL_VERSION_BY_BUILDENV ?= $(shell uname -r)
 KERNEL_PATH := /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/build
 # KSP :=	$(shell if test -d /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; then  \
 #                     echo /lib/modules/$(KERNEL_VERSION_BY_BUILDENV)/source; \
