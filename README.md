@@ -2,7 +2,7 @@
 
 ## 最新消息
 
-- \[2026.03.20\]： KAEZlib加速压缩库新增支持异步模式；KAE2.0解压缩模块新增适配Snappy硬加速。
+- \[2026.03.20\]：KAEZlib加速压缩库新增支持异步模式；KAE2.0解压缩模块新增适配Snappy硬加速。
 - \[2025.12.30\]：KAE2.0新增支持鲲鹏950处理器；KAELz4加速压缩库异步接口新增支持polling模式。
 - \[2025.09.30\]：KAE代码仓切换到Gitcode平台；优化KAELz4、KAEZstd解压性能。
 - \[2025.06.24\]：KAE2.0新增适配TencentOS 5.4操作系统；KAE2.0加解密模块新增适配BoringSSL RSA硬加速；KAELz4加速压缩库新增支持异步模式。
@@ -26,7 +26,7 @@ KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器
 
 **图 1** 软件架构<a name="fig9931619182"></a><a id="软件架构"></a>
 
-![](docs/figures/软件架构.png "软件架构")
+![](./docs/figures/软件架构.png "软件架构")
 
 软件架构中各模块功能如[**表 1** 模块功能描述](#模块功能描述)所示。
 
@@ -42,7 +42,6 @@ KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器
 |kZIP|kZIP（Kunpeng Hardware Acceleration Compression Engine，鲲鹏硬件加速压缩引擎），数据压缩/解压缩专用硬件加速模块，聚焦海量数据的实时压缩、解压缩场景，解决软件压缩方案CPU占用高、吞吐低、延迟高的问题。|
 |KAE|鲲鹏加速器引擎，是基于鲲鹏920系列处理器提供的硬件加速解决方案。|
 
-
 ### 算法支持与规格
 
 详细介绍KAE加解密模块及KAE解压缩模块（含KAEZlib、KAEZstd、KAELz4、KAESnappy）所支持的算法与模型，并列出各算法兼容的处理器型号。
@@ -52,6 +51,7 @@ KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器
 KAE加解密是鲲鹏加速引擎的加解密模块，使用鲲鹏硬加速引擎实现RSA/SM2/SM3/SM4/DH/MD5/AES算法，结合无损用户态驱动框架，提供高性能对称加解密、非对称加解密算法能力，兼容OpenSSL 1.1.1x、OpenSSL 3.0.x系列版本、Tongsuo 8.4.0、BoringSSL，支持同步和异步机制。
 
 - OpenSSL 1.1.1x系列主要支持以下算法：
+
     - 摘要算法SM3/MD5，支持异步模式。
     - 对称加密算法SM4，支持异步模式，支持CTR/XTS/CBC/ECB/OFB/CFB模式。
     - 对称加密算法AES，支持异步模式，支持ECB/CTR/XTS/CBC/OFB/CFB模式。
@@ -63,10 +63,11 @@ KAE加解密是鲲鹏加速引擎的加解密模块，使用鲲鹏硬加速引�
 - Tongsuo 8.4.0目前以Engine机制提供加解密算法能力，已支持SM3/SM4/AES/RSA算法。
 - BoringSSL目前以Engine机制提供加解密算法能力，已支持RSA算法（私钥加密、私钥解密）。
 
->![](./docs/figures/icon-note.gif) **说明：** 
->-   暂不支持Provider机制和更高版本的OpenSSL。
->-   Tongsuo是基于OpenSSL衍生的一个加解密库，接口、用法兼容OpenSSL。
->-   BoringSSL是Google基于早期OpenSSL开发并维护的一个开源加密库，一些接口、用法与OpenSSL有差异。BoringSSL+KAE的使用请参见[使用BoringSSL调用KAE](./docs/zh/user_guide.md#通过boringssl调用kae加解密库)。
+>![](./docs/figures/icon-note.gif) **说明：**
+>
+>- 暂不支持Provider机制和更高版本的OpenSSL。
+>- Tongsuo是基于OpenSSL衍生的一个加解密库，接口、用法兼容OpenSSL。
+>- BoringSSL是Google基于早期OpenSSL开发并维护的一个开源加密库，一些接口、用法与OpenSSL有差异。BoringSSL+KAE的使用请参见《用户指南》中的“[通过BoringSSL调用KAE加解密库](./docs/zh/user_guide.md#通过boringssl调用kae加解密库)”章节。
 
 **KAE解压缩-KAEZlib<a name="section1478918384188"></a>**
 
@@ -118,7 +119,7 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 |加密算法|摘要算法SM3|√|√|√|
 |加密算法|摘要算法MD5|√|√|√|
 |加密算法|对称加密算法SM4-CTR|√|√|√|
-|加密算法|对称加密算法SM4-XTSa|√|√|√|
+|加密算法|对称加密算法SM4-XTS|√|√|√|
 |加密算法|对称加密算法SM4-CBC|√|√|√|
 |加密算法|对称加密算法SM4-ECB|√|√|√|
 |加密算法|对称加密算法SM4-OFB|√|√|√|
@@ -139,18 +140,17 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 |压缩算法|Lz4|x|√|√|
 |压缩算法|Snappy|x|√|√|
 
-
->![](docs/figures/icon-note.gif) **说明：** 
+>![](docs/figures/icon-note.gif) **说明：**
 >
->√：表示支持；x：表示不支持。<br>
->a：对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。<br>
+>√：表示支持；x：表示不支持。 <br>
+>a：对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。 <br>
 >b：ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
 
 ## 目录结构
 
 项目全量目录层级介绍如下：
 
-```
+```text
 ├── docs                                                     # 项目文档目录
 │   └── zh                                                   # 中文文档目录
 │       ├── figures                                          # 中文文档图片资源目录
@@ -227,7 +227,7 @@ KAE包含KAE1.0与KAE2.0两个代码分支版本，本节主要介绍两个版�
 
 **版本介绍<a name="section10131916143616"></a>**
 
-KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解决方案，采用了两套驱动框架，分别是WD（Warpdriver）驱动框架和UADK（User Space Accelerator Development Kit）框架。由于不同内核的差异，KAE存在两套代码用于支持不同的内核代码，分别是KAE1.0和KAE2.0两个代码分支。两者差别如[**表 3** KAE代码分支差别](#KAE代码分支差别)所示。
+KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解决方案，采用了两套驱动框架，分别是WD（Warpdriver）驱动框架和UADK（User Space Accelerator Development Kit）框架。由于不同内核的差异，KAE存在两套代码用于支持不同的内核代码，分别是[KAE1.0](https://gitcode.com/boostkit/KAE/tree/kae1)和[KAE2.0](https://gitcode.com/boostkit/KAE/tree/kae2)两个代码分支。两者差别如[**表 3** KAE代码分支差别](#KAE代码分支差别)所示。
 
 **表 3** KAE代码分支差别<a id="KAE代码分支差别"></a>
 
@@ -280,13 +280,13 @@ KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解�
 </tbody>
 </table>
 
->![](docs/figures/icon-notice.gif) **须知：** 
+>![](docs/figures/icon-notice.gif) **须知：**
+>
 >由于不同版本内核接口可能存在差异，不同的操作系统使能KAE需要实际编译内核驱动验证是否匹配，若特定OS内核编译KAE驱动遇到接口报错，则说明驱动不兼容。
 
 **变更说明<a name="section4408930144513"></a>**
 
-每个发布版本特性变更详细信息，请参见[《版本说明书》](./docs/zh/release_notes.md)。
-
+每个发布版本特性变更详细信息，请参见《[版本说明书](./docs/zh/release_notes.md)》。
 
 ## 环境部署
 
@@ -294,16 +294,17 @@ KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解�
 
 **安装License<a name="section8301973474"></a>**
 
->![](public_sys-resources/icon-note.gif) **说明：** 
+>![](docs/figures/icon-note.gif) **说明：**
 >
 >- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
 >- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导书](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
 
 2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](docs/figures/icon-note.gif) **说明：**
+    >
     >不同的操作系统**lspci**查到的加速器描述信息可能不同，除了通过关键字进行过滤，用户还可以查看是否存在HPRE/SEC/ZIP等具体型号加速器的sbdf号信息。
 
     1. 查看是否存在高性能RSA加速引擎HPRE。
@@ -349,56 +350,76 @@ KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解�
 
 **安装KAE<a name="section3745131824710"></a>**
 
-KAE支持的硬件环境和操作系统，以及安装KAE所需的软件包请参见[《安装指南》中的“环境要求”](./docs/zh/installation_guide.md#环境要求)。
-
-KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参见[《安装指南》](./docs/zh/installation_guide.md)。
+KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操作系统和详细安装步骤请参见《[安装指南](./docs/zh/installation_guide.md)》。
 
 **驱动加载失败问题排查<a name="section3745131824710"></a>**
-* 内核版本和内核开发包版本不一致导致内核安装失败。（包括小版本号）
+
+* 原因一：内核版本和内核开发包版本不一致导致内核安装失败（包括小版本号）。
   
-  > uname -r 查看内核版本 rpm -qa | grep kernel-devel 查看内核开发包版本
-  
-  解决办法：安装和内核版本一致的开发包。
-* 缺少license导致加载失败
-  
-  > lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
-  
-  解决办法：鲲鹏920处理器申请License安装；鲲鹏920新型号处理器更新免License版本BIOS。
+  查看内核版本和内核开发包版本。
+
+  ```shell
+  uname -r  
+  rpm -qa | grep kernel-devel
+  ```
+
+  若查询结果不一致则需要安装和内核版本一致的开发包。
+
+* 原因二：缺少License导致加载失败。
+
+  查看License是否正确安装。
+
+  ```shell
+  lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  ```
+
+  若没有任何显示则License没有正确安装或未安装。
+
+  解决办法：鲲鹏920处理器需要申请License，并且正确安装License；鲲鹏920新型号处理器需要更新免License版本的BIOS。
 
 **修改硬件加速器instance数量**
   
-  驱动instance数量默认安装是每个加速器设备256个instance。
+每个加速器设备默认安装的驱动instance数量为256个。
   
-  > cat /sys/class/uacce/hisi_*/available_instances 显示的数量为256（每个加速器）
-  
-  每个加速器最大的instance数量为1024，如果业务并发量较大，需要使用更多的加速器instance，可以参照如下方式进行修改（选择1种合适的方式即可）：
-  
-  1、可以在驱动目录对应的Makefile文件将pf_q_num=256修改为pf_q_num=1024之后，卸载驱动重新编译安装。
-  
-  2、或者直接执行：
-  ```modprobe -r hisi_zip
+```baah
+cat /sys/class/uacce/hisi_*/available_instances
+```
+
+显示的数量结果为256（每个加速器）。
+
+每个加速器最大的instance数量为1024，如果业务并发量较大，需要通过以下步骤设置更多的加速器instance（选择1种合适的方式即可）。
+
+* 方法一：在驱动目录对应的Makefile文件将pf_q_num=256修改为pf_q_num=1024之后，卸载驱动重新编译安装。
+
+* 方法二：执行以下命令。
+
+  ```bash
+  modprobe -r hisi_zip
   modprobe -r hisi_hpre
   modprobe -r hisi_sec2
   modprobe -r hisi_qm
   modprobe -r uacce
   ```
 
-  先卸载驱动 之后再执行：
-  ```modprobe uacce 
+  先卸载驱动，再执行以下命令。
+
+  ```bash
+  modprobe uacce 
   modprobe hisi_qm
   modprobe hisi_sec2 uacce_mode=2 pf_q_num=1024
   modprobe hisi_hpre uacce_mode=2 pf_q_num=1024
   modprobe hisi_zip uacce_mode=2 pf_q_num=1024
   ```
-
-  按新的队列数量加载驱动。（uacce_mode=2是nosva模式，一般场景不涉及）
   
-  > 若容器场景，每个设备虚拟出的VF，也是和PF共享1024个instance，也就是PF+VF的instance最大为1024
+  按新的队列数量加载驱动（uacce_mode=2是nosva模式，一般场景不涉及）。
+  
+  >![](./docs/figures/icon-note.gif) **说明：**
+  >
+  >若为容器场景，则每个设备虚拟出的VF，也是与PF共享1024个instance，也就是PF+VF的instance最大为1024。
 
 ## 快速入门
 
-安装KAE后如何快速验证KAE加速引擎是否生效，性能是否提升，具体请参见[《快速入门》](./docs/zh/quick_start.md)。
-
+安装KAE后如何快速验证KAE加速引擎是否生效，性能是否提升，具体请参见《[快速入门](./docs/zh/quick_start.md)》。
 
 ## 文档
 
@@ -409,14 +430,14 @@ KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参�
 |[安装指南](docs/zh/installation_guide.md)|提供KAE源码编译安装和RPM包安装方式的详细指导。|
 |[用户指南](docs/zh/user_guide.md)|提供接口说明、接口调用示例、日志查询方法等。|
 |[最佳实践](docs/zh/best_practices.md)|提供KAE在Web、分布式存储、数据库、虚拟化场景下使用的实践案例。|
-|[FAQ](docs/zh/faq.md)|提供KAE安装、使用过程的常见问题和解决方法。|
-
+|[常见问题](docs/zh/faq.md)|提供KAE安装、使用过程的常见问题和解决方法。|
 
 ## 免责声明
 
 **致KAE使用者**
 
 - 本软件仅供调试和开发之用，使用者需自行承担使用风险，并理解以下内容：
+
     - 此代码仓计划参与OpenSSL/Tongsuo/BoringSSL/Lz4/Zlib/Gzip/Zstd/Snappy软件开源，仅作OpenSSL/Tongsuo/BoringSSL/Lz4/Zlib/Gzip/Zstd/Snappy功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。
     - 数据处理及删除：用户在使用本软件过程中产生的数据属于用户责任范畴。建议用户在使用完毕后及时删除相关数据，以防信息泄露。
     - 数据保密与传播：使用者了解并同意不得将通过本软件产生的数据随意外发或传播。对于由此产生的信息泄露、数据泄露或其他不良后果，本软件及其开发者概不负责。
@@ -429,13 +450,11 @@ KAE提供源码安装和RPM包安装两种方式，详见的安装操作请参�
 
 如果您不希望您的数据集等信息在KAE中被提及，或希望更新KAE中有关的描述，请在GitCode提交issue，我们将根据您的issue要求删除或更新您相关描述。衷心感谢您对KAE的理解和贡献。
 
-
 ## License
 
 KAE产品的使用许可证，具体请参见[LICENSE](https://gitcode.com/boostkit/KAE/blob/kae2/LICENSE)文件。
 
 KAE docs目录下的文档适用CC-BY 4.0许可证，具体请参见[LICENSE](https://gitcode.com/boostkit/KAE/blob/kae2/docs/LICENSE)文件。
-
 
 ## 贡献声明
 
@@ -456,11 +475,9 @@ KAE docs目录下的文档适用CC-BY 4.0许可证，具体请参见[LICENSE](ht
     8. 当您的PR获得足够数量的检视者批准后，Committer会进行最终审核。
     9. 审核和测试通过后，CI会将您的PR合并入到项目的主干分支。
 
-
 ## 建议与交流
 
 欢迎大家为社区做贡献。如果有任何疑问或建议，请提交[Issues](https://gitcode.com/boostkit/community/blob/master/docs/contributor/issue-submit.md)，我们会尽快回复。感谢您的支持。
-
 
 ## 致谢
 

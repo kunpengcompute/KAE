@@ -2,20 +2,18 @@
 
 ## 简介
 
-本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些通用的使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
+本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些场景化使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
 
 部分算法在使用过程中的限制如下所示：
 
 - 如果用户未购买KAE加速引擎许可证，建议用户不要通过KAE加速引擎调用相应算法，否则会影响OpenSSL加密算法的性能。
-- SM4-XTS模式仅支持内核态使用，具体使用方法请参见使用KAE提升SM4-XTS算法性能。
+- SM4-XTS模式仅支持内核态使用，具体使用方法请参见[使用KAE提升SM4-XTS算法性能](#使用kae提升sm4-xts算法性能)。
 - SM4同步性能在小包场景下（包长小于2K）性能比异步性能更优。如果使用场景多为小包场景，推荐使用同步模型。
 - AES已在aarch64平台上实现软件指令集加速，硬件加速在中包或大包场景下（包长16K\~256K）异步性能相比OpenSSL才具明显优势，推荐在该场景下使用硬加速。
 - SM4、AES异步模式支持数据长度为256KB及以下，数据长度大于256KB将自动切换同步模式。
-- MD5算法无法防止碰撞攻击，不适用于安全性认证，如SSL公开密钥认证或是数字签名等用途。
+- MD5算法无法防止碰撞攻击，不适用于安全性认证，如SSL公开密钥认证或数字签名等用途。
 - SM3/SM4算法默认开启，用户可以通过openssl.cnf文件开启或关闭这两种算法。
 - 压缩解压算法支持Zlib/Gzip、ZSTD、LZ4及Snappy。
-
-本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些通用的使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
 
 ## 加解密库
 
@@ -107,8 +105,6 @@
 >- 不同算法套件测试得到的性能数据存在差异，请以实际选择的算法套件测试结果为准。
 >- 如果用到openssl req -new -x509命令生成证书功能，请参见[使用openssl req -new -x509命令生成证书失败](./faq.md#使用openssl-req--new--x509命令生成证书失败)中的方法二完成openssl.cnf文件的配置。
 
-本节提供Web场景下KAE如何使能Nginx加速的使用案例和方法。
-
 ### 使用KAE提升SM4-XTS算法性能
 
 KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
@@ -136,14 +132,14 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
         yum install libblkid-devel
         ```
 
-    2. 在“cryptsetup-2.2.0“源码目录下编译安装。
+    2. 在“cryptsetup-2.2.0”源码目录下编译安装。
 
         ```shell
         ./configure 
         make && make install
         ```
 
-    其中，libuuid-devel、device-mapper-devel、popt-devel、json-c-devel、libblkid-devel为cryptsetup依赖软件包。
+    其中libuuid-devel、device-mapper-devel、popt-devel、json-c-devel、libblkid-devel为cryptsetup依赖软件包。
 
 **加密分区/磁盘<a name="section4178174054811"></a>**
 
@@ -248,7 +244,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     cd /home/sec_test/;ll
     ```
 
-9. 在“/home/sec\_test“目录下查看分区/磁盘是否已加密，并且和目录是否正确对应。
+9. 在“/home/sec\_test”目录下查看分区/磁盘是否已加密，并且和目录是否正确对应。
 
     ```shell
     lsblk
@@ -268,7 +264,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test    
     ```
 
-10. <a name="li3196911104520"></a>“/home“目录下查看分区/磁盘加密详细信息。
+10. “/home”目录下查看分区/磁盘加密详细信息。
 
     ```shell
     cryptsetup status /dev/mapper/sx_disk
@@ -347,15 +343,11 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-swap -> ../dm-0
     ```
 
-KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
-
 ### MD5硬件加速调优
 
 支持RGW（RADOS gateway，可扩展对象存储网关）在写对象时的MD5计算过程中使用KAE，加速RGW摘要计算。
 
 详细信息请参见《[Ceph对象存储 调优指南](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephobject_05_0018.html)》中的“KAE MD5摘要算法调优”章节。
-
-支持RGW（RADOS gateway，可扩展对象存储网关）在写对象时的MD5计算过程中使用KAE，加速RGW摘要计算。
 
 ## 压缩库
 
@@ -365,11 +357,9 @@ KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模�
 
 具体案例请参见：
 
-- 《Ceph块存储 调优指南》中的“[KAE zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephblock_05_0009.html)”章节。
-- 《Ceph对象存储 调优指南》中的“[KAE zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephobject_05_0013.html)”章节。
-- 《Ceph文件存储 调优指南》中的“[KAE zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephfile_05_0009.html)”章节。
-
-将Ceph程序中的zlib压缩过程交由KAE硬件加速引擎处理，能最大化CPU处理OSD进程的能力，发挥硬件最大性能。本节提供Ceph调用KAEZlib加速压缩库的使用案例和方法。
+- 《Ceph块存储 调优指南》中的“[KAE Zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephblock_05_0009.html)”章节。
+- 《Ceph对象存储 调优指南》中的“[KAE Zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephobject_05_0013.html)”章节。
+- 《Ceph文件存储 调优指南》中的“[KAE Zlib压缩调优](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/ecosystemEnable/Ceph/kunpengcephfile_05_0009.html)”章节。
 
 ### RocksDB调用KAEZstd压缩库
 
@@ -377,34 +367,17 @@ RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可�
 
 具体案例请参见《元数据加速 特性指南》中的“[KAEZstd算法加速](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/appAccelFeatures/metaaccel/kunpengMetadata_34_0007.html)”章节。
 
-RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可以对其压缩过程进行加速。本节提供RocksDB调用KAEZstd加速压缩库的使用案例和方法。
-
 ### MySQL调用KAEZstd压缩库
 
 KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZSTD相关压缩解压缩算法。本节提供MySQL调用KAEZstd加速压缩库的使用案例和方法。
 
 具体案例请参见《[MySQL KAEZstd页压缩解压缩优化 特性指南](https://support.huawei.com/enterprise/zh/doc/EDOC1100433078/f5fe3e32?idPath=23710424|251364417|9856629|253662285)》。
 
->![](public_sys-resources/icon-note.gif) **说明：** 
->《MySQL KAEZstd页压缩解压缩优化 特性指南》当前受限发布，若需要获取相关文档请联系华为工程师。
-
-KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZSTD相关压缩解压缩算法。本节提供MySQL调用KAEZstd加速压缩库的使用案例和方法。
-
 ### Kafka使能KAELz4压缩库
 
-通过使能鲲鹏加速库LZ4压缩算法，使Kafka在使用LZ4压缩格式时，性能得到提升。本节提供Kafka使能KAELz4加速压缩库的使用案例和方法。
+通过使能KAELz4压缩库，使Kafka在使用LZ4压缩格式时，性能得到提升。本节提供Kafka使能KAELz4压缩库的使用案例和方法。
 
 具体案例请参见《Kafka 调优指南》中的“[Kafka使能LZ4压缩算法](https://www.hikunpeng.com/document/detail/zh/kunpengbds/ecosystemEnable/Kafka/kunpengkafkahdp_05_0019.html)”章节。
-
-通过使能鲲鹏加速库LZ4压缩算法，使Kafka在使用LZ4压缩格式时，性能得到提升。本节提供Kafka使能KAELz4加速压缩库的使用案例和方法。
-
-### KAEZlib异步解压缩接口调用示例
-
-参见KAEZlib README中关于[异步接口及其使用方式的介绍](../../KAEZlib/README.md#异步接口)。
-
-### KAELz4异步压缩接口调用示例
-
-参见KAELz4 README中关于[异步接口及其使用方式的介绍](../../KAELz4/README.md#kaelz4-异步压缩接口用户使用指南)。
 
 ## 通用类
 
@@ -500,10 +473,12 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     ```
 
     >![](public_sys-resources/icon-note.gif) **说明：** 
+    >
     >如果启动虚拟机失败，并提示“Unknown PCI header type '127'”，则需要对挂载的VF进行解绑操作，然后重新启动虚拟机。
+    >
     >![](figures/zh-cn_image_0000002546796253.jpg)
->
-    >```
+    >
+    >```shell
     >echo 0000:76:00.1 > /sys/bus/pci/drivers/hisi_sec/unbind
     >echo vfio-pci > /sys/devices/pci0000:74/0000:74:01.0/0000:76:00.1/driver_override
     >echo 0000:76:00.1 > /sys/bus/pci/drivers_probe
@@ -524,8 +499,6 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     ```text
     hisi_sec-0
     ```
-
-KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前要求HostOS上已经建立虚拟机，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
 ### KAE在Docker中的使用
 
@@ -572,8 +545,6 @@ KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器�
 |--cpuset-cpus|指定容器在哪些CPU内核上运行。|
 |90b5058926a2|为镜像id，也可换成镜像名，查看命令为：docker images。|
 |/bin/bash|启动容器的bash。|
-
-KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器，且已经安装KAE，最后在HostOS上完成相关配置后方可使用。
 
 ### 使用Java调用KAE
 
