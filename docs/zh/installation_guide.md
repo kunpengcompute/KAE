@@ -13,14 +13,15 @@
 |项目|说明|
 |--|--|
 |服务器|鲲鹏服务器（开启KAE功能）|
-|处理器|鲲鹏920处理器、鲲鹏920新型号处理器b、鲲鹏950处理器c|
+|处理器|鲲鹏920处理器、鲲鹏920新型号处理器、鲲鹏950处理器|
 |iBMC|V365及以上版本|
 |BIOS|V105及以上版本|
 
->![](public_sys-resources/icon-note.gif) **说明：** <br>
->a：非虚拟化场景使用加速器建议关闭SMMU，开启SMMU会影响加速器性能，具体操作请参见《[BIOS 参数参考（鲲鹏920处理器）](https://support.huawei.com/enterprise/zh/doc/EDOC1100088653/ca8d53c6)》。<br>
->b：KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器及鲲鹏950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见[README](../../README.md#算法支持与规格)。<br>
->c：鲲鹏950处理器仅支持使用KAE2.0。
+>![](public_sys-resources/icon-note.gif) **说明：**
+>
+>- 非虚拟化场景使用加速器建议关闭SMMU，开启SMMU会影响加速器性能，具体操作请参见《[BIOS 参数参考（鲲鹏920处理器）](https://support.huawei.com/enterprise/zh/doc/EDOC1100088653/ca8d53c6)》。
+>- KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器及鲲鹏950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见《README》中的“[算法支持与规格](../../README.md#算法支持与规格)”内容。
+>- 鲲鹏950处理器仅支持使用KAE2.0。
 
 **软件包的获取与已验证环境<a name="section1796432494313"></a>**
 
@@ -28,14 +29,13 @@
 
 |软件包类型|适配的OS|适配的OpenSSL版本|获取方式|
 |--|--|--|--|
-|源码包|openEuler 22.03 LTS SP1/SP2/SP3/SP4aEulerOS-V2.0 SP12TencentOS 5.4|OpenSSL 1.1.1x系列OpenSSL 3.0.x系列Tongsuo 8.4.0BoringSSL|[获取链接](https://gitcode.com/boostkit/KAE)|
-|RPM包|openEuler 22.03 LTS SP1/SP2/SP3/SP4a|OpenSSL 1.1.1x系列|[获取链接](https://gitcode.com/boostkit/KAE/releases)<br>若KAE代码仓没有相应OS的RPM，请参见[方式二：RPM包安装制作RPM包](#方式二rpm包安装)。|
+|源码包|openEuler 22.03 LTS SP1/SP2/SP3/SP4<br>openEuler 24.03 LTS SP1/SP2/SP3<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|OpenSSL 1.1.1x系列<br>OpenSSL 3.0.x系列<br>Tongsuo 8.4.0<br>BoringSSL|[获取链接](https://gitcode.com/boostkit/KAE)|
+|RPM包|openEuler 22.03 LTS SP1/SP2/SP3/SP4|OpenSSL 1.1.1x系列|[获取链接](https://gitcode.com/boostkit/KAE/releases)<br>若KAE代码仓没有相应OS的RPM，请参见[方式二：RPM包安装制作RPM包](#方式二rpm包安装)。|
 
->![](public_sys-resources/icon-note.gif) **说明：** 
+>![](public_sys-resources/icon-note.gif) **说明：**
 >
->a：openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
->
->b：历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。
+>- openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
+>- 历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。
 
 **其他要求<a name="section0733155717512"></a>**
 
@@ -52,7 +52,7 @@
 >- 鲲鹏服务器K系列硬件KAE加速引擎已默认开启，无需申请License。
 >- 鲲鹏920新型号处理器在BIOS升级至21.23及更新版本的情况下，可实现免License使用KAE加速引擎。
 
-1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
+1. License申请和安装操作，请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导书](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
 
 2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备，如下所示。
 
@@ -104,7 +104,7 @@
 
 KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模块前请正确安装OpenSSL。OpenSSL版本要求为1.1.1x系列、3.0.x系列或Tongsuo 8.4.0。
 
->![](public_sys-resources/icon-notice.gif) **须知：** 
+>![](public_sys-resources/icon-notice.gif) **须知：**
 >若需使用非系统自带的OpenSSL/Tongsuo，请在OpenSSL/Tongsuo安装步骤中指定安装路径，并在后续源码安装的“[6](#方式一源码安装)”步骤传入该路径。
 
 **前提条件<a name="zh-cn_topic_0200576865_section17733210143520"></a>**
@@ -149,21 +149,21 @@ KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模�
 
 **安装步骤<a name="section1426493710530"></a>**
 
->![](public_sys-resources/icon-notice.gif) **须知：** 
+>![](public_sys-resources/icon-notice.gif) **须知：**
 >请先使用**openssl version**命令查询系统中的OpenSSL/Tongsuo版本，若OpenSSL版本为1.1.1x、3.0.x或Tongsuo版本为8.4.0，建议直接进行安装KAE操作，无需重新安装OpenSSL/Tongsuo。
 
 1. 使用SSH远程登录工具，将OpenSSL/Tongsuo源码包拷贝到自定义路径下。
 
     OpenSSL源码包下载：[1.1.1x系列](https://openssl-library.org/source/old/1.1.1/index.html)、[3.0.x系列](https://openssl-library.org/source/old/3.0/index.html)、[Tongsuo 8.4.0](https://github.com/Tongsuo-Project/Tongsuo/tags)。
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >Tongsuo通过**speed**命令调用自定义Engine时，在完成加解密任务后，无法释放相关资源，报段错误。该问题已在上游社区提issue跟进[issue](https://github.com/Tongsuo-Project/Tongsuo/issues/688)，使用时需先合入补丁再编译。
 
 2. 在下载好的OpenSSL/Tongsuo源码目录下，编译安装OpenSSL/Tongsuo。
 
-    若安装的OpenSSL/Tongsuo和OS默认的OpenSSL版本不一致，建议指定到其他目录，如“/usr/local/ssl3\_0\_14“，以防止使用过程出现版本冲突。
+    若安装的OpenSSL/Tongsuo和OS默认的OpenSSL版本不一致，建议指定到其他目录，如“/usr/local/ssl3\_0\_14”，以防止使用过程出现版本冲突。
 
-    - 默认路径安装配置，默认路径为“/usr/local“。
+    - 默认路径安装配置，默认路径为“/usr/local”。
 
         ```shell
         ./config
@@ -182,15 +182,15 @@ KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模�
             ./config --prefix=/opt/tongsuo
             ```
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
-    >该步骤会根据编译平台及环境自动生成Makefile文件，可以通过**./config --prefix**指定安装路径，**-Wl,-rpath**参数指定OpenSSL运行时依赖libcrypto、libssl库的路径。
+    >![](public_sys-resources/icon-note.gif) **说明：**
+    >该步骤会根据编译平台及环境自动生成Makefile文件，可以通过“./config --prefix”指定安装路径，“-Wl,-rpath”参数指定OpenSSL运行时依赖libcrypto、libssl库的路径。
 
     ```shell
     make
     make install
     ```
 
-    OpenSSL/Tongsuo默认安装在“/usr/local“下，更加具体的安装指导请参考源码目录下的README文档。
+    OpenSSL/Tongsuo默认安装在“/usr/local”下，更加具体的安装指导请参考源码目录下的README文档。
 
 **安装后检查<a name="section17265037195318"></a>**
 
@@ -220,8 +220,8 @@ KAE2.0支持源码安装和RPM包安装两种方式，安装前请根据实际�
 
 |安装方式|安装说明|当前支持系统|优缺点|
 |--|--|--|--|
-|源码安装|使用build.sh脚本进行安装。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12TencentOS 5.4|优点：支持修改源码进行编译及安装。缺点：操作复杂，需要做一些额外的配置。|
-|RPM安装|为了方便用户使用，华为提供了部分商用OS的RPM安装包。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12|优点：安装后可以直接使用，不需要做编译及安装等操作。缺点：支持范围有限，仅适用于指定的操作系统。|
+|源码安装|使用build.sh脚本进行安装。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|优点：支持修改源码进行编译及安装。<br>缺点：操作复杂，需要做一些额外的配置。|
+|RPM安装|为了方便用户使用，华为提供了部分商用OS的RPM安装包。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4<br>EulerOS-V2.0 SP12|优点：安装后可以直接使用，不需要做编译及安装等操作。<br>缺点：支持范围有限，仅适用于指定的操作系统。|
 
 ## 方式一：源码安装
 
@@ -237,7 +237,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
     yum install -y make kernel-devel-`uname -r` libtool numactl-devel openssl-devel lz4-devel libzstd-devel chrpath cmake libunwind-devel patch
     ```
 
-- 设置OpenSSL环境变量“OPENSSL\_ENGINES“为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
+- 设置OpenSSL环境变量“OPENSSL\_ENGINES”为KAE动态库所在目录，使OpenSSL能够识别到KAE硬件加速引擎。
     - OpenSSL 1.1.1x系列：
 
         ```shell
@@ -264,7 +264,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
 **安装步骤<a name="section1415911025615"></a>**
 
-1. 使用远程登录工具，以root账号进入Linux操作系统命令行界面_。_
+1. 使用远程登录工具，以root账号进入Linux操作系统命令行界面。
 2. 请参见[软件包的获取](#环境部署)下载KAE2.0源码包，将KAE源码包拷贝到自定义路径下并解压。或通过以下命令下载。
 
     ```shell
@@ -288,11 +288,11 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh driver
         ```
 
-        加速器驱动编译生成uacce.ko、hisi\_qm.ko、hisi\_sec2.ko、hisi\_hpre.ko、hisi\_zip.ko，安装路径为：“/lib/modules/\`uname -r\`/extra“。
+        加速器驱动编译生成uacce.ko、hisi\_qm.ko、hisi\_sec2.ko、hisi\_hpre.ko、hisi\_zip.ko，安装路径为：“/lib/modules/\`uname -r\`/extra”。
 
     2. 查看驱动是否安装成功。
 
-        - 查看“/sys/class/uacce“目录下是否存在加速引擎文件系统。
+        - 查看“/sys/class/uacce”目录下是否存在加速引擎文件系统。
 
             ```shell
             ll /sys/class/uacce/
@@ -337,7 +337,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh uadk
         ```
 
-        UADK框架中包含了用户态驱动，用户态驱动动态库文件为libwd.so、libwd\_crypto.so等。UADK默认安装路径为“/usr/include/uadk“，动态库文件在“/usr/local/lib“下。
+        UADK框架中包含了用户态驱动，用户态驱动动态库文件为libwd.so、libwd\_crypto.so等。UADK默认安装路径为“/usr/include/uadk”，动态库文件在“/usr/local/lib”下。
 
         >![](public_sys-resources/icon-note.gif) **说明：** 
         >若执行安装UADK命令后失败，提示缺少头文件，则安装相关依赖包后重新执行安装命令即可。
@@ -406,9 +406,9 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
             sh build.sh engine3_tongsuo /opt/tongsuo
             ```
 
-    KAE引擎动态库文件为libkae.so。动态库文件在“/usr/local/lib/engines-x.x“或“/usr/local/tongsuo/lib/engines-3.0“下。
+    KAE硬件加速引擎动态库文件为libkae.so。动态库文件在“/usr/local/lib/engines-x.x”或“/usr/local/tongsuo/lib/engines-3.0”下。
 
-7. 查看KAE引擎是否安装成功。
+7. 查看KAE硬件加速引擎是否安装成功。
 
     - OpenSSL 1.1.1x系列：
 
@@ -441,7 +441,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
 8. 编译安装KAEZlib加速库。
 
-    >![](public_sys-resources/icon-notice.gif) **须知：** 
+    >![](public_sys-resources/icon-notice.gif) **须知：**
     >在完成KAEZlib加速库的安装后，可以结合自身需求进行KAEGzip解压缩工具的编译安装，该解压缩工具集成了KAE硬加速接口，使用户能够更加便捷地使用鲲鹏硬加速模块进行文件的压缩和解压操作。
 
     1. 编译安装。
@@ -450,7 +450,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh zlib
         ```
 
-        zlib加速库安装在“/usr/local/kaezip“。
+        zlib加速库安装在“/usr/local/kaezip”。
 
     2. 查看zlib加速压缩库是否安装成功。
 
@@ -477,7 +477,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh gzip
         ```
 
-        工具安装在“/usr/local/kaegzip“。
+        工具安装在“/usr/local/kaegzip”。
 
     4. <a name="li5793114715813"></a>查看KAEGzip解压缩工具是否安装成功。
 
@@ -506,7 +506,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh zstd
         ```
 
-        KAEZstd加速库安装在“/usr/local/kaezstd“。
+        KAEZstd加速库安装在“/usr/local/kaezstd”。
 
     2. 查看是否安装成功。
 
@@ -535,7 +535,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh lz4
         ```
 
-        KAELz4加速库安装在“/usr/local/kaelz4“。
+        KAELz4加速库安装在“/usr/local/kaelz4”。
 
     2. 查看是否安装成功。
 
@@ -564,7 +564,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
         sh build.sh snappy
         ```
 
-        KAESnappy加速库安装在“/usr/local/kaesnappy“。
+        KAESnappy加速库安装在“/usr/local/kaesnappy”。
 
     2. 查看是否安装成功。
 
@@ -588,7 +588,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
 1. 查看KAEOpensslEngine加速引擎是否生效。
 
-    以验证RSA性能为例，验证步骤请参见[测试同步RSA性能](#安装后测试)，通过RSA性能命令可以看到指定KAE引擎之后，RSA的性能得到明显提升。
+    以验证RSA性能为例，验证步骤请参见[测试同步RSA性能](#安装后测试)，通过RSA性能命令可以看到指定KAE硬件加速引擎之后，RSA的性能得到明显提升。
 
     除上述方法外，在执行RSA性能命令过程中，可以在新的终端上同时查看hisi\_hpre设备的硬件队列资源情况。同样，SM3/SM4算法可以查看hisi\_sec2的硬件队列消耗情况。
 
@@ -677,7 +677,7 @@ KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEng
 
 KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密算法需要安装kae-driver和kae-openssl，使用KAEzip相关算法需要安装kae-driver和kae-zip。推荐使用源码的方式来安装KAE2.0，如需在openEuler以外的其他OS上通过RPM包方式安装KAE2.0，则需要通过源码制作RPM包再安装。若需要升级KAE版本，请先卸载旧版本再进行新版本的安装。
 
->![](public_sys-resources/icon-notice.gif) **须知：** 
+>![](public_sys-resources/icon-notice.gif) **须知：**
 >目前KAE2.0的RPM包是基于指定tag点、特定OS制作的，不具备KAE2.0的最新特性和OS的通用性。
 
 **前提条件<a name="section9968616173616"></a>**
@@ -690,7 +690,7 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
     yum install -y make kernel-devel libtool numactl-devel openssl-devel chrpath  lz4-devel
     ```
 
-- 设置OpenSSL环境变量“OPENSSL\_ENGINES“为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
+- 设置OpenSSL环境变量“OPENSSL\_ENGINES”为KAE动态库所在目录，使OpenSSL能够识别到KAE硬件加速引擎。
 
     ```shell
     export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
@@ -793,7 +793,7 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
 
 6. 查看相关软件是否已正常安装到系统内。
     1. 查看驱动是否安装成功。
-        - 查看“/sys/class/uacce“目录下是否存在加速引擎文件系统。
+        - 查看“/sys/class/uacce”目录下是否存在加速引擎文件系统。
 
             ```shell
             ll /sys/class/uacce/
@@ -845,7 +845,7 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
         -rwxr-xr-x. 1 root root 1342080 Aug 22 17:23 /usr/local/lib/libwd.so.2.5.0
         ```
 
-    3. 查看KAE引擎是否安装成功。
+    3. 查看KAE硬件加速引擎是否安装成功。
 
         ```shell
          ll /usr/local/lib/engines-1.1
@@ -918,7 +918,7 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
 
 3. 查看KAEOpensslEngine加速引擎是否生效。
 
-    以验证RSA性能为例，验证步骤请参见[测试同步RSA性能](#安装后测试)，通过RSA性能命令可以看到指定KAE引擎之后，RSA的性能得到明显提升。
+    以验证RSA性能为例，验证步骤请参见[测试同步RSA性能](#安装后测试)，通过RSA性能命令可以看到指定KAE硬件加速引擎之后，RSA的性能得到明显提升。
 
     除上述方法外，在执行RSA性能命令过程中，可以在新的终端上同时查看hisi\_hpre设备的硬件队列资源情况。同样，SM3/SM4算法可以查看hisi\_sec2的硬件队列消耗情况。
 
@@ -1021,7 +1021,7 @@ KAE2.0的RPM软件包包括kae-driver、kae-openssl、kae-zip，使用加解密�
 openssl version
 ```
 
-如果不是安装KAE时的OpenSSL，可以设置如下环境变量来指定OpenSSL。以下命令中“/path/install“为OpenSSL的安装路径。
+如果不是安装KAE时的OpenSSL，可以设置如下环境变量来指定OpenSSL。以下命令中“/path/install”为OpenSSL的安装路径。
 
 ```shell
 export PATH=/path/install/bin:$PATH
@@ -1221,14 +1221,13 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 >![](public_sys-resources/icon-notice.gif) **须知：** 
 >测试步骤需要在源码目录下操作。若KAE是通过RPM包方式安装，则在执行测试之前需要下载并解压KAE源码。
 
-1. 请参见[源码安装](#方式一源码安装)或[RPM包安装](#方式二rpm包安装)安装KAEZlib。
-2. 进入测试目录。
+1. 进入测试目录。
 
     ```shell
     cd KAEZlib/test/gtest/
     ```
 
-3. 测试KAEZlib加速库功能。
+2. 测试KAEZlib加速库功能。
 
     ```shell
     sh build.sh
@@ -1252,7 +1251,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     [  PASSED  ] 2 tests.
     ```
 
-4. 测试性能。
+3. 测试性能。
     1. 进入性能测试目录。
 
         ```shell
@@ -1364,7 +1363,8 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
         可以看到解压缩速度从1.482GB/s提升到了9.422GB/s。
 
-5. 若安装了KAEGzip解压缩工具，可通过下列步骤进行功能及性能验证。
+4. 若安装了KAEGzip解压缩工具，可通过下列步骤进行功能及性能验证。
+
     1. 获取帮助信息。
 
         ```shell
@@ -1463,14 +1463,13 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
         可以看到相较于系统自带的Gzip工具，KAEGzip工具的解压耗时均明显减少。
 
-6. 关于异步接口的使用及测试，参见KAEZlib目录的[README](../../KAEZlib/README.md)。
+5. 关于异步接口的使用及测试，参见KAEZlib目录的[README](../../KAEZlib/README.md)。
 
 ### KAEZstd压缩库测试
 
 用户安装KAEZstd库后，可以通过本节提供的操作步骤测试KAEZstd压缩库功能和性能。
 
-1. 请参见[源码安装](#方式一源码安装)或[RPM包安装](#方式二rpm包安装)安装KAEZstd。
-2. 测试ZSTD压缩库功能。
+1. 测试ZSTD压缩库功能。
 
     ```shell
     cd /KAE/KAEZstd/test/gtest
@@ -1480,7 +1479,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ./zstd_functest
     ```
 
-3. 测试性能。
+2. 测试性能。
     - 使用系统自带ZSTD压缩库进行测试。
 
         ```shell
@@ -1513,11 +1512,11 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
 **同步测试<a name="section371134572320"></a>**
 
-用户安装KAELz4库后，基于“/KAE/KAELz4/open\_source/lz4-1.9.4/test“内开源压缩算法的测试脚本以及kunpeng-lzbench测试工具，测试KAELz4压缩库同步功能和性能。
+用户安装KAELz4库后，基于“/KAE/KAELz4/open\_source/lz4-1.9.4/test”内开源压缩算法的测试脚本以及kunpeng-lzbench测试工具，测试KAELz4压缩库同步功能和性能。
 
-1. 请参见[源码安装](#方式一源码安装)或[RPM包安装](#方式二rpm包安装)完成KAELz4的安装。
-2. 从[Gitee](https://gitee.com/kunpeng_compute/lzbench)仓获取lzbench源码，并在源码路径下使用make命令编译生成二进制工具。
-3. 测试LZ4压缩库功能。
+1. 从[Gitee](https://gitee.com/kunpeng_compute/lzbench)仓获取lzbench源码，并在源码路径下使用make命令编译生成二进制工具。
+
+2. 测试LZ4压缩库功能。
 
     ```shell
     cd /KAE/KAELz4/open_source/lz4-1.9.4/tests
@@ -1525,7 +1524,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ./fullbench datagen
     ```
 
-4. 测试性能。
+3. 测试性能。
     1. 进入lzbench源码路径，查看测试工具所使用的算法库。
 
         ```shell
@@ -1547,7 +1546,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
          /lib/ld-linux-aarch64.so.1 (0x0000ffffae144000)
         ```
 
-    2. 调用开源Lz4算法库测试解压缩性能，测试文件位于“KAE/scripts/compressTestDataset“路径下。
+    2. 调用开源Lz4算法库测试解压缩性能，测试文件位于“KAE/scripts/compressTestDataset”路径下。
 
         ```shell
         taskset -c 1 ./lzbench -relz4 -b8 -i1 -j -m1024 /pathtoKAE/scripts/compressTestDataset/
@@ -1609,14 +1608,14 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
         done... (cIters=1 dIters=1 cTime=1.0 dTime=2.0 chunkSize=8KB cSpeed=0MB)
         ```
 
-5. 测试压缩带宽。
+4. 测试压缩带宽。
     1. 设置环境变量LD\_LIBRARY\_PATH并启用LZ4加速库。
 
         ```shell
         export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
         ```
 
-    2. 在“/KAE/KAELz4/test/perftest“目录下编译带宽测试工具。
+    2. 在“/KAE/KAELz4/test/perftest”目录下编译带宽测试工具。
 
         ```shell
         cd KAE/KAELz4/test/perftest
@@ -1639,17 +1638,16 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
 **异步测试<a name="section3413841245"></a>**
 
-用户安装KAELz4库后，基于“/KAE/scripts/perftest/kzip“内的测试脚本，测试KAELz4压缩库异步功能和性能。
+用户安装KAELz4库后，基于“/KAE/scripts/perftest/kzip”内的测试脚本，测试KAELz4压缩库异步功能和性能。
 
-1. 请参见[源码安装](#方式一源码安装)或[RPM包安装](#方式二rpm包安装)安装KAELz4。
-2. 测试KAELz4压缩库异步接口的功能。
+1. 测试KAELz4压缩库异步接口的功能。
 
     ```shell
     cd KAE/scripts/perftest/kzip
     sh scripts/runFunc.sh
     ```
 
-3. 开启驱动fast模式，设置特定有效压缩窗长以达到最大性能。
+2. 开启驱动fast模式，设置特定有效压缩窗长以达到最大性能。
 
     ```shell
     rmmod hisi_zip  
@@ -1658,7 +1656,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     export KAE_LZ4_COMP_TYPE=8
     ```
 
-4. 测试KAELz4压缩库异步接口的性能。
+3. 测试KAELz4压缩库异步接口的性能。
     1. 8KB分片block异步接口性能。
 
         ```shell
@@ -1694,12 +1692,10 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 ### KAESnappy压缩库测试
 
 用户安装KAESnappy库后，可以通过本节提供的操作步骤测试KAESnappy压缩库性能。
+  
+1. 从[Gitee](https://gitee.com/kunpeng_compute/lzbench)仓获取lzbench源码，并在源码路径下使用make命令编译生成二进制工具。
 
-1. 请参见[源码安装](#方式一源码安装)或[RPM包安装](#方式二rpm包安装)完成KAESnappy的安装。
-   
-2. 从[Gitee](https://gitee.com/kunpeng_compute/lzbench)仓获取lzbench源码，并在源码路径下使用make命令编译生成二进制工具。
-
-3. 测试性能。
+2. 测试性能。
     1. 进入lzbench源码路径，查看测试工具所使用的算法库。
 
         ```shell
@@ -1721,7 +1717,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
          /lib/ld-linux-aarch64.so.1 (0x0000ffffae144000)
         ```
 
-    2. 调用开源Snappy算法库测试解压缩性能，测试文件位于“KAE/scripts/compressTestDataset“路径下。
+    2. 调用开源Snappy算法库测试解压缩性能，测试文件位于“KAE/scripts/compressTestDataset”路径下。
 
         ```shell
         taskset -c 1 ./lzbench -resnappy -b8 -i1 -j -m1024 /pathtoKAE/scripts/compressTestDataset/
@@ -1790,7 +1786,16 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 **卸载源码安装的KAE2.0<a name="section126341424597"></a>**
 
 1. 使用SSH远程登录工具，以root账号进入Linux操作系统命令行界面。
-2. 源码方式安装的加速器驱动包及KAE加速引擎库包通过脚本命令进行卸载。
+
+2. 源码方式安装有以下两种卸载方式。
+
+   方式一：一键卸载
+
+   通过**sh build.sh cleanup**命令一键式卸载默认安装路径的KAE组件。
+   
+   方式二：依次方式
+
+   通过以下步骤依次对加速器驱动包及KAE加速引擎库包进行卸载。
 
     - 卸载驱动。
 
@@ -1854,14 +1859,12 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
         sh build.sh snappy clean
         ```
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
-    >也可以通过**sh build.sh cleanup**命令一键式卸载默认安装路径的KAE组件。
-
 **卸载RPM安装的KAE2.0<a name="section963562418918"></a>**
 
 1. 使用SSH远程登录工具，以root账号进入Linux操作系统命令行界面。
+
 2. 卸载KAE加速引擎相关软件包并检查卸载情况。
-    1. 使用**rpm -e  _软件包名_**命令卸载kae-openssl、kae-driver和kae-zip。
+    1. 使用“rpm -e 软件包名”命令卸载kae-openssl、kae-driver和kae-zip。
 
         ```shell
         rpm -e kae-openssl
@@ -1871,7 +1874,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
     2. 查询RPM包是否卸载成功。
 
-        使用**rpm -qa | grep  _软件包名_**命令。
+        使用“rpm -qa | grep 软件包名”命令。
 
         ```shell
         rpm -qa | grep kae-openssl 

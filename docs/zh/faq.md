@@ -21,11 +21,7 @@
 
 **回答<a name="section20155184504116"></a>**
 
-安装鲲鹏加速器引擎之前需要先安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。具体License申请使用操作可参考《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
-
-- 华为服务器iBMC许可证书使用指导（渠道版）：本文档适用于华为服务器渠道工程师使用。
-- 华为服务器iBMC许可证书使用指导（客户版）：本文档适用于客户的工程师使用。
-- 华为服务器iBMC许可证书使用指导（华为工程师版）：本文档适用于华为工程师使用。
+安装鲲鹏加速器引擎之前需要先安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。License申请流程请根据实际场景选择对应版本的《[华为服务器 iBMC 许可证 使用指导书](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
 
 鲲鹏加速器引擎相应的License分类说明：
 
@@ -49,7 +45,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 **回答<a name="section204963045613"></a>**
 
-查看设备ESN的流程为：登录iBMC系统 ，点击“配置“，选择“许可证管理“，弹出的界面会显示设备ESN号。流程可参见下图。
+查看设备ESN的流程为：登录iBMC系统 ，点击“配置”，选择“许可证管理”，弹出的界面会显示设备ESN号。流程可参见下图。
 
 ![](figures/zh-cn_image_0000002546836291.png)
 
@@ -67,7 +63,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 - 在BIOS界面查看加速器状态。
 
-    具体流程为：按**Esc**键进入BIOS界面，依次进入“Advanced \> Accelerators Status“。如果已经安装成功则会显示如下信息：
+    具体流程为：按**Esc**键进入BIOS界面，依次进入“Advanced \> Accelerators Status”。如果已经安装成功则会显示如下信息：
 
     ![](figures/zh-cn_image_0000002546796315.png)
 
@@ -112,7 +108,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 **关键过程、根本原因分析<a name="zh-cn_topic_0000001721633562_zh-cn_topic_0000001742708945_section31242048897"></a>**
 
-1. 登录服务器iBMC系统，单击“iBMC管理 \> 许可证管理“查看加速器设备是否都是“已开启”状态。
+1. 登录服务器iBMC系统，单击“iBMC管理 \> 许可证管理”查看加速器设备是否都是“已开启”状态。
 
     ![](figures/zh-cn_image_0000002515276388.png)
 
@@ -122,7 +118,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 **结论、解决方案及效果<a name="zh-cn_topic_0000001721633562_section1511044274711"></a>**
 
-在开启TEE功能的服务器上关闭TEE功能。请进入服务器BIOS，选择“Advanced \> TEE Config“，设置为“Disable“，即可关闭TEE功能，详细操作请参见《机密计算TrustZone 特性指南》中“[配置BIOS](https://www.hikunpeng.com/document/detail/zh/kunpengcctrustzone/trustzone/fg/kunpengtrustzone_20_0019.html#ZH-CN_TOPIC_0000002258299325__section132520219345)”相关内容。
+在开启TEE功能的服务器上关闭TEE功能。请进入服务器BIOS，选择“Advanced \> TEE Config”，设置为“Disable”，即可关闭TEE功能，详细操作请参见《机密计算TrustZone 特性指南》中“[配置BIOS](https://www.hikunpeng.com/document/detail/zh/kunpengcctrustzone/trustzone/fg/kunpengtrustzone_20_0019.html#ZH-CN_TOPIC_0000002258299325__section132520219345)”相关内容。
 
 ## 安装KAE相关
 
@@ -253,7 +249,7 @@ rpm -qa | grep kernel-devel
 
 **结论、解决方案及效果<a name="zh-cn_topic_0000001171624344_section50806158"></a>**
 
-正确安装有效的License。License的获取和安装步骤请参见《安装指南》中“环境部署”章节的“[获取License](./installation_guide.md#获取license)”部分。
+正确安装有效的License。License的获取和安装步骤请参见《安装指南》中“环境部署”章节的[获取License](./installation_guide.md#获取license)部分。
 
 ### EulerOS 2.8默认安装的OpenSSL 1.1.1c版本使用加速器失败，提示找不到符号
 
@@ -447,7 +443,7 @@ find / -name "openssl.cnf"
 
                 ![](figures/zh-cn_image_0000002546836317.png)
 
-            2. 进入warpdrive目录，执行autogen.sh脚本文件，执行**./configure**命令配置KAEdriver。
+            2. 进入warpdrive目录，执行autogen.sh脚本文件，执行./configure命令配置KAEdriver。
 
                 ```shell
                 cd warpdrive/
@@ -573,7 +569,7 @@ find / -name "openssl.cnf"
 
 **问题现象描述<a name="zh-cn_topic_0000001840968873_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
-在统信UOS v20 SP1系统下使用源码编译安装KAE内核驱动时，执行**make**命令后提示“/kae\_driver/hisilicon/sec/Makefile“下没有那个文件或目录，详细信息如下：
+在统信UOS v20 SP1系统下使用源码编译安装KAE内核驱动时，执行**make**命令后提示“/kae\_driver/hisilicon/sec/Makefile”下没有那个文件或目录，详细信息如下：
 
 ![](figures/0101701680335248118-20231204165855-42167693270541801409168819555138.png)
 
@@ -583,7 +579,7 @@ find / -name "openssl.cnf"
 
 **结论、解决方案及效果<a name="zh-cn_topic_0000001840968873_section1511044274711"></a>**
 
-请在“/kae\_driver/hisilicon/sec/Makefile“目录下的makefile文件中删除第二行，再重新执行编译命令。
+请在“/kae\_driver/hisilicon/sec/Makefile”目录下的makefile文件中删除第二行，再重新执行编译命令。
 
 ### 使用wrk工具测试Nginx+KAE性能未得到提升
 
@@ -624,13 +620,13 @@ KAE对握手阶段的RSA算法进行加速，如果压测工具采用了TLS重�
 
 例如执行**rpm**命令时出现如下报错：
 
-```text
+```shell
 rpm: relocation error: /lib64/librpmio.so.8: symbol EVP_md2 version OPENSSL_1_1_0 not defined in file libcrypto.so.1.1 with link time reference
 ```
 
 例如执行系统OpenSSL命令时出现如下报错：
 
-```text
+```shell
 /usr/bin/openssl: relocation error: /usr/bin/openssl: symbol EVP_md2 version OPENSSL_1_1_0 not defined in file libcrypto.so.1.1 with link time reference
 ```
 
@@ -738,7 +734,7 @@ make install
 
 2. 在OpenSSL安装目录下的openssl.cnf文件中指定位置（如[**图 1** 在OpenSSL自带的openssl.cnf文件中加入鲲鹏加速引擎配置的位置](#在OpenSSL自带的openssl.cnf文件中加入鲲鹏加速引擎配置的位置)所示）加入鲲鹏加速引擎的配置内容。
 
-    openssl.cnf文件一般在openssl安装目录中的ssl目录下，也可使用命令**find / -name "openssl.cnf"**查找openssl.cnf文件。
+    openssl.cnf文件一般在openssl安装目录中的ssl目录下，也可使用命令find / -name "openssl.cnf"查找openssl.cnf文件。
 
     ```ini
     openssl_conf=openssl_def
@@ -810,13 +806,13 @@ make install
 4. 检查KAE安装是否成功。请参见《安装指南》中的“[安装后测试](./installation_guide.md#安装后测试)”章节下的安装后检查内容。
 5. 运行命令时，查看是否启用KAE，方法如下：
     - 当启用KAE硬件加密时可在加密区相关程序运行时，通过观察加速队列的使用情况来确认加密情况，如KAE使能成功，可通过**cat /sys/class/uacce/hisi\_sec-1/attrs/available\_instances**查看队列消耗。
-    - 当采用软加密（OpenSSL）时可在加密区相关程序运行时，观察是否有相关的热点函数来确认加密情况**。**通过执行**perf top**命令查看是否存在libcrypto.so.1.1，如果存在libcrypto.so.1.1则说明是采用的软加密。如果需要采用KAE硬件加密，则建议采用源码编译的方式重新编译KAE后，再次执行KAE使能和测试。
+    - 当采用软加密（OpenSSL）时可在加密区相关程序运行时，观察是否有相关的热点函数来确认加密情况。通过执行**perf top**命令查看是否存在libcrypto.so.1.1，如果存在libcrypto.so.1.1则说明是采用的软加密。如果需要采用KAE硬件加密，则建议采用源码编译的方式重新编译KAE后，再次执行KAE使能和测试。
 
 ### 虚拟机上安装配置KAE后未生效的解决办法
 
 **问题现象描述<a name="zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
-在HostOS为openEuler 22.03 LTS SP2操作系统下进行KAE虚拟化环境配置，配置完成后使用**ls -al /sys/class/uacce**命令可以查询到HostOS环境中安装的加速器和对应的bdf号。但在虚拟机下使用**ls /sys/class/uacce/**命令查询不到设备。虚拟机中的日志中提示如下信息。
+在HostOS为openEuler 22.03 LTS SP2操作系统下进行KAE虚拟化环境配置，配置完成后使用**ls -al /sys/class/uacce**命令可以查询到HostOS环境中安装的加速器和对应的bdf号。但在虚拟机下使用ls /sys/class/uacce/命令查询不到设备。虚拟机中的日志中提示如下信息。
 
 ```text
 modprobe: ERROR: could not insert 'hisi hpre': Invalid argument make:[Makefile:69: nosva] Error 1 (ignored)
@@ -836,11 +832,11 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
 **问题现象描述<a name="zh-cn_topic_0000001769473497_zh-cn_topic_0000001742708945_section13982317239"></a>**
 
-已经参考《使用指导》中的“[通过OpenSSL/Tongsuo配置文件openssl.cnf使用KAE](./user_guide.md#通过openssltongsuo配置文件opensslcnf调用kae加解密库)”完成OPENSSL\_CONF的配置，使用**openssl speed -elapsed rsa2048**和**openssl speed -elapsed -engine kae rsa2048**命令调用KAE前后发现性能没有变化。
+已经参考《用户指南》中的“[通过OpenSSL/Tongsuo配置文件openssl.cnf使用KAE](./user_guide.md#通过openssltongsuo配置文件opensslcnf调用kae加解密库)”完成OPENSSL\_CONF的配置，使用**openssl speed -elapsed rsa2048**和**openssl speed -elapsed -engine kae rsa2048**命令调用KAE前后发现性能没有变化。
 
 **关键过程、根本原因分析<a name="zh-cn_topic_0000001769473497_zh-cn_topic_0000001742708945_section31242048897"></a>**
 
-如果已经参考《使用指导》中的“[通过OpenSSL/Tongsuo配置文件openssl.cnf使用KAE](./user_guide.md#通过openssltongsuo配置文件opensslcnf调用kae加解密库)”完成OPENSSL\_CONF的配置， 那么运行**openssl speed -elapsed rsa2048**和**openssl speed -elapsed -engine kae rsa2048**命令时KAE都会被调用，所以性能没有得到提升。
+如果已经参考《用户指南》中的“[通过OpenSSL/Tongsuo配置文件openssl.cnf使用KAE](./user_guide.md#通过openssltongsuo配置文件opensslcnf调用kae加解密库)”完成OPENSSL\_CONF的配置， 那么运行**openssl speed -elapsed rsa2048**和**openssl speed -elapsed -engine kae rsa2048**命令时KAE都会被调用，所以性能没有得到提升。
 
 **结论、解决方案及效果<a name="zh-cn_topic_0000001769473497_section1511044274711"></a>**
 
@@ -918,7 +914,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
     uacce                  262144  2 hisi_hpre,hisi_qm,hisi_sec2,hisi_rde,hisi_zip
     ```
 
-2. 检查软件安装目录（RPM方式安装时目录为“/usr/lib64“，源码方式安装时目录为“/usr/local/lib“）和OpenSSL安装目录是否有KAE加速引擎库，且建立正确的软连接。
+2. 检查软件安装目录（RPM方式安装时目录为“/usr/lib64”，源码方式安装时目录为“/usr/local/lib”）和OpenSSL安装目录是否有KAE加速引擎库，且建立正确的软连接。
     1. 查询KAE是否正确安装并建立软连接。
 
         - 若OpenSSL版本为1.1.1x
@@ -1147,17 +1143,17 @@ Ceph对象存储，测试zlib硬算压缩率，使用超过4MB的文件进行测
 
 **关键过程、根本原因分析<a name="zh-cn_topic_0000002235226834_zh-cn_topic_0000001925948013_zh-cn_topic_0000001742708945_section31242048897"></a>**
 
-查看“/dev“下相关设备权限。
+查看“/dev”下相关设备权限。
 
 ```shell
 ll | grep hisi
 ```
 
-回显信息如下所示，可知只有root用户具有读写权限，普通用户在运行KAE性能测试程序时，缺少权限从而提示无法打开“/dev“路径下的相关字符设备。
+回显信息如下所示，可知只有root用户具有读写权限，普通用户在运行KAE性能测试程序时，缺少权限从而提示无法打开“/dev”路径下的相关字符设备。
 
 ![](figures/zh-cn_image_0000002546836307.png)
 
-若KAE使用root用户进行安装，而业务使用普通用户来执行，则可能出现由于没有权限获取相关设备资源而无法使能的问题，此时需要将“/dev“下hisi前缀的设备给对应的普通用户赋予权限。
+若KAE使用root用户进行安装，而业务使用普通用户来执行，则可能出现由于没有权限获取相关设备资源而无法使能的问题，此时需要将“/dev”下hisi前缀的设备给对应的普通用户赋予权限。
 
 **结论、解决方案及效果<a name="zh-cn_topic_0000002235226834_zh-cn_topic_0000001925948013_section1511044274711"></a>**
 
@@ -1170,7 +1166,7 @@ ll | grep hisi
     usermod -aG kaegroup KAE用户名
     ```
 
-2. 查看“/dev“下相关设备权限。
+2. 查看“/dev”下相关设备权限。
 
     ```shell
     ll | grep hisi
@@ -1227,7 +1223,7 @@ ll | grep hisi
 
 前提条件：环境中已经部署8u422及以上版本的毕昇JDK和2.0.3以下版本的KAE。
 
-操作步骤：使用《[KAE ZIP用户使用指导](https://atomgit.com/openeuler/bishengjdk-8/wiki/KAE_ZIP_%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%8C%87%E5%AF%BC.md)》的操作步骤将一个零字节数组压缩，又执行**java -DGZIP\_USE\_KAE=true  _测试文件_**命令将压缩后的文件进行解压缩后提示“gzip header append\_info\_sz is 0”，回显信息如下图所示。
+操作步骤：使用《[KAE ZIP用户使用指导](https://atomgit.com/openeuler/bishengjdk-8/wiki/KAE_ZIP_%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%8C%87%E5%AF%BC.md)》的操作步骤将一个零字节数组压缩，又执行“java -DGZIP\_USE\_KAE=true 测试文件”命令将压缩后的文件进行解压缩后提示“gzip header append\_info\_sz is 0”，回显信息如下图所示。
 
 ![](figures/1_zh-cn_image_0000002126661525.png)
 

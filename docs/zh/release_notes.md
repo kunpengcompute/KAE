@@ -37,26 +37,27 @@
 |iBMC|V365及以上版本|
 |BIOS|V105及以上版本|
 
->![](public_sys-resources/icon-note.gif) **说明：** <br>
->a：非虚拟化场景使用加速器建议关闭SMMU，开启SMMU会影响加速器性能，具体操作请参见《[BIOS 参数参考（鲲鹏920处理器）](https://support.huawei.com/enterprise/zh/doc/EDOC1100088653/ca8d53c6)》。<br>
->b：KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器以及鲲鹏950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见[算法规格](../../README.md#算法支持与规格)。<br>
->c：鲲鹏950处理器仅支持使用KAE2.0。
+>![](public_sys-resources/icon-note.gif) **说明：**
+>
+>- 非虚拟化场景使用加速器建议关闭SMMU，开启SMMU会影响加速器性能，具体操作请参见《[BIOS 参数参考（鲲鹏920处理器）](https://support.huawei.com/enterprise/zh/doc/EDOC1100088653/ca8d53c6)》。
+>- KAEZstd、KAELz4和KAESnappy目前仅支持在鲲鹏920新型号处理器以及鲲鹏950处理器上使用。不同处理器型号支持的加密/压缩算法存在不同，详情请参见《README》中的“[算法支持与规格](../../README.md#算法支持与规格)”内容。
+>- 鲲鹏950处理器仅支持使用KAE2.0。
 
 ### 与操作系统配套说明
 
 |KAE版本|操作系统|OpenSSL版本|
 |--|--|--|
-|KAE2.0|openEuler 22.03 LTS SP1/SP2/SP3/SP4，openEuler 24.03 LTS SP1/SP2/SP3，EulerOS-V2.0 SP12，TencentOS 5.4|OpenSSL 1.1.1x系列OpenSSL 3.0.x系列Tongsuo 8.4.0BoringSSL|
-|KAE1.0|CentOS 7.6 4.14.0-115.el7a.0.1.aarch64，SUSE 15.1 4.12.14-195-default.aarch64，EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64，NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64，BCLinux-R7-U6-Server-aarch64，Kylin 4.0.2 (juniper) 4.15.0-70-generic，Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64，UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64，Ubuntu 18.04.1 LTS 4.15.0-29-generic，openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64，openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64|OpenSSL 1.1.1x系列|
+|KAE2.0|openEuler 22.03 LTS SP1/SP2/SP3/SP4<br>openEuler 24.03 LTS SP1/SP2/SP3<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|OpenSSL 1.1.1x系列<br>OpenSSL 3.0.x系列<br>Tongsuo 8.4.0<br>BoringSSL|
+|KAE1.0|CentOS 7.6 4.14.0-115.el7a.0.1.aarch64<br>SUSE 15.1 4.12.14-195-default.aarch64<br>EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64<br>NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64<br>BCLinux-R7-U6-Server-aarch64<br>Kylin 4.0.2 (juniper) 4.15.0-70-generic<br>Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64<br>UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64<br>Ubuntu 18.04.1 LTS 4.15.0-29-generic<br>openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64<br>openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64|OpenSSL 1.1.1x系列|
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >a：openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
 
 ## 版本使用注意事项
 
-请参见《[算法支持与规格](../../README.md#算法支持与规格)》。
+请参见《README》中的“[算法支持与规格](../../README.md#算法支持与规格)”内容。
 
-## V26.0.0
+## V26.0.RC1
 
 ### 更新说明
 
@@ -219,13 +220,13 @@
 
 | 文档名称 | 内容简介 | 交付形式 |
 | --- | --- | --- |
-| 《版本说明书》 | 提供KAE每个发布版本的基础信息和特性更新信息。 | KAE开源仓库 |
-| 《用户指南》 | 提供接口说明、接口调用示例、日志查询方法等。 | KAE开源仓库 |
-| 《最佳实践》 | 提供KAE在Web、分布式存储、数据库、虚拟化场景下使用的实践案例。 | KAE开源仓库 |
-| 《快速入门》 | 提供KAE加解密和压缩库快速使能并验证加速能力的快速入门指导。 | KAE开源仓库 |
-| 《安装指南》 | 提供KAE源码编译安装和RPM包安装方式的详细指导。 | KAE开源仓库 |
-| 《常见问题》 | 本文档提供提供KAE安装、使用过程的常见问题和解决方法。 | KAE开源仓库 |
+| 《版本说明书》 | 提供KAE每个发布版本的基础信息和特性更新信息。 | 开源仓 |
+| 《用户指南》 | 提供接口说明、接口调用示例、日志查询方法等。 | 开源仓 |
+| 《最佳实践》 | 提供KAE在Web、分布式存储、数据库、虚拟化场景下使用的实践案例。 | 开源仓 |
+| 《快速入门》 | 提供KAE加解密和压缩库快速使能并验证加速能力的快速入门指导。 | 开源仓 |
+| 《安装指南》 | 提供KAE源码编译安装和RPM包安装方式的详细指导。 | 开源仓 |
+| 《常见问题》 | 本文档提供提供KAE安装、使用过程的常见问题和解决方法。 | 开源仓 |
 
 ### 获取文档的方法
 
-您可以通过[访问KAE开源仓库](https://gitcode.com/boostkit/KAE)浏览和获取相关文档。
+您可以通过[开源仓](https://gitcode.com/boostkit/KAE)浏览和获取相关文档。

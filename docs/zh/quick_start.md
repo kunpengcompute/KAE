@@ -1,10 +1,10 @@
 # 快速入门
 
-**简介<a name="section20500846115114"></a>**
+## 简介
 
 本指南通过源码方式快速安装KAE2.0，指导用户快速上手使用KAE加解密库和KAE压缩库。
 
-**环境准备<a name="section1232161919532"></a>**
+## 环境准备
 
 1. 获取License。
     1. License申请和安装操作请参见《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
@@ -19,6 +19,7 @@
         若执行以上命令后没有任何回显信息打印，说明操作系统中没有KAE加速器设备，请检查License是否安装成功。
 
 2. 安装OpenSSL。
+
     1. 检查OpenSSL版本。
 
         ```shell
@@ -27,7 +28,7 @@
 
         OpenSSL需为1.1.1x或3.0.x系列版本，Tongsuo 8.4.0版本。若不符合，需先安装合规版本。
 
-    2. 设置OpenSSL环境变量“OPENSSL\_ENGINES“为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
+    2. 设置OpenSSL环境变量“OPENSSL\_ENGINES”为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
         - OpenSSL 1.1.1x系列：
 
             ```shell
@@ -71,7 +72,7 @@
     sh build.sh all
     ```
 
-**使用KAE加解密库<a name="section1819738555"></a>**
+## 使用KAE加解密库
 
 以验证RSA同步/异步模式性能为例。通过与OpenSSL的软算算法测试结果进行对比，展示使用KAE加解密库前后的RSA算法的性能提升效果。
 
@@ -139,7 +140,7 @@
 
     使用KAE加解密库加速后RSA异步签名性能从735.7sign/s提升到54384.1sign/s。
 
-**使用KAE压缩库<a name="section19298142455615"></a>**
+## 使用KAE压缩库
 
 以KAEZlib压缩库为例，通过与系统自带的zlib库的解压缩性能进行对比，展示使用KAEZlib压缩库前后的性能提升效果。
 

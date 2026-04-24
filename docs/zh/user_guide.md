@@ -1,5 +1,7 @@
 # 用户指南
 
+本文档提供KAE加解密库和KAE压缩库的使用方法，阅读并操作本文档提供的内容前请确保已环境中已安装KAE硬件加速引擎，具体安装步骤请参见《[安装指南](./installation_guide.md)》。
+
 ## 使用KAE加解密库
 
 ### 通过ENGINE\_by\_id函数调用KAE加解密库
@@ -128,56 +130,21 @@ int main(int argc, char **argv)
 
 ### 通过BoringSSL调用KAE加解密库
 
-#### 调用方案
+KAE支持使用BoringSSL调用，但BoringSSL的Engine机制不能通过设置类似于“OPENSSL\_ENGINES”的环境变量来调用KAE，因此KAE提供了相关的对外接口ENGINE\_init\_kae和ENGINE\_free\_kae。提供两种BoringSSL调用KAE的方案。方案一：用户在业务代码中调用API接口；方案二：修改BoringSSL源码，合入相关补丁。本章节对两种方案调用前提、原理和调用示例进行详细介绍。
 
-KAE支持使用BoringSSL调用，提供两种调用方案。方案一：用户在业务代码中调用API接口；方案二：修改BoringSSL源码，合入相关补丁。本章节对两种方案原理进行详细介绍。
+#### 调用前提
 
-BoringSSL的Engine机制不能通过设置类似于“OPENSSL\_ENGINES“的环境变量来调用KAE，因此KAE提供了相关的对外接口ENGINE\_init\_kae和ENGINE\_free\_kae。提供两种BoringSSL调用KAE的方案。
+使用BoringSSL调用KAE前需要先安装KAE，再进行BoringSSL编译，随后选择调用方案进行调用。
 
-**方案一：用户在业务代码中调用接口<a name="zh-cn_topic_0000002332729981_section123525975417"></a>**
+1. 在编译安装KAEOpensslEngine加速引擎步骤中需要使用BoringSSL源码路径，如下所示。
 
-该方案的优点是无需重新编译BoringSSL，缺点是用户可能需要修改现有调用BoringSSL业务代码。
+   ```shell
+   sh build.sh engine_boringssl /opt/boringssl
+   ```
 
-RSA私钥加密、私钥解密的接口兼容性如下：
+2. 下载[BoringSSL源码包](https://github.com/google/boringssl/releases)，将BoringSSL源码包拷贝到自定义路径下并解压（如“/opt/boringssl”）。
 
-- RSA\_new\(\)：无法调用到KAE。
-- RSA\_new\_method\(\)：将KAE作为输入参数，可以调用到KAE。
-
-在进行加密前调用ENGINE\_init\_kae获取KAE，将KAE作为RSA\_new\_method的入参，后续的私钥加密和公钥加密就会调用到KAE，任务完成后调用ENGINE\_free\_kae进行KAE资源释放。如[**图 1** BoringSSL通过API调用KAE原理图](#BoringSSL通过API调用KAE原理图)所示为通过API调用的原理图。
-
-**图 1** BoringSSL通过API调用KAE原理图<a name="zh-cn_topic_0000002332729981_fig571210343319"></a><a id="BoringSSL通过API调用KAE原理图"></a>
-
-![](figures/zh-cn_image_0000002478068108.png "BoringSSL通过API调用KAE原理图")
-
-**方案二：修改BoringSSL源码，合入相关补丁<a name="zh-cn_topic_0000002332729981_section1277662845415"></a>**
-
-修改BoringSSL源码，合入相关patch，使BoringSSL的RSA算法默认使用KAE来做加解密。目前已针对0.20250311.0版本的BoringSSL给出相应补丁文件bssl\_add\_kae\_support.patch。不同版本的BoringSSL源码有差异，该patch不具有兼容性，如果需要使用其他版本的BoringSSL，可以参考该patch文件中的内容修改相应的源码，修改量并不多。
-
-该方案的优点是无需修改现有业务代码；缺点是BoringSSL需要强依赖于KAE动态库。
-
-RSA私钥加密、私钥解密的接口兼容性如下：
-
-- RSA\_new\(\)：默认使用KAE。
-- RSA\_new\_method\(\)：将KAE作为输入参数，可以调用到KAE。
-
-#### 调用示例
-
-使用BoringSSL调用KAE前需要先安装KAE，再进行BoringSSL编译，随后选择调用方案进行调用。本章节提供两种调用方式的调用示例。
-
-**前提条件<a name="zh-cn_topic_0000002298930250_section14710172717351"></a>**
-
-请参见《[安装指南](./installation_guide.md)》完成KAE的安装。
-
-在编译安装KAEOpensslEngine加速引擎步骤中需要使用BoringSSL源码路径，如下所示。
-
-```shell
-sh build.sh engine_boringssl /opt/boringssl
-```
-
-**安装BoringSSL<a name="zh-cn_topic_0000002298930250_section13607252155212"></a>**
-
-1. 下载[BoringSSL源码包](https://github.com/google/boringssl/releases)，将BoringSSL源码包拷贝到自定义路径下并解压（如“/opt/boringssl“）。
-2. 编译并安装。
+3. 编译并安装BoringSSL。
 
     BoringSSL默认编译Debug版本，发布版本需要添加-DCMAKE\_BUILD\_TYPE=Release进行编译。
 
@@ -188,9 +155,9 @@ sh build.sh engine_boringssl /opt/boringssl
     make install
     ```
 
-3. 查看BoringSSL是否安装成功。
+4. 查看BoringSSL是否安装成功。
 
-    使用**make install**安装后，BoringSSL的源码路径会生成“install“目录，查看“install“目录下的文件。
+    使用**make install**安装后，BoringSSL的源码路径会生成“install”目录，查看“install”目录下的文件。
 
     ```shell
     ll /opt/boringssl/install/
@@ -206,16 +173,33 @@ sh build.sh engine_boringssl /opt/boringssl
     drwxr-xr-x. 2 root root 4096 Apr  8 09:14 lib64
     ```
 
-**方案一：在业务代码中调用接口<a name="zh-cn_topic_0000002298930250_section260785225210"></a>**
+#### 方案一：用户在业务代码中调用接口
 
-**使用前提**：编译业务代码时需要链接KAE的头文件和动态库
+**方案原理**
+
+该方案的优点是无需重新编译BoringSSL，缺点是用户可能需要修改现有调用BoringSSL业务代码。
+
+RSA私钥加密、私钥解密的接口兼容性如下：
+
+- RSA\_new\(\)：无法调用到KAE。
+- RSA\_new\_method\(\)：将KAE作为输入参数，可以调用到KAE。
+
+在进行加密前调用ENGINE\_init\_kae获取KAE，将KAE作为RSA\_new\_method的入参，后续的私钥加密和公钥加密就会调用到KAE，任务完成后调用ENGINE\_free\_kae进行KAE资源释放。如[**图 1** BoringSSL通过API调用KAE原理图](#BoringSSL通过API调用KAE原理图)所示为通过API调用的原理图。
+
+**图 1** BoringSSL通过API调用KAE原理图<a name="zh-cn_topic_0000002332729981_fig571210343319"></a><a id="BoringSSL通过API调用KAE原理图"></a>
+
+![](figures/zh-cn_image_0000002478068108.png "BoringSSL通过API调用KAE原理图")
+
+**调用前提**
+
+编译业务代码时需要链接KAE的头文件和动态库。
 
 - 头文件：/usr/local/boringssl/include/kae\_bssl.h
 - 动态库：/usr/local/boringssl/lib/engines-1.1/kae\_bssl.so
 
-**使用示例**
+**调用示例**
 
-示例文件可参考testsuit\_rsa.cpp文件，该文件给出了通过ENGINE\_init\_kae和ENGINE\_free\_kae接口调用KAE的示例代码，文件路径为：“KAEOpensslEngine/test/bssl\_test/src/rsa/“。使用步骤如下：
+示例文件可参考testsuit\_rsa.cpp文件，该文件给出了通过ENGINE\_init\_kae和ENGINE\_free\_kae接口调用KAE的示例代码，文件路径为：“KAEOpensslEngine/test/bssl\_test/src/rsa/”。使用步骤如下：
 
 1. 设置KAE和BoringSSL动态库查找路径。
 
@@ -230,9 +214,9 @@ sh build.sh engine_boringssl /opt/boringssl
     vi Makefile
     ```
 
-3. 按“i“进入编辑模式，修改第26行**-I**为BoringSSL的头文件路径，第28行**-L**为BoringSSL动态库路径。
+3. 按“i”进入编辑模式，修改第26行“-I”为BoringSSL的头文件路径，第28行“-L”为BoringSSL动态库路径。
 
-    按“Esc“键，输入**:wq!**，按“Enter“保存并退出编辑。
+    按“Esc”键，输入:wq!，按“Enter”保存并退出编辑。
 
 4. 进入测试脚本路径，执行测试脚本build.sh，该脚本会自动编译使用示例testsuit\_rsa.cpp文件。
 
@@ -248,16 +232,29 @@ sh build.sh engine_boringssl /opt/boringssl
     ./kaedemo
     ```
 
-**方案二：修改BoringSSL源码<a name="zh-cn_topic_0000002298930250_section6608165285211"></a>**
+#### 方案二：修改BoringSSL源码，合入相关补丁
 
-**使用前提**：编译业务代码时需要链接KAE的头文件和动态库
+**方案原理**
+
+修改BoringSSL源码，合入相关patch，使BoringSSL的RSA算法默认使用KAE来做加解密。目前已针对0.20250311.0版本的BoringSSL给出相应补丁文件bssl\_add\_kae\_support.patch。不同版本的BoringSSL源码有差异，该patch不具有兼容性，如果需要使用其他版本的BoringSSL，可以参考该patch文件中的内容修改相应的源码，修改量并不多。
+
+该方案的优点是无需修改现有业务代码；缺点是BoringSSL需要强依赖于KAE动态库。
+
+RSA私钥加密、私钥解密的接口兼容性如下：
+
+- RSA\_new\(\)：默认使用KAE。
+- RSA\_new\_method\(\)：将KAE作为输入参数，可以调用到KAE。
+
+**调用前提**
+
+编译业务代码时需要链接KAE的头文件和动态库。
 
 - KAE提供的bssl\_add\_kae\_support.patch只适用于0.20250311.0版本的BoringSSL，若使用其他版本的BoringSSL需要对该patch内容进行修改后再合入，修改点已在patch中详细说明，修改量较小（patch文件的加号表示新增，减号表示删除，修改的位置可以参考上下文）。
 - 头文件：/usr/local/boringssl/include/kae\_bssl.h
 - 动态库：/usr/local/boringssl/lib/engines-1.1/kae\_bssl.so
 
 1. 重新下载一份BoringSSL源码。
-2. 将bssl\_add\_kae\_support.patch文件复制到新的BoringSSL源码同级目录，bssl\_add\_kae\_support.patch文件路径为“KAEOpensslEngine/patch/bssl\_add\_kae\_support.patch“。
+2. 将bssl\_add\_kae\_support.patch文件复制到新的BoringSSL源码同级目录，bssl\_add\_kae\_support.patch文件路径为“KAEOpensslEngine/patch/bssl\_add\_kae\_support.patch”。
 3. 使用**cd**命令进入BoringSSL源码目录。
 4. 合入bssl\_add\_kae\_support.patch文件。
 
@@ -265,7 +262,7 @@ sh build.sh engine_boringssl /opt/boringssl
     patch -Np1 < ../bssl_add_kae_support.patch
     ```
 
-5. 构建，需要传入**-DENABLE\_KAE=ON**。
+5. 构建，需要传入-DENABLE\_KAE=ON。
 
     ```shell
     cmake -DENABLE_KAE=ON -DCMAKE_BUILD_TYPE=Release  -B build -DBUILD_SHARED_LIBS=1
@@ -281,14 +278,14 @@ sh build.sh engine_boringssl /opt/boringssl
 
 **使用示例**
 
-编译安装BoringSSL后，使用**bssl**命令进行性能测试，该命令在BoringSSL源码的“install/bin“目录中，**bssl**命令参数如[**表 1** **bssl**命令参数说明](#**bssl**命令参数说明)所示。
+编译安装BoringSSL后，使用**bssl**命令进行性能测试，该命令在BoringSSL源码的“install/bin”目录中，**bssl**命令参数如[**表 1** **bssl**命令参数说明](#**bssl**命令参数说明)所示。
 
 **表 1** **bssl**命令参数说明<a id="**bssl**命令参数说明"></a>
 
 |参数|参数说明|
 |--|--|
-|-filter|筛选指定算法进行运行|
-|-timeout|测试项运行时间|
+|-filter|筛选指定算法进行运行。|
+|-timeout|测试项运行时间。|
 
 以下为使用**bssl speed**进行性能测试的示例步骤，对比**bssl**不使用KAE和使用KAE的签名性能结果差异。
 
@@ -360,11 +357,11 @@ sh build.sh engine_boringssl /opt/boringssl
 
 ## 使用KAE压缩库
 
-### 调用KAEZlib加速库
+### 调用KAEZlib压缩库
 
-本节提供分布式存储场景下KAEZlib加速压缩库的使用方法。
+本节提供分布式存储场景下KAEZlib压缩库的使用方法。
 
-请参见[安装指南](./installation_guide.md)章节编译并安装好软件。应用层可以通过以下两种方式链接到zlib加速压缩库：
+应用层可以通过以下两种方式链接到zlib压缩库：
 
 - 应用层在编译阶段指定运行时加载libz.so的位置，通过以下编译选项进行链接：
 
@@ -372,7 +369,7 @@ sh build.sh engine_boringssl /opt/boringssl
     -Wl,-rpath=/usr/local/kaezip/lib
     ```
 
-    其中“/usr/local/kaezip/lib“为一示例，表示新安装zlib库的路径。
+    其中“/usr/local/kaezip/lib”为安装路径示例，表示新安装zlib库的路径。
 
 - 设置环境变量：
 
@@ -382,13 +379,13 @@ sh build.sh engine_boringssl /opt/boringssl
 
 若需要使用KAEZlib的异步接口，请参考KAEZlib目录下的[README](../../KAEZlib/README.md)。
 
-### 调用KAEZstd加速库
+### 调用KAEZstd压缩库
 
-本节提供KAEZstd加速压缩库的使用方法。
+本节提供KAEZstd压缩库的使用方法。
 
-- 通过lib库调用KAEZstd加速压缩库。
+- 通过lib库调用KAEZstd压缩库。
 
-    请参见[安装指南](./installation_guide.md)章节编译并安装好软件。应用层可以通过以下两种方式链接到KAEZstd加速压缩库。
+    应用层可以通过以下两种方式链接到KAEZstd压缩库。
 
     - 应用层在编译阶段指定运行时加载libkaezstd.so的位置，通过以下编译选项进行链接：
 
@@ -402,9 +399,9 @@ sh build.sh engine_boringssl /opt/boringssl
         export LD_LIBRARY_PATH=/usr/local/kaezstd/lib:$LD_LIBRARY_PATH
         ```
 
-- 通过二进制文件调用KAEZstd加速压缩库。
+- 通过二进制文件调用KAEZstd压缩库。
 
-    请参见[安装指南](./installation_guide.md)章节编译并安装好软件。可以直接使用“/usr/local/kaezstd/bin/zstd“应用程序进行解压缩。
+    可以直接使用“/usr/local/kaezstd/bin/zstd”应用程序进行解压缩。
 
     - 设置环境变量。
 
@@ -424,15 +421,15 @@ sh build.sh engine_boringssl /opt/boringssl
         /usr/local/kaezstd/bin/zstd -d -f compressed_file -o decompressed_file
         ```
 
-### 调用KAELz4加速库
+### 调用KAELz4压缩库
 
 **同步接口的使用<a name="section47033483288"></a>**
 
-本节提供KAELz4加速压缩库同步接口的使用方法。
+本节提供KAELz4压缩库同步接口的使用方法。
 
-- 通过lib库调用KAELz4加速压缩库。
+- 通过lib库调用KAELz4压缩库。
 
-    请参见[安装指南](./installation_guide.md)章节编译并安装好软件。应用层可以通过以下两种方式链接到KAELz4加速压缩库。
+    应用层可以通过以下两种方式链接到KAELz4压缩库。
 
     - 应用层在编译阶段指定运行时加载libkaelz4.so的位置，通过以下编译选项进行链接：
 
@@ -446,9 +443,9 @@ sh build.sh engine_boringssl /opt/boringssl
         export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
         ```
 
-- 通过二进制文件调用KAELz4加速压缩库。
+- 通过二进制文件调用KAELz4压缩库。
 
-    请参见[安装指南](./installation_guide.md)章节编译并安装好软件。可以直接使用“/usr/local/kaelz4/bin/lz4“应用程序进行解压缩。
+    直接使用“/usr/local/kaelz4/bin/lz4”应用程序进行解压缩。
 
     - 设置环境变量。
 
@@ -470,14 +467,13 @@ sh build.sh engine_boringssl /opt/boringssl
 
 **异步接口的使用<a name="section115671214297"></a>**
 
-本节提供KAELz4加速压缩库异步接口的使用方法。
+本节提供KAELz4压缩库异步接口的使用方法。
 
 KAELz4异步接口当前支持2种模式，polling模式压缩接口、非polling模式压缩接口，polling模式下需要由用户线程主动调用相关接口回收压缩数据，非polling模式下，数据通过接口直接被异步压缩处理，最终由callback函数回调压缩结果的相关接口。同时，KAELz4异步接口支持3种压缩数据格式：block、frame、lz77\_raw，其中block与frame格式与社区lz4标准block\\frame格式兼容，lz77\_raw格式需要调用对应的后处理接口进行转换成标准block\\frame格式。 
 
 以下给出非polling模式下压缩生成frame格式的代码样例。详细的API接口说明及使用样例请参见[KAELz4开源仓README](https://gitcode.com/boostkit/KAE/blob/kae2/KAELz4/README.md)。
 
-1. 请参见[安装指南](./installation_guide.md)章节编译并安装好软件。
-2. 应用层在编译阶段指定libkaelz4.so的位置，指定KAELz4异步头文件的位置，通过以下编译选项进行链接。
+1. 应用层在编译阶段指定libkaelz4.so的位置，指定KAELz4异步头文件的位置，通过以下编译选项进行链接。
 
     ```shell
     -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4
@@ -490,7 +486,7 @@ KAELz4异步接口当前支持2种模式，polling模式压缩接口、非pollin
     export C_INCLUDE_PATH=/usr/local/kaelz4/include:$C_INCLUDE_PATH
     ```
 
-3. 使用异步接口编写压缩代码main.c。frame格式压缩代码示例如下。
+2. 使用异步接口编写压缩代码main.c。frame格式压缩代码示例如下。
 
     ```c
     #include <stdio.h>
@@ -646,7 +642,7 @@ KAELz4异步接口当前支持2种模式，polling模式压缩接口、非pollin
     }
     ```
 
-4. 编译并运行代码。
+3. 编译并运行代码。
 
     ```shell
     gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_frame_async_test
@@ -659,23 +655,23 @@ KAELz4异步接口当前支持2种模式，polling模式压缩接口、非pollin
     Test Success.
     ```
 
-### 调用KAESnappy加速库
+### 调用KAESnappy压缩库
 
-- 本节提供通过lib库调用KAESnappy加速压缩库的使用方法。
+本节提供通过lib库调用KAESnappy压缩库的使用方法。
 
-    请参见[安装指南](./installation_guide.md)章节编译并安装好软件。应用层可以通过以下两种方式链接到KAESnappy加速压缩库。
+应用层可以通过以下两种方式链接到KAESnappy压缩库。
 
-    - 应用层在编译阶段指定运行时加载libkaesnappy.so的位置，通过以下编译选项进行链接：
+- 应用层在编译阶段指定运行时加载libkaesnappy.so的位置，通过以下编译选项进行链接：
 
-        ```shell
-        -Wl,-rpath=/usr/local/kaesnappy/lib
-        ```
+    ```shell
+    -Wl,-rpath=/usr/local/kaesnappy/lib
+    ```
 
-    - 设置环境变量：
+- 设置环境变量：
 
-        ```shell
-        export LD_LIBRARY_PATH=/usr/local/kaesnappy/lib:$LD_LIBRARY_PATH
-        ```
+    ```shell
+    export LD_LIBRARY_PATH=/usr/local/kaesnappy/lib:$LD_LIBRARY_PATH
+    ```
 
 ## 维护KAE
 
@@ -690,8 +686,8 @@ KAE涉及日志信息如[**表 1** 日志信息](#日志信息)所示。
 |目录|文件名|文件内容说明|
 |--|--|--|
 |/var/log/|kae.log|OpenSSL引擎日志默认打印等级为error级别。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAE_CONF_ENV=/var/log/```，在/var/log/下创建kae.cnf文件。并在kae.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
-|/var/log/|kaezip.log|KAEZlib加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAEZIP_CONF_ENV=/var/log/```，在/var/log/下创建文件kaezip.cnf。并在kaezip.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
-|/var/log/|kaezstd.log|KAEZstd加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAEZSTD_CONF_ENV=/var/log/```在/var/log/下创建kaezstd.cnf文件。并在kaezstd.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
-|/var/log/|kaelz4.log|KAELz4加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAELZ4_CONF_ENV=/var/log/```，在/var/log/下创建kaelz4.cnf文件。并在kaelz4.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
-|/var/log/|kaesnappy.log|KAESnappy加速库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAESNAPPY_CONF_ENV=/var/log/```，在/var/log/下创建kaesnappy.cnf文件。并在kaesnappy.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaezip.log|KAEZlib压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAEZIP_CONF_ENV=/var/log/```，在/var/log/下创建文件kaezip.cnf。并在kaezip.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaezstd.log|KAEZstd压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAEZSTD_CONF_ENV=/var/log/```在/var/log/下创建kaezstd.cnf文件。并在kaezstd.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaelz4.log|KAELz4压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAELZ4_CONF_ENV=/var/log/```，在/var/log/下创建kaelz4.cnf文件。并在kaelz4.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaesnappy.log|KAESnappy压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置环境变量：```export KAESNAPPY_CONF_ENV=/var/log/```，在/var/log/下创建kaesnappy.cnf文件。并在kaesnappy.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
 |/var/log/|message/syslog|CentOS，SUSE，Euler等OS内核日志路径为/var/log/message。Ubuntu等OS内核日志路径为/var/log/syslog。或通过dmesg > /var/log/dmesg.log日志收集内核相关日志，包含驱动及内核态日志。|
