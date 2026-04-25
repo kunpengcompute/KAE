@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -97,8 +97,15 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
     int i, j, err;
     int ret = 0;
     pid_t pid_child = 0;
+    int result_pipe[2] = {-1, -1};
+    int use_result_pipe = (!compress && multi > 0);
     fflush(stdout);
     fflush(stderr);
+
+    if (use_result_pipe && pipe(result_pipe) != 0) {
+        fprintf(stderr, "create result pipe failed, errno = %d\n", errno);
+        return -1;
+    }
 
     struct timeval start, stop;
     gettimeofday(&start, NULL);
@@ -109,7 +116,37 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
         }
     }
 
+    if (pid_child == -1) {
+        fprintf(stderr, "fork failed, errno = %d\n", errno);
+        if (use_result_pipe) {
+            close(result_pipe[1]);
+        }
+        while (i > 0) {
+            pid_t wait_ret = wait(NULL);
+            if (wait_ret > 0) {
+                i--;
+                continue;
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno != ECHILD) {
+                fprintf(stderr, "wait child failed, errno = %d\n", errno);
+            }
+            break;
+        }
+        if (use_result_pipe) {
+            close(result_pipe[0]);
+        }
+        return -1;
+    }
+
     if (pid_child == 0) {
+        int report_result = (use_result_pipe && i == 0);
+        int perf_finished = 0;
+        if (use_result_pipe) {
+            close(result_pipe[0]);
+        }
         z_stream strm;
         strm.zalloc   = (alloc_func)0;
         strm.zfree    = (free_func)0;
@@ -169,7 +206,17 @@ int do_multi_perf(int multi, uLong stream_len, int loop_times, int windowBits, i
                 }
             }
         }
+        perf_finished = 1;
 free_init:
+        if (report_result && perf_finished) {
+            ssize_t write_sz = write(result_pipe[1], &output_sz, sizeof(output_sz));
+            if (write_sz != sizeof(output_sz)) {
+                fprintf(stderr, "write decompress size failed, errno = %d\n", errno);
+            }
+        }
+        if (use_result_pipe) {
+            close(result_pipe[1]);
+        }
         if (compress) {
             (void)deflateEnd(&strm);
         } else {
@@ -178,14 +225,33 @@ free_init:
     }
 
     if (pid_child > 0) {
-        ret = -1;
+        if (use_result_pipe) {
+            close(result_pipe[1]);
+        }
+        ret = 0;
         while (1) {
-            ret = wait(NULL);
-            if (ret == -1) {
+            int status = 0;
+            pid_t wait_ret = wait(&status);
+            if (wait_ret == -1) {
                 if (errno == EINTR) {
                     continue;
                 }
                 break;
+            }
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                ret = -1;
+            }
+        }
+        if (use_result_pipe) {
+            ssize_t read_sz = read(result_pipe[0], &output_sz, sizeof(output_sz));
+            close(result_pipe[0]);
+            if (read_sz != sizeof(output_sz)) {
+                if (read_sz < 0) {
+                    fprintf(stderr, "read decompress size failed, errno = %d\n", errno);
+                } else {
+                    fprintf(stderr, "read decompress size failed, read %zd bytes\n", read_sz);
+                }
+                return -1;
             }
         }
     }
@@ -362,4 +428,3 @@ int main(int argc, char **argv)
         return do_decompress_perf(in_filename, out_filename, multi, stream_len, loop_times, windowBits, level);
     }
 }
-
