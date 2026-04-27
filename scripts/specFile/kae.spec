@@ -412,7 +412,7 @@ echo "zip-rpm uninstalled"
 
 %package openssl
 Summary: KAE Openssl Package
-Requires:kae-driver, openssl-devel
+Requires:kae-driver
 Autoreq: no
 Autoprov: no
 
