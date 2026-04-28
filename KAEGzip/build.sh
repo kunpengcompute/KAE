@@ -44,7 +44,7 @@ function install_gzip()
     chmod +x ./build-aux/git-version-gen
     
     local libs='-lwd -lkaezip -lz'
-    local cflags='-O2 -I/usr/local/include/uadk/'
+    local cflags='-O2 -I/usr/local/include/uadk/ -I/usr/local/kaezip/include'
     local ldflags='-L/usr/local/kaezip/lib -L/usr/local/lib -Wl,-rpath=/usr/local/kaezip/lib'
 
     kaegzip_run_configure "${libs}" "${cflags}" "${ldflags}"
@@ -75,7 +75,7 @@ function dev_build_kaegzip()
     chmod +x ./build-aux/git-version-gen
 
     local libs="-lwd -lz -lkaezip"
-    local cflags="-O2 -I${KAE_BUILD_HEAD}/uadk"
+    local cflags="-O2 -I${KAE_BUILD_HEAD}/uadk -I${SRC_PATH}/../kae_build/kaezip/include"
     local ldflags="-L${UADK_LIB} -L${SRC_PATH}/../kae_build/kaezip/lib"
     ldflags="${ldflags} -Wl,-rpath=/usr/local/kaezip/lib:/usr/local/lib:${SRC_PATH}/../kae_build/kaezip/lib:${UADK_LIB}"
 
