@@ -52,12 +52,9 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib
     chrpath -d %{kae_path}/kae_build/uadk/lib/*
     cp -rf %{kae_path}/kae_build/uadk/lib/*                        ${RPM_BUILD_ROOT}/usr/local/lib
-
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
-    mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/v1
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
     install -b -m755 %{kae_path}/kae_build/uadk/include/*.h        ${RPM_BUILD_ROOT}/usr/include/uadk
-    install -b -m755 %{kae_path}/kae_build/uadk/include/v1/*.h     ${RPM_BUILD_ROOT}/usr/include/uadk/v1
     install -b -m755 %{kae_path}/kae_build/uadk/include/drv/*.h    ${RPM_BUILD_ROOT}/usr/include/uadk/drv
 
 
@@ -142,7 +139,6 @@ This package kae_driver library.
 
 %defattr(644,root,root)
 /usr/include/uadk/*.h
-/usr/include/uadk/v1/*.h
 /usr/include/uadk/drv/*.h
 
 
@@ -367,7 +363,6 @@ This package kaezip library.
 /usr/local/kaelz4/share/man/man1/*
 /usr/local/kaesnappy/include/*.h
 
-
 %pre zip
 echo "installing pre zip..."
 if [ "$1" = "2" ] ; then  #2: update
@@ -418,7 +413,7 @@ echo "zip-rpm uninstalled"
 
 %package openssl
 Summary: KAE Openssl Package
-Requires:kae-driver, openssl-devel
+Requires:kae-driver
 Autoreq: no
 Autoprov: no
 
