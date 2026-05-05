@@ -40,14 +40,17 @@ LIBS +=  -lgtest_main -lgtest -lz
 CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11
 LDFLAGS   += $(LIBDIR)
 LDFLAGS   += $(LIBS)
-LDFLAGS   += -Wl,-rpath,/usr/local/kaezip/lib
+# LDFLAGS   += -Wl,-rpath,/usr/local/kaezip/lib
 
 # The command used to delete file.
 RM        = rm -f
 
-SOURCES = $(SRCDIRS)/original_case.cpp
-# SOURCES += $(SRCDIRS)/zlib_compress.cpp
-# SOURCES += $(SRCDIRS)/zlib_inflate.cpp
+SOURCES = $(SRCDIRS)/test_compression_mode.cpp
+SOURCES += $(SRCDIRS)/test_compression_level_dataset.cpp
+SOURCES += $(SRCDIRS)/test_boundary_condition.cpp
+SOURCES += $(SRCDIRS)/test_error_handling.cpp
+SOURCES += $(SRCDIRS)/test_performance_benchmark.cpp
+SOURCES += $(SRCDIRS)/test_compatibility.cpp
 
 OBJS    = $(foreach x,$(SRCEXTS), \
       $(patsubst %$(x), %.o, $(filter %$(x),$(SOURCES))))

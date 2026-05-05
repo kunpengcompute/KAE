@@ -16,8 +16,8 @@
 
 enum {
     HW_NONE,
-    HW_V1,
-    HW_V2,
+    HW_V1,  //no-SVA
+    HW_V2,  // SVA 
     HW_V3   //  unused now
 };
 static int g_platform = -1;
@@ -64,6 +64,10 @@ int kz_deflateInit2_(z_streamp strm, int level, int metho, int windowBit, int me
         ret = Z_OK;
         break;
     case HW_V1:
+        if (level <= 0 || level > 9) {
+            ret = Z_OK;// 走软算
+            break;
+        }
         ret = kz_deflateInit2_v1(strm, level, metho, windowBit, memLevel, strategy, version, stream_size);
         break;
     case HW_V2:
