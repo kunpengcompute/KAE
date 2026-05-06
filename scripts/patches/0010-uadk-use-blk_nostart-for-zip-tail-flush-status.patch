@@ -1,0 +1,44 @@
+From d298f0a8b28061ac80263e7cf2bdf50a067d39c3 Mon Sep 17 00:00:00 2001
+From: yuzh1105 <yuzh.aurora@gmail.com>
+Date: Fri, 24 Apr 2026 17:17:09 +0800
+Subject: [PATCH] uadk: use blk_nostart for zip tail flush status
+
+When the last decompression block is fully consumed and the stream
+context still holds cached data, the driver asks the user to send
+a zero-input request to flush the remaining data from hardware.
+
+This case is not caused by insufficient output space. The hardware
+treats the cached data as possibly incomplete and needs another
+request to continue processing, so qm_parse_zip_sqe() and
+qm_parse_zip_sqe_v3() should return WCRYPTO_DECOMP_BLK_NOSTART
+instead of WCRYPTO_DECOMP_END_NOSPACE.
+
+Signed-off-by: yuzh1105 <yuzh.aurora@gmail.com>
+---
+ uadk/v1/drv/hisi_zip_udrv.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/uadk/v1/drv/hisi_zip_udrv.c b/uadk/v1/drv/hisi_zip_udrv.c
+index 903df1c..1c1eec3 100644
+--- a/uadk/v1/drv/hisi_zip_udrv.c
++++ b/uadk/v1/drv/hisi_zip_udrv.c
+@@ -441,7 +441,7 @@ int qm_parse_zip_sqe(void *hw_msg, const struct qm_queue_info *info,
+ 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+ 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+ 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+-		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
++		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+ 
+ 	return 1;
+ }
+@@ -913,7 +913,7 @@ int qm_parse_zip_sqe_v3(void *hw_msg, const struct qm_queue_info *info,
+ 	qm_parse_zip_sqe_set_status(recv_msg, status, lstblk, ctx_st);
+ 	if (ctx_st == HW_DECOMPING_NO_SPACE && recv_msg->in_size == recv_msg->in_cons &&
+ 	    ctx_bfinal && (sqe->ctx_dw1 & HZ_CTX_STORE_MASK))
+-		recv_msg->status = WCRYPTO_DECOMP_END_NOSPACE;
++		recv_msg->status = WCRYPTO_DECOMP_BLK_NOSTART;
+ 
+ 	/*
+ 	 * It need to analysis the data cache by hardware.
+-- 
+2.50.1 (Apple Git-155)
