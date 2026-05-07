@@ -49,7 +49,7 @@ LIBDIR += -L/usr/local/lib
 LIBDIR += -L/usr/lib64
 LIBDIR += -L/usr/lib
 LIBDIR += -L$(WORK_PATH)/../kae_build/lib/
-LIBS := -pthread -lwd -lwd_comp
+LIBS := -pthread -Wl,-rpath,/usr/local/lib -lwd -lwd_comp
 LIBS += -lc_nonshared
 
 # The flags
