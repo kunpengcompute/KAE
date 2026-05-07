@@ -87,6 +87,7 @@ function kae_apply_uadk_patches()
         kae_apply_patch_file "./scripts/patches/0007-uadk-support-lz77-only-for-kaelz4.patch"
         kae_apply_patch_file "./scripts/patches/0008-uadk-support-sgl-zero-copy-for-kaelz4.patch"
         kae_apply_patch_file "./scripts/patches/0009-uadk-optimizations-to-zip-module.patch"
+        kae_apply_patch_file "./scripts/patches/0010-uadk-use-blk_nostart-for-zip-tail-flush-status.patch"
     )
 }
 

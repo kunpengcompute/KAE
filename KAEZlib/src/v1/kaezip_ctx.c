@@ -692,12 +692,12 @@ void kaezip_put_ctx(kaezip_ctx_t* kz_ctx)
         temp = kz_ctx->q_node;
         instance->free_num++;
         if (instance->free_num == instance->cur_idx) {
-            (void)kaezip_put_node_to_pool(kaezip_get_qp(kz_ctx->comp_type), temp, kaezip_free_instance);
             instance->cur_idx = 0;
             instance->free_num = 0;
             if (instance == g_cur_instance[kz_ctx->comp_type % COMP_OPTYPE_NUM]) {
                 g_cur_instance[kz_ctx->comp_type % COMP_OPTYPE_NUM] = NULL;
             }
+            (void)kaezip_put_node_to_pool(kaezip_get_qp(kz_ctx->comp_type), temp, kaezip_free_instance);
         }
     }
 
