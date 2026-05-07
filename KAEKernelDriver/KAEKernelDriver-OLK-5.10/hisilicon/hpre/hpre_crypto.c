@@ -19,7 +19,7 @@
 
 struct hpre_ctx;
 
-#define HPRE_CRYPTO_ALG_PRI	1000
+#define HPRE_CRYPTO_ALG_PRI	80
 #define HPRE_ALIGN_SZ		64
 #define HPRE_BITS_2_BYTES_SHIFT	3
 #define HPRE_RSA_512BITS_KSZ	64
