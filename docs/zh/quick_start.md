@@ -4,7 +4,7 @@
 
 本指南通过源码方式快速安装KAE2.0，指导用户快速上手使用KAE加解密库和KAE压缩库。
 
-## 环境准备
+## 环境准备**
 
 1. 获取License。
     1. License申请和安装操作请参见《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
