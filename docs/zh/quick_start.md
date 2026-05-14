@@ -2,70 +2,44 @@
 
 ## 简介
 
-本指南通过源码方式快速安装KAE2.0，指导用户快速上手使用KAE加解密库和KAE压缩库。
+KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器提供的硬件加速解决方案，包含了KAE加解密和KAE解压缩。KAE加解密用于加速SSL（Secure Sockets Layer）/TLS（Transport Layer Security）应用，KAE解压缩用于加速数据压缩、解压，可以显著降低处理器消耗，提高处理器效率。此外，加速引擎对应用层屏蔽了其内部实现细节，用户通过OpenSSL、Tongsuo、BoringSSL、Zlib、ZSTD、LZ4标准接口即可实现快速迁移现有业务。  
+本文基于OpenSSL 1.1.1x版本，提供基于KAE源码的一键安装方式，指导用户快速上手使用KAE加解密库和KAE压缩库。
 
-## 环境准备
+## 前提条件
 
-1. 获取License。
-    1. License申请和安装操作请参见《[华为服务器iBMC许可证 使用指导](https://support.huawei.com/enterprise/zh/management-software/ibmc-pid-8060757?category=operation-maintenance)》。
-    2. 安装成功后，通过**lspci**命令查看操作系统是否有加速器设备。
-
-        ```shell
-        lspci | grep HPRE
-        lspci | grep SEC
-        lspci | grep ZIP
-        ```
-
-        若执行以上命令后没有任何回显信息打印，说明操作系统中没有KAE加速器设备，请检查License是否安装成功。
-
-2. 安装OpenSSL。
-
-    1. 检查OpenSSL版本。
-
-        ```shell
-        openssl version
-        ```
-
-        OpenSSL需为1.1.1x或3.0.x系列版本，Tongsuo 8.4.0版本。若不符合，需先安装合规版本。
-
-    2. 设置OpenSSL环境变量“OPENSSL\_ENGINES”为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
-        - OpenSSL 1.1.1x系列：
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-            ```
-
-        - OpenSSL 3.0.x系列：
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/lib/engines-3.0
-            ```
-
-        - Tongsuo：
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/tongsuo/lib/engines-3.0
-            ```
-
-3. 设置LD\_LIBRARY\_PATH环境变量，使KAE能够识别到UADK驱动动态库。
-
-    ```shell
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
-    ```
-
-4. 安装环境依赖。
+- 安装前系统环境已满足[环境要求](./installation_guide.md/#环境要求)中的要求。
+- 安装前判断系统是否需要申请License，具体请参考[获取License](./installation_guide.md/#获取license)。
+- 使用openssl version命令检查OpenSSL是否为1.1.1x版本，若不符合请参见[安装OpenSSL/Tongsuo](./installation_guide.md/#安装openssltongsuo)。
+- 使用以下命令安装相关依赖。
 
     ```shell
     yum install -y make kernel-devel-`uname -r` libtool numactl-devel openssl-devel lz4-devel libzstd-devel chrpath cmake libunwind-devel patch
     ```
 
-5. 获取KAE2.0源码包。
+- 设置OpenSSL 1.1.1x环境变量“OPENSSL\_ENGINES”为KAE动态库所在目录，使OpenSSL能够识别到KAE引擎。
+    
+    ```shell
+    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+    ```   
+
+- 设置LD\_LIBRARY\_PATH环境变量，使KAE能够识别到UADK驱动动态库。
+
+    ```shell
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+    ```
+
+## 安装步骤
+
+当OpenSSL为1.1.1x系列，我们支持一键安装。如果需要了解更多的安装方式，请参考[安装指南](./installation_guide.md)。下面给出一键安装的具体步骤。
+
+1. 使用远程登录工具，以root账号进入Linux操作系统命令行界面。
+2. 获取源码包。
 
     ```shell
     git clone https://gitcode.com/boostkit/KAE.git -b kae2
     ```
 
-6. 使用源码包中的build.sh脚本一键安装KAE2.0所有模块。
+3. 使用源码包中的build.sh脚本一键安装KAE所有模块。
 
     ```shell
     cd KAE
