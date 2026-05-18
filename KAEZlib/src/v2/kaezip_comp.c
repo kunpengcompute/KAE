@@ -13,6 +13,10 @@
 #include "kaezip_buffer.h"
 #include "kaezip_log.h"
 
+/*
+ * This code is reserved for v2. Current KAE will not enter this path.
+ * It is temporarily commented out to avoid unnecessary log output.
+ *
 static z_stream g_init_strm = {0};
 
 static void __attribute((constructor)) wd_do_init_onlyone(void)
@@ -24,6 +28,8 @@ static void __attribute((destructor)) wd_do_uninit_onlyone(void)
 {
 	kz_deflate_end(&g_init_strm);
 }
+	
+*/
 
 static int kz_check_params(struct wd_comp_req *req)
 {

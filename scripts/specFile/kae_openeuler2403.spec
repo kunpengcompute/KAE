@@ -50,8 +50,20 @@ part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 
 #uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib
+    mkdir -p ${RPM_BUILD_ROOT}/usr/local/lib/uadk
     chrpath -d %{kae_path}/kae_build/uadk/lib/*
-    cp -rf %{kae_path}/kae_build/uadk/lib/*                        ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libwd.*                   ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libwd_comp.*              ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libwd_crypto.*            ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libwd_udma.*              ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libwd_dae.*               ${RPM_BUILD_ROOT}/usr/local/lib
+    cp -rf %{kae_path}/kae_build/uadk/lib/libhisi_hpre.*            ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libhisi_sec.*             ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libhisi_zip.*             ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libhisi_dae.*             ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libhisi_udma.*            ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libisa_ce.*               ${RPM_BUILD_ROOT}/usr/local/lib/uadk
+    cp -rf %{kae_path}/kae_build/uadk/lib/libisa_sve.*              ${RPM_BUILD_ROOT}/usr/local/lib/uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk
     mkdir -p ${RPM_BUILD_ROOT}/usr/include/uadk/drv
     install -b -m755 %{kae_path}/kae_build/uadk/include/*.h        ${RPM_BUILD_ROOT}/usr/include/uadk
@@ -128,13 +140,14 @@ This package kae_driver library.
 /usr/local/lib/libwd_crypto.*
 /usr/local/lib/libwd_udma.*
 /usr/local/lib/libwd_dae.*
-/usr/local/lib/libhisi_hpre.*
-/usr/local/lib/libhisi_sec.* 
-/usr/local/lib/libhisi_zip.*
-/usr/local/lib/libhisi_dae.*
-/usr/local/lib/libhisi_udma.*
-/usr/local/lib/libisa_ce.*
-/usr/local/lib/libisa_sve.*
+%dir /usr/local/lib/uadk
+/usr/local/lib/uadk/libhisi_hpre.*
+/usr/local/lib/uadk/libhisi_sec.*
+/usr/local/lib/uadk/libhisi_zip.*
+/usr/local/lib/uadk/libhisi_dae.*
+/usr/local/lib/uadk/libhisi_udma.*
+/usr/local/lib/uadk/libisa_ce.*
+/usr/local/lib/uadk/libisa_sve.*
 
 
 %defattr(644,root,root)
@@ -149,18 +162,26 @@ modprobe -r hisi_hpre > /dev/null 2>&1 || true
 modprobe -r hisi_sec2 > /dev/null 2>&1 || true
 modprobe -r hisi_qm   > /dev/null 2>&1 || true
 modprobe -r uacce     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd.*           > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_comp.*      > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_crypto.*    > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_udma.*      > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libwd_dae.*       > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_hpre.*    > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_sec.*     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_zip.*     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_dae.*     > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libhisi_udma.*    > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_ce.*       > /dev/null 2>&1 || true
-rm -rf /usr/local/lib/libisa_sve.*      > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd.*              > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_comp.*         > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_crypto.*       > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_udma.*         > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libwd_dae.*          > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_hpre.*       > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_sec.*        > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_zip.*        > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_dae.*        > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libhisi_udma.*       > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_ce.*          > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/libisa_sve.*         > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libhisi_hpre.*  > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libhisi_sec.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libhisi_zip.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libhisi_dae.*   > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libhisi_udma.*  > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libisa_ce.*     > /dev/null 2>&1 || true
+rm -rf /usr/local/lib/uadk/libisa_sve.*    > /dev/null 2>&1 || true
+rmdir /usr/local/lib/uadk                  > /dev/null 2>&1 || true
 
 echo "checking installed modules"
 if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
@@ -302,18 +323,26 @@ if [ "$1" = "0" ] ; then  #0: uninstall
 fi
 
 if [ "$1" = "0" ] ; then  #0: uninstall
-    rm -rf /usr/local/lib/libwd.*         > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libwd_comp.*    > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libwd_crypto.*  > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libwd_udma.*    > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libwd_dae.*     > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libhisi_hpre.*  > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libhisi_sec.*   > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libhisi_zip.*   > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libhisi_dae.*   > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libhisi_udma.*  > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libisa_ce.*     > /dev/null 2>&1 || true
-    rm -rf /usr/local/lib/libisa_sve.*    > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd.*              > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_comp.*         > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_crypto.*       > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_udma.*         > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libwd_dae.*          > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_hpre.*       > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_sec.*        > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_zip.*        > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_dae.*        > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libhisi_udma.*       > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libisa_ce.*          > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/libisa_sve.*         > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libhisi_hpre.*  > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libhisi_sec.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libhisi_zip.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libhisi_dae.*   > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libhisi_udma.*  > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libisa_ce.*     > /dev/null 2>&1 || true
+    rm -rf /usr/local/lib/uadk/libisa_sve.*    > /dev/null 2>&1 || true
+    rmdir /usr/local/lib/uadk                  > /dev/null 2>&1 || true
 fi
 
 if [ "$1" = "0" ] ; then  #0: uninstall
