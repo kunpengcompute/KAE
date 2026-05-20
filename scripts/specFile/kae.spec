@@ -217,7 +217,16 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
         ln -snf "/lib/modules/${build_kver}/extra/hisi_hpre.ko" "/lib/modules/${running_kver}/extra/hisi_hpre.ko"
         ln -snf "/lib/modules/${build_kver}/extra/hisi_zip.ko"  "/lib/modules/${running_kver}/extra/hisi_zip.ko"
     fi
-    depmod -a
+    if [ -e /sbin/weak-modules ]; then
+        {
+            echo "/lib/modules/%{kernel_version}/extra/uacce.ko"
+            echo "/lib/modules/%{kernel_version}/extra/hisi_qm.ko"
+            echo "/lib/modules/%{kernel_version}/extra/hisi_sec2.ko"
+            echo "/lib/modules/%{kernel_version}/extra/hisi_hpre.ko"
+            echo "/lib/modules/%{kernel_version}/extra/hisi_zip.ko"
+        } | /sbin/weak-modules --add-module --no-initramfs
+    fi
+    /sbin/depmod -a > /dev/null 2>&1 || true
     modprobe uacce
     modprobe hisi_qm
     modprobe hisi_sec2 uacce_mode=2 pf_q_num=256
@@ -229,37 +238,9 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
 fi
 /sbin/ldconfig
 
-if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/uacce.ko"   | /sbin/weak-modules --add-module --no-initramfs
-        echo "/lib/modules/%{kernel_version}/extra/hisi_qm.ko" | /sbin/weak-modules --add-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "uacce modules installed"
-
-if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_sec2.ko" | /sbin/weak-modules --add-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_sec2 modules installed"
-
-if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_hpre.ko" | /sbin/weak-modules --add-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_hpre modules installed"
-
-if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
-    if [ -e /sbin/weak-modules ]; then
-        echo "/lib/modules/%{kernel_version}/extra/hisi_zip.ko" | /sbin/weak-modules --add-module --no-initramfs
-    fi
-    /sbin/depmod -a > /dev/null 2>&1 || true
-fi
 echo "hisi_zip modules installed"
 
 %preun driver
@@ -270,31 +251,26 @@ modprobe -r hisi_qm   > /dev/null 2>&1 || true
 modprobe -r uacce     > /dev/null 2>&1 || true
 
 if [ -e /sbin/weak-modules ]; then
-    echo "/lib/modules/%{kernel_version}/extra/uacce.ko"   | /sbin/weak-modules --remove-module --no-initramfs
-    echo "/lib/modules/%{kernel_version}/extra/hisi_qm.ko" | /sbin/weak-modules --remove-module --no-initramfs
+    {
+        echo "/lib/modules/%{kernel_version}/extra/uacce.ko"
+        echo "/lib/modules/%{kernel_version}/extra/hisi_qm.ko"
+        echo "/lib/modules/%{kernel_version}/extra/hisi_sec2.ko"
+        echo "/lib/modules/%{kernel_version}/extra/hisi_hpre.ko"
+        echo "/lib/modules/%{kernel_version}/extra/hisi_zip.ko"
+    } | /sbin/weak-modules --remove-module --no-initramfs
 fi
-/sbin/depmod -a > /dev/null 2>&1 || true
 if [ "$1" = "0" ] ; then  #0: uninstall
     echo "uacce modules uninstalling"
 fi
 
-if [ -e /sbin/weak-modules ]; then
-    echo "/lib/modules/%{kernel_version}/extra/hisi_sec2.ko" | /sbin/weak-modules --remove-module --no-initramfs
-fi
 if [ "$1" = "0" ] ; then  #0: uninstall
     echo "hisi_sec2 modules uninstalling"
 fi
 
-if [ -e /sbin/weak-modules ]; then
-    echo "/lib/modules/%{kernel_version}/extra/hisi_hpre.ko" | /sbin/weak-modules --remove-module --no-initramfs
-fi
 if [ "$1" = "0" ] ; then  #0: uninstall
     echo "hisi_hpre modules uninstalling"
 fi
 
-if [ -e /sbin/weak-modules ]; then
-    echo "/lib/modules/%{kernel_version}/extra/hisi_zip.ko" | /sbin/weak-modules --remove-module --no-initramfs
-fi
 if [ "$1" = "0" ] ; then  #0: uninstall
     echo "hisi_zip modules uninstalling"
 fi
