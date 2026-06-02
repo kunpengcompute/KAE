@@ -264,7 +264,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test    
     ```
 
-10. “/home”目录下查看分区/磁盘加密详细信息。
+10. <a name="li3196911104520"></a>“/home”目录下查看分区/磁盘加密详细信息。
 
     ```shell
     cryptsetup status /dev/mapper/sx_disk
