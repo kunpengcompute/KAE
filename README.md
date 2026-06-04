@@ -2,6 +2,7 @@
 
 ## 最新消息
 
+- \[2026.06.30\]：KAE2.0新增支持4.19内核用户态使用，不支持内核态加解密及压缩/解压缩接口；新增支持在KVM虚拟机场景下通过VF查询HostOS上PF设备的硬件故障隔离状态和隔离阈值。
 - \[2026.03.20\]：KAEZlib加速压缩库新增支持异步模式；KAE2.0解压缩模块新增适配Snappy硬加速。
 - \[2025.12.30\]：KAE2.0新增支持鲲鹏950处理器；KAELz4加速压缩库异步接口新增支持polling模式。
 - \[2025.09.30\]：KAE代码仓切换到Gitcode平台；优化KAELz4、KAEZstd解压性能。
@@ -223,62 +224,25 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 
 ## 版本说明
 
-KAE包含KAE1.0与KAE2.0两个代码分支版本，本节主要介绍两个版本差异和特性变更说明。
+KAE2.0为当前维护版本，后续新增特性、OS/内核适配及问题修复均以KAE2.0为主。KAE1.0为历史版本，既有版本记录继续保留，不再新增特性、OS/内核适配或问题修复。
 
-**版本介绍<a name="section10131916143616"></a>**
+**KAE2.0内核支持范围<a name="section10131916143616"></a>**
 
-KAE是基于鲲鹏处理器内置的硬件加速单元提供的硬件加速解决方案，采用了两套驱动框架，分别是WD（Warpdriver）驱动框架和UADK（User Space Accelerator Development Kit）框架。由于不同内核的差异，KAE存在两套代码用于支持不同的内核代码，分别是[KAE1.0](https://gitcode.com/boostkit/KAE/tree/kae1)和[KAE2.0](https://gitcode.com/boostkit/KAE/tree/kae2)两个代码分支。两者差别如[**表 3** KAE代码分支差别](#KAE代码分支差别)所示。
+KAE2.0基于UADK（User Space Accelerator Development Kit）框架提供加速能力，当前支持范围如[**表 3** KAE2.0内核支持范围](#KAE2.0内核支持范围)所示。
 
-**表 3** KAE代码分支差别<a id="KAE代码分支差别"></a>
+**表 3** KAE2.0内核支持范围<a id="KAE2.0内核支持范围"></a>
 
-<table><thead align="left"><tr id="row1282443814467"><th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.1"><p id="p1682563815463"><a name="p1682563815463"></a><a name="p1682563815463"></a>内核版本</p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.2"><p id="p19825438174616"><a name="p19825438174616"></a><a name="p19825438174616"></a>设备形态</p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.3"><p id="p38259381468"><a name="p38259381468"></a><a name="p38259381468"></a>KAE 1.0</p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.4"><p id="p188251738134612"><a name="p188251738134612"></a><a name="p188251738134612"></a>KAE 2.0</p>
-</th>
-</tr>
-</thead>
-<tbody><tr id="row182593854618"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p108255381469"><a name="p108255381469"></a><a name="p108255381469"></a>4.19</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p158251382464"><a name="p158251382464"></a><a name="p158251382464"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p882543811469"><a name="p882543811469"></a><a name="p882543811469"></a>YES</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p98253385469"><a name="p98253385469"></a><a name="p98253385469"></a>NA</p>
-</td>
-</tr>
-<tr id="row11825183811467"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p16825123811466"><a name="p16825123811466"></a><a name="p16825123811466"></a>5.4</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p882583814615"><a name="p882583814615"></a><a name="p882583814615"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p68251385467"><a name="p68251385467"></a><a name="p68251385467"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p18251238124611"><a name="p18251238124611"></a><a name="p18251238124611"></a>YES</p>
-</td>
-</tr>
-<tr id="row882553812462"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p11825238164616"><a name="p11825238164616"></a><a name="p11825238164616"></a>5.10</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p3825113814612"><a name="p3825113814612"></a><a name="p3825113814612"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p4825138194612"><a name="p4825138194612"></a><a name="p4825138194612"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p138259386468"><a name="p138259386468"></a><a name="p138259386468"></a>YES</p>
-</td>
-</tr>
-<tr id="row11825183811467"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p16825123811466"><a name="p16825123811466"></a><a name="p16825123811466"></a>6.6</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p882583814615"><a name="p882583814615"></a><a name="p882583814615"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p68251385467"><a name="p68251385467"></a><a name="p68251385467"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p18251238124611"><a name="p18251238124611"></a><a name="p18251238124611"></a>YES</p>
-</td>
-</tr>
-</tbody>
-</table>
+|内核版本|设备形态|支持范围|
+|--|--|--|
+|4.19|920,920新型号及950|仅支持用户态使用，不支持内核态加解密及压缩/解压缩接口|
+|5.4|920,920新型号及950|支持用户态使用及文档列明的内核态接口|
+|5.10|920,920新型号及950|支持用户态使用及文档列明的内核态接口|
+|6.6|920,920新型号及950|支持用户态使用及文档列明的内核态接口|
+
+>![](docs/figures/icon-note.gif) **说明：**
+>
+>- 用户态使用包括通过UADK、OpenSSL/Tongsuo/BoringSSL、Zlib、ZSTD、LZ4、Snappy、Gzip等接口调用KAE加速能力。
+>- 内核态接口包括Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核模块或内核态场景。
 
 >![](docs/figures/icon-notice.gif) **须知：**
 >
@@ -381,7 +345,7 @@ KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操�
   
 每个加速器设备默认安装的驱动instance数量为256个。
   
-```baah
+```bash
 cat /sys/class/uacce/hisi_*/available_instances
 ```
 

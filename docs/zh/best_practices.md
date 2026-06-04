@@ -44,7 +44,7 @@
 
 1. 请参见《[Nginx 移植指南](https://www.hikunpeng.com/document/detail/zh/kunpengwebs/ecosystemEnable/Nginx/kunpengnginx_02_0001.html)》使用源码编译方式安装Nginx，并完成Nginx的HTTPS功能的配置。
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >不同算法套件测试得到的性能数据存在差异，您需要根据实际情况进行算法套件的配置，若算法套件中某算法KAE不支持，则调用OpenSSL软算接口。
 
 2. 请参见《[httpress 测试指导](https://www.hikunpeng.com/document/detail/zh/kunpengwebs/testguide/tstg/kunpenghttpress_06_0001.html)》使用源码编译方式安装并验证httpress。
@@ -100,7 +100,7 @@
 
 从以上测试结果来看，软算测试性能为6939 rps，即每秒请求数为6939个；硬算测试性能为12262 rps，即每秒请求数为12262个。可以发现使用KAE加速后，性能有明显提升。
 
->![](public_sys-resources/icon-note.gif) **说明：** 
+>![](public_sys-resources/icon-note.gif) **说明：**
 >
 >- 不同算法套件测试得到的性能数据存在差异，请以实际选择的算法套件测试结果为准。
 >- 如果用到openssl req -new -x509命令生成证书功能，请参见[使用openssl req -new -x509命令生成证书失败](./faq.md#使用openssl-req--new--x509命令生成证书失败)中的方法二完成openssl.cnf文件的配置。
@@ -108,6 +108,10 @@
 ### 使用KAE提升SM4-XTS算法性能
 
 KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
+
+>![](public_sys-resources/icon-note.gif) **说明：**
+>
+> KAE2.0在4.19内核下仅支持用户态使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。因此，本章节不适用于KAE2.0在4.19内核下的用户态支持范围。
 
 dm-crypt向上呈现为一个device mapper机制的target device，经过映射挂载后就可以作为透明加密分区/磁盘使用。
 
@@ -135,7 +139,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     2. 在“cryptsetup-2.2.0”源码目录下编译安装。
 
         ```shell
-        ./configure 
+        ./configure
         make && make install
         ```
 
@@ -261,7 +265,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
       ├─vg_os-swap 254:0    0    20G  0 lvm   [SWAP]
       └─vg_os-root 254:1    0   2.2T  0 lvm   /
     sdb              8:16   0 278.5G  0 disk
-    └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test    
+    └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test
     ```
 
 10. “/home”目录下查看分区/磁盘加密详细信息。
@@ -291,7 +295,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
 1. 卸载分区/磁盘的挂载目录。
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >执行指令前，用户必须先退出挂载目录。
     >当有多个分区/磁盘挂载时，需要多次执行该命令进行目录卸载。
 
@@ -321,7 +325,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
 3. 关闭映射。
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >需要多次执行该命令关闭所有映射。
 
     ```shell
@@ -337,7 +341,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     显示结果如下：
 
     ```text
-    total 0                       
+    total 0
     crw---- 1 root root 10, 236 Jul 31 22:27 control
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-root -> ../dm-1
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-swap -> ../dm-0
@@ -419,12 +423,12 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
 2. 在配置文件中添加vcpu配置（以配置4个core为例）。
 
     ```xml
-    <cputune> 
-    <vcpupin vcpu='0' cpuset='4'/> 
-    <vcpupin vcpu='1' cpuset='5'/> 
-    <vcpupin vcpu='2' cpuset='6'/> 
-    <vcpupin vcpu='3' cpuset='7'/> 
-    <emulatorpin cpuset='4-7'/> 
+    <cputune>
+    <vcpupin vcpu='0' cpuset='4'/>
+    <vcpupin vcpu='1' cpuset='5'/>
+    <vcpupin vcpu='2' cpuset='6'/>
+    <vcpupin vcpu='3' cpuset='7'/>
+    <emulatorpin cpuset='4-7'/>
     </cputune>
     ```
 
@@ -435,10 +439,10 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     - 配置一个VF
 
         ```xml
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x1'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x1'/>
+          </source>
         </hostdev>
         ```
 
@@ -447,19 +451,19 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     - 配置多个VF
 
         ```xml
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x1'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x1'/>
+          </source>
         </hostdev>
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x2'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x2'/>
+          </source>
         </hostdev>
         ```
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >- 本文给虚拟机配置的VF是hisi\_sec-8，它对应的编码是：hisi\_sec-8 -\> ../../devices/pci0000:74/0000:74:01.0/0000:**76:00.1**/uacce/hisi\_sec-8。虚拟机xml配置的数据来自于编码里的“76:00.1”，bus对应“76”，slot对应“00”，function对应“1”，而且这些数据都是16进制的，所以要加上“0x”。
     >- 本文只给虚拟化并配置了SEC设备，所以虚拟机安装完成后，只有这个SEC设备可用。如果虚拟机需要zip或者HPRE设备，请参考操作SEC设备的方式进行增加。
     >- hisi\_sec设备SBDF号以0000:7x:xx.x，其对应CPU0上设备；以0000:bx:xx.x为开头，对应CPU1上设备。
@@ -472,7 +476,7 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     virsh start vm1
     ```
 
-    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >![](public_sys-resources/icon-note.gif) **说明：**
     >
     >如果启动虚拟机失败，并提示“Unknown PCI header type '127'”，则需要对挂载的VF进行解绑操作，然后重新启动虚拟机。
     >
@@ -499,6 +503,30 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
     ```text
     hisi_sec-0
     ```
+
+7. 在虚拟机上查询VF隔离状态。
+
+    KAE支持通过UACCE的sysfs属性查询加速器隔离状态。HostOS上的PF设备触发隔离后，驱动会将隔离状态同步到对应VF，虚拟机内可以直接查询VF设备的隔离状态。
+
+    在虚拟机中执行以下命令，查询VF设备当前是否处于隔离状态。
+
+    ```shell
+    cat /sys/class/uacce/hisi_sec-0/isolate
+    ```
+
+    回显为`0`表示设备状态正常，回显为`1`表示设备已隔离，回显为`-1`表示查询异常。
+
+    查询VF设备从PF同步到的硬件故障隔离阈值。
+
+    ```shell
+    cat /sys/class/uacce/hisi_sec-0/isolate_strategy
+    ```
+
+    如果虚拟机中挂载的是hisi_hpre或hisi_zip设备，请将命令中的`hisi_sec-0`替换为虚拟机内实际查询到的设备名。
+
+    >![](public_sys-resources/icon-note.gif) **说明：**
+    >- 该功能用于在虚拟机内通过VF查看HostOS上PF设备的硬件故障隔离状态。
+    >- VF设备的`isolate`表示当前硬件故障隔离状态，`isolate_strategy`表示从PF同步到VF的硬件故障隔离阈值。
 
 ### KAE在Docker中的使用
 

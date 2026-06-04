@@ -7,9 +7,9 @@ KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）是基于鲲鹏处理器
 
 ## 前提条件
 
-- 安装前系统环境已满足[环境要求](./installation_guide.md/#环境要求)中的要求。
-- 安装前判断系统是否需要申请License，具体请参考[获取License](./installation_guide.md/#获取license)。
-- 使用openssl version命令检查OpenSSL是否为1.1.1x版本，若不符合请参见[安装OpenSSL/Tongsuo](./installation_guide.md/#安装openssltongsuo)。
+- 安装前系统环境已满足[环境要求](./installation_guide.md#环境要求)中的要求。
+- 安装前判断系统是否需要申请License，具体请参考[获取License](./installation_guide.md#获取license)。
+- 使用openssl version命令检查OpenSSL是否为1.1.1x版本，若不符合请参见[安装OpenSSL/Tongsuo](./installation_guide.md#安装openssltongsuo)。
 - 使用以下命令安装相关依赖。
 
     ```shell

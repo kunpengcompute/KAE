@@ -130,8 +130,8 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 **回答<a name="section1016841975912"></a>**
 
-- 请从[Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae2)下载鲲鹏加速引擎2.0软件包。
-- 请从[Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae1)下载鲲鹏加速引擎1.0软件包。
+- 请从[Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae2)下载当前维护版本KAE2.0软件包。
+- KAE1.0为历史版本，不再维护更新。历史版本软件包如需获取，请通过[Release](https://gitcode.com/boostkit/KAE/releases)或历史分支查找。
 
 ### 如何安装和升级鲲鹏加速引擎？
 
@@ -797,7 +797,7 @@ make install
 
 2. 确认KAE安装方式。
 
-    目前RPM及DEB只支持openEuler 4.19内核，其余内核版本需要使用源码编译安装，4.19内核用kae1分支，5.1x内核用kae2分支。请根据实际情况选择KAE的安装方式，安装步骤请参见《[安装指南](./installation_guide.md)》。
+    当前维护版本KAE2.0支持源码安装和RPM包安装。4.19内核场景请使用源码编译安装，且仅支持用户态使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。请根据实际情况选择KAE的安装方式，安装步骤请参见《[安装指南](./installation_guide.md)》。
 
 3. 确认OpenSSL环境变量是否配置。
 
