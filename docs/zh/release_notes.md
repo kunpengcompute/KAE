@@ -47,8 +47,8 @@
 
 |KAE版本|操作系统|OpenSSL版本|
 |--|--|--|
-|KAE2.0（当前维护版本）|openEuler 22.03 LTS SP1/SP2/SP3/SP4<br>openEuler 24.03 LTS SP1/SP2/SP3<br>EulerOS-V2.0 SP12<br>TencentOS 5.4<br>4.19内核（仅支持用户态使用）|OpenSSL 1.1.1x系列<br>OpenSSL 3.0.x系列<br>Tongsuo 8.4.0<br>BoringSSL|
-|KAE1.0（历史版本，不再维护更新）|CentOS 7.6 4.14.0-115.el7a.0.1.aarch64<br>SUSE 15.1 4.12.14-195-default.aarch64<br>EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64<br>NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64<br>BCLinux-R7-U6-Server-aarch64<br>Kylin 4.0.2 (juniper) 4.15.0-70-generic<br>Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64<br>UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64<br>Ubuntu 18.04.1 LTS 4.15.0-29-generic<br>openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64<br>openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64|OpenSSL 1.1.1x系列|
+|KAE2.0（当前维护版本）|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS-V2.0 SP12</li><li>TencentOS 5.4</li><li>4.19内核（仅支持用户态使用）</li></ul>|<ul><li>OpenSSL 1.1.1x系列</li><li>OpenSSL 3.0.x系列</li><li>Tongsuo 8.4.0</li><li>BoringSSL</li></ul>|
+|KAE1.0（历史版本，不再维护更新）|<ul><li>CentOS 7.6 4.14.0-115.el7a.0.1.aarch64</li><li>SUSE 15.1 4.12.14-195-default.aarch64</li><li>EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64</li><li>NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64</li><li>BCLinux-R7-U6-Server-aarch64</li><li>Kylin 4.0.2 (juniper) 4.15.0-70-generic</li><li>Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64</li><li>UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64</li><li>Ubuntu 18.04.1 LTS 4.15.0-29-generic</li><li>openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64</li><li>openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64</li></ul>|OpenSSL 1.1.1x系列|
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >- openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
@@ -66,7 +66,7 @@
 
 |KAE版本|更新说明|
 |--|--|
-|KAE2.0|新增支持在KVM虚拟机场景下通过VF查询HostOS上PF设备的硬件故障隔离状态和隔离阈值;<br>新增支持4.19内核用户态使用，不支持内核态加解密及压缩/解压缩接口。|
+|KAE2.0|<ul><li>新增支持在KVM虚拟机场景下通过VF查询HostOS上PF设备的硬件故障隔离状态和隔离阈值。</li><li>新增支持4.19内核用户态使用，不支持内核态加解密及压缩/解压缩接口。</li></ul>|
 
 **修改特性**
 

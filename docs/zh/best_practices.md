@@ -109,9 +109,7 @@
 
 KAE支持对称加密算法SM4的XTS模式，用以提高算法能力。该模式仅支持内核态使用，具体使用方法是基于dm-crypt的透明分区/磁盘加密。
 
->![](public_sys-resources/icon-note.gif) **说明：**
->
-> KAE2.0在4.19内核下仅支持用户态使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。因此，本章节不适用于KAE2.0在4.19内核下的用户态支持范围。
+KAE2.0在4.19内核下仅支持用户态使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。因此，本章节不适用于KAE2.0在4.19内核下的用户态支持范围。
 
 dm-crypt向上呈现为一个device mapper机制的target device，经过映射挂载后就可以作为透明加密分区/磁盘使用。
 
@@ -323,10 +321,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
     └─sx_disk      254:2    0 278.5G  0 crypt
     ```
 
-3. 关闭映射。
-
-    >![](public_sys-resources/icon-note.gif) **说明：**
-    >需要多次执行该命令关闭所有映射。
+3. 关闭映射（需要多次执行该命令关闭所有映射）。
 
     ```shell
     cryptsetup luksClose sx_disk
@@ -464,7 +459,7 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
         ```
 
     >![](public_sys-resources/icon-note.gif) **说明：**
-    >- 本文给虚拟机配置的VF是hisi\_sec-8，它对应的编码是：hisi\_sec-8 -\> ../../devices/pci0000:74/0000:74:01.0/0000:**76:00.1**/uacce/hisi\_sec-8。虚拟机xml配置的数据来自于编码里的“76:00.1”，bus对应“76”，slot对应“00”，function对应“1”，而且这些数据都是16进制的，所以要加上“0x”。
+    >- 本文给虚拟机配置的VF是hisi\_sec-8，对应的编码是：hisi\_sec-8 -\> ../../devices/pci0000:74/0000:74:01.0/0000:**76:00.1**/uacce/hisi\_sec-8。虚拟机xml配置的数据来自于编码里的“76:00.1”，bus对应“76”，slot对应“00”，function对应“1”，而且这些数据都是16进制的，所以要加上“0x”。
     >- 本文只给虚拟化并配置了SEC设备，所以虚拟机安装完成后，只有这个SEC设备可用。如果虚拟机需要zip或者HPRE设备，请参考操作SEC设备的方式进行增加。
     >- hisi\_sec设备SBDF号以0000:7x:xx.x，其对应CPU0上设备；以0000:bx:xx.x为开头，对应CPU1上设备。
     >- 为保证性能稳定，推荐虚拟机上核选取对应CPU上的core，同时VF也选择对应加速器上虚拟出来的VF。
@@ -508,19 +503,19 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
 
     KAE支持通过UACCE的sysfs属性查询加速器隔离状态。HostOS上的PF设备触发隔离后，驱动会将隔离状态同步到对应VF，虚拟机内可以直接查询VF设备的隔离状态。
 
-    在虚拟机中执行以下命令，查询VF设备当前是否处于隔离状态。
+    1. 在虚拟机中执行以下命令，查询VF设备当前是否处于隔离状态。
 
-    ```shell
-    cat /sys/class/uacce/hisi_sec-0/isolate
-    ```
+       ```shell
+       cat /sys/class/uacce/hisi_sec-0/isolate
+       ```
 
-    回显为`0`表示设备状态正常，回显为`1`表示设备已隔离，回显为`-1`表示查询异常。
+       回显为`0`表示设备状态正常，回显为`1`表示设备已隔离，回显为`-1`表示查询异常。
 
-    查询VF设备从PF同步到的硬件故障隔离阈值。
+    2. 查询VF设备从PF同步到的硬件故障隔离阈值。
 
-    ```shell
-    cat /sys/class/uacce/hisi_sec-0/isolate_strategy
-    ```
+       ```shell
+       cat /sys/class/uacce/hisi_sec-0/isolate_strategy
+       ```
 
     如果虚拟机中挂载的是hisi_hpre或hisi_zip设备，请将命令中的`hisi_sec-0`替换为虚拟机内实际查询到的设备名。
 
