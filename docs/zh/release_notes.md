@@ -12,7 +12,7 @@
 </tr>
 <tr id="row24726251"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.2.1"><p id="p56669300"><a name="p56669300"></a><a name="p56669300"></a>产品版本</p>
 </th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.2.1 "><p id="p16166112734513"><a name="p16166112734513"></a><a name="p16166112734513"></a><span id="text1726192733514"><a name="text1726192733514"></a><a name="text1726192733514"></a>26.0.RC1</span></p>
+<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.2.1 "><p id="p16166112734513"><a name="p16166112734513"></a><a name="p16166112734513"></a><span id="text1726192733514"><a name="text1726192733514"></a><a name="text1726192733514"></a>26.1.RC1</span></p>
 </td>
 </tr>
 <tr id="row5497143514612"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.3.1"><p id="p162251517551"><a name="p162251517551"></a><a name="p162251517551"></a>软件名称</p>
@@ -47,15 +47,42 @@
 
 |KAE版本|操作系统|OpenSSL版本|
 |--|--|--|
-|KAE2.0|openEuler 22.03 LTS SP1/SP2/SP3/SP4<br>openEuler 24.03 LTS SP1/SP2/SP3<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|OpenSSL 1.1.1x系列<br>OpenSSL 3.0.x系列<br>Tongsuo 8.4.0<br>BoringSSL|
-|KAE1.0|CentOS 7.6 4.14.0-115.el7a.0.1.aarch64<br>SUSE 15.1 4.12.14-195-default.aarch64<br>EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64<br>NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64<br>BCLinux-R7-U6-Server-aarch64<br>Kylin 4.0.2 (juniper) 4.15.0-70-generic<br>Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64<br>UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64<br>Ubuntu 18.04.1 LTS 4.15.0-29-generic<br>openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64<br>openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64|OpenSSL 1.1.1x系列|
+|KAE2.0（当前维护版本）|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS-V2.0 SP12</li><li>TencentOS 5.4</li><li>4.19内核（仅支持用户态使用）</li></ul>|<ul><li>OpenSSL 1.1.1x系列</li><li>OpenSSL 3.0.x系列</li><li>Tongsuo 8.4.0</li><li>BoringSSL</li></ul>|
+|KAE1.0（历史版本，不再维护更新）|<ul><li>CentOS 7.6 4.14.0-115.el7a.0.1.aarch64</li><li>SUSE 15.1 4.12.14-195-default.aarch64</li><li>EulerOS 2.8 4.19.36-vhulk1907.1.0.h410.eulerosv2r8.aarch64</li><li>NeoKylin 7.6 4.14.0-115.5.1.el7a.06.aarch64</li><li>BCLinux-R7-U6-Server-aarch64</li><li>Kylin 4.0.2 (juniper) 4.15.0-70-generic</li><li>Kylin release 4.0.2 (SP2) 4.19.36-vhulk1907.1.0.h403.ky4.aarch64</li><li>UniKylin Linux release 3(Core)  4.18.0-80.ky3.kb21.hw.aarch64</li><li>Ubuntu 18.04.1 LTS 4.15.0-29-generic</li><li>openEuler 20.03 LTS 4.19.90-2003.4.0.0036.oe1.aarch64</li><li>openEuler 20.03 LTS SP1 4.19.90-2012.4.0.0053.oe1.aarch64</li></ul>|OpenSSL 1.1.1x系列|
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
->a：openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
+>- openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
+>- KAE2.0在4.19内核下仅支持通过UADK、OpenSSL/Tongsuo/BoringSSL、Zlib、ZSTD、LZ4、Snappy、Gzip等用户态接口使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。
 
 ## 版本使用注意事项
 
 请参见《README》中的“[算法支持与规格](../../README.md#算法支持与规格)”内容。
+
+## V26.1.RC1
+
+### 更新说明
+
+**新增特性**
+
+|KAE版本|更新说明|
+|--|--|
+|KAE2.0|<ul><li>新增支持在KVM虚拟机场景下通过VF查询HostOS上PF设备的硬件故障隔离状态和隔离阈值。</li><li>新增支持4.19内核用户态使用，不支持内核态加解密及压缩/解压缩接口。</li></ul>|
+
+**修改特性**
+
+无
+
+**删除特性**
+
+无
+
+### 已解决的问题
+
+无
+
+### 遗留问题
+
+无
 
 ## V26.0.RC1
 
@@ -216,7 +243,7 @@
 
 ## 版本配套文档
 
-### V26.0.RC1版本配套文档
+### V26.1.RC1版本配套文档
 
 | 文档名称 | 内容简介 | 交付形式 |
 | --- | --- | --- |

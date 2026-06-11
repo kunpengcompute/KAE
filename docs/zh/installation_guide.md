@@ -29,12 +29,13 @@
 
 |软件包类型|适配的OS|适配的OpenSSL版本|获取方式|
 |--|--|--|--|
-|源码包|openEuler 22.03 LTS SP1/SP2/SP3/SP4<br>openEuler 24.03 LTS SP1/SP2/SP3<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|OpenSSL 1.1.1x系列<br>OpenSSL 3.0.x系列<br>Tongsuo 8.4.0<br>BoringSSL|[获取链接](https://gitcode.com/boostkit/KAE)|
+|源码包|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS-V2.0 SP12</li><li>TencentOS 5.4</li><li>4.19内核（仅支持用户态使用）</li></ul>|<ul><li>OpenSSL 1.1.1x系列</li><li>OpenSSL 3.0.x系列</li><li>Tongsuo 8.4.0</li><li>BoringSSL</li></ul>|[获取链接](https://gitcode.com/boostkit/KAE)|
 |RPM包|openEuler 22.03 LTS SP1/SP2/SP3/SP4|OpenSSL 1.1.1x系列|[获取链接](https://gitcode.com/boostkit/KAE/releases)<br>若KAE代码仓没有相应OS的RPM，请参见[方式二：RPM包安装制作RPM包](#方式二rpm包安装)。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
 >
 >- openEuler 22.03 LTS SP1仅支持KAE v2.0.3及以前版本。
+>- KAE2.0在4.19内核下仅支持通过UADK、OpenSSL/Tongsuo/BoringSSL、Zlib、ZSTD、LZ4、Snappy、Gzip等用户态接口使用，不支持Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核态接口。
 >- 历史版本软件包请通过[Release](https://gitcode.com/boostkit/KAE/releases)获取。
 
 **其他要求<a name="section0733155717512"></a>**
@@ -214,18 +215,18 @@ KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模�
 
 ## 安装方式说明
 
-KAE2.0支持源码安装和RPM包安装两种方式，安装前请根据实际使用操作系统选择合适的安装方式。
+KAE2.0为当前维护版本，支持源码安装和RPM包安装两种方式，安装前请根据实际使用操作系统选择合适的安装方式。
 
 **表 1** KAE2.0支持的安装方式与操作系统说明<a id="KAE2.0支持的安装方式与操作系统说明"></a>
 
 |安装方式|安装说明|当前支持系统|优缺点|
 |--|--|--|--|
-|源码安装|使用build.sh脚本进行安装。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4<br>EulerOS-V2.0 SP12<br>TencentOS 5.4|优点：支持修改源码进行编译及安装。<br>缺点：操作复杂，需要做一些额外的配置。|
-|RPM安装|为了方便用户使用，华为提供了部分商用OS的RPM安装包。|openEuler 22.03 LTS-SP1/SP2/SP3/SP4<br>EulerOS-V2.0 SP12|优点：安装后可以直接使用，不需要做编译及安装等操作。<br>缺点：支持范围有限，仅适用于指定的操作系统。|
+|源码安装|使用build.sh脚本进行安装。|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS-V2.0 SP12</li><li>TencentOS 5.4</li><li>4.19内核（仅支持用户态使用）</li></ul>|优点：支持修改源码进行编译及安装。<br>缺点：操作复杂，需要做一些额外的配置。|
+|RPM安装|为了方便用户使用，华为提供了部分商用OS的RPM安装包。|<ul><li>openEuler 22.03 LTS-SP1/SP2/SP3/SP4</li><li>EulerOS-V2.0 SP12</li></ul>|优点：安装后可以直接使用，不需要做编译及安装等操作。<br>缺点：支持范围有限，仅适用于指定的操作系统。|
 
 ## 方式一：源码安装
 
-KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEngine引擎和KAEZlib、KAEZstd、KAELz4模块，其中KAEKernelDriver内核驱动与UADK为必选项，其他模块按实际需求选择安装。若需要升级KAE版本，请先参见[卸载KAE](#卸载kae)章节卸载旧版本再进行新版本的安装。
+KAE2.0源码包中包含KAEKernelDriver内核驱动、UADK框架、KAEOpensslEngine引擎和KAEZlib、KAEZstd、KAELz4、KAESnappy模块，其中KAEKernelDriver内核驱动与UADK为必选项，其他模块按实际需求选择安装。若需要升级KAE版本，请先参见[卸载KAE](#卸载kae)章节卸载旧版本再进行新版本的安装。
 
 **前提条件<a name="section14710172717351"></a>**
 
