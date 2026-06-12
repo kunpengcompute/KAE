@@ -432,12 +432,71 @@ private:
     void *sess_;
 };
 
+class GuardedInput {
+public:
+    static std::unique_ptr<GuardedInput> Create(const uint8_t *src, size_t len)
+    {
+        long page_size = sysconf(_SC_PAGESIZE);
+        if (page_size <= 0 || len == 0) {
+            return nullptr;
+        }
+
+        size_t page = static_cast<size_t>(page_size);
+        size_t accessible = ((len + page - 1) / page) * page;
+        size_t total = accessible + page;
+        void *base = mmap(nullptr, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (base == MAP_FAILED) {
+            return nullptr;
+        }
+
+        uint8_t *guard = static_cast<uint8_t *>(base) + accessible;
+        if (mprotect(guard, page, PROT_NONE) != 0) {
+            munmap(base, total);
+            return nullptr;
+        }
+
+        std::unique_ptr<GuardedInput> input(new GuardedInput(base, total, guard - len, len));
+        memcpy(input->data_, src, len);
+        return input;
+    }
+
+    ~GuardedInput()
+    {
+        if (base_ != MAP_FAILED && base_ != nullptr) {
+            munmap(base_, total_);
+        }
+    }
+
+    uint8_t *data() const
+    {
+        return data_;
+    }
+
+    size_t size() const
+    {
+        return size_;
+    }
+
+    GuardedInput(const GuardedInput &) = delete;
+    GuardedInput &operator=(const GuardedInput &) = delete;
+
+private:
+    GuardedInput(void *base, size_t total, uint8_t *data, size_t size)
+        : base_(base), total_(total), data_(data), size_(size) {}
+
+    void *base_;
+    size_t total_;
+    uint8_t *data_;
+    size_t size_;
+};
+
 struct AsyncTask {
     explicit AsyncTask(TaskFormat fmt) : format(fmt) {}
 
     TaskFormat format;
     std::vector<uint8_t> expected;
     std::vector<uint8_t> heap_src;
+    std::vector<std::unique_ptr<GuardedInput> > guarded_src;
     void *zero_src = nullptr;
 
     std::vector<uint8_t> direct_dst_storage;
@@ -585,6 +644,77 @@ std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_
         }
         task->tuple.buf_num = 1;
         task->tuple.buf = task->tuple_bufs.data();
+    }
+
+    if (frame_output) {
+        InitFramePreferences(task.get(), frame_full_checksums);
+    }
+
+    memset(&task->result, 0, sizeof(task->result));
+    task->result.user_data = task.get();
+    if (with_crc) {
+        task->result.ibuf_crc = &task->ibuf_crc;
+        task->result.obuf_crc = &task->obuf_crc;
+    }
+
+    return task;
+}
+
+std::unique_ptr<AsyncTask> PrepareGuardedNonZeroCopyTask(TaskFormat format,
+                                                         const std::vector<size_t> &segment_sizes,
+                                                         bool with_crc, uint32_t seed,
+                                                         bool frame_full_checksums)
+{
+    size_t total_size = 0;
+    for (size_t len : segment_sizes) {
+        if (len == 0 || total_size > SIZE_MAX - len) {
+            return nullptr;
+        }
+        total_size += len;
+    }
+
+    std::unique_ptr<AsyncTask> task(new AsyncTask(format));
+    task->done.store(false, std::memory_order_relaxed);
+    task->expected = GenerateInput(total_size, seed);
+    task->crc_enabled = with_crc;
+
+    size_t offset = 0;
+    for (size_t len : segment_sizes) {
+        std::unique_ptr<GuardedInput> guarded = GuardedInput::Create(task->expected.data() + offset, len);
+        if (guarded == nullptr) {
+            return nullptr;
+        }
+        task->src_bufs.push_back({guarded->size(), guarded->data()});
+        task->guarded_src.push_back(std::move(guarded));
+        offset += len;
+    }
+
+    task->src.buf_num = static_cast<unsigned int>(task->src_bufs.size());
+    task->src.rsvd = 0;
+    task->src.buf = task->src_bufs.data();
+    task->src.usr_data = nullptr;
+
+    bool frame_output = task->OutputIsFrame();
+    size_t dst_capacity = OutputCapacity(total_size, frame_output);
+    task->direct_dst_storage.assign(dst_capacity, 0);
+    task->direct_dst_bufs.push_back({dst_capacity, task->direct_dst_storage.data()});
+    task->direct_dst.buf_num = 1;
+    task->direct_dst.buf = task->direct_dst_bufs.data();
+    task->direct_dst.usr_data = nullptr;
+
+    task->final_dst_storage.assign(dst_capacity, 0);
+    task->final_dst_bufs.push_back({dst_capacity, task->final_dst_storage.data()});
+    task->final_dst.buf_num = 1;
+    task->final_dst.buf = task->final_dst_bufs.data();
+    task->final_dst.usr_data = nullptr;
+
+    if (task->IsLz77()) {
+        size_t tuple_len = KAELZ4_compress_get_tuple_buf_len(total_size);
+        task->tuple_heap_storage.assign(tuple_len, 0);
+        task->tuple_bufs.push_back({tuple_len, task->tuple_heap_storage.data()});
+        task->tuple.buf_num = 1;
+        task->tuple.buf = task->tuple_bufs.data();
+        task->tuple.usr_data = nullptr;
     }
 
     if (frame_output) {
@@ -772,6 +902,23 @@ void RunSingleCase(MemoryMode mode, TaskFormat format, size_t size, int segments
     ASSERT_NE(session.get(), nullptr);
 
     std::unique_ptr<AsyncTask> task = PrepareTask(mode, format, size, segments, with_crc, seed, frame_full_checksums);
+    ASSERT_NE(task, nullptr);
+
+    ASSERT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_SUCC);
+    std::vector<AsyncTask *> tasks;
+    tasks.push_back(task.get());
+    ASSERT_TRUE(WaitForTasks(session.get(), tasks));
+    ASSERT_TRUE(VerifyTask(task.get()));
+}
+
+void RunGuardedNonZeroCopyCase(TaskFormat format, const std::vector<size_t> &segment_sizes,
+                               bool with_crc, bool frame_full_checksums, uint32_t seed)
+{
+    PollingSession session(MemoryMode::kNonZeroCopy);
+    ASSERT_NE(session.get(), nullptr);
+
+    std::unique_ptr<AsyncTask> task =
+        PrepareGuardedNonZeroCopyTask(format, segment_sizes, with_crc, seed, frame_full_checksums);
     ASSERT_NE(task, nullptr);
 
     ASSERT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_SUCC);
@@ -979,9 +1126,93 @@ struct RebuildValidationCase {
     LZ4F_preferences_t preferences = {};
 };
 
+struct GuardedRebuildCase {
+    GuardedRebuildCase(const std::vector<uint8_t> &input, const std::vector<size_t> &segment_sizes)
+    {
+        expected = input;
+        size_t offset = 0;
+        for (size_t len : segment_sizes) {
+            if (len == 0 || offset > expected.size() || len > expected.size() - offset) {
+                valid = false;
+                return;
+            }
+            std::unique_ptr<GuardedInput> guarded = GuardedInput::Create(expected.data() + offset, len);
+            if (guarded == nullptr) {
+                valid = false;
+                return;
+            }
+            src_bufs.push_back({guarded->size(), guarded->data()});
+            guarded_src.push_back(std::move(guarded));
+            offset += len;
+        }
+        if (offset != expected.size()) {
+            valid = false;
+            return;
+        }
+
+        src.buf_num = static_cast<unsigned int>(src_bufs.size());
+        src.buf = src_bufs.data();
+        src.usr_data = nullptr;
+
+        tuple_storage.assign(KAELZ4_compress_get_tuple_buf_len(expected.size()), 0);
+        tuple_bufs.push_back({tuple_storage.size(), tuple_storage.data()});
+        tuple.buf_num = 1;
+        tuple.buf = tuple_bufs.data();
+        tuple.usr_data = nullptr;
+
+        dst_storage.assign(OutputCapacity(expected.size(), false), 0);
+        dst_bufs.push_back({dst_storage.size(), dst_storage.data()});
+        dst.buf_num = 1;
+        dst.buf = dst_bufs.data();
+        dst.usr_data = nullptr;
+
+        memset(&result, 0, sizeof(result));
+        result.status = KAE_LZ4_SUCC;
+        result.src_size = expected.size();
+    }
+
+    uint32_t *SeqNum()
+    {
+        return reinterpret_cast<uint32_t *>(tuple_storage.data());
+    }
+
+    seqDef *FirstSeq()
+    {
+        return reinterpret_cast<seqDef *>(tuple_storage.data() + sizeof(uint32_t));
+    }
+
+    bool valid = true;
+    std::vector<uint8_t> expected;
+    std::vector<std::unique_ptr<GuardedInput> > guarded_src;
+    std::vector<uint8_t> tuple_storage;
+    std::vector<uint8_t> dst_storage;
+    std::vector<kaelz4_buffer> src_bufs;
+    std::vector<kaelz4_buffer> tuple_bufs;
+    std::vector<kaelz4_buffer> dst_bufs;
+    kaelz4_buffer_list src = {};
+    kaelz4_buffer_list tuple = {};
+    kaelz4_buffer_list dst = {};
+    kaelz4_result result = {};
+};
+
 size_t MaxSeqNumPerTupleChunk()
 {
     return (KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(uint32_t)) / sizeof(seqDef);
+}
+
+std::vector<uint8_t> BuildSingleSequenceSource(size_t final_literal_len)
+{
+    std::vector<uint8_t> input;
+    input.reserve(17 + 4 + final_literal_len);
+    for (int i = 0; i < 16; ++i) {
+        input.push_back(static_cast<uint8_t>('a' + i));
+    }
+    input.push_back('Q');
+    input.insert(input.end(), 4, 'Q');
+    for (size_t i = 0; i < final_literal_len; ++i) {
+        input.push_back(static_cast<uint8_t>('Z' - (i % 13)));
+    }
+    return input;
 }
 
 } // namespace
@@ -1121,6 +1352,46 @@ TEST(KAELz4AsyncPolling, RebuildRejectsMalformedSeqFields)
     EXPECT_EQ(tc.result.dst_len, 0U);
 }
 
+// Purpose: rebuild literal copying from a guarded source segment. Verifies that
+// a malformed-but-bounds-checked tuple with a non-16-byte literal does not read
+// into the guard page while copying within the current segment.
+TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedDirectLiteral)
+{
+    std::vector<uint8_t> input = BuildSingleSequenceSource(1);
+    GuardedRebuildCase tc(input, {input.size()});
+    ASSERT_TRUE(tc.valid);
+    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
+
+    *tc.SeqNum() = 1;
+    seqDef *seq = tc.FirstSeq();
+    seq->litLength = 17;
+    seq->offBase = 0;
+    seq->mlBase = 1;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_GT(tc.result.dst_len, 0U);
+}
+
+// Purpose: rebuild literal copying across guarded source segments. Verifies that
+// the buffer-list copy helper handles a segment tail shorter than 16 bytes
+// without reading into the guard page.
+TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedSegmentedLiteral)
+{
+    std::vector<uint8_t> input = BuildSingleSequenceSource(12);
+    GuardedRebuildCase tc(input, {17, input.size() - 17});
+    ASSERT_TRUE(tc.valid);
+    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
+
+    *tc.SeqNum() = 1;
+    seqDef *seq = tc.FirstSeq();
+    seq->litLength = 17;
+    seq->offBase = 0;
+    seq->mlBase = 1;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
+}
+
 // Purpose: zero-copy block output with a single small input segment. Verifies
 // hugepage-backed SGL input, direct submission through the polling session,
 // callback completion, block decompression, and input/output CRC.
@@ -1234,6 +1505,22 @@ TEST(KAELz4AsyncPolling, ZeroCopy_ResetPendingTasks)
 TEST(KAELz4AsyncPolling, NonZeroCopy_BlockSmall_WithCRC)
 {
     RunSingleCase(MemoryMode::kNonZeroCopy, TaskFormat::kBlock, kSmallSize, 1, true, false, 0x11);
+}
+
+// Purpose: non-zero-copy flat-buffer copy from a guarded single segment.
+// Verifies that an unaligned segment tail is copied exactly and does not read
+// past the user buffer before hardware submission.
+TEST(KAELz4AsyncPolling, NonZeroCopy_BlockGuardedUnalignedSingleSegment)
+{
+    RunGuardedNonZeroCopyCase(TaskFormat::kBlock, {4093}, true, false, 0x61);
+}
+
+// Purpose: non-zero-copy flat-buffer copy from guarded multi-segment input.
+// Verifies that every user segment tail is copied exactly before concatenation
+// into the internal flat staging buffer.
+TEST(KAELz4AsyncPolling, NonZeroCopy_BlockGuardedUnalignedMultiSegment)
+{
+    RunGuardedNonZeroCopyCase(TaskFormat::kBlock, {31, 47, 4093}, true, false, 0x62);
 }
 
 // Purpose: non-zero-copy block output with multi-segment heap input larger than

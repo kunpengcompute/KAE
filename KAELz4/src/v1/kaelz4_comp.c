@@ -526,7 +526,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         }
 
         if (likely(tmp_len < ip_buf_remain)) {
-            LZ4_wildCopy16(op, ip, op + litLength);
+            LZ4_wildCopy16Exact(op, ip, litLength);
             ip += tmp_len;
             ip_buf_remain -= tmp_len;
         } else {
@@ -683,7 +683,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             save_info->prev_last_lit_len = 0;
         }
         if (likely(tmp_len < ip_buf_remain)) {
-            LZ4_wildCopy16(op, ip, op + litLength);
+            LZ4_wildCopy16Exact(op, ip, litLength);
             ip += tmp_len;
             ip_buf_remain -= tmp_len;
         } else {
@@ -756,7 +756,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         if (likely(tmp_len < ip_buf_remain)) {
-            LZ4_wildCopy16(op, ip, op + litLength);
+            LZ4_wildCopy16Exact(op, ip, litLength);
             ip += tmp_len;
             ip_buf_remain -= tmp_len;
         } else {
@@ -930,7 +930,7 @@ static void kaelz4_fill_flat_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_li
     op_data->in_len = 0;
     size_t offset = 0;
     for (int i = 0; i < src->buf_num; i++) {
-        LZ4_wildCopy16((uint8_t *)op_data->in + offset, src->buf[i].data, (uint8_t *)op_data->in + offset + src->buf[i].buf_len);
+        LZ4_wildCopy16Exact((uint8_t *)op_data->in + offset, src->buf[i].data, src->buf[i].buf_len);
         offset += src->buf[i].buf_len;
     }
     op_data->in_len += kz_ctx->do_comp_len;
