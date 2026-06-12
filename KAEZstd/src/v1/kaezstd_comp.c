@@ -47,15 +47,25 @@ static int kaezstd_data_parsing(ZSTD_CCtx* zc, kaezstd_ctx_t* config)
 
 int kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 {
+    if (zc == NULL || src == NULL || srcSize == 0) {
+        US_ERR("compress parameter invalid\n");
+        return KAE_ZSTD_INVAL_PARA;
+    }
+
+    if (srcSize > COMP_BLOCK_SIZE) {
+        US_ERR("compress srcSize %lu exceeds max block size %u\n", srcSize, (unsigned int)COMP_BLOCK_SIZE);
+        return KAE_ZSTD_INVAL_PARA;
+    }
+
     kaezstd_ctx_t* kaezstd_ctx = (kaezstd_ctx_t*)zc->kaeConfig;
-    if (kaezstd_ctx == NULL || src == NULL || srcSize == 0) {
+    if (kaezstd_ctx == NULL) {
         US_ERR("compress parameter invalid\n");
         return KAE_ZSTD_INVAL_PARA;
     }
 
     US_INFO("kaezstd compress srcSize : %lu", srcSize);
     kaezstd_ctx->in           = (void*)src;
-    kaezstd_ctx->in_len       = srcSize;
+    kaezstd_ctx->in_len       = (unsigned int)srcSize;
     kaezstd_ctx->out          = NULL;
     kaezstd_ctx->consumed     = 0;
     kaezstd_ctx->produced     = 0;

@@ -30,7 +30,6 @@ endif
 SRCDIRS   += ${WORK_PATH}/src
 SRCDIRS   += ${WORK_PATH}/src/utils
 SRCDIRS   += ${WORK_PATH}/src/v1
-SRCDIRS   += ${WORK_PATH}/src/v2
 
 SRCEXTS   := .c # C program
 
@@ -86,11 +85,12 @@ objs : $(OBJS)
 	@echo compiling $(notdir $<)
 	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
-libkaezstd.a: $(OBJS)
+libkaezstd.a: $(OBJS) Makefile
 	@echo compling static library
-	@ar rcs $@ $^
+	@$(RM) $@
+	@ar rcs $@ $(OBJS)
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) Makefile
 	@echo Linking $@
 	$(SILENCE) $(CC) $(CFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
 
