@@ -876,9 +876,72 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len)
     return freg_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
 }
 
+static int kaelz4_rebuild_param_invalid(struct kaelz4_result *result)
+{
+    if (result != NULL) {
+        result->status = KAE_LZ4_INVAL_PARA;
+        result->dst_len = 0;
+    }
+    return KAE_LZ4_INVAL_PARA;
+}
+
+static int kaelz4_check_rebuild_param_valid(const struct kaelz4_buffer_list *src,
+                                            const struct kaelz4_buffer_list *tuple_buf,
+                                            const struct kaelz4_buffer_list *dst,
+                                            struct kaelz4_result *result)
+{
+    size_t src_total = 0;
+    size_t chunk_cnt;
+    size_t tuple_len;
+
+    if (unlikely(src == NULL || tuple_buf == NULL || dst == NULL || result == NULL)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    if (unlikely(src->buf == NULL || src->buf_num == 0 || dst->buf == NULL || tuple_buf->buf == NULL)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    for (unsigned int i = 0; i < src->buf_num; i++) {
+        if (unlikely(src->buf[i].data == NULL || src->buf[i].buf_len == 0 ||
+                     src_total > SIZE_MAX - src->buf[i].buf_len)) {
+            return kaelz4_rebuild_param_invalid(result);
+        }
+        src_total += src->buf[i].buf_len;
+    }
+
+    if (unlikely(src_total == 0 || result->src_size != src_total)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    if (unlikely(dst->buf_num != 1 || dst->buf[0].data == NULL || dst->buf[0].buf_len == 0)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    if (unlikely(tuple_buf->buf_num != 1 || tuple_buf->buf[0].data == NULL)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    chunk_cnt = (result->src_size - 1) / SMALL_BLOCK_SIZE + 1;
+    if (unlikely(chunk_cnt > SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    tuple_len = chunk_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+    if (unlikely(tuple_buf->buf[0].buf_len < tuple_len)) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
+    return KAE_LZ4_SUCC;
+}
+
 int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                  struct kaelz4_result *result)
 {
+    if (unlikely(kaelz4_check_rebuild_param_valid(src, tuple_buf, dst, result) != KAE_LZ4_SUCC)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+
     if (result->src_size <= SMALL_BLOCK_SIZE && src->buf_num <= SMALL_BLOCK_MAX_BUF_NUM) {
         return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
     }
@@ -889,5 +952,9 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
 int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
                                  struct kaelz4_result *result, const void *preferences_ptr)
 {
+    if (unlikely(kaelz4_check_rebuild_param_valid(src, tuple_buf, dst, result) != KAE_LZ4_SUCC)) {
+        return KAE_LZ4_INVAL_PARA;
+    }
+
     return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
 }

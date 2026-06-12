@@ -36,13 +36,13 @@ function main()
         exit 1
     fi
 
-    # 下载gtest
+    # Download GoogleTest if it is not already available.
     download_googletest
 
-    # 编译gtest
+    # Build GoogleTest.
     build_googletest
    
-    # 编译测试代码
+    # Build the test binaries.
     cd ${BUILD_PATH}
     make
 }

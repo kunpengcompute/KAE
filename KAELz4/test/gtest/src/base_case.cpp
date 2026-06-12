@@ -17,7 +17,7 @@ extern "C" {
 #include <lz4frame.h>
 }
 
-// // 随机生成指定长度的数据
+// // Generate random data with the requested length.
 // static void generate_random_data(Bytef* data, unsigned long long length) {
 //     srand((unsigned int)time(NULL));
 //     for (unsigned long long i = 0; i < length; ++i) {
@@ -57,25 +57,25 @@ extern "C" {
 // printf("start--> \n");
 //     int ret = LZ4_compress_async(src, dst, compress_async_callback, result);
 //     ASSERT_EQ(ret, 0);
-//     // 等待压缩操作完成
+//     // Wait for the asynchronous compression operation to complete.
 //     while (user_data->done == 0) {
-//         // 可选择添加延时或者使用条件变量进行更有效的等待
+//         // A delay or condition variable can be used here for a more efficient wait.
 //         usleep(10);
 //     }
 // printf("start-->2 \n");
-//     // 异步压缩完成后，调用同步解压接口
+//     // After asynchronous compression completes, call the synchronous decompression API.
 //     int dst_len = input_size;
-//     Bytef *decompressed_data = new Bytef[dst_len]; // 用于存放解压后的数据
+//     Bytef *decompressed_data = new Bytef[dst_len]; // Holds decompressed data.
 //     ASSERT_NE(decompressed_data, nullptr);
 
 //     int src_len = user_data->dst_len;
 //     int decompressed_size = LZ4_decompress_safe((const char *)user_data->dst, (char *)decompressed_data, src_len, dst_len);
-//     ASSERT_GT(decompressed_size, 0); // 解压成功返回正数
+//     ASSERT_GT(decompressed_size, 0); // Successful decompression returns a positive value.
 //     ASSERT_EQ(decompressed_size, input_size);
-//     // 比较原始数据与解压后的数据是否一致
-//     ASSERT_EQ(memcmp(src, decompressed_data, input_size), 0); // 比较原始数据和解压数据
+//     // Compare the decompressed data with the original input.
+//     ASSERT_EQ(memcmp(src, decompressed_data, input_size), 0); // Verify original and decompressed data match.
 
-//     // 清理内存
+//     // Clean up memory.
 //     delete[] src;
 //     delete[] dst;
 //     delete[] decompressed_data;
@@ -86,4 +86,3 @@ TEST(LZ4Test, CompressAndDecompress_lz4)
     int ret = 0;
     ASSERT_EQ(ret, 0);
 }
-

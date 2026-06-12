@@ -39,10 +39,10 @@ INCDIR += -I $(WORK_PATH)/gtest-download/googletest-release-1.11.0/googletest/in
 
 # Include Libs.
 LIBDIR += -L $(WORK_PATH)/test_tool_bins/gtest
-LIBS +=  -lgtest_main -lgtest -lz  -llz4  -lrt -lkaelz4 -lwd -lwd_comp
+LIBS +=  -lgtest_main -lgtest -lz  -llz4  -lrt -lpthread -lkaelz4 -lwd -lwd_comp
 
 # The flags
-CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++11 #-Wl,-rpath,/usr/local/kaezip/lib
+CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++17 #-Wl,-rpath,/usr/local/kaezip/lib
 LDFLAGS   += $(LIBDIR)
 LDFLAGS   += $(LIBS)
 LDFLAGS   += -Wl,-rpath,/usr/local/kaelz4/lib

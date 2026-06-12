@@ -385,6 +385,64 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
     free(compress_ctx);
 }
 
+static int kaelz4_rebuild_invalid_seq(struct kaelz4_priv_save_info *save_info)
+{
+    if (save_info != NULL && save_info->status != NULL) {
+        *save_info->status = KAE_LZ4_INVAL_PARA;
+    }
+    US_ERR("kaelz4 rebuild tuple sequence is invalid\n");
+    return KAE_LZ4_REBUILD_FAIL;
+}
+
+static int kaelz4_rebuild_add_u32(U32 *value, size_t add)
+{
+    if (unlikely(add > UINT32_MAX || *value > UINT32_MAX - (U32)add)) {
+        return KAE_LZ4_REBUILD_FAIL;
+    }
+
+    *value += (U32)add;
+    return KAE_LZ4_SUCC;
+}
+
+static int kaelz4_rebuild_add_literal_seq(U32 *tempLiteralLength, U32 litLength, size_t total_src_bytes)
+{
+    U32 literal_len = litLength;
+
+    if (unlikely(kaelz4_rebuild_add_u32(&literal_len, 3) != KAE_LZ4_SUCC ||
+                 kaelz4_rebuild_add_u32(tempLiteralLength, literal_len) != KAE_LZ4_SUCC ||
+                 (size_t)*tempLiteralLength > total_src_bytes)) {
+        return KAE_LZ4_REBUILD_FAIL;
+    }
+
+    return KAE_LZ4_SUCC;
+}
+
+static int kaelz4_rebuild_get_seq_consumed(U32 litLength, U16 mlBase, size_t consumed_src,
+                                           size_t total_src_bytes, U32 *tmp_len)
+{
+    size_t seq_len = (size_t)litLength + (size_t)mlBase + 4;
+
+    if (unlikely(consumed_src > total_src_bytes || seq_len > total_src_bytes - consumed_src ||
+                 seq_len > UINT32_MAX)) {
+        return KAE_LZ4_REBUILD_FAIL;
+    }
+
+    *tmp_len = (U32)seq_len;
+    return KAE_LZ4_SUCC;
+}
+
+static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_result)
+{
+    size_t max_seq_num = (KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num)) / sizeof(seqDef);
+
+    if (unlikely((size_t)seq_result->seq_num > max_seq_num)) {
+        US_ERR("kaelz4 rebuild tuple seq_num %u exceeds max %zu\n", seq_result->seq_num, max_seq_num);
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    return KAE_LZ4_SUCC;
+}
+
 static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_buf_list *source,
                                   void *dest, struct kaelz4_priv_save_info *save_info)
 {
@@ -414,6 +472,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
     U32 tempLiteralLength = 0;
     BYTE* token = NULL;
     U32 len = 0;
+    size_t consumed_src = 0;
 
     while (seqCount < seqSum) {
         offBase = sequencesPtr->offBase + 1;
@@ -422,14 +481,30 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         sequencesPtr++;
         seqCount++;
 
+        if (unlikely(offBase > 65535)) {
+            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
+            return KAE_LZ4_REBUILD_FAIL;
+        }
+
         if (mlBase == 0) {
-            tempLiteralLength += litLength + 3;
+            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
+                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             continue;
         }
 
         mlBase -= 1;
-        litLength += tempLiteralLength;
+        if (unlikely(kaelz4_rebuild_add_u32(&litLength, tempLiteralLength) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
         tempLiteralLength = 0;
+
+        U32 tmp_len;
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
+                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
 
         token = op++;
         if (unlikely(litLength >= RUN_MASK)) {
@@ -444,7 +519,6 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
             *token = (BYTE)(litLength << ML_BITS);
         }
 
-        U32 tmp_len = litLength + mlBase + 4;
         if (likely(tmp_len < ip_buf_remain)) {
             LZ4_wildCopy16(op, ip, op + litLength);
             ip += tmp_len;
@@ -453,14 +527,11 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
             wd_wild_copy16_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, litLength);
             wd_ip_add_len(source, &cur_buf_idx, &ip, &ip_buf_remain, mlBase + 4);
         }
+        consumed_src += tmp_len;
         op += litLength;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
-        if (unlikely(offBase > 65535)) {
-            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
-        }
 
         if (unlikely(mlBase >= ML_MASK)) {
             *token += ML_MASK;
@@ -475,12 +546,10 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         }
     }
 
-    size_t processed_bytes = 0;
-    for (unsigned int i = 0; i < cur_buf_idx; ++i) {
-        processed_bytes += source->buf[i].buf_len;
+    if (unlikely(consumed_src > total_src_bytes)) {
+        return kaelz4_rebuild_invalid_seq(save_info);
     }
-    processed_bytes += (size_t)(ip - (const BYTE*)source->buf[cur_buf_idx].data);
-    tempLiteralLength = total_src_bytes > processed_bytes ? (U32)(total_src_bytes - processed_bytes) : 0;
+    tempLiteralLength = (U32)(total_src_bytes - consumed_src);
 
     token = op++;
     if (tempLiteralLength >= RUN_MASK) {
@@ -494,8 +563,10 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
     } else {
         *token = (BYTE)(tempLiteralLength << ML_BITS);
     }
-    wd_copy_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, tempLiteralLength);
-    op += tempLiteralLength;
+    if (tempLiteralLength > 0) {
+        wd_copy_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, tempLiteralLength);
+        op += tempLiteralLength;
+    }
 
     int result = (int)(((char*)op) - ((char*)dest));
     return result;
@@ -534,6 +605,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
     U32 tempLiteralLength = 0;
     BYTE* token = NULL;
     U32 len = 0;
+    size_t consumed_src = 0;
 
     // 生成first new sequence 时，继承prev subblock的last literal
     // 如果无法生成，则本分块整体作为literal，留给后续的分块的first new sequence继承
@@ -545,18 +617,44 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         sequencesPtr++;
         seqCount++;
 
+        if (unlikely(offBase > 65535)) {
+            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
+            return KAE_LZ4_REBUILD_FAIL;
+        }
+
         if (mlBase == 0) {
-            tempLiteralLength += litLength + 3;
+            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
+                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             continue;
         }
 
         mlBase -= 1;
-        litLength += tempLiteralLength + save_info->prev_last_lit_len;
+        if (unlikely(kaelz4_rebuild_add_u32(&litLength, tempLiteralLength) != KAE_LZ4_SUCC ||
+                     kaelz4_rebuild_add_u32(&litLength, save_info->prev_last_lit_len) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
         tempLiteralLength = 0;
 
+        U32 outputLitLength = litLength;
+        if (save_info->prev_last_lit_ptr != NULL) {
+            if (unlikely(save_info->prev_last_lit_buf_index >= save_info->src->buf_num ||
+                         save_info->prev_last_lit_len > litLength)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
+            litLength -= save_info->prev_last_lit_len;
+        }
+
+        U32 tmp_len;
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
+                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
+
         token = op++;
-        if (unlikely(litLength >= RUN_MASK)) {
-            len = litLength - RUN_MASK;
+        if (unlikely(outputLitLength >= RUN_MASK)) {
+            len = outputLitLength - RUN_MASK;
             *token = (RUN_MASK << ML_BITS);
             while (len >= 255) {
                 *op++ = 255;
@@ -564,7 +662,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             }
             *op++ = (BYTE)len;
         } else {
-            *token = (BYTE)(litLength << ML_BITS);
+            *token = (BYTE)(outputLitLength << ML_BITS);
         }
 
         // 满足生成first new sequence条件，继承prev subblock的last literal
@@ -575,11 +673,9 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
                                             (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain,
                                             op, save_info->prev_last_lit_len);
             op += save_info->prev_last_lit_len;
-            litLength -= save_info->prev_last_lit_len;
             save_info->prev_last_lit_ptr = NULL;
             save_info->prev_last_lit_len = 0;
         }
-        U32 tmp_len = litLength + mlBase + 4;
         if (likely(tmp_len < ip_buf_remain)) {
             LZ4_wildCopy16(op, ip, op + litLength);
             ip += tmp_len;
@@ -588,14 +684,11 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             wd_wild_copy16_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, litLength);
             wd_ip_add_len(source, &cur_buf_idx, &ip, &ip_buf_remain, mlBase + 4);
         }
+        consumed_src += tmp_len;
         op += litLength;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
-        if (unlikely(offBase > 65535)) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
-            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
-        }
 
         if (mlBase >= ML_MASK) {
             *token += ML_MASK;
@@ -618,14 +711,30 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         sequencesPtr++;
         seqCount++;
 
+        if (unlikely(offBase > 65535)) {
+            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
+            return KAE_LZ4_REBUILD_FAIL;
+        }
+
         if (mlBase == 0) {
-            tempLiteralLength += litLength + 3;
+            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
+                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             continue;
         }
 
         mlBase -= 1;
-        litLength += tempLiteralLength;
+        if (unlikely(kaelz4_rebuild_add_u32(&litLength, tempLiteralLength) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
         tempLiteralLength = 0;
+
+        U32 tmp_len;
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
+                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
 
         token = op++;
         if (litLength >= RUN_MASK) {
@@ -640,7 +749,6 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             *token = (BYTE)(litLength << ML_BITS);
         }
 
-        U32 tmp_len = litLength + mlBase + 4;
         if (likely(tmp_len < ip_buf_remain)) {
             LZ4_wildCopy16(op, ip, op + litLength);
             ip += tmp_len;
@@ -649,14 +757,11 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             wd_wild_copy16_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, litLength);
             wd_ip_add_len(source, &cur_buf_idx, &ip, &ip_buf_remain, mlBase + 4);
         }
+        consumed_src += tmp_len;
         op += litLength;
 
         LZ4_writeLE16(op, (U16)(offBase));
         op += 2;
-        if (unlikely(offBase > 65535)) { // 边界情况判断，硬件返回结果中，offBase不应该大于64KB
-            US_ERR("Warning! offBase(%d) is larger than 64KB.\n", offBase);
-            return KAE_LZ4_REBUILD_FAIL;
-        }
 
         if (mlBase >= ML_MASK) {
             *token += ML_MASK;
@@ -671,27 +776,34 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
     }
 
-    size_t processed_bytes = 0;
-    for (unsigned int i = 0; i < cur_buf_idx; ++i) {
-        processed_bytes += source->buf[i].buf_len;
+    if (unlikely(consumed_src > total_src_bytes)) {
+        return kaelz4_rebuild_invalid_seq(save_info);
     }
-    processed_bytes += (size_t)(ip - (const BYTE*)source->buf[cur_buf_idx].data);
-    tempLiteralLength = total_src_bytes > processed_bytes ? (U32)(total_src_bytes - processed_bytes) : 0;
+    tempLiteralLength = (U32)(total_src_bytes - consumed_src);
 
     // 尾部处理
     // 非last subblock，刷新ctx中的prev subblock literal 信息
     if (req->last != 1) {
         // 本分块不满足rebuild new seq：1)subblock完全不可压，全是literal;2)三元组全是matchlen=0。本分块作为literal留给后续分块的first new seq继承，且存在跨多个分块情况
         if (unlikely(save_info->prev_last_lit_ptr != NULL)) {
+            if (unlikely(save_info->prev_last_lit_len > SIZE_MAX - tempLiteralLength)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             save_info->prev_last_lit_len += tempLiteralLength;
-        } else { // 本分块满足rebuild new seq:记录尾部的literal部分信息，留给后续分块的first new seq继承
+        } else if (tempLiteralLength > 0) { // 本分块满足rebuild new seq:记录尾部的literal部分信息，留给后续分块的first new seq继承
+            if (unlikely(cur_buf_idx >= source->buf_num)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             save_info->prev_last_lit_ptr = (void *)ip;
             save_info->prev_last_lit_buf_index = req->buf_start_index + cur_buf_idx;
             save_info->prev_last_lit_len = tempLiteralLength;
         }
     } else { // last subblock，生成last seq
         // 继承prev subblock的last literal
-        tempLiteralLength += save_info->prev_last_lit_len;
+        if (unlikely(kaelz4_rebuild_add_u32(&tempLiteralLength,
+                                            save_info->prev_last_lit_len) != KAE_LZ4_SUCC)) {
+            return kaelz4_rebuild_invalid_seq(save_info);
+        }
 
         token = op++;
         if (tempLiteralLength >= RUN_MASK) {
@@ -707,6 +819,10 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         if (save_info->prev_last_lit_ptr != NULL) {
+            if (unlikely(save_info->prev_last_lit_buf_index >= save_info->src->buf_num ||
+                         save_info->prev_last_lit_len > tempLiteralLength)) {
+                return kaelz4_rebuild_invalid_seq(save_info);
+            }
             struct kaelz4_buffer *last_buf = &save_info->src->buf[save_info->prev_last_lit_buf_index];
             size_t last_buf_remain = last_buf->data + last_buf->buf_len - save_info->prev_last_lit_ptr;
             kaelz4_wild_copy16_from_buffers(save_info->src, &save_info->prev_last_lit_buf_index,
@@ -717,8 +833,10 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             save_info->prev_last_lit_ptr = NULL;
             save_info->prev_last_lit_len = 0;
         }
-        wd_copy_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, tempLiteralLength);
-        op += tempLiteralLength;
+        if (tempLiteralLength > 0) {
+            wd_copy_from_buffers(source, &cur_buf_idx, &ip, &ip_buf_remain, op, tempLiteralLength);
+            op += tempLiteralLength;
+        }
     }
 
     int result = (int)(((char*)op) - ((char*)dest));
@@ -1628,10 +1746,19 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
         if (remainingLength == 0) {
             req.last = 1;
         }
+        if (unlikely(kaelz4_check_rebuild_seq_result(seq_result) != KAE_LZ4_SUCC)) {
+            result->status = KAE_LZ4_INVAL_PARA;
+            result->dst_len = 0;
+            return KAE_LZ4_INVAL_PARA;
+        }
         req.zc.seqStore.sequencesStart = (seqDef *)seq_result->seq_start;
         req.zc.seqnum = seq_result->seq_num;
         ret = g_post_process_handle[data_format](&req, &req.src, dst->buf[0].data + save_info.dst_len, &save_info);
         if (ret < 0 || result->status != KAE_LZ4_SUCC) {
+            result->dst_len = 0;
+            if (result->status == KAE_LZ4_INVAL_PARA) {
+                return KAE_LZ4_INVAL_PARA;
+            }
             result->status = KAE_LZ4_COMP_FAIL;
             return KAE_LZ4_COMP_FAIL;
         }

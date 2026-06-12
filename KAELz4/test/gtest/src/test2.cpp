@@ -16,34 +16,23 @@ extern "C" {
     #include "kaelz4.h"
     #include <lz4.h>
     #include <lz4frame.h>
+    #include <lz4_accelerater.h>
     #include "kaelz4_ctx.h"
     #include "kaelz4_comp.h"
     #include "kaelz4_log.h"
-    extern void kaelz4_ctx_clear(void);
+    extern void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl);
 }
 
 extern __thread struct kaelz4_async_ctrl g_async_ctrl;
 
-TEST(kaelz4_ctx_clear_Test, is_test_g_async_ctrl_all_clean)
+TEST(kaelz4_ctx_clear_Test, empty_ctrl_is_safe)
 {
-    int ret = 0;
-    kaelz4_ctx_t *kzctx = (kaelz4_ctx_t *)malloc(sizeof(kaelz4_ctx_t));
-    g_async_ctrl.kz_ctx[0] = kzctx;
-    kaelz4_init_ctx(g_async_ctrl.kz_ctx[0]);
-    for (int i = 0; i < 2; i++) {
-        if (g_async_ctrl.kz_ctx[i] != NULL) {
-            ret++;
-        }
-    }
-    ASSERT_EQ(ret, 1);
+    memset(&g_async_ctrl, 0, sizeof(g_async_ctrl));
+    g_async_ctrl.ctx_num = 2;
 
-    kaelz4_ctx_clear();
+    kaelz4_ctx_clear(&g_async_ctrl);
 
-    ret = 0;
     for (int i = 0; i < 2; i++) {
-        if (g_async_ctrl.kz_ctx[i] != NULL) {
-            ret++;
-        }
+        ASSERT_EQ(g_async_ctrl.kz_ctx[i], nullptr);
     }
-    ASSERT_EQ(ret, 0);
 }
