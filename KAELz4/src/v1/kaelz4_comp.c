@@ -9,6 +9,7 @@
 #include "kaelz4_ctx.h"
 #include "kaelz4_comp.h"
 #include "kaelz4_log.h"
+#include <limits.h>
 #include <xxhash.h>
 
 __thread struct kaelz4_async_ctrl g_async_ctrl = {0};
@@ -53,15 +54,20 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
 
 int kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize)
 {
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
-    if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
+    if (zc == NULL || src == NULL || srcSize == 0 || zc->kaeConfig == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_LZ4_INVAL_PARA;
     }
 
+    if (srcSize > COMP_BLOCK_SIZE || srcSize > UINT_MAX) {
+        US_ERR("compress srcSize %lu exceeds v1 staging buffer size\n", srcSize);
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
     US_INFO("kaelz4 compress srcSize : %lu", srcSize);
     kaelz4_ctx->in           = (void*)src;
-    kaelz4_ctx->in_len       = srcSize;
+    kaelz4_ctx->in_len       = (unsigned int)srcSize;
     kaelz4_ctx->out          = NULL;
     kaelz4_ctx->consumed     = 0;
     kaelz4_ctx->produced     = 0;

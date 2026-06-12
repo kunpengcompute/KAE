@@ -18,10 +18,16 @@
 #include <zlib.h>
 
 extern "C" {
+#include <lz4_accelerater.h>
 #include "kaelz4.h"
+#include "kaelz4_comp.h"
 #include <lz4.h>
 #include <lz4frame.h>
+
+extern void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl);
 }
+
+extern __thread struct kaelz4_async_ctrl g_async_ctrl;
 
 #ifndef MAP_HUGE_SHIFT
 #define MAP_HUGE_SHIFT 26
@@ -48,6 +54,7 @@ namespace {
 const size_t kSmallSize = 32 * 1024;
 const size_t kLargeSize = 160 * 1024;
 const size_t kFrameSize = 192 * 1024;
+const size_t kLz4BlockSize = 64 * 1024;
 const size_t kLiteralOnlyLz77Size = 11;
 const int kInflightTasks = 16;
 const int kBackpressureTasks = 72;
@@ -979,9 +986,34 @@ size_t MaxSeqNumPerTupleChunk()
 
 } // namespace
 
+// Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the documented
+// 64KB chunk rounding used by async LZ77 raw output buffers.
+TEST(KAELz4AsyncPolling, LZ77TupleBufferLengthRoundsBy64KB)
+{
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(0), 0U);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(1), KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize), KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize + 1),
+              2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+}
+
+// Purpose: async control cleanup validation. Verifies that clearing an empty
+// control object is safe and nulls the context slots it is asked to inspect.
+TEST(KAELz4AsyncPolling, CtxClearEmptyCtrlIsSafe)
+{
+    memset(&g_async_ctrl, 0, sizeof(g_async_ctrl));
+    g_async_ctrl.ctx_num = 2;
+
+    kaelz4_ctx_clear(&g_async_ctrl);
+
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(g_async_ctrl.kz_ctx[i], nullptr);
+    }
+}
+
 // Purpose: rebuild API entry validation. Verifies that public block/frame
 // rebuild calls reject NULL top-level arguments before touching nested fields.
-TEST(KAELz4RebuildValidation, RejectsNullArguments)
+TEST(KAELz4AsyncPolling, RebuildRejectsNullArguments)
 {
     RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -998,7 +1030,7 @@ TEST(KAELz4RebuildValidation, RejectsNullArguments)
 
 // Purpose: tuple buffer-list shape validation. Verifies that rebuild rejects
 // tuple lists that are not the single-buffer format documented by KAELz4.
-TEST(KAELz4RebuildValidation, RejectsInvalidTupleBufferList)
+TEST(KAELz4AsyncPolling, RebuildRejectsInvalidTupleBufferList)
 {
     RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -1020,7 +1052,7 @@ TEST(KAELz4RebuildValidation, RejectsInvalidTupleBufferList)
 // Purpose: tuple total-length validation for block rebuild. Verifies that a
 // source requiring several 64KB tuple chunks cannot be rebuilt from a short
 // tuple buffer.
-TEST(KAELz4RebuildValidation, RejectsShortTupleBuffer_Block)
+TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferBlock)
 {
     RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 3);
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -1033,7 +1065,7 @@ TEST(KAELz4RebuildValidation, RejectsShortTupleBuffer_Block)
 
 // Purpose: tuple total-length validation for frame rebuild. Verifies that the
 // frame wrapper path performs the same tuple length checks before post-processing.
-TEST(KAELz4RebuildValidation, RejectsShortTupleBuffer_Frame)
+TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferFrame)
 {
     RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 2);
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -1047,7 +1079,7 @@ TEST(KAELz4RebuildValidation, RejectsShortTupleBuffer_Frame)
 
 // Purpose: source-size validation. Verifies that callers cannot drive the
 // rebuild loop with result->src_size that differs from the actual source list.
-TEST(KAELz4RebuildValidation, RejectsSrcSizeMismatch)
+TEST(KAELz4AsyncPolling, RebuildRejectsSrcSizeMismatch)
 {
     RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize), 2);
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -1061,7 +1093,7 @@ TEST(KAELz4RebuildValidation, RejectsSrcSizeMismatch)
 
 // Purpose: per-chunk seq_num validation. Verifies that an oversized seq_num is
 // rejected even when the tuple buffer has the documented total capacity.
-TEST(KAELz4RebuildValidation, RejectsSeqNumPastTupleChunk)
+TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastTupleChunk)
 {
     RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
@@ -1074,7 +1106,7 @@ TEST(KAELz4RebuildValidation, RejectsSeqNumPastTupleChunk)
 
 // Purpose: embedded seqDef validation. Verifies that a tuple whose seqDef would
 // consume more bytes than the current source chunk fails before copying input.
-TEST(KAELz4RebuildValidation, RejectsMalformedSeqFields)
+TEST(KAELz4AsyncPolling, RebuildRejectsMalformedSeqFields)
 {
     RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
     ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
