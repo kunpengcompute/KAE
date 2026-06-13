@@ -39,6 +39,7 @@ INCDIR += -I $(WORK_PATH)/gtest-download/googletest-release-1.11.0/googletest/in
 
 # Include Libs.
 LIBDIR += -L $(WORK_PATH)/test_tool_bins/gtest
+LIBDIR += -L/usr/local/lib64/
 LIBS +=  -lgtest_main -lgtest -lz  -llz4  -lrt -lpthread -lkaelz4 -lwd -lwd_comp
 
 # The flags
@@ -46,6 +47,7 @@ CFLAGS    := -g -pipe -Wall -Wextra -Wshadow -fPIC -std=c++17 #-Wl,-rpath,/usr/l
 LDFLAGS   += $(LIBDIR)
 LDFLAGS   += $(LIBS)
 LDFLAGS   += -Wl,-rpath,/usr/local/kaelz4/lib
+LDFLAGS   += -Wl,--wrap=malloc
 
 # The command used to delete file.
 RM        = rm -f
@@ -80,7 +82,7 @@ objs : $(OBJS)
 $(TARGET): $(OBJS)
 	@echo Linking $@
    
-	$(SILENCE) $(CXX) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS)
+	$(SILENCE) $(CXX) $(CPPFLAGS) $(CFLAGS) $(INCDIR) -o ./$(TARGET) $(OBJS) $(LDFLAGS)
 
 rebuild: clean all
 

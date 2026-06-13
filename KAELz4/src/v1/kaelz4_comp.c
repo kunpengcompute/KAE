@@ -1668,6 +1668,8 @@ int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_bu
                           lz4_async_callback callback, struct kaelz4_result *result,
                           enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
 {
+    struct kaelz4_compress_ctx *prev_tail = ctrl->tail;
+    int queue_was_empty = (ctrl->ctx_head == NULL);
     struct kaelz4_compress_ctx *compress_ctx = (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
     if (unlikely(compress_ctx == NULL)) {
         US_ERR("Alloc compress_ctx failed!\n");
@@ -1692,7 +1694,7 @@ int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_bu
     compress_ctx->save_info.prev_last_lit_len = 0;
     compress_ctx->save_info.src = src;
 
-    if (ctrl->ctx_head) {
+    if (!queue_was_empty) {
         ctrl->tail->next = compress_ctx;
     } else {
         ctrl->ctx_head = compress_ctx;
@@ -1706,11 +1708,14 @@ int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_bu
     return KAE_LZ4_SUCC;
 
 free_compress_ctx:
-    ctrl->ctx_head = compress_ctx->next;
-    free(compress_ctx);
-    if (ctrl->ctx_head == NULL) {
+    if (queue_was_empty) {
+        ctrl->ctx_head = NULL;
         ctrl->tail = NULL;
+    } else {
+        prev_tail->next = NULL;
+        ctrl->tail = prev_tail;
     }
+    free(compress_ctx);
 
 err_callback:
     if (ctrl->is_polling) {

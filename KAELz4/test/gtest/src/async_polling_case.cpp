@@ -25,9 +25,42 @@ extern "C" {
 #include <lz4frame.h>
 
 extern void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl);
+extern int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src,
+                                 struct kaelz4_buffer_list *dst, lz4_async_callback callback,
+                                 struct kaelz4_result *result,
+                                 enum kae_lz4_async_data_format data_format,
+                                 const LZ4F_preferences_t *ptr);
 }
 
 extern __thread struct kaelz4_async_ctrl g_async_ctrl;
+
+enum class MallocFailPoint {
+    kNone,
+    kAsyncReqAlloc,
+};
+
+static thread_local MallocFailPoint g_thread_malloc_fail_point = MallocFailPoint::kNone;
+static thread_local size_t g_thread_malloc_fail_size = 0;
+static thread_local int g_thread_malloc_fail_count = 0;
+static thread_local int g_thread_malloc_fail_skip = 0;
+
+extern "C" void *__real_malloc(size_t size);
+
+extern "C" void *__wrap_malloc(size_t size)
+{
+    if (g_thread_malloc_fail_point == MallocFailPoint::kAsyncReqAlloc &&
+        g_thread_malloc_fail_count > 0 &&
+        size == g_thread_malloc_fail_size) {
+        if (g_thread_malloc_fail_skip > 0) {
+            --g_thread_malloc_fail_skip;
+        } else {
+            --g_thread_malloc_fail_count;
+            return nullptr;
+        }
+    }
+
+    return __real_malloc(size);
+}
 
 #ifndef MAP_HUGE_SHIFT
 #define MAP_HUGE_SHIFT 26
@@ -62,6 +95,28 @@ const int kPollBudget = 16;
 const int kTimeoutMs = 30000;
 const uint64_t kPagemapPresent = 1ULL << 63;
 const uint64_t kPagemapPfnMask = (1ULL << 55) - 1;
+
+class ScopedAsyncReqMallocFailure {
+public:
+    explicit ScopedAsyncReqMallocFailure(int fail_count)
+    {
+        g_thread_malloc_fail_point = MallocFailPoint::kAsyncReqAlloc;
+        g_thread_malloc_fail_size = sizeof(struct kaelz4_async_req);
+        g_thread_malloc_fail_count = fail_count;
+        g_thread_malloc_fail_skip = (sizeof(struct kaelz4_async_req) == sizeof(struct kaelz4_compress_ctx)) ? 1 : 0;
+    }
+
+    ~ScopedAsyncReqMallocFailure()
+    {
+        g_thread_malloc_fail_point = MallocFailPoint::kNone;
+        g_thread_malloc_fail_size = 0;
+        g_thread_malloc_fail_count = 0;
+        g_thread_malloc_fail_skip = 0;
+    }
+
+    ScopedAsyncReqMallocFailure(const ScopedAsyncReqMallocFailure &) = delete;
+    ScopedAsyncReqMallocFailure &operator=(const ScopedAsyncReqMallocFailure &) = delete;
+};
 
 enum class MemoryMode {
     kNonZeroCopy,
@@ -1215,6 +1270,12 @@ std::vector<uint8_t> BuildSingleSequenceSource(size_t final_literal_len)
     return input;
 }
 
+void UnexpectedQueueRollbackCallback(kaelz4_result *result)
+{
+    (void)result;
+    ADD_FAILURE() << "allocation rollback test should not invoke callback in polling mode";
+}
+
 } // namespace
 
 // Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the documented
@@ -1240,6 +1301,46 @@ TEST(KAELz4AsyncPolling, CtxClearEmptyCtrlIsSafe)
     for (int i = 0; i < 2; i++) {
         ASSERT_EQ(g_async_ctrl.kz_ctx[i], nullptr);
     }
+}
+
+// Purpose: async queue rollback on request allocation failure. Builds an
+// existing ctx queue, injects one kaelz4_async_req malloc failure, then verifies
+// that the newly appended ctx is removed without dropping the old queue head.
+TEST(KAELz4AsyncPolling, AsyncReqAllocFailurePreservesExistingQueue)
+{
+    struct kaelz4_async_ctrl ctrl = {};
+    struct kaelz4_compress_ctx existing_ctx = {};
+    ctrl.ctx_head = &existing_ctx;
+    ctrl.tail = &existing_ctx;
+    ctrl.is_polling = 1;
+
+    std::vector<uint8_t> input = GenerateInput(128, 0x7100);
+    std::vector<uint8_t> output(OutputCapacity(input.size(), false), 0);
+    std::vector<kaelz4_buffer> src_bufs;
+    kaelz4_buffer_list src = {};
+    BuildBufferList(input.data(), input.size(), 1, &src_bufs, &src, nullptr);
+
+    kaelz4_buffer dst_buf = {output.size(), output.data()};
+    kaelz4_buffer_list dst = {};
+    dst.buf_num = 1;
+    dst.buf = &dst_buf;
+    dst.usr_data = nullptr;
+
+    kaelz4_result result = {};
+    result.src_size = input.size();
+    result.dst_len = output.size();
+    LZ4F_preferences_t preferences = {};
+
+    {
+        ScopedAsyncReqMallocFailure fail_once(1);
+        EXPECT_EQ(kaelz4_compress_async(&ctrl, &src, &dst, UnexpectedQueueRollbackCallback,
+                                        &result, KAELZ4_ASYNC_BLOCK, &preferences),
+                  KAE_LZ4_ALLOC_FAIL);
+    }
+
+    EXPECT_EQ(ctrl.ctx_head, &existing_ctx);
+    EXPECT_EQ(ctrl.tail, &existing_ctx);
+    EXPECT_EQ(existing_ctx.next, nullptr);
 }
 
 // Purpose: rebuild API entry validation. Verifies that public block/frame
