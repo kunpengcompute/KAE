@@ -30,6 +30,10 @@ static KAE_QUEUE_POOL_HEAD_S* g_kaezip_deflate_qp = NULL;
 static KAE_QUEUE_POOL_HEAD_S* g_kaezip_inflate_qp = NULL;
 static pthread_mutex_t g_kaezip_deflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_kaezip_inflate_pool_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int g_kaezip_parent_had_qp_before_fork = 0;
+
+#define COMP_OPTYPE_NUM (2)
+__thread struct kaezip_instance *g_cur_instance[COMP_OPTYPE_NUM];
 
 static KAE_QUEUE_POOL_HEAD_S* kaezip_get_qp(int algtype);
 static kaezip_ctx_t *kaezip_new_ctx(struct kaezip_instance *instance, int alg_comp_type, int comp_optype, int is_sgl);
@@ -52,26 +56,24 @@ static void kaezip_register_fork_handlers(void) {
 static void kaezip_prepare_fork(void) {
     pthread_mutex_lock(&g_kaezip_deflate_pool_init_mutex);
     pthread_mutex_lock(&g_kaezip_inflate_pool_init_mutex);
-    if (g_kaezip_deflate_qp) {
-        kaezip_queue_pool_destroy(g_kaezip_deflate_qp, kaezip_free_instance);
-        g_kaezip_deflate_qp = NULL;
-    }
-    
-    if (g_kaezip_inflate_qp) {
-        kaezip_queue_pool_destroy(g_kaezip_inflate_qp, kaezip_free_instance);
-        g_kaezip_inflate_qp = NULL;
-    }
+    g_kaezip_parent_had_qp_before_fork = (g_kaezip_deflate_qp != NULL || g_kaezip_inflate_qp != NULL);
 }
 
 static void kaezip_parent_fork(void) {
+    g_kaezip_parent_had_qp_before_fork = 0;
     pthread_mutex_unlock(&g_kaezip_inflate_pool_init_mutex);
     pthread_mutex_unlock(&g_kaezip_deflate_pool_init_mutex);
 }
 
 static void kaezip_child_fork(void) {
-    pthread_mutex_init(&g_kaezip_deflate_pool_init_mutex, NULL);
-    pthread_mutex_init(&g_kaezip_inflate_pool_init_mutex, NULL);
-    
+    if (g_kaezip_parent_had_qp_before_fork) {
+        g_kaezip_deflate_qp = NULL;
+        g_kaezip_inflate_qp = NULL;
+        g_cur_instance[0] = NULL;
+        g_cur_instance[1] = NULL;
+    }
+    g_kaezip_parent_had_qp_before_fork = 0;
+
     pthread_mutex_unlock(&g_kaezip_inflate_pool_init_mutex);
     pthread_mutex_unlock(&g_kaezip_deflate_pool_init_mutex);
 }
@@ -610,8 +612,6 @@ static void kaezip_free_instance(void *arg)
     kae_free(instance);
 }
 
-#define COMP_OPTYPE_NUM (2)
-__thread struct kaezip_instance *g_cur_instance[COMP_OPTYPE_NUM];
 kaezip_ctx_t* kaezip_get_ctx(int alg_comp_type, int comp_optype, int win_size, int is_sgl, const device_config_t *config, operation_mode mode)
 {
     KAE_QUEUE_DATA_NODE_S      *q_node = NULL;
