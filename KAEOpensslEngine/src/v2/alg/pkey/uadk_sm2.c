@@ -21,6 +21,8 @@
 #include <openssl/engine.h>
 #include <openssl/ossl_typ.h>
 #include <openssl/err.h>
+#include <limits.h>
+#include <stdint.h>
 #include <uadk/wd_ecc.h>
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
@@ -28,6 +30,7 @@
 #include "utils/engine_log.h"
 
 #define GET_SIGNLEN	1
+#define SM2_POINT_BYTES	32
 
 enum {
 	CTX_INIT_FAIL = -1,
@@ -554,28 +557,62 @@ free_x1:
 static int cipher_ber_to_bin(const EVP_MD *md, struct sm2_ciphertext *ctext_struct,
 			     struct wd_ecc_point *c1, struct wd_dtb *c2, struct wd_dtb *c3)
 {
-	int len, len1, md_size;
+	size_t len, len1, c2_len, c3_len, total_len;
+	int bn_len, bn_len1, md_size;
 
-	len = BN_num_bytes(ctext_struct->C1x);
-	len1 = BN_num_bytes(ctext_struct->C1y);
-	c1->x.data = malloc(len + len1 + ctext_struct->C2->length +
-			    ctext_struct->C3->length);
+	if (!md || !ctext_struct || !c1 || !c2 || !c3 ||
+	    !ctext_struct->C1x || !ctext_struct->C1y ||
+	    !ctext_struct->C2 || !ctext_struct->C3)
+		return -EINVAL;
+
+	if (ctext_struct->C2->length < 0 || ctext_struct->C3->length < 0)
+		return -EINVAL;
+
+	md_size = EVP_MD_size(md);
+	if (md_size <= 0 || ctext_struct->C3->length != md_size) {
+		fprintf(stderr, "invalid: c3 length(%d) != hash_size(%d)\n",
+			ctext_struct->C3->length, md_size);
+		return -EINVAL;
+	}
+
+	bn_len = BN_num_bytes(ctext_struct->C1x);
+	bn_len1 = BN_num_bytes(ctext_struct->C1y);
+	if (bn_len <= 0 || bn_len > SM2_POINT_BYTES ||
+	    bn_len1 <= 0 || bn_len1 > SM2_POINT_BYTES)
+		return -EINVAL;
+
+	len = (size_t)bn_len;
+	len1 = (size_t)bn_len1;
+	c2_len = (size_t)ctext_struct->C2->length;
+	c3_len = (size_t)ctext_struct->C3->length;
+
+	if ((c2_len && !ctext_struct->C2->data) ||
+	    (c3_len && !ctext_struct->C3->data))
+		return -EINVAL;
+
+	if (len > SIZE_MAX - len1)
+		return -EINVAL;
+	total_len = len + len1;
+	if (total_len > SIZE_MAX - c3_len)
+		return -EINVAL;
+	total_len += c3_len;
+	if (total_len > SIZE_MAX - c2_len)
+		return -EINVAL;
+	total_len += c2_len;
+	if (total_len > UINT_MAX)
+		return -EINVAL;
+
+	c1->x.data = malloc(total_len);
 	if (!c1->x.data)
 		return -ENOMEM;
 
 	c1->y.data = c1->x.data + len;
 	c3->data = c1->y.data + len1;
-	c2->data = c3->data + ctext_struct->C3->length;
-	memcpy(c2->data, ctext_struct->C2->data, ctext_struct->C2->length);
-	memcpy(c3->data, ctext_struct->C3->data, ctext_struct->C3->length);
-	c2->dsize = ctext_struct->C2->length;
-	c3->dsize = ctext_struct->C3->length;
-	md_size = EVP_MD_size(md);
-	if (c3->dsize != md_size) {
-		fprintf(stderr, "invalid: c3 dsize(%u) != hash_size(%d)\n", c3->dsize, md_size);
-		free(c1->x.data);
-		return -EINVAL;
-	}
+	c2->data = c3->data + c3_len;
+	memcpy(c2->data, ctext_struct->C2->data, c2_len);
+	memcpy(c3->data, ctext_struct->C3->data, c3_len);
+	c2->dsize = (__u32)c2_len;
+	c3->dsize = (__u32)c3_len;
 
 	c1->x.dsize = BN_bn2bin(ctext_struct->C1x, (void *)c1->x.data);
 	c1->y.dsize = BN_bn2bin(ctext_struct->C1y, (void *)c1->y.data);

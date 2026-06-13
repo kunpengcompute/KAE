@@ -28,6 +28,8 @@
 #define MAXBLOCKSIZE   0x90000
 #define MAXRSVMEM      0x400000
 
+static pthread_mutex_t g_kae_pool_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 const char *g_alg_type[] = {
 	"rsa",
 	"dh",
@@ -208,6 +210,7 @@ KAE_QUEUE_POOL_HEAD_S *kae_init_queue_pool(int algtype)
 	kae_pool->algtype = algtype;
 	kae_pool->next = NULL;
 	kae_pool->pool_use_num = 0;
+	kae_pool->is_destroyed = 0;
 
 	/* malloc a pool */
 	kae_pool->kae_queue_pool = (KAE_QUEUE_POOL_NODE_S *)
@@ -327,9 +330,17 @@ KAE_QUEUE_DATA_NODE_S *kae_get_node_from_pool(KAE_QUEUE_POOL_HEAD_S *pool_head)
 		return NULL;
 	}
 
+	pthread_mutex_lock(&g_kae_pool_list_mutex);
+	if (pool_head->is_destroyed || pool_head->kae_queue_pool == NULL) {
+		pthread_mutex_unlock(&g_kae_pool_list_mutex);
+		return NULL;
+	}
+
 	queue_data_node = kae_get_queue_data_from_list(pool_head);
 	if (queue_data_node == NULL)
 		queue_data_node = kae_new_wd_queue_memory(pool_head->algtype);
+
+	pthread_mutex_unlock(&g_kae_pool_list_mutex);
 
 	return queue_data_node;
 }
@@ -353,6 +364,13 @@ int kae_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S *pool_head,  KAE_QUEUE_DATA_NODE_
 
 	US_DEBUG("Add nodedata to pool");
 
+	pthread_mutex_lock(&g_kae_pool_list_mutex);
+	if (pool_head->is_destroyed || pool_head->kae_queue_pool == NULL) {
+		pthread_mutex_unlock(&g_kae_pool_list_mutex);
+		kae_free_wd_queue_memory(node_data, NULL);
+		return 0;
+	}
+
 	while (temp_pool != NULL) {
 		for (i = 0; i < KAE_QUEUE_POOL_MAX_SIZE; i++) {
 			if (temp_pool->kae_queue_pool[i].node_data)
@@ -370,6 +388,7 @@ int kae_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S *pool_head,  KAE_QUEUE_DATA_NODE_
 						kae_set_pool_use_num(temp_pool, i + 1);
 
 					US_DEBUG("kae put queue node to pool, queue_node id is %d.", i);
+					pthread_mutex_unlock(&g_kae_pool_list_mutex);
 					return 1;
 				}
 			}
@@ -391,6 +410,7 @@ int kae_put_node_to_pool(KAE_QUEUE_POOL_HEAD_S *pool_head,  KAE_QUEUE_DATA_NODE_
 		}
 	}
 	/* if not added,free it */
+	pthread_mutex_unlock(&g_kae_pool_list_mutex);
 	kae_free_wd_queue_memory(node_data, NULL);
 	return 0;
 }
@@ -408,45 +428,60 @@ void kae_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx
 	KAE_QUEUE_POOL_HEAD_S *temp_pool = NULL;
 	KAE_QUEUE_POOL_HEAD_S *cur_pool = pool_head;
 
+	if (pool_head == NULL)
+		return;
+
+	pthread_mutex_lock(&g_kae_pool_list_mutex);
+	pool_head->is_destroyed = 1;
 	while (cur_pool != NULL) {
+		cur_pool->is_destroyed = 1;
 		error = pthread_mutex_lock(&cur_pool->destroy_mutex);
 		if (error != 0) {
-			(void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
+			pthread_mutex_unlock(&g_kae_pool_list_mutex);
 			return;
 		}
 
 		error = pthread_mutex_lock(&cur_pool->kae_queue_mutex);
 		if (error != 0) {
 			(void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
+			pthread_mutex_unlock(&g_kae_pool_list_mutex);
 			return;
 		}
-		for (i = 0; i < cur_pool->pool_use_num; i++) {
-			queue_data_node = cur_pool->kae_queue_pool[i].node_data;
-			if (queue_data_node != NULL) {
-				kae_free_wd_queue_memory(queue_data_node, release_fn);
+		if (cur_pool->kae_queue_pool != NULL) {
+			for (i = 0; i < cur_pool->pool_use_num; i++) {
+				queue_data_node = cur_pool->kae_queue_pool[i].node_data;
+				if (queue_data_node != NULL) {
+					kae_free_wd_queue_memory(queue_data_node, release_fn);
 #ifndef KAE_BORINGSSL
-				US_DEBUG("kae queue node destroy success. queue_node id =%d", i);
+					US_DEBUG("kae queue node destroy success. queue_node id =%d", i);
 #endif
-				cur_pool->kae_queue_pool[i].node_data = NULL;
+					cur_pool->kae_queue_pool[i].node_data = NULL;
+				}
 			}
-		}
 #ifndef KAE_BORINGSSL
-		US_DEBUG("pool use num :%d.", cur_pool->pool_use_num);
+			US_DEBUG("pool use num :%d.", cur_pool->pool_use_num);
 #endif
-		kae_free(cur_pool->kae_queue_pool);
+			kae_free(cur_pool->kae_queue_pool);
+			cur_pool->kae_queue_pool = NULL;
+			cur_pool->pool_use_num = 0;
+		}
 
 		(void)pthread_mutex_unlock(&cur_pool->kae_queue_mutex);
 		(void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
 
-		pthread_mutex_destroy(&cur_pool->kae_queue_mutex);
-		pthread_mutex_destroy(&cur_pool->destroy_mutex);
+		temp_pool = cur_pool->next;
+		cur_pool->next = NULL;
 
-        temp_pool = cur_pool->next;
+		if (cur_pool != pool_head) {
+			pthread_mutex_destroy(&cur_pool->kae_queue_mutex);
+			pthread_mutex_destroy(&cur_pool->destroy_mutex);
+			kae_free(cur_pool);
+		}
 
-        kae_free(cur_pool);
-
-        cur_pool = temp_pool;
+		cur_pool = temp_pool;
 	}
+	pool_head->next = NULL;
+	pthread_mutex_unlock(&g_kae_pool_list_mutex);
 #ifndef KAE_BORINGSSL
 	US_DEBUG("kae queue pool destroy success.");
 #endif
@@ -462,11 +497,19 @@ void kae_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S *pool_head, release_
 
 	current_time = time((time_t *)NULL);
 
+	if (pool_head == NULL)
+		return;
+
+	pthread_mutex_lock(&g_kae_pool_list_mutex);
+	if (pool_head->is_destroyed || pool_head->kae_queue_pool == NULL) {
+		pthread_mutex_unlock(&g_kae_pool_list_mutex);
+		return;
+	}
+
 	while (cur_pool != NULL) {
 		error = pthread_mutex_lock(&cur_pool->destroy_mutex);
 		if (error != 0) {
 			cur_pool = cur_pool->next;
-			(void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
 			continue;
 		}
 		if (cur_pool->kae_queue_pool == NULL) {
@@ -502,4 +545,5 @@ void kae_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S *pool_head, release_
 		(void)pthread_mutex_unlock(&cur_pool->destroy_mutex);
 		cur_pool = cur_pool->next;
 	}
+	pthread_mutex_unlock(&g_kae_pool_list_mutex);
 }

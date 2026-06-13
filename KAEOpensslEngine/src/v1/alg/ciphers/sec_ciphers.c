@@ -611,7 +611,10 @@ static int sec_ciphers_priv_ctx_cleanup(EVP_CIPHER_CTX *ctx)
 	}
 
 	kae_free(priv_ctx->iv);
-	kae_free(priv_ctx->key);
+	if (priv_ctx->key) {
+		OPENSSL_cleanse(priv_ctx->key, priv_ctx->key_len);
+		kae_free(priv_ctx->key);
+	}
 	kae_free(priv_ctx->next_iv);
 	if (priv_ctx->ecb_encryto) {
 		if (priv_ctx->ecb_encryto->ecb_ctx != NULL) {
@@ -619,7 +622,11 @@ static int sec_ciphers_priv_ctx_cleanup(EVP_CIPHER_CTX *ctx)
 			priv_ctx->ecb_encryto->ecb_ctx = NULL;
 		}
 
-		kae_free(priv_ctx->ecb_encryto->key2);
+		if (priv_ctx->ecb_encryto->key2) {
+			OPENSSL_cleanse(priv_ctx->ecb_encryto->key2,
+					priv_ctx->ecb_encryto->key2_len);
+			kae_free(priv_ctx->ecb_encryto->key2);
+		}
 		kae_free(priv_ctx->ecb_encryto->encryto_iv);
 		kae_free(priv_ctx->ecb_encryto->iv_out);
 		kae_free(priv_ctx->ecb_encryto);

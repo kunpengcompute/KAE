@@ -18,6 +18,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <limits.h>
 #include <openssl/aes.h>
 #include <openssl/engine.h>
 #include <uadk/wd_aead.h>
@@ -482,10 +483,20 @@ static int uadk_e_do_aes_gcm_first(struct aead_priv_ctx *priv, unsigned char *ou
 {
 	int ret;
 
-	priv->req.assoc_bytes = inlen;
+	if (unlikely(inlen > USHRT_MAX)) {
+		fprintf(stderr, "aead aad length is too long!\n");
+		return UADK_E_FAIL;
+	}
+
+	priv->req.assoc_bytes = (__u16)inlen;
 
 	/* Asynchronous jobs use the block mode. */
 	if (priv->mode == ASYNC_STREAM) {
+		if (unlikely(inlen > AEAD_BLOCK_SIZE)) {
+			fprintf(stderr, "aead aad length is too long!\n");
+			return UADK_E_FAIL;
+		}
+
 		memcpy(priv->data, in, inlen);
 		return UADK_E_SUCCESS;
 	}

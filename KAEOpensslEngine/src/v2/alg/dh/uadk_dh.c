@@ -578,12 +578,23 @@ static int dh_prepare_data(const BIGNUM *g, DH *dh,
 	return ret;
 }
 
+static int dh_check_bn_size(const BIGNUM *bn, __u16 key_size)
+{
+	if (!bn || BN_num_bytes(bn) > key_size)
+		return UADK_E_FAIL;
+
+	return UADK_E_SUCCESS;
+}
+
 static int dh_set_g(const BIGNUM *g, const __u16 key_size,
 		    unsigned char *ag_bin, struct uadk_dh_sess *dh_sess)
 {
 	struct wd_dtb g_dtb;
 	__u32 gbytes;
 	int ret;
+
+	if (!dh_check_bn_size(g, key_size))
+		return UADK_E_FAIL;
 
 	gbytes = BN_bn2bin(g, ag_bin);
 	g_dtb.data = (char *)ag_bin;
@@ -624,6 +635,10 @@ static int dh_fill_genkey_req(const BIGNUM *g, const BIGNUM *p,
 	unsigned char *ap_bin;
 	unsigned char *out_pri;
 	int ret;
+
+	if (!dh_check_bn_size(p, key_size) ||
+	    !dh_check_bn_size(priv_key, key_size))
+		return UADK_E_FAIL;
 
 	ag_bin = OPENSSL_malloc(key_size);
 	if (!ag_bin)
@@ -674,6 +689,11 @@ static int dh_fill_compkey_req(const BIGNUM *g, const BIGNUM *p,
 	unsigned char *ag_bin;
 	unsigned char *out_pri;
 	int ret;
+
+	if (!dh_check_bn_size(p, key_size) ||
+	    !dh_check_bn_size(priv_key, key_size) ||
+	    !dh_check_bn_size(pub_key, key_size))
+		return UADK_E_FAIL;
 
 	ag_bin = OPENSSL_malloc(key_size);
 	if (!ag_bin)

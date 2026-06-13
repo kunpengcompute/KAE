@@ -66,6 +66,7 @@ typedef struct KAE_QUEUE_POOL_NODE {
 typedef struct KAE_QUEUE_POOL_HEAD {
 	int pool_use_num;
 	int algtype;  /* alg type,just init at init pool */
+	int is_destroyed;
 	pthread_mutex_t destroy_mutex;
 	pthread_mutex_t kae_queue_mutex;
 	struct KAE_QUEUE_POOL_HEAD *next;  /* next pool */
@@ -106,4 +107,3 @@ void kae_queue_pool_destroy(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx
 void kae_queue_pool_check_and_release(KAE_QUEUE_POOL_HEAD_S *pool_head, release_engine_ctx_cb release_ectx_fn);
 
 #endif
-
