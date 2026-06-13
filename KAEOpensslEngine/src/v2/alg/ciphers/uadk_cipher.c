@@ -21,6 +21,7 @@
 #include <string.h>
 #include <dlfcn.h>
 #include <openssl/engine.h>
+#include <openssl/crypto.h>
 #include <uadk/wd_cipher.h>
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
@@ -551,6 +552,8 @@ static int uadk_e_cipher_cleanup(EVP_CIPHER_CTX *ctx)
 		wd_cipher_free_sess(priv->sess);
 		priv->sess = 0;
 	}
+	if (priv)
+		OPENSSL_cleanse(priv->key, sizeof(priv->key));
 
 	return 1;
 }

@@ -123,6 +123,21 @@ void sec_aead_cb(const void *msg, void *tag)
 	struct wcrypto_aead_msg *message = (struct wcrypto_aead_msg *)msg;
 	aead_engine_ctx_t *eng_ctx = (aead_engine_ctx_t *)tag;
 
+	if (!eng_ctx->priv_ctx || !eng_ctx->priv_ctx->out_data_buf) {
+		US_ERR("sec cb ctx err!\n");
+		return;
+	}
+
+	if (message->out_bytes > OUTPUT_CACHE_SIZE) {
+		US_ERR("sec cb output bytes too large, out_bytes = %u", message->out_bytes);
+		return;
+	}
+
+	if (message->out_bytes && !message->out) {
+		US_ERR("sec cb output buffer is NULL");
+		return;
+	}
+
 	kae_memcpy(eng_ctx->priv_ctx->out_data_buf, message->out, message->out_bytes);
 }
 
@@ -222,6 +237,7 @@ static int sec_aead_engine_cleanup(aead_priv_ctx_t *priv_ctx)
 	}
 
 	if (priv_ctx->key != NULL) {
+		OPENSSL_cleanse(priv_ctx->key, priv_ctx->key_len);
 		kae_free(priv_ctx->key);
 	}
 
@@ -403,9 +419,41 @@ int wd_aead_do_crypto_impl_async(struct aead_priv_ctx *priv, op_done_t *op_done)
 }
 
 // 获取add头信息
+static int sec_aead_check_input_len(struct aead_priv_ctx *priv, size_t add_len)
+{
+	size_t used;
+
+	if (!priv)
+		return KAE_FAIL;
+
+	used = (size_t)priv->aad_len + priv->data_len;
+	if (used > INPUT_CACHE_SIZE || add_len > INPUT_CACHE_SIZE - used) {
+		US_ERR("aead input length is too long");
+		return KAE_FAIL;
+	}
+
+	return KAE_SUCCESS;
+}
+
+static int sec_aead_check_output_len(struct aead_priv_ctx *priv)
+{
+	if (!priv || !priv->e_aead_ctx)
+		return KAE_FAIL;
+
+	if (priv->e_aead_ctx->op_data.out_bytes > OUTPUT_CACHE_SIZE) {
+		US_ERR("aead output length is too long");
+		return KAE_FAIL;
+	}
+
+	return KAE_SUCCESS;
+}
+
 static int sec_aes_do_aes_gcm_first(struct aead_priv_ctx *priv, unsigned char *out,
 				   const unsigned char *in, size_t inlen)
 {
+	if (sec_aead_check_input_len(priv, inlen) != KAE_SUCCESS)
+		return KAE_FAIL;
+
 	memcpy(priv->data_buf, in, inlen);
 	priv->aad_len = inlen;
 
@@ -420,6 +468,9 @@ static int do_aes_aead_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 	
 	if (!enc) {
 		unsigned char *ctx_buf = EVP_CIPHER_CTX_buf_noconst(ctx);
+		if (sec_aead_check_input_len(priv, AES_GCM_TAG_LEN) != KAE_SUCCESS)
+			return KAE_FAIL;
+
 		memcpy(priv->data_buf + priv->aad_len + priv->data_len, ctx_buf, AES_GCM_TAG_LEN);
 		priv->e_aead_ctx->op_data.in_bytes = priv->data_len;
 		priv->e_aead_ctx->op_data.out_bytes = priv->aad_len + priv->data_len;
@@ -427,6 +478,9 @@ static int do_aes_aead_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 		priv->e_aead_ctx->op_data.in_bytes = priv->data_len;
 		priv->e_aead_ctx->op_data.out_bytes = priv->aad_len + priv->data_len + priv->mac_len;
 	}
+
+	if (sec_aead_check_output_len(priv) != KAE_SUCCESS)
+		return KAE_FAIL;
 
 	if (op_done) {
 		// async
@@ -452,6 +506,9 @@ static int do_aes_aead_final(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 static int sec_aes_do_aes_gcm_update(EVP_CIPHER_CTX *ctx, struct aead_priv_ctx *priv,
 				    unsigned char *out, const unsigned char *in, size_t inlen)
 {
+	if (sec_aead_check_input_len(priv, inlen) != KAE_SUCCESS)
+		return KAE_FAIL;
+
 	memcpy(priv->data_buf + priv->aad_len, in, inlen);
 	priv->data_len += inlen;
 	return 0; //只囤包，不计算
