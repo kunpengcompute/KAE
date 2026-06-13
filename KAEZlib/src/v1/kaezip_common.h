@@ -29,11 +29,15 @@
 
 #define WCRYPTO_NONE            (-1)
 #define WCRYPTO_RAW_DEFLATE     2
+#define KAEZIP_FMT_HEADER_ERROR (-1)
+#define KAEZIP_FMT_HEADER_INCOMPLETE 0
+#define KAEZIP_FMT_HEADER_DONE 1
 
 int kz_get_devices(void);
 int kaezip_winbits2algtype(int windowBits);
 
 const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const void* src);
+int            kaezip_parse_fmt_header(kaezip_ctx_t *kz_ctx, uint32_t *skip_len);
 const char*    kaezip_get_fmt_header(int comp_alg_type, int level, int windowBits);
 char*          kaezip_get_fmt_header_zlib(int level, int windowBits);
 void           kaezip_set_fmt_tail(kaezip_ctx_t *kz_ctx);

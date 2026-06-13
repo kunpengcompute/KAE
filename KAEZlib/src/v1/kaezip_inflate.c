@@ -160,6 +160,7 @@ int ZEXPORT kz_inflateReset_v1(z_streamp strm)
 static int kaezip_do_inflate(z_streamp strm, int flush)
 {
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getInflateKaezipCtx(strm);
+    uint32_t fmt_header_skip = 0;
     KAEZIP_RETURN_FAIL_IF(kaezip_ctx == NULL, "kaezip ctx is NULL.", KAEZIP_FAILED);
     KAEZIP_RETURN_FAIL_IF(kaezip_ctx->comp_alg_type != WCRYPTO_ZLIB && kaezip_ctx->comp_alg_type != WCRYPTO_GZIP &&
         kaezip_ctx->comp_alg_type != WCRYPTO_RAW_DEFLATE, "not support alg comp type!", KAEZIP_FAILED);
@@ -176,22 +177,29 @@ static int kaezip_do_inflate(z_streamp strm, int flush)
         kaezip_ctx->flush = WCRYPTO_SYNC_FLUSH;
     }
 
-    //the firsh input z stream, should skip the format header, for hardware incompatible
+    /*
+     * UADK handles the raw deflate payload, so the software wrapper consumes
+     * zlib/gzip headers first. If the header is incomplete, report the bytes
+     * consumed and wait for the next inflate() call instead of sending header
+     * bytes to hardware.
+     */
     if ((kaezip_ctx->comp_alg_type != WCRYPTO_RAW_DEFLATE) && (kaezip_ctx->status == KAEZIP_DECOMP_INIT)) {
-        const uint32_t fmt_header_sz = kaezip_fmt_header_sz(kaezip_ctx->comp_alg_type, kaezip_ctx->comp_type, kaezip_ctx->in);
-        if (kaezip_ctx->header_pos + kaezip_ctx->in_len <= fmt_header_sz) {
-            kaezip_ctx->header_pos += kaezip_ctx->in_len;
-            kaezip_ctx->consumed   = kaezip_ctx->in_len;
-            kaezip_ctx->produced   = 0;
-            US_WARN("the z stream avail len is less then format header, skip!");
+        /* fmt_header_skip is the number of wrapper-header bytes found in this input chunk. */
+        int header_status = kaezip_parse_fmt_header(kaezip_ctx, &fmt_header_skip);
+        if (header_status == KAEZIP_FMT_HEADER_ERROR || fmt_header_skip > kaezip_ctx->in_len) {
+            US_ERR("invalid z stream format header");
+            return KAEZIP_FAILED;
+        }
+
+        /* Drop parsed wrapper bytes so op_data.in starts at raw deflate payload. */
+        kaezip_ctx->in       = (uint8_t *)kaezip_ctx->in + fmt_header_skip;
+        kaezip_ctx->in_len  -= fmt_header_skip;
+        if (header_status == KAEZIP_FMT_HEADER_INCOMPLETE || kaezip_ctx->in_len == 0) {
+            /* No payload is available yet; let the outer inflate loop advance next_in. */
+            kaezip_ctx->consumed = fmt_header_skip;
+            kaezip_ctx->produced = 0;
+            US_WARN("the z stream avail len is less than format header, skip!");
             return KAEZIP_SUCCESS;
-        } else {
-            kaezip_ctx->in        += fmt_header_sz - kaezip_ctx->header_pos;
-            kaezip_ctx->in_len    -= fmt_header_sz - kaezip_ctx->header_pos;
-            kaezip_ctx->consumed  = fmt_header_sz - kaezip_ctx->header_pos;
-            kaezip_ctx->produced  = fmt_header_sz;
-            KAEZIP_UPDATE_ZSTREAM_IN(strm, kaezip_ctx->consumed);  //skip the strm format header here
-            kaezip_ctx->header_pos = 0;
         }
     }
 
@@ -200,6 +208,8 @@ static int kaezip_do_inflate(z_streamp strm, int flush)
         US_ERR("kae zip do inflate impl fail!");
         return KAEZIP_FAILED;
     }
+    /* Add the skipped wrapper bytes to the payload bytes consumed by hardware. */
+    kaezip_ctx->consumed += fmt_header_skip;
 
     US_DEBUG("kaezip do inflate avail_in %u, avail_out %u, consumed %u, produced %u, remain %u, status %d, zflush %d",
         strm->avail_in, strm->avail_out, kaezip_ctx->consumed, kaezip_ctx->produced,

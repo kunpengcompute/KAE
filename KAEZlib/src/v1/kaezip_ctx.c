@@ -220,6 +220,10 @@ void  kaezip_init_ctx(kaezip_ctx_t* kz_ctx)
     kz_ctx->buffer_remain = 0;
 
     kz_ctx->header_pos   = 0;
+    kz_ctx->fmt_header_done = 0;
+    kz_ctx->gzip_flags = 0;
+    kz_ctx->gzip_header_pos = 0;
+    memset(kz_ctx->gzip_header, 0, sizeof(kz_ctx->gzip_header));
     kz_ctx->flush        = 0;
     kz_ctx->status       = 0;
     kz_ctx->callback     = NULL;
