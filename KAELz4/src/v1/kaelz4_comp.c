@@ -1654,7 +1654,11 @@ void kaelz4_async_deinit(void)
 {
     kaelz4_flush_compress(&g_async_ctrl);
     kaelz4_ctx_clear(&g_async_ctrl);
-    kaelz4_free_all_qps();
+    /*
+     * g_async_ctrl is per worker thread, but the queue pools are process-wide
+     * and also shared by sync and polling-session users. Do not destroy them
+     * from a worker exit path while other users may still traverse the pool.
+     */
 }
 
 const kaelz4_post_process_handle_t g_post_process_handle[KAELZ4_ASYNC_BUTT] = {
