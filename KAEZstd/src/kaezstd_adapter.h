@@ -12,6 +12,7 @@
 enum {
     HW_NONE,
     HW_V1,
+    HW_V2,   // unsupported now, v2 source is not built in this library
     HW_V3   //  unused now
 };
 static int g_platform = -1;

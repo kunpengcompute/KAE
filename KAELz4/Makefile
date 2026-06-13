@@ -30,7 +30,6 @@ endif
 SRCDIRS   += ${WORK_PATH}/src
 SRCDIRS   += ${WORK_PATH}/src/utils
 SRCDIRS   += ${WORK_PATH}/src/v1
-SRCDIRS   += ${WORK_PATH}/src/v2
 
 SRCEXTS   := .c # C program
 

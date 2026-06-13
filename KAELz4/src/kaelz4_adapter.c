@@ -1,6 +1,6 @@
 /*
  * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
- * @Description: kaelz4 adapter for sva(v2) and nosva(v1)
+ * @Description: kaelz4 adapter for nosva(v1)
  * @Author: LiuYongYang
  * @Date: 2024-02-22
  * @LastEditTime: 2024-02-26
@@ -9,12 +9,12 @@
 #include <stdlib.h>
 #include <semaphore.h>
 #include <stdatomic.h>
+#include <numa.h>
 #include "kaelz4_common.h"
 #include "kaelz4.h"
 #include "kaelz4_utils.h"
 #include "kaelz4_adapter.h"
 #include "kaelz4_log.h"
-#include "uadk/wd.h"
 
 lz4_task_queues g_task_queues = {0};
 pthread_mutex_t g_task_queue_init_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -29,17 +29,7 @@ static void uadk_get_accel_platform(void)
     }
     //  init log
     kaelz4_debug_init_log();
-    //  check sva
-    struct uacce_dev* dev = wd_get_accel_dev("lz77_zstd");
-    if (dev) {
-        int flag = dev->flags;
-        free(dev);
-        if (flag & 0x1) {
-            g_platform = HW_V2;
-            goto end;
-        }
-    }
-    //  check no-sva
+    //  check no-sva, v2 is not built in this library
     int nosva_dev_num = wd_get_available_dev_num("lz77_zstd");
     if (nosva_dev_num > 0) {
         g_platform = HW_V1;
@@ -63,9 +53,6 @@ int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_devi
     case HW_V1:
         ret = kaelz4_init_v1(zc, is_sgl, mode, config);
         break;
-    case HW_V2:
-        ret = kaelz4_init_v2(zc);
-        break;
     default:
         break;
     }
@@ -84,8 +71,6 @@ void kaelz4_reset(LZ4_CCtx* zc)
     case HW_V1:
         kaelz4_reset_v1(zc);
         break;
-    case HW_V2:
-        break;
     default:
         break;
     }
@@ -102,9 +87,6 @@ void kaelz4_release(LZ4_CCtx* zc)
         break;
     case HW_V1:
         kaelz4_release_v1(zc);
-        break;
-    case HW_V2:
-        kaelz4_release_v2(zc);
         break;
     default:
         break;
@@ -123,9 +105,6 @@ void kaelz4_setstatus(LZ4_CCtx* zc, unsigned int status)
     case HW_V1:
         kaelz4_setstatus_v1(zc, status);
         break;
-    case HW_V2:
-        kaelz4_setstatus_v2(zc, status);
-        break;
     default:
         break;
     }
@@ -143,9 +122,6 @@ int kaelz4_compress(LZ4_CCtx* zc, const void* src, size_t srcSize)
         break;
     case HW_V1:
         ret = kaelz4_compress_v1(zc, src, srcSize);
-        break;
-    case HW_V2:
-        ret = kaelz4_compress_v2(zc, src, srcSize);
         break;
     default:
         break;
