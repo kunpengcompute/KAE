@@ -25,12 +25,23 @@ static int kaezstd_data_parsing(ZSTD_CCtx* zc, kaezstd_ctx_t* config)
         return KAE_ZSTD_INVAL_PARA;
     }
 
-    memcpy(zc->seqStore.litStart, config->zstd_data.literals_start, config->zstd_data.lit_num);
-    zc->seqStore.lit += config->zstd_data.lit_num;
+    unsigned int lit_num = config->zstd_data.lit_num;
+    unsigned int seq_num = config->zstd_data.seq_num;
+    size_t seq_size = (size_t)seq_num * sizeof(seqDef);
+
+    if (unlikely(lit_num > zc->seqStore.maxNbLit || seq_num > zc->seqStore.maxNbSeq)) {
+        US_ERR("zstd hw output invalid, lit_num = %u, maxNbLit = %lu, seq_num = %u, maxNbSeq = %lu\n",
+            lit_num, (unsigned long)zc->seqStore.maxNbLit,
+            seq_num, (unsigned long)zc->seqStore.maxNbSeq);
+        return KAE_ZSTD_INVAL_PARA;
+    }
+
+    memcpy(zc->seqStore.litStart, config->zstd_data.literals_start, lit_num);
+    zc->seqStore.lit += lit_num;
 
     memcpy((unsigned char*)zc->seqStore.sequencesStart, config->zstd_data.sequences_start,
-        config->zstd_data.seq_num * sizeof(seqDef));
-    zc->seqStore.sequences += config->zstd_data.seq_num;
+        seq_size);
+    zc->seqStore.sequences += seq_num;
 
     if (config->zstd_data.lit_length_overflow_cnt  == 1) {
         zc->seqStore.longLengthType = ZSTD_llt_literalLength;
@@ -47,15 +58,25 @@ static int kaezstd_data_parsing(ZSTD_CCtx* zc, kaezstd_ctx_t* config)
 
 int kaezstd_compress_v1(ZSTD_CCtx* zc, const void* src, size_t srcSize)
 {
+    if (zc == NULL || src == NULL || srcSize == 0) {
+        US_ERR("compress parameter invalid\n");
+        return KAE_ZSTD_INVAL_PARA;
+    }
+
+    if (srcSize > COMP_BLOCK_SIZE) {
+        US_ERR("compress srcSize %lu exceeds max block size %u\n", srcSize, (unsigned int)COMP_BLOCK_SIZE);
+        return KAE_ZSTD_INVAL_PARA;
+    }
+
     kaezstd_ctx_t* kaezstd_ctx = (kaezstd_ctx_t*)zc->kaeConfig;
-    if (kaezstd_ctx == NULL || src == NULL || srcSize == 0) {
+    if (kaezstd_ctx == NULL) {
         US_ERR("compress parameter invalid\n");
         return KAE_ZSTD_INVAL_PARA;
     }
 
     US_INFO("kaezstd compress srcSize : %lu", srcSize);
     kaezstd_ctx->in           = (void*)src;
-    kaezstd_ctx->in_len       = srcSize;
+    kaezstd_ctx->in_len       = (unsigned int)srcSize;
     kaezstd_ctx->out          = NULL;
     kaezstd_ctx->consumed     = 0;
     kaezstd_ctx->produced     = 0;

@@ -10,6 +10,7 @@
 #define KAEZIP_ASYNC_COMP_H
 
 #include <zlib.h>
+#include <string.h>
 #include "kaezlib_common.h"
 #include <stdint.h>
 #include <arm_acle.h>
@@ -109,6 +110,23 @@ static inline void ZIP_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd
     BYTE* const e = (BYTE*)dstEnd;
 
     do { KZL_MEMCPY_16(d,s,16); d+=16; s+=16; } while (d<e);
+}
+
+static inline void ZIP_wildCopy16Exact(void* dstPtr, const void* srcPtr, size_t len)
+{
+    BYTE* d = (BYTE*)dstPtr;
+    const BYTE* s = (const BYTE*)srcPtr;
+    size_t copy16_len = len & ~(size_t)0xf;
+
+    if (copy16_len > 0) {
+        ZIP_wildCopy16(d, s, d + copy16_len);
+        d += copy16_len;
+        s += copy16_len;
+    }
+
+    if (len > copy16_len) {
+        memcpy(d, s, len - copy16_len);
+    }
 }
 
 int kaezip_async_is_thread_do_comp_full(struct kaezip_async_ctrl *ctrl);

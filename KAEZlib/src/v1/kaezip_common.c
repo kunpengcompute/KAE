@@ -21,6 +21,7 @@
  *****************************************************************************/
 #include <unistd.h>
 #include <dirent.h>
+#include <string.h>
 #include "kaezip_common.h"
 #include "kaezip_ctx.h"
 #include "kaezip_log.h"
@@ -33,6 +34,18 @@
         (((x)&0x00ff0000) >> 8) |  \
         (((x)&0xff000000) >> 24))
 #define __cpu_to_be32(x)       __swab32(x)
+#define KAEZIP_ZLIB_HEADER_SIZE 2U
+#define KAEZIP_GZIP_HEADER_SIZE 10U
+#define KAEZIP_GZIP_ID1 0x1FU
+#define KAEZIP_GZIP_ID2 0x8BU
+#define KAEZIP_GZIP_CM_DEFLATE 8U
+#define KAEZIP_GZIP_FHCRC 0x02U
+#define KAEZIP_GZIP_FEXTRA 0x04U
+#define KAEZIP_GZIP_FNAME 0x08U
+#define KAEZIP_GZIP_FCOMMENT 0x10U
+#define KAEZIP_GZIP_RESERVED_FLAGS 0xE0U
+#define KAEZIP_GZIP_UNSUPPORTED_FLAGS \
+    (KAEZIP_GZIP_FHCRC | KAEZIP_GZIP_FEXTRA | KAEZIP_GZIP_FCOMMENT | KAEZIP_GZIP_RESERVED_FLAGS)
 
 static unsigned int inline __kaezip_checksum_reverse(unsigned int x)
 {
@@ -102,27 +115,144 @@ int kaezip_winbits2algtype(int windowbits)
     return alg_type;
 }
 
+static uint32_t kaezip_min_u32(uint32_t a, uint32_t b)
+{
+    return a < b ? a : b;
+}
+
 const uint32_t kaezip_fmt_header_sz(int comp_alg_type, int comp_optype, const void* src)
 {
-    if (comp_alg_type ==  WCRYPTO_ZLIB) {
-        return 2U;
+    (void)comp_optype;
+    (void)src;
+
+    if (comp_alg_type == WCRYPTO_ZLIB) {
+        return KAEZIP_ZLIB_HEADER_SIZE;
     } else if (comp_alg_type == WCRYPTO_GZIP) {
-        uint32_t append_info_sz = 0U;
-        if (comp_optype == WCRYPTO_INFLATE) {
-            const char* inflate_data = (const char*)src;
-            const char flag = inflate_data[3];
-            if (flag & 0x8) {   //  header contain filename
-                uint32_t filename_sz = strlen(inflate_data + 10U);
-                append_info_sz += (filename_sz + 1U);   //  end with 0x0
-            }
-        }
-        US_DEBUG("gzip header append_info_sz is %u\n", append_info_sz);
-        return 10U + append_info_sz;
+        return KAEZIP_GZIP_HEADER_SIZE;
     } else if (comp_alg_type == WCRYPTO_RAW_DEFLATE) {
         return 0U;
     }
+
     US_WARN("not support alg comp type!");
     return 0U;
+}
+
+static int kaezip_parse_zlib_header(kaezip_ctx_t *kz_ctx, uint32_t *skip_len)
+{
+    uint32_t remain = KAEZIP_ZLIB_HEADER_SIZE - kz_ctx->header_pos;
+    uint32_t consumed = kaezip_min_u32(kz_ctx->in_len, remain);
+
+    kz_ctx->header_pos += consumed;
+    *skip_len = consumed;
+    if (kz_ctx->header_pos < KAEZIP_ZLIB_HEADER_SIZE) {
+        return KAEZIP_FMT_HEADER_INCOMPLETE;
+    }
+
+    kz_ctx->fmt_header_done = 1;
+    kz_ctx->header_pos = 0;
+    return KAEZIP_FMT_HEADER_DONE;
+}
+
+static int kaezip_parse_gzip_header(kaezip_ctx_t *kz_ctx, uint32_t *skip_len)
+{
+    const unsigned char *in = (const unsigned char *)kz_ctx->in;
+    /* Bytes consumed from this input chunk only. The caller will skip them. */
+    uint32_t offset = 0;
+
+    /*
+     * The fixed gzip header is 10 bytes. It can be split by the caller, so copy
+     * only the bytes available in this input chunk and wait for the next chunk
+     * before reading flags or validating magic fields.
+     */
+    if (kz_ctx->gzip_header_pos < KAEZIP_GZIP_HEADER_SIZE) {
+        uint32_t remain = KAEZIP_GZIP_HEADER_SIZE - kz_ctx->gzip_header_pos;
+        uint32_t consumed = kaezip_min_u32(kz_ctx->in_len, remain);
+
+        /*
+         * Cache the fixed header because later chunks may not contain the
+         * earlier bytes; validation and flag parsing require the full 10 bytes.
+         */
+        memcpy(kz_ctx->gzip_header + kz_ctx->gzip_header_pos, in, consumed);
+        kz_ctx->gzip_header_pos += consumed; /* Total fixed-header bytes collected across calls. */
+        offset += consumed;                  /* Bytes consumed from the current input buffer. */
+        if (kz_ctx->gzip_header_pos < KAEZIP_GZIP_HEADER_SIZE) {
+            *skip_len = kz_ctx->in_len;      /* The whole current chunk is a fixed-header fragment. */
+            return KAEZIP_FMT_HEADER_INCOMPLETE;
+        }
+
+        /*
+         * Reaching here means the fixed 10-byte gzip header has been collected.
+         * Reject malformed gzip input before reading any optional fields.
+         */
+        if (kz_ctx->gzip_header[0] != KAEZIP_GZIP_ID1 || kz_ctx->gzip_header[1] != KAEZIP_GZIP_ID2 ||
+            kz_ctx->gzip_header[2] != KAEZIP_GZIP_CM_DEFLATE) {
+            US_ERR("invalid gzip header");
+            return KAEZIP_FMT_HEADER_ERROR;
+        }
+
+        kz_ctx->gzip_flags = kz_ctx->gzip_header[3]; /* Safe after all 10 fixed header bytes are cached. */
+        /*
+         * This implementation only supports the optional FNAME field for now.
+         * FEXTRA, FCOMMENT, FHCRC, and reserved flags are rejected here instead
+         * of being parsed with incomplete boundary rules.
+         */
+        if (kz_ctx->gzip_flags & KAEZIP_GZIP_UNSUPPORTED_FLAGS) {
+            US_ERR("unsupported gzip header flags: 0x%x", kz_ctx->gzip_flags);
+            return KAEZIP_FMT_HEADER_ERROR;
+        }
+    }
+
+    if (kz_ctx->gzip_flags & KAEZIP_GZIP_FNAME) {
+        const unsigned char *fname_end = NULL;
+        uint32_t remain;
+
+        /*
+         * FNAME is a NUL-terminated byte string in the gzip stream, but the
+         * current input buffer is not guaranteed to contain the terminator.
+         * Search only within in_len and consume another chunk if it is absent.
+         */
+        if (offset == kz_ctx->in_len) {
+            *skip_len = kz_ctx->in_len; /* This chunk ended exactly after the fixed header; FNAME starts later. */
+            return KAEZIP_FMT_HEADER_INCOMPLETE;
+        }
+
+        remain = kz_ctx->in_len - offset;
+        fname_end = memchr(in + offset, '\0', remain);
+        if (fname_end == NULL) {
+            *skip_len = kz_ctx->in_len; /* Consume all available FNAME bytes and wait for NUL. */
+            return KAEZIP_FMT_HEADER_INCOMPLETE;
+        }
+        offset = (uint32_t)(fname_end - in) + 1U; /* Include the terminating NUL in the skipped header. */
+    }
+
+    kz_ctx->fmt_header_done = 1;
+    kz_ctx->header_pos = 0;
+    *skip_len = offset; /* Bytes to remove before sending the remaining payload to hardware. */
+    return KAEZIP_FMT_HEADER_DONE;
+}
+
+int kaezip_parse_fmt_header(kaezip_ctx_t *kz_ctx, uint32_t *skip_len)
+{
+    if (kz_ctx == NULL || skip_len == NULL) {
+        return KAEZIP_FMT_HEADER_ERROR;
+    }
+
+    *skip_len = 0;
+    if (kz_ctx->fmt_header_done) {
+        return KAEZIP_FMT_HEADER_DONE;
+    }
+
+    if (kz_ctx->comp_alg_type == WCRYPTO_ZLIB) {
+        return kaezip_parse_zlib_header(kz_ctx, skip_len);
+    } else if (kz_ctx->comp_alg_type == WCRYPTO_GZIP) {
+        return kaezip_parse_gzip_header(kz_ctx, skip_len);
+    } else if (kz_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE) {
+        kz_ctx->fmt_header_done = 1;
+        return KAEZIP_FMT_HEADER_DONE;
+    }
+
+    US_WARN("not support alg comp type!");
+    return KAEZIP_FMT_HEADER_ERROR;
 }
 
 // 参考deflate函数中获取header的逻辑 rfc-1950
@@ -266,4 +396,3 @@ void kaezip_deflate_addcrc(kaezip_ctx_t *kz_ctx)
     kz_ctx->produced += end_produced;
     kz_ctx->status = (kz_ctx->end_block.remain == 0 ? KAEZIP_COMP_END : KAEZIP_COMP_END_BUT_DATAREMAIN);
 }
-

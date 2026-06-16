@@ -78,6 +78,16 @@ struct kaezip_ctx {
 
     const char*      header;        // compress data header
     unsigned int     header_pos;    // the format header pos
+    /*
+     * Inflate skips zlib/gzip wrapper headers before submitting raw deflate
+     * payload to hardware. Gzip headers may arrive split across inflate()
+     * calls, so keep a small parser state in the context instead of treating
+     * each input buffer as a complete C string.
+     */
+    unsigned char    fmt_header_done;
+    unsigned char    gzip_flags;
+    unsigned int     gzip_header_pos;
+    unsigned char    gzip_header[10];
     int              flush;         // WCRYPTO_SYNC_FLUSH / WCRYPTO_FINISH
     int              zflush;        // zlib flush value
     int              comp_alg_type; // WCRYPTO_ZLIB / WCRYPTO_GZIP
@@ -127,4 +137,3 @@ void          kaezip_set_comp_status(kaezip_ctx_t *kz_ctx);
 
 int kaezip_get_win_size(void);
 #endif
-

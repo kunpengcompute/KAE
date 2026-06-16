@@ -46,9 +46,14 @@ int kaesnappy_compress_v1(SNAPPY_CCtx* zc, const void* src, size_t srcSize)
         return KAE_SNAPPY_INVAL_PARA;
     }
 
+    if (srcSize > COMP_BLOCK_SIZE) {
+        US_ERR("compress srcSize %lu exceeds max block size %u\n", srcSize, (unsigned int)COMP_BLOCK_SIZE);
+        return KAE_SNAPPY_INVAL_PARA;
+    }
+
     US_INFO("kaesnappy compress srcSize : %lu", srcSize);
     kaesnappy_ctx->in           = (void*)src;
-    kaesnappy_ctx->in_len       = srcSize;
+    kaesnappy_ctx->in_len       = (unsigned int)srcSize;
     kaesnappy_ctx->out          = NULL;
     kaesnappy_ctx->consumed     = 0;
     kaesnappy_ctx->produced     = 0;

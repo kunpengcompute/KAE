@@ -373,7 +373,7 @@ static void kaezip_fill_flat_buffer(kaezip_ctx_t *kz_ctx, const struct wd_buf_li
     op_data->in_len = 0;
     size_t offset = 0;
     for (int i = 0; i < src->buf_num; i++) {
-        ZIP_wildCopy16((uint8_t *)op_data->in + offset, src->buf[i].data, (uint8_t *)op_data->in + offset + src->buf[i].buf_len);
+        ZIP_wildCopy16Exact((uint8_t *)op_data->in + offset, src->buf[i].data, src->buf[i].buf_len);
         offset += src->buf[i].buf_len;
     }
     op_data->in_len += kz_ctx->do_comp_len;

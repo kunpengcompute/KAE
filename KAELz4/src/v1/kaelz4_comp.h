@@ -202,6 +202,23 @@ static inline void LZ4_wildCopy16(void* dstPtr, const void* srcPtr, void* dstEnd
     do { KZL_MEMCPY_16(d, s, 16); d += 16; s += 16; } while (d < e);
 }
 
+static inline void LZ4_wildCopy16Exact(void* dstPtr, const void* srcPtr, size_t len)
+{
+    BYTE* d = (BYTE*)dstPtr;
+    const BYTE* s = (const BYTE*)srcPtr;
+    size_t copy16_len = len & ~(size_t)0xf;
+
+    if (copy16_len > 0) {
+        LZ4_wildCopy16(d, s, d + copy16_len);
+        d += copy16_len;
+        s += copy16_len;
+    }
+
+    if (len > copy16_len) {
+        LZ4_memcpy(d, s, len - copy16_len);
+    }
+}
+
 
 static inline void LZ4_writeLE16(void* memPtr, U16 value)
 {
@@ -241,7 +258,7 @@ static inline void wd_wild_copy16_from_buffers(const struct wd_buf_list *src, un
 {
     while (len > 0 && *cur_idx < src->buf_num) {
         size_t can_copy = *remain < len ? *remain : len;
-        LZ4_wildCopy16(dst, *ip, dst + can_copy);
+        LZ4_wildCopy16Exact(dst, *ip, can_copy);
         dst += can_copy;
         len -= can_copy;
         wd_ip_add_len(src, cur_idx, ip, remain, can_copy);
@@ -287,7 +304,7 @@ static inline void kaelz4_wild_copy16_from_buffers(const struct kaelz4_buffer_li
 {
     while (len > 0 && *cur_idx < src->buf_num) {
         size_t can_copy = *remain < len ? *remain : len;
-        LZ4_wildCopy16(dst, *ip, dst + can_copy);
+        LZ4_wildCopy16Exact(dst, *ip, can_copy);
         dst += can_copy;
         len -= can_copy;
         kaelz4_ip_add_len(src, cur_idx, ip, remain, can_copy);

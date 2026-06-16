@@ -241,8 +241,8 @@ diff -Naru snappy-1.1.10/snappy.cc snappy-1.1.10-new/snappy.cc
 +    // 待压缩内容送入硬件
 +    SNAPPY_CCtx& ctxBody = *cctx;
 +    int result  = kaesnappy_compress(&ctxBody, input, input_size);
-+    if (result) {
-+      US_ERR("Snappy kaesnappy_compress failed, turn to soft version\n");
++    if (result != KAE_SNAPPY_SUCC) {
++      US_ERR("Snappy kaesnappy_compress failed, result = %d, turn to soft version\n", result);
 +      goto _softVersion;
 +    }
 +

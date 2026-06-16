@@ -1,16 +1,14 @@
 /*
  * @Copyright: Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
- * @Description: kaezstd adapter for sva(v2) and nosva(v1)
+ * @Description: kaezstd adapter for nosva(v1)
  * @Author: LiuYongYang
  * @Date: 2024-02-22
  * @LastEditTime: 2024-02-26
  */
 
-#include <stdlib.h>
 #include "kaezstd.h"
 #include "kaezstd_adapter.h"
 #include "kaezstd_log.h"
-#include "uadk/wd.h"
 
 static void uadk_get_accel_platform(void)
 {
@@ -19,17 +17,7 @@ static void uadk_get_accel_platform(void)
     }
     //  init log
     kaezstd_debug_init_log();
-    //  check sva
-    struct uacce_dev* dev = wd_get_accel_dev("lz77_zstd");
-    if (dev) {
-        int flag = dev->flags;
-        free(dev);
-        if (flag & 0x1) {
-            g_platform = HW_V2;
-            goto end;
-        }
-    }
-    //  check no-sva
+    //  check no-sva, v2 is not built in this library
     int nosva_dev_num = wd_get_available_dev_num("lz77_zstd");
     if (nosva_dev_num > 0) {
         g_platform = HW_V1;
@@ -53,9 +41,6 @@ int kaezstd_init(ZSTD_CCtx* zc)
     case HW_V1:
         ret = kaezstd_init_v1(zc);
         break;
-    case HW_V2:
-        ret = kaezstd_init_v2(zc);
-        break;
     default:
         break;
     }
@@ -74,8 +59,6 @@ void kaezstd_reset(ZSTD_CCtx* zc)
     case HW_V1:
         kaezstd_reset_v1(zc);
         break;
-    case HW_V2:
-        break;
     default:
         break;
     }
@@ -92,9 +75,6 @@ void kaezstd_release(ZSTD_CCtx* zc)
         break;
     case HW_V1:
         kaezstd_release_v1(zc);
-        break;
-    case HW_V2:
-        kaezstd_release_v2(zc);
         break;
     default:
         break;
@@ -113,9 +93,6 @@ void kaezstd_setstatus(ZSTD_CCtx* zc, unsigned int status)
     case HW_V1:
         kaezstd_setstatus_v1(zc, status);
         break;
-    case HW_V2:
-        kaezstd_setstatus_v2(zc, status);
-        break;
     default:
         break;
     }
@@ -133,9 +110,6 @@ int kaezstd_compress(ZSTD_CCtx* zc, const void* src, size_t srcSize)
         break;
     case HW_V1:
         ret = kaezstd_compress_v1(zc, src, srcSize);
-        break;
-    case HW_V2:
-        ret = kaezstd_compress_v2(zc, src, srcSize);
         break;
     default:
         break;
