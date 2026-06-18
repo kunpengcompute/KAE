@@ -33,9 +33,8 @@
 #define QM_MB_PING_ALL_VFS		0xffff
 #define QM_MB_STATUS_MASK		GENMASK(12, 9)
 #define QM_MB_BUSY_MASK			BIT(13)
-#define QM_MB_SIZE			16
-#define QM_MB_MAX_WAIT_CNT		6000
-#define QM_MB_WAIT_READY_CNT		10
+#define QM_MB_MAX_WAIT_TIMEOUT		USEC_PER_SEC
+#define QM_MB_MAX_STOP_TIMEOUT		(5 * USEC_PER_SEC)
 
 /* sqc shift */
 #define QM_SQ_HOP_NUM_SHIFT		0
@@ -209,10 +208,9 @@
 
 #define POLL_PERIOD			10
 #define POLL_TIMEOUT			1000
-#define QM_MB_MAX_STOP_CNT		20000
 #define WAIT_PERIOD_US_MAX		200
 #define WAIT_PERIOD_US_MIN		100
-#define MAX_WAIT_COUNTS			10000
+#define MAX_WAIT_COUNTS			1000
 #define QM_CACHE_WB_START		0x204
 #define QM_CACHE_WB_DONE		0x208
 #define QM_FUNC_CAPS_REG		0x3100
@@ -251,9 +249,11 @@
 #define QM_QOS_MIN_CIR_B		100
 #define QM_QOS_MAX_CIR_U		6
 #define QM_AUTOSUSPEND_DELAY		3000
- /* qm isolation state mask */
+
+/* qm isolation state mask */
 #define QM_ISOLATED_STATE		BIT(31)
 #define QM_ISOLATED_THRESHOLD_MASK	GENMASK(15, 0)
+
  /* abnormal status value for stopping queue */
 #define QM_STOP_QUEUE_FAIL		1
 #define	QM_DUMP_SQC_FAIL		3
@@ -293,7 +293,7 @@ enum qm_alg_type {
 	ALG_TYPE_0,
 	ALG_TYPE_1,
 };
- 
+
 /**
  * @brief Message format for QM_VF_GET_ISOLATE and QM_PF_SET_ISOLATE commands
  *
@@ -497,6 +497,7 @@ static struct qm_typical_qos_table shaper_cbs_s[] = {
 
 static void qm_irqs_unregister(struct hisi_qm *qm);
 static int qm_reset_device(struct hisi_qm *qm);
+static void hisi_qm_stop_qp(struct hisi_qp *qp);
 static void qm_dev_err_uninit(struct hisi_qm *qm);
 
 int hisi_qm_q_num_set(const char *val, const struct kernel_param *kp,
@@ -616,25 +617,44 @@ static void qm_mb_pre_init(struct qm_mailbox *mailbox, u8 cmd,
 	mailbox->rsvd = 0;
 }
 
+/*
+ * The mailbox is 128 bits and requires a single read/write operation.
+ * Since there is no general 128-bit IO memory access API in the current
+ * ARM64 architecture, this needs to be implemented in the driver.
+ */
+static struct qm_mailbox qm_mb_read(struct hisi_qm *qm)
+{
+	struct qm_mailbox mailbox = {0};
+
+#if IS_ENABLED(CONFIG_ARM64)
+	const void __iomem *fun_base = qm->io_base + QM_MB_CMD_SEND_BASE;
+	unsigned long tmp0, tmp1;
+
+	asm volatile("ldp %0, %1, %3\n"
+		     "stp %0, %1, %2\n"
+		     : "=&r" (tmp0),
+		       "=&r" (tmp1),
+		       "+Q" (mailbox)
+		     : "Q" (*((char __iomem *)fun_base))
+		     : "memory");
+#endif
+
+	return mailbox;
+}
+
 /* 128 bit should be written to hardware at one time to trigger a mailbox */
 static void qm_mb_write(struct hisi_qm *qm, const void *src)
 {
+#if IS_ENABLED(CONFIG_ARM64)
 	void __iomem *fun_base = qm->io_base + QM_MB_CMD_SEND_BASE;
-
-#if IS_ENABLED(CONFIG_ARM64)
-	unsigned long tmp0 = 0, tmp1 = 0;
-#endif
-
-	if (!IS_ENABLED(CONFIG_ARM64)) {
-		memcpy_toio(fun_base, src, QM_MB_SIZE);
-		dma_wmb();
-		return;
-	}
-
-#if IS_ENABLED(CONFIG_ARM64)
+	unsigned long tmp0, tmp1;
+	/*
+	 * The dmb oshst instruction ensures that the data in the
+	 * mailbox is written before it is sent to the hardware.
+	 */
 	asm volatile("ldp %0, %1, %3\n"
-		     "stp %0, %1, %2\n"
 		     "dmb oshst\n"
+		     "stp %0, %1, %2\n"
 		     : "=&r" (tmp0),
 		       "=&r" (tmp1),
 		       "+Q" (*((char __iomem *)fun_base))
@@ -643,68 +663,34 @@ static void qm_mb_write(struct hisi_qm *qm, const void *src)
 #endif
 }
 
-/* 128 bit should be read from hardware at one time */
-static void qm_mb_read(struct hisi_qm *qm, void *dst)
-{
-	const void __iomem *fun_base = qm->io_base + QM_MB_CMD_SEND_BASE;
-
-#if IS_ENABLED(CONFIG_ARM64)
-	unsigned long tmp0 = 0, tmp1 = 0;
-#endif
-
-	if (!IS_ENABLED(CONFIG_ARM64)) {
-		memcpy_fromio(dst, fun_base, QM_MB_SIZE);
-		dma_wmb();
-		return;
-	}
-
-#if IS_ENABLED(CONFIG_ARM64)
-	asm volatile("ldp %0, %1, %3\n"
-		     "stp %0, %1, %2\n"
-		     "dmb oshst\n"
-		     : "=&r" (tmp0),
-		       "=&r" (tmp1),
-		       "+Q" (*((char *)dst))
-		     : "Q" (*((char __iomem *)fun_base))
-		     : "memory");
-#endif
-}
-
 int hisi_qm_wait_mb_ready(struct hisi_qm *qm)
 {
-	struct qm_mailbox mailbox;
-	int i = 0;
+	struct qm_mailbox mailbox = {0};
+	int ret;
 
-	while (i++ < QM_MB_WAIT_READY_CNT) {
-		qm_mb_read(qm, &mailbox);
-		if (!(le16_to_cpu(mailbox.w0) & QM_MB_BUSY_MASK))
-			return 0;
+	ret = read_poll_timeout(qm_mb_read, mailbox,
+				!(le16_to_cpu(mailbox.w0) & QM_MB_BUSY_MASK),
+				POLL_PERIOD, POLL_TIMEOUT,
+				true, qm);
+	if (ret)
+		dev_err(&qm->pdev->dev, "QM mailbox is busy to start!\n");
 
-		usleep_range(WAIT_PERIOD_US_MIN, WAIT_PERIOD_US_MAX);
-	}
-
-	dev_err(&qm->pdev->dev, "QM mailbox is busy to start!\n");
-
-	return -EBUSY;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_wait_mb_ready);
 
-static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_cnt)
+static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_timeout)
 {
 	struct device *dev = &qm->pdev->dev;
-	u32 i = 0;
+	int ret;
 
-	while (++i) {
-		qm_mb_read(qm, mailbox);
-		if (!(le16_to_cpu(mailbox->w0) & QM_MB_BUSY_MASK))
-			break;
-
-		if (i == wait_cnt) {
-			dev_err(dev, "QM mailbox operation timeout!\n");
-			return -ETIMEDOUT;
-		}
-
-		usleep_range(WAIT_PERIOD_US_MIN, WAIT_PERIOD_US_MAX);
+	ret = read_poll_timeout(qm_mb_read, *mailbox,
+				!(le16_to_cpu(mailbox->w0) & QM_MB_BUSY_MASK),
+				POLL_PERIOD, wait_timeout,
+				true, qm);
+	if (ret) {
+		dev_err(dev, "QM mailbox operation timeout!\n");
+		return ret;
 	}
 
 	if (le16_to_cpu(mailbox->w0) & QM_MB_STATUS_MASK) {
@@ -715,7 +701,7 @@ static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32
 	return 0;
 }
 
-static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_cnt)
+static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_timeout)
 {
 	int ret;
 
@@ -725,7 +711,7 @@ static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait
 
 	qm_mb_write(qm, mailbox);
 
-	ret = qm_wait_mb_finish(qm, mailbox, wait_cnt);
+	ret = qm_wait_mb_finish(qm, mailbox, wait_timeout);
 	if (ret)
 		goto mb_err_cnt_increase;
 
@@ -736,17 +722,17 @@ mb_err_cnt_increase:
 	return ret;
 }
 
-int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
+int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	       bool op)
 {
 	struct qm_mailbox mailbox;
-	u32 wait_cnt;
+	u32 wait_timeout;
 	int ret;
 
 	if (cmd == QM_MB_CMD_STOP_QP || cmd == QM_MB_CMD_FLUSH_QM)
-		wait_cnt = QM_MB_MAX_STOP_CNT;
+		wait_timeout = QM_MB_MAX_STOP_TIMEOUT;
 	else
-		wait_cnt = QM_MB_MAX_WAIT_CNT;
+		wait_timeout = QM_MB_MAX_WAIT_TIMEOUT;
 
 	/* No need to judge if master OOO is blocked. */
 	if (qm_check_dev_error(qm)) {
@@ -757,12 +743,12 @@ int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	qm_mb_pre_init(&mailbox, cmd, dma_addr, queue, op);
 
 	mutex_lock(&qm->mailbox_lock);
-	ret = qm_mb_nolock(qm, &mailbox, wait_cnt);
+	ret = qm_mb_nolock(qm, &mailbox, wait_timeout);
 	mutex_unlock(&qm->mailbox_lock);
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(hisi_qm_mb_write);
+EXPORT_SYMBOL_GPL(hisi_qm_mb);
 
 int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 {
@@ -771,7 +757,7 @@ int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 
 	qm_mb_pre_init(&mailbox, cmd, 0, queue, 1);
 	mutex_lock(&qm->mailbox_lock);
-	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_CNT);
+	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 	mutex_unlock(&qm->mailbox_lock);
 	if (ret)
 		return ret;
@@ -829,7 +815,7 @@ int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op
 		memcpy(tmp_xqc, xqc, size);
 
 	qm_mb_pre_init(&mailbox, cmd, xqc_dma, qp_id, op);
-	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_CNT);
+	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 	if (!ret && op)
 		memcpy(xqc, tmp_xqc, size);
 
@@ -1876,12 +1862,12 @@ unlock:
 
 static int qm_drain_qm(struct hisi_qm *qm)
 {
-	return hisi_qm_mb_write(qm, QM_MB_CMD_FLUSH_QM, 0, 0, 0);
+	return hisi_qm_mb(qm, QM_MB_CMD_FLUSH_QM, 0, 0, 0);
 }
 
 static int qm_stop_qp(struct hisi_qp *qp)
 {
-	return hisi_qm_mb_write(qp->qm, QM_MB_CMD_STOP_QP, 0, qp->qp_id, 0);
+	return hisi_qm_mb(qp->qm, QM_MB_CMD_STOP_QP, 0, qp->qp_id, 0);
 }
 
 static int qm_set_msi(struct hisi_qm *qm, bool set)
@@ -1980,7 +1966,7 @@ static int qm_set_ifc_begin_v3(struct hisi_qm *qm, enum qm_ifc_cmd cmd, u32 data
 
 	qm_mb_pre_init(&mailbox, QM_MB_CMD_SRC, msg, fun_num, 0);
 	mutex_lock(&qm->mailbox_lock);
-	return qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_CNT);
+	return qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 }
 
 static void qm_set_ifc_end_v3(struct hisi_qm *qm)
@@ -2331,7 +2317,7 @@ static int qm_start_qp_nolock(struct hisi_qp *qp, unsigned long arg)
  * After this function, qp can receive request from user. Return 0 if
  * successful, negative error code if failed.
  */
-int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
+static int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 {
 	struct hisi_qm *qm = qp->qm;
 	int ret;
@@ -2342,7 +2328,6 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
 
 /**
  * qp_stop_fail_cb() - call request cb.
@@ -2487,13 +2472,12 @@ static void qm_stop_qp_nolock(struct hisi_qp *qp)
  *
  * This function is reverse of hisi_qm_start_qp.
  */
-void hisi_qm_stop_qp(struct hisi_qp *qp)
+static void hisi_qm_stop_qp(struct hisi_qp *qp)
 {
 	down_write(&qp->qm->qps_lock);
 	qm_stop_qp_nolock(qp);
 	up_write(&qp->qm->qps_lock);
 }
-EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
 
 /**
  * hisi_qp_send() - Queue up a task in the hardware queue.
@@ -2908,13 +2892,12 @@ static enum uacce_dev_state hisi_qm_get_isolate_state(struct uacce_device *uacce
 	struct hisi_qm *qm = uacce->priv;
 	struct hisi_qm *pf_qm;
 
-	if (uacce->is_vf && !test_bit(QM_SUPPORT_MB_COMMAND, &qm->caps)) {
+	if (uacce->is_vf)
 		pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
-		return pf_qm->isolate_data.is_isolate ?
-				UACCE_DEV_ISOLATE : UACCE_DEV_NORMAL;
-	}
+	else
+		pf_qm = qm;
 
-	return qm->isolate_data.is_isolate ?
+	return pf_qm->isolate_data.is_isolate ?
 			UACCE_DEV_ISOLATE : UACCE_DEV_NORMAL;
 }
 
@@ -2922,22 +2905,20 @@ static int hisi_qm_isolate_threshold_write(struct uacce_device *uacce, u32 num)
 {
 	struct hisi_qm *qm = uacce->priv;
 	int ret;
-	u32 data;
 
 	/* Must be set by PF */
 	if (uacce->is_vf)
 		return -EPERM;
 
-	mutex_lock(&qm->isolate_data.isolate_lock);
-	if (qm->isolate_data.is_isolate) {
-		mutex_unlock(&qm->isolate_data.isolate_lock);
+	if (qm->isolate_data.is_isolate)
 		return -EPERM;
-	}
 
+	mutex_lock(&qm->isolate_data.isolate_lock);
 	qm->isolate_data.err_threshold = num;
 
 	/* After the policy is updated, need to reset the hardware err list */
 	qm_hw_err_destroy(qm);
+
 	if (!qm->vfs_num) {
 		mutex_unlock(&qm->isolate_data.isolate_lock);
 		return 0;
@@ -2945,15 +2926,9 @@ static int hisi_qm_isolate_threshold_write(struct uacce_device *uacce, u32 num)
 
 	/* Notifying all VFs to update after the PF sets a threshold. */
 	if (test_bit(QM_SUPPORT_MB_COMMAND, &qm->caps)) {
-		data = qm->isolate_data.err_threshold;
-		if (qm->isolate_data.is_isolate)
-			data |= QM_ISOLATED_STATE;
-		ret = qm_ping_all_vfs(qm, QM_PF_SET_ISOLATE, data);
-		if (ret) {
+		ret = qm_ping_all_vfs(qm, QM_PF_SET_ISOLATE, qm->isolate_data.err_threshold);
+		if (ret)
 			dev_err(&qm->pdev->dev, "failed to send command to all VFs set isolate!\n");
-			mutex_unlock(&qm->isolate_data.isolate_lock);
-			return ret;
-		}
 	}
 	mutex_unlock(&qm->isolate_data.isolate_lock);
 
@@ -3049,15 +3024,18 @@ static int qm_alloc_uacce(struct hisi_qm *qm)
 int qm_register_uacce(struct hisi_qm *qm)
 {
 	int ret;
+
 	if (!qm->uacce)
 		return 0;
 
 	dev_info(&qm->pdev->dev, "qm register to uacce\n");
+
 	if (qm->fun_type == QM_HW_VF && test_bit(QM_SUPPORT_MB_COMMAND, &qm->caps)) {
 		ret = qm_ping_pf(qm, QM_VF_GET_ISOLATE);
 		if (ret)
 			dev_err(&qm->pdev->dev, "failed to send cmd to PF to get isolate!\n");
 	}
+
 	return uacce_register(qm->uacce);
 }
 EXPORT_SYMBOL_GPL(qm_register_uacce);
@@ -3507,11 +3485,11 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	if (ret)
 		return ret;
 
-	ret = hisi_qm_mb_write(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
+	ret = hisi_qm_mb(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
-	ret = hisi_qm_mb_write(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
+	ret = hisi_qm_mb(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
@@ -3530,7 +3508,7 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 int hisi_qm_start(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
-	int ret = 0;
+	int ret;
 
 	down_write(&qm->qps_lock);
 
@@ -4064,8 +4042,8 @@ back_func_qos:
 
 static u32 qm_get_shaper_vft_qos(struct hisi_qm *qm, u32 fun_index)
 {
-	u64 cir_u = 0, cir_b = 0, cir_s = 0;
 	u64 shaper_vft, ir_calc, ir;
+	u64 cir_u, cir_b, cir_s;
 	unsigned int val;
 	u32 error_rate;
 	int ret;
@@ -4425,8 +4403,8 @@ int hisi_qm_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
 	if (num_vfs == 0)
 		return hisi_qm_sriov_disable(pdev, false);
-	else
-		return hisi_qm_sriov_enable(pdev, num_vfs);
+
+	return hisi_qm_sriov_enable(pdev, num_vfs);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_sriov_configure);
 
@@ -5020,7 +4998,7 @@ static int qm_controller_reset(struct hisi_qm *qm)
 	return 0;
 
 err_prepare:
-	pci_info(pdev, "Controller reset_prepare failed\n"); 
+	pci_info(pdev, "Controller reset_prepare failed\n");
 	writel(ACC_MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       qm->io_base + ACC_MASTER_GLOBAL_CTRL);
 	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
