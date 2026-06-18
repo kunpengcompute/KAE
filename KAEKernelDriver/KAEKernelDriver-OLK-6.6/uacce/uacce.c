@@ -757,6 +757,9 @@ static ssize_t isolate_strategy_show(struct device *dev, struct device_attribute
 	struct uacce_device *uacce = to_uacce_device(dev);
 	u32 val;
 
+	if (!uacce->ops->isolate_err_threshold_read)
+		return -ENOENT;
+
 	val = uacce->ops->isolate_err_threshold_read(uacce);
 
 	return sysfs_emit(buf, "%u\n", val);
@@ -768,6 +771,9 @@ static ssize_t isolate_strategy_store(struct device *dev, struct device_attribut
 	struct uacce_device *uacce = to_uacce_device(dev);
 	unsigned long val;
 	int ret;
+
+	if (!uacce->ops->isolate_err_threshold_write)
+		return -ENOENT;
 
 	if (kstrtoul(buf, 0, &val) < 0)
 		return -EINVAL;
@@ -848,7 +854,7 @@ static umode_t uacce_dev_is_visible(struct kobject *kobj,
 		return 0;
 
 	if (attr == &dev_attr_isolate_strategy.attr &&
-	    (!uacce->ops->isolate_err_threshold_read ||
+	    (!uacce->ops->isolate_err_threshold_read &&
 	     !uacce->ops->isolate_err_threshold_write))
 		return 0;
 
@@ -979,13 +985,10 @@ int uacce_register(struct uacce_device *uacce)
 	uacce->cdev->owner = THIS_MODULE;
 
 	ret = cdev_device_add(uacce->cdev, &uacce->dev);
-	if (ret) {
-		cdev_del(uacce->cdev);
+	if (ret)
 		uacce->cdev = NULL;
-		return ret;
-	}
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(uacce_register);
 
