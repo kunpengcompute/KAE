@@ -6,7 +6,7 @@ diff -Nur zstd-1.5.4/examples/Makefile zstd/examples/Makefile
  LIB = $(LIBDIR)/libzstd.a
  
 +KAEZSTD_LDFLAGS=-L/usr/local/lib -L/usr/local/kaezstd/lib -Wl,-rpath,/usr/local/lib:/usr/local/kaezstd/lib -lzstd -lwd_comp -lkaezstd
-+LDFLAFS+=$(KAEZSTD_LDFLAGS)
++LDFLAGS+=$(KAEZSTD_LDFLAGS)
  
  .PHONY: default
  default: all
@@ -241,3 +241,14 @@ diff -Nur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
  ifndef ALREADY_APPENDED_NOEXECSTACK
  export ALREADY_APPENDED_NOEXECSTACK := 1
  ifeq ($(shell echo "int main(int argc, char* argv[]) { (void)argc; (void)argv; return 0; }" | $(CC) $(FLAGS) -z noexecstack -x c -Werror - -o $(VOID) 2>$(VOID) && echo 1 || echo 0),1)
+diff -Nur zstd-1.5.4/programs/Makefile zstd/programs/Makefile
+--- zstd-1.5.4/programs/Makefile	2023-02-10 08:41:50.000000000 +0800
++++ zstd/programs/Makefile	2026-06-22 19:00:00.000000000 +0800
+@@ -137,6 +137,7 @@
+ zstd : CPPFLAGS += $(THREAD_CPP) $(ZLIBCPP) $(LZMACPP) $(LZ4CPP)
+ zstd : LDFLAGS += $(THREAD_LD) $(DEBUGFLAGS_LD)
+ zstd : LDLIBS += $(ZLIBLD) $(LZMALD) $(LZ4LD)
++zstd : LDLIBS += $(KAEZSTD_LDFLAGS)
+ zstd : CPPFLAGS += -DZSTD_LEGACY_SUPPORT=$(ZSTD_LEGACY_SUPPORT)
+ ifneq (,$(filter Windows%,$(OS)))
+ zstd : $(RES_FILE)
