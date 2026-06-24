@@ -593,6 +593,7 @@ Cause analysis: The wrk tool uses TLS reconnection. During the stress test, only
 Process analysis: According to the wrk source code, as shown in [**Figure 1**](#wrk-source-code-snippet), the client sends a Client Hello sub-message in the handshake phase, and the session ID in the message is empty. After a complete handshake phase, the client and server store the session ID locally (in the client memory and server cache respectively). After the session is closed and when the same HTTPS website is accessed next time, the client browser carries the session ID in the Client Hello sub-message. After receiving the request, the server matches the received session ID with that stored in the server cache. If matched, the server restores the previous TLS connection and uses the previously negotiated key instead of re-negotiating a key. In this case, the RSA algorithm is called only once.
 
 **Figure 1** wrk source code snippet<a name="fig133708381251"></a><a id="wrk-source-code-snippet"></a>
+
 ![](figures/wrk-source-code-snippet.png "wrk source code snippet")
 
 **Conclusion and Solution<a name="section133105342021"></a>**
@@ -684,12 +685,15 @@ My program calls the APIs provided by OpenSSL and is bound to KAE. The program c
 When the program is running, you can query the number of hardware device queues to check whether the program has called KAE. You can run the **cat /sys/class/uacce/hisi\_*xxx*/attrs/available\_instances** command to view the number of queues corresponding to a driver module. By default, the number of queues is 256.
 
 **Figure 1** Checking the number of queues of each driver module<a name="fig104433984511"></a><a id="checking-the-number-of-queues-of-each-driver-module"></a>
+
 ![](figures/checking-the-number-of-queues-of-each-driver-module.png "Checking the number of queues of each driver module")
 
 **Figure 2** Checking the number of queues in a specific driver module (for example, **hisi\_hpre**)<a name="fig676105110454"></a><a id="checking-the-number-of-queues-in-a-specific-driver-module-(for-example-hisi\_hpre)"></a>
+
 ![](figures/for-example-hisi_hpre.png "Checking the number of queues in a specific driver module (for example, **hisi\_hpre**)")
 
 **Figure 3** Checking the number of queues of a specific device in a driver module (for example, **hisi\_hpre-2**)<a name="fig14841143462"></a><a id="checking-the-number-of-queues-of-a-specific-device-in-a-driver-module-(for-example-hisi\_hpre-2)"></a>
+
 ![](figures/for-example-hisi_hpre-2.png "Checking the number of queues of a specific device in a driver module (for example, **hisi\_hpre-2**)")
 
 >![](public_sys-resources/icon-note.gif) **NOTE**

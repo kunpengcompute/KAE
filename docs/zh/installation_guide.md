@@ -46,7 +46,7 @@
 
 ### 获取License
 
-由于KAE是针对硬件的加速解决方案，因此安装KAE前请确正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
+由于KAE是针对硬件的加速解决方案，因此安装KAE前请正确安装相应的License，License安装成功之后，操作系统才能识别到加速器设备。
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >
@@ -1451,7 +1451,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
         - 使用KAEGzip工具
 
             ```shell
-            time /usr/local/kaegzip/gzip -d itemdata.gz 
+            time /usr/local/kaegzip/gzip -d itemdata.gz
             ```
 
         - 回显示例如下。

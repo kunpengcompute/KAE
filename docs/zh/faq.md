@@ -45,7 +45,7 @@ License文件是一种授权文件，依据用户与华为公司签署的合同�
 
 **回答<a name="section204963045613"></a>**
 
-查看设备ESN的流程为：登录iBMC系统 ，点击“配置”，选择“许可证管理”，弹出的界面会显示设备ESN号。流程可参见下图。
+查看设备ESN的流程为：登录iBMC系统，单击“配置”，选择“许可证管理”，弹出的界面会显示设备ESN号。流程可参见下图。
 
 ![](figures/zh-cn_image_0000002546836291.png)
 
@@ -327,7 +327,7 @@ find / -name "openssl.cnf"
             3. 配置并安装OpenSSL。
 
                 ```shell
-                ./config --prefixm/usr/local/openssl_1
+                ./config --prefix /usr/local/openssl_1
                 ```
 
                 ```shell
@@ -414,7 +414,7 @@ find / -name "openssl.cnf"
 
             3. 更新动态链接库数据。
 
-                在配置文件/etc/ld.so.conf中，配置OpenSSL的lib路径：/usr/local/openssl\_1/lib。执行**ldconfig –v**命令。使它生效。
+                在配置文件/etc/ld.so.conf中，配置OpenSSL的lib路径：/usr/local/openssl\_1/lib。执行**ldconfig -v**命令。使它生效。
 
                 ![](figures/zh-cn_image_0000002546796329.png)
 
