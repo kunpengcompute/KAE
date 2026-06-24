@@ -243,10 +243,7 @@ KAE 2.0 provides acceleration capabilities based on the Userspace Accelerator De
 >
 >- User-mode support includes invoking KAE acceleration capabilities via interfaces such as UADK, OpenSSL/Tongsuo/BoringSSL, zlib, zstd, LZ4, Snappy, and gzip.
 >- Kernel-mode interfaces include encryption/decryption and compression/decompression interfaces in the Linux kernel crypto API, as well as kernel modules or kernel-mode scenarios such as dm-crypt and SM4-XTS.
-
->![](docs/figures/icon-notice.gif) **NOTICE**
->
-> The kernel APIs may vary depending on the version. To enable KAE in different OSs, you need to compile the kernel driver to check whether it matches the OS. If an interface error is reported during the compilation of the KAE driver for a specific OS kernel, the driver is incompatible.
+>- The kernel APIs may vary depending on the version. To enable KAE in different OSs, you need to compile the kernel driver to check whether it matches the OS. If an interface error is reported during the compilation of the KAE driver for a specific OS kernel, the driver is incompatible.
 
 **Change Description<a name="section4408930144513"></a>**
 
