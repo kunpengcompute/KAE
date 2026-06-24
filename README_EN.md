@@ -143,8 +143,8 @@ Encryption and compression algorithms supported by different processor models va
 
 >![](docs/figures/icon-note.gif) **NOTE**
 >
->√: supported; x: not supported <br>
->* SM4-XTS can be used only in kernel space and does not support OpenSSL. <br>
+>* √: supported; x: not supported
+>* SM4-XTS can be used only in kernel space and does not support OpenSSL.
 >* For zstd, LZ4, and Snappy, compression can leverage hardware-based acceleration, while decompression is handled by software only.
 
 ## Directory Structure

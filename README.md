@@ -143,9 +143,9 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 
 >![](docs/figures/icon-note.gif) **说明：**
 >
->√：表示支持；x：表示不支持。 <br>
->a：对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。 <br>
->b：ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
+>* √：表示支持；x：表示不支持。
+>* 对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。
+>* ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
 
 ## 目录结构
 
@@ -243,7 +243,6 @@ KAE2.0基于UADK（User Space Accelerator Development Kit）框架提供加速�
 >
 >- 用户态使用包括通过UADK、OpenSSL/Tongsuo/BoringSSL、Zlib、ZSTD、LZ4、Snappy、Gzip等接口调用KAE加速能力。
 >- 内核态接口包括Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核模块或内核态场景。
-
 >![](docs/figures/icon-notice.gif) **须知：**
 >
 >由于不同版本内核接口可能存在差异，不同的操作系统使能KAE需要实际编译内核驱动验证是否匹配，若特定OS内核编译KAE驱动遇到接口报错，则说明驱动不兼容。

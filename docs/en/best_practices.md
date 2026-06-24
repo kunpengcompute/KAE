@@ -267,7 +267,7 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
     └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test
     ```
 
-10. View the detailed encryption information about the partition or drive in the **/home** directory.
+10. <a name="li3196911104520"></a>View the detailed encryption information about the partition or drive in the **/home** directory.
 
     ```shell
     cryptsetup status /dev/mapper/sx_disk
