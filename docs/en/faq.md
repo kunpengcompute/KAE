@@ -21,7 +21,7 @@ Do I need to install a license before installing KAE? If so, how can I obtain th
 
 **Answer<a name="section20155184504116"></a>**
 
-Before installing KAE, you need to install a license. The OS can identify KAE devices only after the license is installed successfully. For details about how to apply for a license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance).
+Before installing KAE, you need to install a license. The OS can identify KAE devices only after the license is installed successfully. For details about how to apply for a license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance) corresponding to your actual scenario.
 
 KAE license classification:
 
@@ -128,8 +128,8 @@ How do I obtain the KAE software package?
 
 **Answer<a name="section1016841975912"></a>**
 
-- Download the KAE 2.0 software package from [Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae2).
-- Download the KAE 1.0 software package from [Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae1).
+- Download the current active maintenance version, KAE 2.0, from [Kunpeng/KAE](https://gitcode.com/boostkit/KAE/tree/kae2).
+- KAE 1.0 is a legacy version and is no longer maintained or updated. To obtain legacy software packages, search the [Releases](https://gitcode.com/boostkit/KAE/releases) or historical branches.
 
 ### Installing and Upgrading KAE
 
@@ -247,7 +247,7 @@ A possible cause is that KAE hardware devices are not enabled, that is, there is
 
 **Conclusion and Solution<a name="en-us_topic_0000001171624344_section50806158"></a>**
 
-Install a valid license. For details, see "Environment Deployment > Obtaining a License" in [Installation Guide](./installation_guide.md).
+Install a valid license. For details, see "Environment Deployment > Obtaining the License" in [Installation Guide](./installation_guide.md).
 
 ### KAE Fails to Be Used by OpenSSL 1.1.1c Installed on EulerOS 2.8
 
@@ -441,7 +441,7 @@ The detailed OpenSSL installation process is as follows:
 
                 ![](figures/en-us_image_0000002546836317.png)
 
-            2. Go to the **warpdrive** directory and run the **autogen.sh** script. Run the **./configure** command to configure the KAE driver.
+            2. Go to the **warpdrive** directory and run the **autogen.sh** script. Run the `./configure` command to configure the KAE driver.
 
                 ```shell
                 cd warpdrive/
@@ -500,7 +500,8 @@ The detailed OpenSSL installation process is as follows:
                 make install
                 ```
 
-                >![](public_sys-resources/icon-note.gif) **Note:**
+                >![](public_sys-resources/icon-note.gif) **NOTE**
+                >
                 >When running the **./configure** command, you must specify the path of the newly installed OpenSSL. Otherwise, the compilation fails.
 
                 ![](figures/en-us_image_0000002546836301.png)
@@ -567,7 +568,7 @@ The detailed OpenSSL installation process is as follows:
 
 **Symptom<a name="en-us_topic_0000001840968873_en-us_topic_0000001742708945_section13982317239"></a>**
 
-When the KAE kernel driver is being compiled and installed through source code on UOS v20 SP1, the system displays a message indicating that the specified file or directory does not exist in the <filepath class="+ topic/ph sw-d/filepath " id="filepath74971023173516">/kae\_driver/hisilicon/sec/Makefile</filepath> directory after the **make** command is executed.
+When the KAE kernel driver is being compiled and installed through source code on UOS v20 SP1, the system displays a message indicating that the specified file or directory does not exist in the **/kae\_driver/hisilicon/sec/Makefile** directory after the **make** command is executed.
 
 ![](figures/0101701680335248118-20231204165855-42167693270541801409168819555138.png)
 
@@ -592,7 +593,6 @@ Cause analysis: The wrk tool uses TLS reconnection. During the stress test, only
 Process analysis: According to the wrk source code, as shown in [**Figure 1**](#wrk-source-code-snippet), the client sends a Client Hello sub-message in the handshake phase, and the session ID in the message is empty. After a complete handshake phase, the client and server store the session ID locally (in the client memory and server cache respectively). After the session is closed and when the same HTTPS website is accessed next time, the client browser carries the session ID in the Client Hello sub-message. After receiving the request, the server matches the received session ID with that stored in the server cache. If matched, the server restores the previous TLS connection and uses the previously negotiated key instead of re-negotiating a key. In this case, the RSA algorithm is called only once.
 
 **Figure 1** wrk source code snippet<a name="fig133708381251"></a><a id="wrk-source-code-snippet"></a>
-
 ![](figures/wrk-source-code-snippet.png "wrk source code snippet")
 
 **Conclusion and Solution<a name="section133105342021"></a>**
@@ -684,18 +684,16 @@ My program calls the APIs provided by OpenSSL and is bound to KAE. The program c
 When the program is running, you can query the number of hardware device queues to check whether the program has called KAE. You can run the **cat /sys/class/uacce/hisi\_*xxx*/attrs/available\_instances** command to view the number of queues corresponding to a driver module. By default, the number of queues is 256.
 
 **Figure 1** Checking the number of queues of each driver module<a name="fig104433984511"></a><a id="checking-the-number-of-queues-of-each-driver-module"></a>
-
 ![](figures/checking-the-number-of-queues-of-each-driver-module.png "Checking the number of queues of each driver module")
 
 **Figure 2** Checking the number of queues in a specific driver module (for example, **hisi\_hpre**)<a name="fig676105110454"></a><a id="checking-the-number-of-queues-in-a-specific-driver-module-(for-example-hisi\_hpre)"></a>
-
-![](figures/checking-the-number-of-queues-in-a-specific-driver-module-(for-example-hisi\_hpre).png "Checking the number of queues in a specific driver module (for example, **hisi\_hpre**)")
+![](figures/for-example-hisi_hpre.png "Checking the number of queues in a specific driver module (for example, **hisi\_hpre**)")
 
 **Figure 3** Checking the number of queues of a specific device in a driver module (for example, **hisi\_hpre-2**)<a name="fig14841143462"></a><a id="checking-the-number-of-queues-of-a-specific-device-in-a-driver-module-(for-example-hisi\_hpre-2)"></a>
+![](figures/for-example-hisi_hpre-2.png "Checking the number of queues of a specific device in a driver module (for example, **hisi\_hpre-2**)")
 
-![](figures/checking-the-number-of-queues-of-a-specific-device-in-a-driver-module-(for-example-hisi\_hpre-2).png "Checking the number of queues of a specific device in a driver module (for example, **hisi\_hpre-2**)")
-
->![](public_sys-resources/icon-note.gif) **Note:**
+>![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >After the KAE is installed, the driver device IDs on each machine may vary. The preceding are for reference only.
 
 ### Certificates Fail to Be Generated After Running openssl req -new -x509
@@ -799,7 +797,7 @@ Perform the following steps:
 
 2. Check the KAE installation mode.
 
-    Currently, only the openEuler 4.19 kernel allows KAE installation using an RPM or DEB package. For other kernel versions, you need to compile and install KAE using the source code (the KAE 1 branch for kernel 4.19 and the KAE 2 branch for kernel 5.1*x*). Select a KAE installation method based on the actual situation. For details, see [Installation Guide](./installation_guide.md).
+    The current active maintenance version, KAE 2.0, supports installation from both source code and RPM packages. For kernel 4.19, compilation and installation from source code must be used; this supports user mode only, and does not support kernel-mode interfaces such as encryption/decryption and compression/decompression interfaces in the Linux kernel crypto API, dm-crypt, and SM4-XTS. Select a KAE installation method based on the actual situation. For details, see [Installation Guide](./installation_guide.md).
 
 3. Check whether the OpenSSL environment variables are configured.
 
@@ -834,11 +832,11 @@ Configure the hisi\_hpre and hisi\_zip devices by referring to the virtualizatio
 
 **Symptom<a name="en-us_topic_0000001769473497_en-us_topic_0000001742708945_section13982317239"></a>**
 
-The **OPENSSL\_CONF** environment variable has been configured based on [Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf](./user_guide.md#calling-the-kae-encryption-and-decryption-library-using-the-openssltongsuo-configuration-file-opensslcnf) in the User Guide. After running the **openssl speed -elapsed rsa2048** and **openssl speed -elapsed -engine kae rsa2048** commands, you find that there are no performance changes.
+The **OPENSSL\_CONF** environment variable has been configured based on "Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf" in the [User Guide](./user_guide.md). After running the **openssl speed -elapsed rsa2048** and **openssl speed -elapsed -engine kae rsa2048** commands, you find that there are no performance changes.
 
 **Key Process and Cause Analysis<a name="en-us_topic_0000001769473497_en-us_topic_0000001742708945_section31242048897"></a>**
 
-If you have configured **OPENSSL\_CONF** by referring to [Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf](./user_guide.md#calling-the-kae-encryption-and-decryption-library-using-the-engine_by_id-function) in the User Guide, both **openssl speed -elapsed rsa2048** and **openssl speed -elapsed -engine kae rsa2048** commands can call KAE. As a result, the performance is not improved.
+If you have configured **OPENSSL\_CONF** by referring to "Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf" in the [User Guide](./user_guide.md), both **openssl speed -elapsed rsa2048** and **openssl speed -elapsed -engine kae rsa2048** commands can call KAE. As a result, the performance is not improved.
 
 **Conclusion and Solution<a name="en-us_topic_0000001769473497_section1511044274711"></a>**
 
@@ -861,7 +859,8 @@ If you have configured **OPENSSL\_CONF** by referring to [Calling the KAE Encryp
     export OPENSSL_CONF=/home/app/openssl.cnf  
     ```
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >This path stores the **openssl.cnf** file. Replace it with the actual path.
 
 4. Test the RSA performance (KAE called).
@@ -986,7 +985,7 @@ Accelerator devices cannot be identified after KAE is installed.
 
 **Conclusion and Solution<a name="en-us_topic_0000002327644549_section168911281068"></a>**
 
-1. <a name="en-us_topic_0000002327644549_li19353192114321"></a> Check whether the corresponding devices exist in the virtual file system.
+1. <a name="en-us_topic_0000002327644549_li19353192114321"></a>Check whether the corresponding devices exist in the virtual file system.
 
     ```shell
     ls -al /sys/class/uacce/
@@ -1225,7 +1224,7 @@ Scenario: The KAEzip feature is used to decompress the file generated after a ze
 
 Prerequisites: BiSheng JDK 8u422 or later and KAE earlier than 2.0.3 have been deployed in the environment.
 
-Procedure: Compress a zero-byte array by following the instructions in the [KAEzip User Guide](https://atomgit.com/openeuler/bishengjdk-8/wiki/KAE_ZIP_%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%8C%87%E5%AF%BC.md), and run the **jjava -DGZIP\_USE\_KAE=true** *test_file* command to decompress the compressed file. The message "gzip header append\_info\_sz is 0" is displayed, as shown in the following figure.
+Procedure: Compress a zero-byte array by following the instructions in the *KAEzip User Guide*, and run the **java -DGZIP\_USE\_KAE=true** *test_file* command to decompress the compressed file. The message "gzip header append\_info\_sz is 0" is displayed, as shown in the following figure.
 
 ![](figures/1_en-us_image_0000002126661525.png)
 

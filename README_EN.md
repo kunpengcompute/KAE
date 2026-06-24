@@ -2,6 +2,7 @@
 
 ## Latest Updates
 
+- \[2026-06-30\]: Enabled user-mode support for kernel 4.19 in KAE 2.0 (kernel-mode encryption/decryption and compression/decompression interfaces are not supported), and allowed VFs to query the hardware fault isolation status and isolation thresholds of Host OS PF devices in KVM scenarios.
 - \[2026-03-20\]: Added asynchronous support to the KAEZlib compression library, and adapted the KAE 2.0 decompression module to Snappy hardware acceleration.
 - \[2025-12-30\]: Supported Kunpeng 950 processors in KAE 2.0, and the polling mode for asynchronous APIs of the KAELz4 compression library.
 - \[2025-09-30\]: Migrated the KAE code repository to the GitCode platform, and optimized the decompression performance of KAELz4 and KAEZstd.
@@ -26,7 +27,7 @@ Kunpeng Accelerator Engine (KAE) is a hardware-based acceleration solution built
 
 **Figure 1** Software architecture<a name="fig9931619182"></a><a id="software-architecture"></a>
 
-![](docs/figures/software-architecture.png "Software architecture")
+![](./docs/figures/software-architecture.png "Software architecture")
 
 [Table 1](#module-functions) describes the functions of each module in the software architecture.
 
@@ -51,6 +52,7 @@ This section describes the algorithms and models supported by the KAE encryption
 The KAE encryption and decryption module implements the RSA, SM2, SM3, SM4, DH, MD5, and AES algorithms. It provides high-performance symmetric and asymmetric encryption and decryption based on the lossless user-mode driver framework. It is compatible with OpenSSL 1.1.1x, OpenSSL 3.0.x, Tongsuo 8.4.0, and BoringSSL and supports synchronous and asynchronous mechanisms.
 
 - OpenSSL 1.1.1x supports the following algorithms:
+
     - Digest algorithms SM3 and MD5, operating in asynchronous mode
     - Symmetric encryption algorithm SM4, operating in asynchronous mode and supporting CTR, XTS, CBC, ECB, OFB, and CFB
     - Symmetric encryption algorithm AES, operating in asynchronous mode and supporting ECB, CTR, XTS, CBC, OFB, and CFB
@@ -63,9 +65,10 @@ The KAE encryption and decryption module implements the RSA, SM2, SM3, SM4, DH, 
 - BoringSSL offers encryption and decryption algorithm implementations through the engine mechanism and supports the RSA algorithm (private key encryption and decryption).
 
 >![](./docs/figures/icon-note.gif) **NOTE**
->-   The provider mechanism and later OpenSSL versions are not supported.
->-   Tongsuo is an encryption and decryption library derived from OpenSSL. Its APIs and usage patterns are compatible with OpenSSL.
->-   BoringSSL is an open-source encryption library developed and maintained by Google and derived from earlier OpenSSL versions. Some of its interfaces and usage patterns are different from those of OpenSSL. For details about how to use KAE with BoringSSL, see [Using BoringSSL to Call KAE](./docs/en/user_guide.md#calling-the-KAE-encryption-and-decryption-library-using-BoringSSL).
+>
+>- The provider mechanism and later OpenSSL versions are not supported.
+>- Tongsuo is an encryption and decryption library derived from OpenSSL. Its APIs and usage patterns are compatible with OpenSSL.
+>- BoringSSL is an open-source encryption library developed and maintained by Google and derived from earlier OpenSSL versions. Some of its interfaces and usage patterns are different from those of OpenSSL. For details about how to use KAE with BoringSSL, see [Calling the KAE Encryption and Decryption Library Using BoringSSL](./docs/en/user_guide.md#calling-the-KAE-encryption-and-decryption-library-using-BoringSSL) in the *User Guide*.
 
 **KAEZlib<a name="section1478918384188"></a>**
 
@@ -117,7 +120,7 @@ Encryption and compression algorithms supported by different processor models va
 |Encryption algorithm|Digest algorithm SM3|√|√|√|
 |Encryption algorithm|Digest algorithm MD5|√|√|√|
 |Encryption algorithm|Symmetric encryption algorithm SM4-CTR|√|√|√|
-|Encryption algorithm|Symmetric encryption algorithm SM4-XTSa|√|√|√|
+|Encryption algorithm|Symmetric encryption algorithm SM4-XTS|√|√|√|
 |Encryption algorithm|Symmetric encryption algorithm SM4-CBC|√|√|√|
 |Encryption algorithm|Symmetric encryption algorithm SM4-ECB|√|√|√|
 |Encryption algorithm|Symmetric encryption algorithm SM4-OFB|√|√|√|
@@ -139,9 +142,10 @@ Encryption and compression algorithms supported by different processor models va
 |Compression algorithm|Snappy|x|√|√|
 
 >![](docs/figures/icon-note.gif) **NOTE**
->√: supported; x: not supported<br>
->a: SM4-XTS can be used only in kernel space and does not support OpenSSL.<br>
->b: For zstd, LZ4, and Snappy, compression can leverage hardware-based acceleration, while decompression is handled by software only.
+>
+>√: supported; x: not supported <br>
+>* SM4-XTS can be used only in kernel space and does not support OpenSSL. <br>
+>* For zstd, LZ4, and Snappy, compression can leverage hardware-based acceleration, while decompression is handled by software only.
 
 ## Directory Structure
 
@@ -220,65 +224,29 @@ The project directory structure is as follows:
 
 ## Version Description
 
-KAE has two code branch versions: KAE 1.0 and KAE 2.0. This section describes the differences between the two versions and the feature changes.
+KAE 2.0 is the active maintenance version. All future new features, OS/kernel adaptations, and bug fixes will focus on KAE 2.0. KAE 1.0 is a legacy version; historical versions will be retained, but no new features, OS/kernel adaptations, or bug fixes will be provided.
 
-**Version Introduction<a name="section10131916143616"></a>**
+**KAE 2.0 Kernel Support Range<a name="section10131916143616"></a>**
 
-KAE is an accelerator developed based on Kunpeng processors. It uses two driver frameworks: Warpdriver (WD) and UADK. It has two code branches for different kernel versions: KAE 1.0 and KAE 2.0. [Table 3](#differences-in-KAE-code-branch-versions) lists the differences of the two versions.
+KAE 2.0 provides acceleration capabilities based on the Userspace Accelerator Development Kit (UADK) framework. The current support range is shown in [**Table  3** KAE 2.0 kernel support range](#kae2.0-kernel-support-range).
 
-**Table 3** Differences in KAE code branch versions<a id="differences-in-KAE-code-branch-versions"></a>
+**Table 3** KAE 2.0 kernel support range<a id="kae2.0-kernel-support-range"></a>
 
-<table><thead align="left"><tr id="row1282443814467"><th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.1"><p id="p1682563815463"><a name="p1682563815463"></a><a name="p1682563815463"></a>Kernel Version<sup id="sup714911196507"><a name="sup714911196507"></a><a name="sup714911196507"></a>[1]</sup></p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.2"><p id="p19825438174616"><a name="p19825438174616"></a><a name="p19825438174616"></a>Device Model</p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.3"><p id="p38259381468"><a name="p38259381468"></a><a name="p38259381468"></a>KAE 1.0</p>
-</th>
-<th class="cellrowborder" valign="top" width="25%" id="mcps1.2.5.1.4"><p id="p188251738134612"><a name="p188251738134612"></a><a name="p188251738134612"></a>KAE 2.0</p>
-</th>
-</tr>
-</thead>
-<tbody><tr id="row182593854618"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p108255381469"><a name="p108255381469"></a><a name="p108255381469"></a>4.19</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p158251382464"><a name="p158251382464"></a><a name="p158251382464"></a>920/920X<sup id="sup1855193634913"><a name="sup1855193634913"></a><a name="sup1855193634913"></a>[2]</sup></p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p882543811469"><a name="p882543811469"></a><a name="p882543811469"></a>YES</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p98253385469"><a name="p98253385469"></a><a name="p98253385469"></a>NA</p>
-</td>
-</tr>
-<tr id="row11825183811467"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p16825123811466"><a name="p16825123811466"></a><a name="p16825123811466"></a>5.4</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p882583814615"><a name="p882583814615"></a><a name="p882583814615"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p68251385467"><a name="p68251385467"></a><a name="p68251385467"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p18251238124611"><a name="p18251238124611"></a><a name="p18251238124611"></a>YES</p>
-</td>
-</tr>
-<tr id="row882553812462"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p11825238164616"><a name="p11825238164616"></a><a name="p11825238164616"></a>5.10</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p3825113814612"><a name="p3825113814612"></a><a name="p3825113814612"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p4825138194612"><a name="p4825138194612"></a><a name="p4825138194612"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p138259386468"><a name="p138259386468"></a><a name="p138259386468"></a>YES</p>
-</td>
-</tr>
-<tr id="row11825183811467"><td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.1 "><p id="p16825123811466"><a name="p16825123811466"></a><a name="p16825123811466"></a>6.6</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.2 "><p id="p882583814615"><a name="p882583814615"></a><a name="p882583814615"></a>920/920X</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.3 "><p id="p68251385467"><a name="p68251385467"></a><a name="p68251385467"></a>NA</p>
-</td>
-<td class="cellrowborder" valign="top" width="25%" headers="mcps1.2.5.1.4 "><p id="p18251238124611"><a name="p18251238124611"></a><a name="p18251238124611"></a>YES</p>
-</td>
-</tr>
-</tbody>
-</table>
+| Kernel Version | Device Model | Support Range |
+| -- | -- | -- |
+| 4.19 | Kunpeng 920 processor, new Kunpeng 920 processor model, Kunpeng 950 processor | Supports user mode only; kernel-mode encryption/decryption and compression/decompression interfaces are not supported. |
+| 5.4 | Kunpeng 920 processor, new Kunpeng 920 processor model, Kunpeng 950 processor | Supports user mode and the kernel-mode interfaces listed in the documentation. |
+| 5.10 | Kunpeng 920 processor, new Kunpeng 920 processor model, Kunpeng 950 processor | Supports user mode and the kernel-mode interfaces listed in the documentation. |
+| 6.6 | Kunpeng 920 processor, new Kunpeng 920 processor model, Kunpeng 950 processor | Supports user mode and the kernel-mode interfaces listed in the documentation. |
+
+>![](docs/figures/icon-note.gif) **NOTE**
+>
+>- User-mode support includes invoking KAE acceleration capabilities via interfaces such as UADK, OpenSSL/Tongsuo/BoringSSL, zlib, zstd, LZ4, Snappy, and gzip.
+>- Kernel-mode interfaces include encryption/decryption and compression/decompression interfaces in the Linux kernel crypto API, as well as kernel modules or kernel-mode scenarios such as dm-crypt and SM4-XTS.
 
 >![](docs/figures/icon-notice.gif) **NOTICE**
->The kernel APIs may vary depending on the version. To enable KAE in different OSs, you need to compile the kernel driver to check whether it matches the OS. If an interface error is reported during the compilation of the KAE driver for a specific OS kernel, the driver is incompatible.
+>
+> The kernel APIs may vary depending on the version. To enable KAE in different OSs, you need to compile the kernel driver to check whether it matches the OS. If an interface error is reported during the compilation of the KAE driver for a specific OS kernel, the driver is incompatible.
 
 **Change Description<a name="section4408930144513"></a>**
 
@@ -286,98 +254,121 @@ For details about feature changes in each released version, see [Release Notes](
 
 ## Environment Deployment
 
-Select an appropriate KAE code branch for installation based on the Kunpeng processor model and kernel version. Before the installation, make sure the environment meets the requirements and install the corresponding license in advance.
+Since KAE is a hardware-targeted acceleration solution, ensure that the corresponding license is properly installed before installing KAE. The OS can recognize the accelerator devices only after the license is successfully installed.
 
 **Installing the License<a name="section8301973474"></a>**
 
-- Before installing KAE, you need to install a license. The OS can identify the accelerators only after the license is installed successfully. KAE is enabled on TaiShan K servers by default. You do not need to apply for a license. The new Kunpeng 920 processor model can use KAE without a license after the BIOS is upgraded to 21.23 or later. For details about how to apply for and use the license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance).
-- Run the **lspci** command to check whether the OS has an accelerator device.
+>![](docs/figures/icon-note.gif) **NOTE**
+>
+>- KAE is enabled on Kunpeng K series servers by default. You do not need to apply for a license.
+>- The new Kunpeng 920 processor model can use KAE without a license after the BIOS is upgraded to 21.23 or later.
+
+1. To apply for and install the license, refer to [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance) corresponding to your actual scenario.
+
+2. After the license is installed, run the **lspci** command to check whether the OS has an accelerator device.
 
     >![](docs/figures/icon-note.gif) **NOTE**
+    >
     >The accelerator description returned by the **lspci** command varies depending on the OS. In addition to filtering by keywords, you can also check whether the HPRE/SEC/ZIP accelerator SBDF information exists.
 
     1. Check whether the high-performance RSA accelerator engine HPRE exists in the system.
 
-        ```
+        ```shell
         lspci | grep HPRE
         ```
 
         If the following information is displayed, HPRE exists in the OS:
 
-        ```
+        ```text
         79:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         b9:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         ```
 
     2. Check for the Security Engine (SEC).
 
-        ```
+        ```shell
         lspci | grep SEC
         ```
 
         If the following information is displayed, SEC exists in the OS:
 
-        ```
+        ```text
         76:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         b6:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         ```
 
     3. Check for the ZIP compression acceleration engine.
 
-        ```
+        ```shell
         lspci | grep ZIP
         ```
 
         If the following information is displayed, ZIP exists in the OS:
 
-        ```
+        ```text
         75:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         b5:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         ```
 
-If no command output is displayed, no KAE accelerator device exists in the OS. Check whether the license has been installed.
+    If no command output is displayed, no KAE accelerator device exists in the OS. Check whether the license has been installed.
 
 **Installing KAE<a name="section3745131824710"></a>**
 
-For details about the hardware environment and OS supported by KAE and the software packages required for installing KAE, see [Environment Requirements](./docs/en/installation_guide.md#environment-requirements) in **Installation Guide**.
-
-KAE can be installed using the source code or RPM package. For details, see [Installation Guide](./docs/en/installation_guide.md).
+KAE can be installed using the source code or RPM package. For details about the supported hardware, OSs, and installation procedures, see [Installation Guide](./docs/en/installation_guide.md).
 
 **Troubleshooting Driver Loading Failures<a name="section3745131824710"></a>**
 
-* Check whether the kernel version is consistent with the kernel development package version (including the minor version number). The inconsistency may cause the kernel installation failures.
+* Cause 1: Kernel installation failure due to inconsistency between the kernel version and the kernel development package version (including the minor version number).
+  
+  Check the kernel version and the kernel development package version:
 
-  > uname -r kernel_version rpm -qa | grep kernel-devel kernel_development_package_version
-  
-  Solution: Install the development package that matches the kernel version.
-* Check whether the loading fails due to lack of the license.
-  
-  > lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
-  
-  Solution: For Kunpeng 920 processors, apply for a license. For the new Kunpeng 920 processor model, update the BIOS to a license-free version.
+  ```shell
+  uname -r  
+  rpm -qa | grep kernel-devel
+  ```
+
+If the query results are inconsistent, install the development package that matches the kernel version.
+
+* Cause 2: Loading failure due to a missing license.
+
+  Check whether the license is properly installed:
+
+  ```shell
+  lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  ```
+
+If no output is displayed, the license is not properly installed or is not installed.
+
+Solution: For the Kunpeng 920 processor, apply for and properly install the license. For a new Kunpeng 920 processor model, update the BIOS to a license-free version.
 
 **Changing the Number of Hardware Accelerator Instances**
-  
-  By default, 256 driver instances are installed for each accelerator.
-  
-  > The number displayed in the command output of **cat /sys/class/uacce/hisi_*/available_instances** is 256 (for each accelerator).
-  
-  Each accelerator can have up to 1,024 instances. If there are a large number of concurrent services and more accelerator instances are required, use either of the following methods:
-  
-  Method 1: In the Makefile of the driver directory, change **pf_q_num=256** to **pf_q_num=1024**, uninstall the driver, and recompile and install the driver.
-  
-  Method 2: Run the following commands:
-  
-  ```modprobe -r hisi_zip
+
+Each accelerator device has 256 driver instances installed by default.
+
+```bash
+cat /sys/class/uacce/hisi_*/available_instances
+```
+
+The displayed number of instances is 256 (per accelerator).
+
+The maximum number of instances per accelerator is 1,024. If the service concurrency volume is high, use one of the following methods to configure more accelerator instances:
+
+* In the Makefile of the driver directory, change **pf_q_num=256** to **pf_q_num=1024**, and then uninstall, recompile, and reinstall the drivers.
+
+* Method 2: Run the following commands:
+
+  ```bash
+  modprobe -r hisi_zip
   modprobe -r hisi_hpre
   modprobe -r hisi_sec2
   modprobe -r hisi_qm
   modprobe -r uacce
   ```
 
-  Uninstall the driver and then run the following command:
+  Uninstall the drivers, and then run the following commands:
 
-  ```modprobe uacce 
+  ```bash
+  modprobe uacce 
   modprobe hisi_qm
   modprobe hisi_sec2 uacce_mode=2 pf_q_num=1024
   modprobe hisi_hpre uacce_mode=2 pf_q_num=1024
@@ -385,8 +376,10 @@ KAE can be installed using the source code or RPM package. For details, see [Ins
   ```
 
   Load the driver based on the new number of queues. (**uacce_mode=2** indicates the NO-SVA mode, which is not involved in common scenarios.)
-  
-  > In container scenarios, each VF virtualized from a device also shares 1,024 instances with the PF. That means the maximum number of instances for PF and VF is 1024.
+
+  >![](./docs/figures/icon-note.gif) **NOTE**
+  >
+  > In a container scenario, the Virtual Functions (VFs) virtualized from each device shares the 1,024 instances with the Physical Function (PF). That means the maximum number of instances for the PF and VFs is 1,024.
 
 ## Quick Start
 
@@ -408,6 +401,7 @@ For details about how to quickly verify that KAE is working normally and the per
 **To KAE Users**
 
 - This software is intended solely for debugging and development. You are responsible for any risks and should carefully review the following information:
+  
     - This code repository contributes to the OpenSSL, Tongsuo, BoringSSL, Lz4, zlib, gzip, zstd, and Snappy open-source projects solely for performance optimization. It strictly adheres to the coding style and methods, as well as security design of the native open-source software. Any vulnerability and security issues of the software shall be resolved by the corresponding upstream communities according to their response mechanisms. Please pay attention to the notifications and version updates released by the upstream communities. The Kunpeng computing community does not assume any responsibility for software vulnerabilities and security issues.
     - Data processing and deletion: Users are responsible for managing and deleting any data generated while using this software. Users are advised to delete such data promptly after use to prevent information leakage.
     - Data confidentiality and transmission: Users understand and agree not to share or transmit any data generated by this software. Neither the software nor its developers are responsible for any information leakage, data breaches, or other negative consequences.

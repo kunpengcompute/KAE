@@ -1,5 +1,7 @@
 # User Guide
 
+This document provides instructions on how to use the KAE encryption/decryption library and the KAE compression library. Before reading and performing the operations described in this document, ensure that KAE has been installed in the environment. For details about the installation steps, see [Installation Guide](./installation_guide.md).
+
 ## Using the KAE Encryption and Decryption Library
 
 ### Calling the KAE Encryption and Decryption Library Using the ENGINE\_by\_id Function
@@ -25,10 +27,10 @@ int main(int argc, char **argv)
     
     /*You can use ENGINE_by_id Function to get the handle of the Huawei Accelerator Engine*/
     ENGINE *e = ENGINE_by_id("kae");
-    /*Enable the KAE asynchronization function. This function is optional. The value **0** indicates that this function is disabled, and the value **1** (default) indicates that this function is enabled.*/
+    /*Enable the KAE asynchronization function. This function is optional. The value 0 indicates that this function is disabled, and the value 1 (default) indicates that this function is enabled.*/
     ENGINE_ctrl_cmd_string(e, "KAE_CMD_ENABLE_ASYNC", "1", 0);
     ENGINE_init(e);
-    /*Specify the KAE for RSA-based encryption and decryption. If **ENGINE_set_default_RSA(ENGINE *e)** is used during initialization, **e** does not need to be transferred.*/
+    /*Specify the KAE for RSA-based encryption and decryption. If ENGINE_set_default_RSA(ENGINE *e) is used during initialization, e does not need to be passed.*/
     RSA *rsa = RSA_new_method(e);
     /*The user code*/
     ……
@@ -61,6 +63,7 @@ OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL); // Load and initialize the 
 ```
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >If Tongsuo is used for encryption and decryption, the configuration method is the same as that of OpenSSL.
 >If you run the **openssl req -new -x509** command to generate a certificate, configure **openssl.cnf** by referring to Method 2 described in [Certificates Fail to Be Generated After Running openssl req -new -x509](./faq.md#en-us_topic_0000001217022681_section3941254).
 
@@ -116,7 +119,7 @@ int main(int argc, char **argv)
     /* Load openssl configure */
     OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
     ENGINE *e = ENGINE_by_id("kae");
-    /*Specify the KAE for RSA-based encryption and decryption. If **ENGINE_set_default_RSA(ENGINE *e)** is used during initialization, **e** does not need to be transferred.*/
+    /*Specify the KAE for RSA-based encryption and decryption. If ENGINE_set_default_RSA(ENGINE *e) is used during initialization, e does not need to be passed.*/
     RSA *rsa = RSA_new_method(e);
     /*The user code*/ 
     …… 
@@ -126,62 +129,23 @@ int main(int argc, char **argv)
 }
 ```
 
-To use the OpenSSL configuration file to invoke KAE, you need to add KAE-related configuration parameters to the **openssl.cnf** configuration file. Using KAE through the configuration file enables your applications to use the accelerator function with just a few modifications.
-
 ### Calling the KAE Encryption and Decryption Library Using BoringSSL
 
-#### Methods
+KAE supports invocation via BoringSSL. However, the engine mechanism of BoringSSL does not allow KAE to be called by setting environment variables like OPENSSL_ENGINES. Therefore, KAE provides external interfaces: `ENGINE_init_kae` and `ENGINE_free_kae`. Two methods are available for calling KAE from BoringSSL. Method 1: Invoke the APIs within the service code. Method 2: Modify the BoringSSL source code to integrate the relevant patches. This section describes the invocation prerequisites, principles, and examples for both solutions in detail.
 
-KAE can be called by BoringSSL in either of the following methods: Method 1: Call APIs in service code. Method 2: Modify BoringSSL source code and apply a patch. This section describes the principles of the two methods in detail.
+#### Prerequisites
 
-The engine mechanism of BoringSSL cannot call KAE by setting environment variables like **OPENSSL\_ENGINES**. Therefore, KAE provides APIs ENGINE\_init\_kae and ENGINE\_free\_kae for external calls. Two methods are provided for BoringSSL to call KAE.
+Before using BoringSSL to call KAE, you need to install KAE, compile BoringSSL, and select a calling method.
 
-**Method 1: Calling APIs in Service Code<a name="en-us_topic_0000002332729981_section123525975417"></a>**
+1. Compile and install KAEOpensslEngine. The BoringSSL source code path is required.
 
-This method does not require BoringSSL recompilation, but you may need to modify the existing BoringSSL service code.
+   ```shell
+   sh build.sh engine_boringssl /opt/boringssl
+   ```
 
-The compatibility of RSA private key encryption and decryption APIs is as follows:
+2. Download the [BoringSSL source package](https://github.com/google/boringssl/releases). Copy the BoringSSL source package to a custom directory (for example, **/opt/boringssl**) and decompress the package.
 
-- RSA\_new\(\): KAE cannot be called.
-- RSA\_new\_method\(\): KAE can be called when it is passed as an input parameter.
-
-Before encryption, call ENGINE\_init\_kae to initiate KAE and pass KAE as an input parameter of RSA\_new\_method. Then, call KAE for private/public key encryption. After the task is complete, call ENGINE\_free\_kae to release KAE resources. [Figure 1](#BoringSSL-calling-KAE-through-APIs) shows the principle.
-
-**Figure 1** BoringSSL calling KAE through APIs<a name="en-us_topic_0000002332729981_fig571210343319"></a><a id="BoringSSL-calling-KAE-through-APIs"></a>
-
-![](figures/en-us_image_0000002478068108.png "BoringSSL calling KAE through APIs")
-
-**Method 2: Modifying the BoringSSL Source Code and Applying a Patch<a name="en-us_topic_0000002332729981_section1277662845415"></a>**
-
-Modify BoringSSL source code and apply a patch to enable the RSA algorithm of BoringSSL to use KAE by default for encryption and decryption. **bssl\_add\_kae\_support.patch** has been provided for BoringSSL 0.20250311.0. The patch is not compatible with other BoringSSL versions due to source code differences. If you use another BoringSSL version, you can adapt the patch based on BoringSSL source code, which requires minor modification effort.
-
-This method requires no modifications to existing service code. However, BoringSSL has a strong dependency on the KAE dynamic library.
-
-The compatibility of RSA private key encryption and decryption APIs is as follows:
-
-- RSA\_new\(\): KAE is used by default.
-- RSA\_new\_method\(\): KAE can be called when it is passed as an input parameter.
-
-KAE can be called by BoringSSL in either of the following methods: Method 1: Call APIs in service code. Method 2: Modify BoringSSL source code and apply a patch. This section describes the principles of the two methods in detail.
-
-#### Examples
-
-Before using BoringSSL to call KAE, you need to install KAE, compile BoringSSL, and select a calling method. This section provides two examples.
-
-**Prerequisites<a name="en-us_topic_0000002298930250_section14710172717351"></a>**
-
-Install KAE by referring to [Installation Guide](./installation_guide.md).
-
-Compile and install KAEOpensslEngine. The BoringSSL source code path is required.
-
-```shell
-sh build.sh engine_boringssl /opt/boringssl
-```
-
-**Installing BoringSSL<a name="en-us_topic_0000002298930250_section13607252155212"></a>**
-
-1. Download the [BoringSSL source code package](https://github.com/google/boringssl/releases). Copy and decompress the BoringSSL source code package to a custom directory (for example, **/opt/boringssl**) and decompress the package.
-2. Compile and install it.
+3. Compile and install BoringSSL.
 
     By default, BoringSSL is compiled in debug mode. To compile BoringSSL in release mode, add **-DCMAKE\_BUILD\_TYPE=Release**.
 
@@ -192,7 +156,7 @@ sh build.sh engine_boringssl /opt/boringssl
     make install
     ```
 
-3. Check whether the installation is successful.
+4. Check whether the installation is successful.
 
     After the installation using **make install** is complete, the **install** directory is generated in the BoringSSL source code path. Check the files in the **install** directory.
 
@@ -210,9 +174,26 @@ sh build.sh engine_boringssl /opt/boringssl
     drwxr-xr-x. 2 root root 4096 Apr  8 09:14 lib64
     ```
 
-**Method 1: Calling APIs in Service Code<a name="en-us_topic_0000002298930250_section260785225210"></a>**
+#### Method 1: Calling APIs in Service Code
 
-**Prerequisites**: The KAE header file and dynamic library need to be linked during service code compilation.
+**Principles**
+
+This method does not require BoringSSL recompilation, but you may need to modify the existing BoringSSL service code.
+
+The compatibility of RSA private key encryption and decryption APIs is as follows:
+
+- RSA\_new\(\): KAE cannot be called.
+- RSA\_new\_method\(\): KAE can be called when it is passed as an input parameter.
+
+Before encryption, call ENGINE\_init\_kae to initiate KAE and pass KAE as an input parameter of RSA\_new\_method. Then, call KAE for private/public key encryption. After the task is complete, call ENGINE\_free\_kae to release KAE resources. [**Figure 1**](#BoringSSL-calling-KAE-through-APIs) shows the principles.
+
+**Figure 1** BoringSSL calling KAE through APIs<a name="en-us_topic_0000002332729981_fig571210343319"></a><a id="BoringSSL-calling-KAE-through-APIs"></a>
+
+![](figures/en-us_image_0000002478068108.png "BoringSSL calling KAE through APIs")
+
+**Prerequisites**
+
+The KAE header file and dynamic library need to be linked during service code compilation.
 
 - Header file: **/usr/local/boringssl/include/kae\_bssl.h**
 - Dynamic library: **/usr/local/boringssl/lib/engines-1.1/kae\_bssl.so**
@@ -252,9 +233,22 @@ For details, see the **testsuit\_rsa.cpp** file, which provides the sample code 
     ./kaedemo
     ```
 
-**Method 2: Modifying the BoringSSL Source Code<a name="en-us_topic_0000002298930250_section6608165285211"></a>**
+#### Method 2: Modifying the BoringSSL Source Code and Applying a Patch
 
-**Prerequisites**: The KAE header file and dynamic library need to be linked during service code compilation.
+**Principles**
+
+Modify BoringSSL source code and apply a patch to enable the RSA algorithm of BoringSSL to use KAE by default for encryption and decryption. **bssl\_add\_kae\_support.patch** has been provided for BoringSSL 0.20250311.0. The patch is not compatible with other BoringSSL versions due to source code differences. If you use another BoringSSL version, you can adapt the patch based on BoringSSL source code, which requires minor modification effort.
+
+This method requires no modifications to existing service code. However, BoringSSL has a strong dependency on the KAE dynamic library.
+
+The compatibility of RSA private key encryption and decryption APIs is as follows:
+
+- RSA\_new\(\): KAE is used by default.
+- RSA\_new\_method\(\): KAE can be called when it is passed as an input parameter.
+
+**Prerequisites**
+
+The KAE header file and dynamic library need to be linked during service code compilation.
 
 - **bssl\_add\_kae\_support.patch** provided by KAE applies only to BoringSSL 0.20250311.0. If BoringSSL of another version is used, modify the patch and then apply it. The modification points are described in detail in the patch, which requires only minor effort. (Plus signs (+) in the patch file indicate new content, and minus signs (-) indicate the content to be deleted. You can refer to the context to locate the modifications.)
 - Header file: **/usr/local/boringssl/include/kae\_bssl.h**
@@ -368,7 +362,7 @@ The following describes how to use **bssl speed** to perform performance tests. 
 
 This section provides methods of using the KAEZlib compression library in distributed storage scenarios.
 
-Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can use either of the following methods to link the zlib compression library to the application layer:
+You can use either of the following methods to link the zlib compression library to the application layer:
 
 - Specify the runtime loading path of **libz.so** during application compilation. Use the following compilation options for linking:
 
@@ -392,7 +386,7 @@ The section provides methods of using the KAEZstd compression library.
 
 - Use KAEZstd by calling the compression library.
 
-    Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can use either of the following methods to link the KAEZstd compression library to the application layer:
+    You can use either of the following methods to link the KAEZstd compression library to the application layer:
 
     - Specify the runtime loading path of **libkaezstd.so** during application compilation. Use the following compilation options for linking:
 
@@ -408,7 +402,7 @@ The section provides methods of using the KAEZstd compression library.
 
 - Use KAEZstd by executing its binary file.
 
-    Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can directly use **/usr/local/kaezstd/bin/zstd** for decompression.
+    You can directly use **/usr/local/kaezstd/bin/zstd** for decompression.
 
     - Set the environment variable.
 
@@ -436,7 +430,7 @@ This section describes how to use synchronous APIs of the KAELz4 library.
 
 - Use KAELz4 by calling the compression library.
 
-    Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can use either of the following methods to link the KAELz4 compression library to the application layer:
+    You can use either of the following methods to link the KAELz4 compression library to the application layer:
 
     - Specify the runtime loading path of **libkaelz4.so** during application compilation. Use the following compilation options for linking:
 
@@ -452,7 +446,7 @@ This section describes how to use synchronous APIs of the KAELz4 library.
 
 - Use KAELz4 by executing its binary file.
 
-    Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can directly use **/usr/local/kaelz4/bin/lz4** for decompression.
+    You can directly use **/usr/local/kaelz4/bin/lz4** for decompression.
 
     - Set the environment variable.
 
@@ -478,10 +472,9 @@ This section describes how to use asynchronous APIs of the KAELz4 library.
 
 KAELz4 asynchronous APIs support both polling and non-polling modes. In polling mode, the user thread needs to call related APIs to retrieve compressed data. In non-polling mode, data is compressed asynchronously, with the compression results returned through a callback function. KAELz4 asynchronous APIs support three compression formats: block, frame, and lz77\_raw. The block and frame formats are compatible with the standard LZ4 block and frame formats. The lz77\_raw format needs to be converted to a standard block or frame format using a post-processing API.
 
-A code sample is provided below for frame format compression in non-polling mode. For details about the APIs and usage examples, see [README_EN of the KAELz4 open-source repository](../../KAELz4/README_EN.md).
+A code sample is provided below for frame format compression in non-polling mode. For details about the APIs and usage examples, see [README_EN of the KAELz4 open-source repository](https://gitcode.com/boostkit/KAE/blob/kae2/KAELz4/README_EN.md).
 
-1. Compile and install the software by referring to [Installation Guide](./installation_guide.md).
-2. Specify the paths to **libkaelz4.so** and the KAELz4 asynchronous header file during application compilation. Use the following compilation options for linking:
+1. Specify the paths to **libkaelz4.so** and the KAELz4 asynchronous header file during application compilation. Use the following compilation options for linking:
 
     ```shell
     -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4
@@ -494,7 +487,7 @@ A code sample is provided below for frame format compression in non-polling mode
     export C_INCLUDE_PATH=/usr/local/kaelz4/include:$C_INCLUDE_PATH
     ```
 
-3. Use the asynchronous APIs to compile the compression code **main.c**. Refer to the code sample below for the implementation of frame format compression.
+2. Use the asynchronous APIs to compile the compression code **main.c**. Refer to the code sample below for the implementation of frame format compression.
 
     ```c
     #include <stdio.h>
@@ -650,7 +643,7 @@ A code sample is provided below for frame format compression in non-polling mode
     }
     ```
 
-4. Compile and run the code.
+3. Compile and run the code.
 
     ```shell
     gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_frame_async_test
@@ -665,21 +658,21 @@ A code sample is provided below for frame format compression in non-polling mode
 
 ### Calling the KAESnappy Library
 
-- This section describes how to call the KAESnappy library using the compression library.
+This section describes how to call the KAESnappy library using the compression library.
 
-    Compile and install the software by referring to [Installation Guide](./installation_guide.md). You can use either of the following methods to link the KAESnappy compression library to the application layer:
+You can use either of the following methods to link the KAESnappy compression library to the application layer:
 
-    - Specify the runtime loading path of **libkaesnappy.so** during application compilation. Use the following compilation options for linking:
+- Specify the runtime loading path of **libkaesnappy.so** during application compilation. Use the following compilation options for linking:
 
-        ```shell
-        -Wl,-rpath=/usr/local/kaesnappy/lib
-        ```
+    ```shell
+    -Wl,-rpath=/usr/local/kaesnappy/lib
+    ```
 
-    - Set the environment variable.
+- Set the environment variable.
 
-        ```shell
-        export LD_LIBRARY_PATH=/usr/local/kaesnappy/lib:$LD_LIBRARY_PATH
-        ```
+    ```shell
+    export LD_LIBRARY_PATH=/usr/local/kaesnappy/lib:$LD_LIBRARY_PATH
+    ```
 
 ## Maintenance
 
@@ -699,5 +692,3 @@ This section describes how to query logs so that you can accurately locate and a
 |/var/log/|kaelz4.log|By default, KAELz4 library logs are not printed.<br>To set the log level, take the following steps: Set the environment variable: `export KAELZ4_CONF_ENV=/var/log/`. Create the **kae.cnf** file in **kaelz4.cnf**. In the **kaelz4.cnf** file, set the following content: `[LogSection]debug_level=error`<br>The value of **debug_level** can be **none**, **error**, **info**, **warning**, or **debug**. In normal cases, you should not enable the **info** or **debug** log level. If such log level is set, the accelerator performance will deteriorate.|
 |/var/log/|kaesnappy.log|By default, KAESnappy library logs are not printed.<br>To set the log level, take the following steps: Set the environment variable: `export KAESNAPPY_CONF_ENV=/var/log/`. Create the **kaesnappy.cnf** file in **/var/log/**. In the **kaesnappy.cnf** file, set the following content: `[LogSection]debug_level=error`<br>The value of **debug_level** can be **none**, **error**, **info**, **warning**, or **debug**. In normal cases, you should not enable the **info** or **debug** log level. If such log level is set, the accelerator performance will deteriorate.|
 |/var/log/|message/syslog|Kernel logs of OSs such as CentOS, SUSE, and EulerOS are stored in the **/var/log/message** directory. Kernel logs of OSs such as Ubuntu are stored in the **/var/log/syslog** directory. Alternatively, you can run the **dmesg > /var/log/dmesg.log** command to collect driver and kernel logs.|
-
-This section describes how to query logs so that you can accurately locate and analyze the root cause of a fault.

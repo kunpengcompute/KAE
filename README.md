@@ -134,7 +134,7 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 |加密算法|非对称算法RSA|√|√|√|
 |加密算法|非对称算法SM2|x|√|√|
 |加密算法|密钥协商算法DH|√|√|√|
-|压缩算法|zlib（Gzip\zlib格式）|√|√|√|
+|压缩算法|zlib（Gzip/zlib格式）|√|√|√|
 |压缩算法|zlib（Deflate格式）|x|√|√|
 |压缩算法|Gzip|√|√|√|
 |压缩算法|Zstd|x|√|√|
@@ -323,7 +323,7 @@ KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操�
   查看内核版本和内核开发包版本。
 
   ```shell
-  uname -r  
+  uname -r
   rpm -qa | grep kernel-devel
   ```
 
@@ -334,7 +334,9 @@ KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操�
   查看License是否正确安装。
 
   ```shell
-  lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  lspci | grep HPRE
+  lspci | grep SEC
+  lspci | grep ZIP
   ```
 
   若没有任何显示则License没有正确安装或未安装。
@@ -368,7 +370,7 @@ cat /sys/class/uacce/hisi_*/available_instances
   先卸载驱动，再执行以下命令。
 
   ```bash
-  modprobe uacce 
+  modprobe uacce
   modprobe hisi_qm
   modprobe hisi_sec2 uacce_mode=2 pf_q_num=1024
   modprobe hisi_hpre uacce_mode=2 pf_q_num=1024

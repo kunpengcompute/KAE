@@ -2,69 +2,44 @@
 
 ## Introduction
 
-This document describes how to use the source code to quickly install KAE 2.0 quickly and how to use the KAE encryption and decryption library and KAE compression library.
+The Kunpeng Accelerator Engine (KAE) is a hardware-based acceleration solution built on Kunpeng processors. It supports encryption, decryption, and decompression. The KAE encryption and decryption module accelerates Secure Sockets Layer (SSL) and Transport Layer Security (TLS) applications. The KAE decompression modules accelerate data compression and decompression, greatly reducing processor consumption and improving efficiency. In addition, KAE abstracts the internal processing details from the application layer. You can quickly migrate services by using the standard OpenSSL, Tongsuo, BoringSSL, zlib, zstd, and LZ4 interfaces.
+Based on OpenSSL 1.1.1x, this document provides a one-click installation method using KAE source code to help you get started quickly with the KAE libraries.
 
-## Environment Preparation
+## Prerequisites
 
-1. Obtain the license.
-    1. For details about how to apply for and install a license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance).
-    2. Run the **lspci** commands to check whether the OS has an accelerator device.
-
-        ```shell
-        lspci | grep HPRE
-        lspci | grep SEC
-        lspci | grep ZIP
-        ```
-
-        If no command output is displayed, no KAE accelerator device exists in the OS. Check whether the license has been installed.
-
-2. Install OpenSSL.
-    1. Check the OpenSSL version.
-
-        ```shell
-        openssl version
-        ```
-
-        The OpenSSL version must be 1.1.1x or 3.0.x, and the Tongsuo version must be 8.4.0. If not, install a compliant version.
-
-    2. Set the OpenSSL environment variable **OPENSSL\_ENGINES** to the directory where the KAE dynamic library is stored so that OpenSSL can detect KAE.
-        - OpenSSL 1.1.1x:
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
-            ```
-
-        - OpenSSL 3.0.x:
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/lib/engines-3.0
-            ```
-
-        - Tongsuo:
-
-            ```shell
-            export OPENSSL_ENGINES=/usr/local/tongsuo/lib/engines-3.0
-            ```
-
-3. Set the **LD\_LIBRARY\_PATH** environment variable so that KAE can detect the UADK driver dynamic library.
-
-    ```shell
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
-    ```
-
-4. Install environment dependencies.
+- The system environment meets the requirements specified in [Environment Requirements](./installation_guide.md#environment-requirements) before installation.
+- Determine whether the system requires a license before installation. For details, see [Obtaining the License](./installation_guide.md#obtaining-the-license).
+- Run the **openssl version** command to check whether the OpenSSL version is 1.1.1x. If not, see [Installing OpenSSL/Tongsuo](./installation_guide.md#installing-openssltongsuo).
+- Run the following command to install the required dependencies.
 
     ```shell
     yum install -y make kernel-devel-`uname -r` libtool numactl-devel openssl-devel lz4-devel libzstd-devel chrpath cmake libunwind-devel patch
     ```
 
-5. Obtain the KAE 2.0 source package.
+- Set the OpenSSL 1.1.1x environment variable **OPENSSL\_ENGINES** to the directory where the KAE dynamic library is stored so that OpenSSL can detect KAE.
+    
+    ```shell
+    export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+    ```   
+
+- Set the **LD\_LIBRARY\_PATH** environment variable so that KAE can detect the UADK driver dynamic library.
+
+    ```shell
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+    ```
+
+## Installation Procedure
+
+If the OpenSSL version is 1.1.1x, one-click installation is supported. For more installation methods, see [Installation Guide](./installation_guide.md). The specific steps for the one-click installation method are as follows:
+
+1. Use a remote login tool to log in to the Linux CLI as the **root** user.
+2. Obtain the source package.
 
     ```shell
     git clone https://gitcode.com/boostkit/KAE.git -b kae2
     ```
 
-6. Use the **build.sh** script in the source package to install all KAE 2.0 modules in one click.
+3. Use the **build.sh** script in the source package to install all KAE modules in one click.
 
     ```shell
     cd KAE
@@ -107,7 +82,7 @@ The following uses the verification of RSA synchronous/asynchronous performance 
 
 After KAE encryption and decryption library is used, the RSA synchronous signing speed is improved from 724.1 signs/s to 2,819 signs/s.
 
-## Testing the RSA Asynchronous Performance
+**Testing the RSA Asynchronous Performance**
 
 - Use the OpenSSL software algorithm to test the RSA asynchronous performance.
 
