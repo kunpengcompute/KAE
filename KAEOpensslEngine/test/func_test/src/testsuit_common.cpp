@@ -301,7 +301,7 @@ int evp_decrypt(EVP_PKEY *key, unsigned char *decData, size_t *declen, unsigned 
 
     ret = EVP_PKEY_decrypt(dctx, decData, declen, encData, enclen);
     EVP_PKEY_CTX_free(dctx);
-    if (ret < 0) 
+    if (ret <= 0) 
     {
         unsigned long ulErr = ERR_get_error();  
         char szErrMsg[1024] = { 0 };
@@ -524,4 +524,3 @@ int rsa_software_and_hardware_switch_mode(int keylen)
     return TRUE;
 
 }
-
