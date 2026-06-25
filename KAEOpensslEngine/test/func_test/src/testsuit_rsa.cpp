@@ -153,12 +153,15 @@ TEST_F(RsaTestGroup, case3)
     unsigned char *signData = (unsigned char *)malloc(key_len + 1);
     memset(signData, 0, key_len + 1);
 
+    enclen = key_len + 1;
     ret = evp_encrypt(pkey, encData, &enclen, srcStr, engine);
     ASSERT_GT(ret , 0);
+    declen = key_len + 1;
     ret = evp_decrypt(pri_key, decData, &declen, encData, enclen, engine);
     ASSERT_GT(ret , 0);
     EXPECT_EQ(memcmp(decData, srcStr, declen) , 0);
 
+    siglen = key_len + 1;
     ret = evp_sign(pri_key, signData, &siglen, srcStr, engine);
     ASSERT_GT(ret , 0);
     ret = evp_verify(pkey, srcStr, strlen((const char *)srcStr), signData, siglen, engine);
@@ -419,4 +422,3 @@ TEST_F(RsaTestGroup, case9)
     waitpid(pid,NULL,0);
     
 }
-
