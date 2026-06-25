@@ -421,7 +421,7 @@ The documents of this project are licensed under CC-BY 4.0. For details, see [LI
 
 ## Contribution Statement
 
-If you have any questions or want to provide feedback on feature requirements and bug reports, you can submit issues. For details, see the [contribution guideline](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md).
+If you have any questions or want to provide feedback on feature requirements and bug reports, you can submit issues. For details, see the contribution guideline.
 
 1. Submit an error report: If you find a non-security vulnerability in KAE, first search the **Issues** in the KAE repository to avoid submitting duplicates. If the vulnerability is not listed, create a new issue. If you discover a security-related issue, do not disclose it publicly. Please refer to the security handling guidelines for details. All error reports must include complete information about the issue.
 2. Handling security issues: For guidance on handling security issues in this project, please contact the core team via email for instructions.
@@ -440,7 +440,7 @@ If you have any questions or want to provide feedback on feature requirements an
 
 ## Suggestions and Communication
 
-You are welcome to contribute to the community. If you have any questions or suggestions, submit [issues](https://gitcode.com/boostkit/community/blob/master/docs/contributor/issue-submit.md). We will reply to you as soon as possible. Thank you for your support.
+You are welcome to contribute to the community. If you have any questions or suggestions, submit issues. We will reply to you as soon as possible. Thank you for your support.
 
 ## Acknowledgement
 
