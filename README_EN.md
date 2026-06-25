@@ -331,7 +331,9 @@ If the query results are inconsistent, install the development package that matc
   Check whether the license is properly installed:
 
   ```shell
-  lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  lspci | grep HPRE
+  lspci | grep SEC
+  lspci | grep ZIP
   ```
 
 If no output is displayed, the license is not properly installed or is not installed.

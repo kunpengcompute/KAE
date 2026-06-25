@@ -77,7 +77,8 @@ This section describes how to enable Nginx acceleration using KAE in web scenari
     ps -ef | grep nginx
     ```
 
-3. Ensure that OpenSSL can call the configuration file using **OPENSSL\_CONF** and identify KAE. For details, see section "Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf" in the [User Guide](./user_guide.md).
+3. Ensure that OpenSSL can call the configuration file using **OPENSSL\_CONF** and identify KAE. For details, see section "Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf" in the [User Guide](./user_guide.md#calling-the-kae-encryption-and-decryption-library-using-the-openssltongsuo-configuration-file-opensslcnf).
+
 4. Start Nginx.
 
     ```shell
