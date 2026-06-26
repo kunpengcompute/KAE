@@ -2,20 +2,18 @@
 
 ## Introduction
 
-This document provides common examples of using the encryption, decryption, and compression modules of the Kunpeng Accelerator Engine (KAE) to help you use KAE in specific scenarios.
+This document provides examples of using the encryption, decryption, and compression modules of the Kunpeng Accelerator Engine (KAE) to help you use KAE in specific scenarios.
 
 The restrictions on some algorithms are as follows:
 
 - If you have not purchased a KAE license, do not use KAE to call the algorithms. Otherwise, the performance of the OpenSSL encryption algorithm may be affected.
-- The SM4-XTS mode can be used only in kernel mode. For details, see "Using KAE to Improve SM4-XTS Algorithm Performance."
+- The SM4-XTS mode can be used only in kernel mode. For details, see [Using KAE to Improve SM4-XTS Algorithm Performance](#using-kae-to-improve-sm4-xts-algorithm-performance).
 - SM4 performs better in synchronous mode than in asynchronous mode for small packets with size smaller than 2 KB. If small packets are mostly used, the synchronous mode is recommended.
 - AES has implemented acceleration of software instruction sets on the AArch64 platform. Hardware acceleration has obvious asynchronous performance advantages over OpenSSL in the medium- or large-packet scenario (packet size: 16 KB to 256 KB). In this scenario, hardware acceleration is recommended.
 - The SM4 and AES asynchronous modes support the data size of up to 256 KB. If the data size is greater than 256 KB, the synchronous mode is used for calculation.
 - The MD5 algorithm cannot prevent collision attacks and is not applicable to security authentication, such as SSL public key authentication or digital signature.
 - The SM3 and SM4 algorithms are enabled by default. You can enable or disable the two algorithms in the **openssl.cnf** file.
 - zlib, gzip, zstd, LZ4, and Snappy algorithms can be used for compression and decompression.
-
-This document provides common examples of using the encryption, decryption, and compression modules of the Kunpeng Accelerator Engine (KAE) to help you use KAE in specific scenarios.
 
 ## Encryption and Decryption Library
 
@@ -46,8 +44,9 @@ This section describes how to enable Nginx acceleration using KAE in web scenari
 
 1. Install Nginx by compiling the source code and configure the HTTPS function of Nginx. For details, see [Nginx Porting Guide](https://www.hikunpeng.com/document/detail/en/kunpengwebs/ecosystemEnable/Nginx/kunpengnginx_02_0001.html).
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
-    >The performance data varies with algorithm suites. You can choose an algorithm suite based on your requirements. If an algorithm in the algorithm suite is not supported by KAE, the OpenSSL software computing API is called.
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
+    > The performance data varies with algorithm suites. You can choose an algorithm suite based on your requirements. If an algorithm in the algorithm suite is not supported by KAE, the OpenSSL software computing API is called.
 
 2. Install and verify httpress by compiling the source code. For details, see [httpress Test Guide](https://www.hikunpeng.com/document/detail/en/kunpengwebs/testguide/tstg/kunpenghttpress_06_0001.html).
 
@@ -78,7 +77,8 @@ This section describes how to enable Nginx acceleration using KAE in web scenari
     ps -ef | grep nginx
     ```
 
-3. Ensure that OpenSSL can call the configuration file using **OPENSSL\_CONF** and identify KAE. For details, see section [Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf](./user_guide.md#calling-the-kae-encryption-and-decryption-library-using-the-engine_by_id-function) in the User Guide.
+3. Ensure that OpenSSL can call the configuration file using **OPENSSL\_CONF** and identify KAE. For details, see section "Calling the KAE Encryption and Decryption Library Using the OpenSSL/Tongsuo Configuration File openssl.cnf" in the [User Guide](./user_guide.md#calling-the-kae-encryption-and-decryption-library-using-the-openssltongsuo-configuration-file-opensslcnf).
+
 4. Start Nginx.
 
     ```shell
@@ -102,16 +102,16 @@ This section describes how to enable Nginx acceleration using KAE in web scenari
 
 According to the preceding test results, the software computing performance is 6,939 requests per second, and the hardware computing performance is 12,262 requests per second. After KAE acceleration is used, the performance is significantly improved.
 
->![](public_sys-resources/icon-note.gif) **Note:**
+>![](public_sys-resources/icon-note.gif) **NOTE**
 >
 >- The performance data varies with algorithm suites. The test result of the algorithm suite you use may be different.
 >- If you run the **openssl req -new -x509** command to generate a certificate, configure **openssl.cnf** by referring to Method 2 described in [Certificates Fail to Be Generated After Running openssl req -new -x509](./faq.md#en-us_topic_0000001217022681_section3941254).
 
-This section describes how to enable Nginx acceleration using KAE in web scenarios.
-
 ### Using KAE to Improve SM4-XTS Algorithm Performance
 
 KAE supports the XTS mode of the symmetric encryption algorithm SM4 to improve algorithm performance. This mode can be used only in kernel mode through transparent partition/drive encryption based on dm-crypt.
+
+KAE 2.0 under kernel 4.19 supports user mode only, and does not support kernel-mode interfaces such as encryption/decryption and compression/decompression interfaces in the Linux kernel crypto API, dm-crypt, and SM4-XTS. Therefore, this section does not apply to the user-mode support range of KAE 2.0 under kernel 4.19.
 
 dm-crypt is presented as a target device of the device mapper. After being mapped and mounted, dm-crypt can be used as a transparent encrypted partition or drive.
 
@@ -136,10 +136,10 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
         yum install libblkid-devel
         ```
 
-    2. Perform the compilation and installation in the cryptsetup-2.2.0 source code directory.
+    2. Perform the compilation and installation in the **cryptsetup-2.2.0** source code directory.
 
         ```shell
-        ./configure 
+        ./configure
         make && make install
         ```
 
@@ -265,7 +265,7 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
       ├─vg_os-swap 254:0    0    20G  0 lvm   [SWAP]
       └─vg_os-root 254:1    0   2.2T  0 lvm   /
     sdb              8:16   0 278.5G  0 disk
-    └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test    
+    └─sx_disk      254:2    0 278.5G  0 crypt /home/sec_test
     ```
 
 10. <a name="li3196911104520"></a>View the detailed encryption information about the partition or drive in the **/home** directory.
@@ -295,7 +295,8 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
 
 1. Unmount the partition or drive from the mounting directory.
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >Before running this command, you must exit the directory.
     >If multiple partitions or drives are mounted, you need to run this command multiple times.
 
@@ -323,10 +324,7 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
     └─sx_disk      254:2    0 278.5G  0 crypt
     ```
 
-3. Disable the mapping.
-
-    >![](public_sys-resources/icon-note.gif) **Note:**
-    >You need to run this command multiple times to disable the mapping of all partitions or drives.
+3. Disable the mapping. You need to run this command multiple times to disable the mapping of all partitions or drives.
 
     ```shell
     cryptsetup luksClose sx_disk
@@ -341,13 +339,11 @@ An operation on an encryption drive occupies 24 queues. Currently, the accelerat
     The command output is as follows:
 
     ```text
-    total 0                       
+    total 0
     crw---- 1 root root 10, 236 Jul 31 22:27 control
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-root -> ../dm-1
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-swap -> ../dm-0
     ```
-
-KAE supports the XTS mode of the symmetric encryption algorithm SM4 to improve algorithm performance. This mode can be used only in kernel mode through transparent partition/drive encryption based on dm-crypt.
 
 ### MD5 Hardware Acceleration Tuning
 
@@ -379,22 +375,11 @@ KAEZstd supports transparent page compression in MySQL. It uses the Kunpeng hard
 
 For details, see [MySQL KAEZstd Page Compression and Decompression Optimization Feature Guide](https://support.huawei.com/enterprise/en/doc/EDOC1100433077/f5fe3e32/introduction).
 
->![](public_sys-resources/icon-note.gif) **Note:**
->This document is released with restrictions. To obtain this document, contact Huawei engineers.
-
 ### Enabling the KAELz4 Compression Library for Kafka
 
-Enabling the LZ4 compression algorithm in KAE can improve Kafka performance when Kafka uses the LZ4 compression format. The section provides use cases and methods of enabling the KAELz4 compression library for Kafka.
+Enabling the KAELz4 compression library can improve Kafka performance when Kafka uses the LZ4 compression format. The section provides use cases and methods of enabling the KAELz4 compression library for Kafka.
 
 For details, see [Enabling the LZ4 Compression Algorithm for Kafka](https://www.hikunpeng.com/document/detail/en/kunpengbds/ecosystemEnable/Kafka/kunpengkafkahdp_05_0019.html) in the Kafka Tuning Guide.
-
-### Calling Example of the KAEzlib Asynchronous Decompression API
-
-For details, see [Asynchronous APIs and Their Usage](../../KAEZlib/README_EN.md).
-
-### Calling Example of the KAELz4 Asynchronous Compression API
-
-For details, see [Asynchronous APIs and Their Usage](../../KAELz4/README_EN.md).
 
 ## General Purposes
 
@@ -416,7 +401,7 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
 
     ![](figures/en-us_image_0000002515276330.jpg)
 
-2. Configure accelerator VF settings. For example, virtualize three VFs from each hisi\_sec device, corresponding to hisi\_sec - 8 \ to hisi\_sec - 13.
+2. Configure accelerator VF settings. For example, virtualize three VFs from each hisi\_sec device, corresponding to hisi\_sec - 8 to hisi\_sec - 13.
 
     ```shell
     echo 3 > /sys/devices/pci0000:74/0000:74:01.0/0000:76:00.0/sriov_numvfs
@@ -436,12 +421,12 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
 2. Add the vCPU configuration to the configuration file. For example, configure four cores for the VM.
 
     ```xml
-    <cputune> 
-    <vcpupin vcpu='0' cpuset='4'/> 
-    <vcpupin vcpu='1' cpuset='5'/> 
-    <vcpupin vcpu='2' cpuset='6'/> 
-    <vcpupin vcpu='3' cpuset='7'/> 
-    <emulatorpin cpuset='4-7'/> 
+    <cputune>
+    <vcpupin vcpu='0' cpuset='4'/>
+    <vcpupin vcpu='1' cpuset='5'/>
+    <vcpupin vcpu='2' cpuset='6'/>
+    <vcpupin vcpu='3' cpuset='7'/>
+    <emulatorpin cpuset='4-7'/>
     </cputune>
     ```
 
@@ -452,10 +437,10 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
     - Configure one VF.
 
         ```xml
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x1'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x1'/>
+          </source>
         </hostdev>
         ```
 
@@ -464,20 +449,21 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
     - Configure multiple VFs.
 
         ```xml
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x1'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x1'/>
+          </source>
         </hostdev>
-        <hostdev mode='subsystem' type='pci' managed='yes'> 
-          <source> 
-            <address bus='0x76' slot='0x00' function='0x2'/> 
-          </source> 
+        <hostdev mode='subsystem' type='pci' managed='yes'>
+          <source>
+            <address bus='0x76' slot='0x00' function='0x2'/>
+          </source>
         </hostdev>
         ```
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
-    >- In this section, the VF configured for the VM is virtualized by **hisi\_sec-8**, whose BDF number is **hisi\_sec-8 -> ../../devices/pci0000:74/0000:74:01.0/0000:76:00.1/uacce/hisi\_sec-8**. The data configured in the VM XML file comes from **76:00.1** in the BDF number. **76** indicates the bus, **00** indicates the slot, and **1** indicates the function. Since the data is hexadecimal, **0x** must be added.
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
+    >- In this section, the VF configured for the VM is virtualized by **hisi\_sec-8**, whose BDF number is **hisi\_sec-8 -\> ../../devices/pci0000:74/0000:74:01.0/0000:76:00.1/uacce/hisi\_sec-8**. The data configured in the VM XML file comes from **76:00.1** in the BDF number. **76** indicates the bus, **00** indicates the slot, and **1** indicates the function. Since the data is hexadecimal, **0x** must be added.
     >- In this section, only the SEC device is virtualized and configured. Therefore, after the VM is installed, only this device is available. If the VM requires a ZIP or HPRE device, add the required device by referring to the method of configuring the SEC device.
     >- A hisi\_sec device with the SBDF number of 0000:7x:xx.x corresponds to a device on CPU 0. The value starting with 0000:bx:xx.x corresponds to a device on CPU 1.
     >- To ensure stable performance, you are advised to select the core of the corresponding CPU for the VM and select the VF virtualized by the corresponding accelerator.
@@ -489,12 +475,13 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
     virsh start vm1
     ```
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >If the VM fails to be started and the message "Unknown PCI header type '127'" is displayed, unbind the mounted VFs and restart the VM.
     >
     >![](figures/en-us_image_0000002546796253.jpg)
->
-    >```
+    >
+    >```shell
     >echo 0000:76:00.1 > /sys/bus/pci/drivers/hisi_sec/unbind
     >echo vfio-pci > /sys/devices/pci0000:74/0000:74:01.0/0000:76:00.1/driver_override
     >echo 0000:76:00.1 > /sys/bus/pci/drivers_probe
@@ -515,6 +502,31 @@ The PF cannot be directly passed through to VMs. Instead, it needs to be virtual
     ```text
     hisi_sec-0
     ```
+
+7. Check the VF isolation status on the VM.
+
+    KAE supports querying the accelerator isolation status through the sysfs attributes of UACCE. After a PF device on the host OS triggers isolation, the driver synchronizes the isolation status to the corresponding VF, allowing the isolation status of the VF device to be queried directly within the VM.
+
+    1. Run the following command in the VM to check whether the VF device is currently isolated.
+
+       ```shell
+       cat /sys/class/uacce/hisi_sec-0/isolate
+       ```
+
+       An output of `0` indicates that the device status is normal, `1` indicates that the device is isolated, and `-1` indicates a query exception.
+
+    2. Query the hardware fault isolation threshold synchronized to the VF device from the PF.
+
+       ```shell
+       cat /sys/class/uacce/hisi_sec-0/isolate_strategy
+       ```
+
+    If a hisi_hpre or hisi_zip device is mounted in the VM, replace `hisi_sec-0` in the commands with the actual device name detected in the VM.
+
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
+    >- This feature is used to view the hardware fault isolation status of the PF device on the host OS via the VF inside the VM.
+    >- The `isolate` attribute of a VF device indicates the current hardware fault isolation status, and `isolate_strategy` indicates the hardware fault isolation threshold synchronized from the PF to the VF.
 
 ### Using KAE on Docker
 
@@ -551,17 +563,17 @@ The accelerator device complies with the PCIe specifications. It is presented as
 
     **Table 1** Startup parameters<a id="startup-parameters "></a>
 
-|Parameter|Description|
-|--|--|
-|- i|Enables Docker to allocate a pseudo terminal and bind it to the standard input of the container.|
-|- t|Always enables the standard input of the container.|
-|- v|Mounts the host directory to the image. The directory before the colon (:) is the host directory, which must be an absolute path. The directory after the colon (:) is the mount path in the image.|
-|--device|Specifies the host device used by the container. The value before the colon (:) indicates the VF device created on the host. The value after the colon (:) indicates the directory in the container. **r**, **w**, and **m** give the container the permissions to read, write, and create device files.|
-|-m|Specifies the maximum memory used by the container.|
-|--cpuset-cpus|Specifies the CPU cores on which the container runs.|
-|90b5058926a2|Indicates the image ID. You can also use the image name. To query the image name, run the **docker images** command.|
-|/bin/bash|Indicates the bash that starts the container.|
+   |Parameter|Description|
+   |--|--|
+   |- i|Enables Docker to allocate a pseudo terminal and bind it to the standard input of the container.|
+   |- t|Always enables the standard input of the container.|
+   |- v|Mounts the host directory to the image. The directory before the colon (:) is the host directory, which must be an absolute path. The directory after the colon (:) is the mount path in the image.|
+   |--device|Specifies the host device used by the container. The value before the colon (:) indicates the VF device created on the host. The value after the colon (:) indicates the directory in the container. **r**, **w**, and **m** give the container the permissions to read, write, and create device files.|
+   |-m|Specifies the maximum memory used by the container.|
+   |--cpuset-cpus|Specifies the CPU cores on which the container runs.|
+   |90b5058926a2|Indicates the image ID. You can also use the image name. To query the image name, run the **docker images** command.|
+   |/bin/bash|Indicates the bash that starts the container.|
 
 ### Calling KAE in Java
 
-To call KAE in Java, use the KAE Provider feature of the BiSheng JDK. For details, see *KAE Provider User Guide (BiSheng JDK 8)* or *KAE Provider User Guide (BiSheng JDK 11)*.
+To call KAE in Java, use the KAE Provider feature of the BiSheng JDK. For details, see the *KAE Provider User Guide (BiSheng JDK 8)* or *KAE Provider User Guide (BiSheng JDK 11)*.

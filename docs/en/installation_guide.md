@@ -12,15 +12,16 @@ Before the installation, ensure that the environment meets the verified requirem
 
 |Item|Description|
 |--|--|
-|Server|Kunpeng server (with KAE enabled)<sup>a</sup>|
-|Processor|Kunpeng 920 processors, new Kunpeng 920 processor model<sup>b</sup>, or Kunpeng 950 processors<sup>c</sup>|
+|Server|Kunpeng server (with KAE enabled)|
+|Processor|Kunpeng 920 processor, new Kunpeng 920 processor model, or Kunpeng 950 processor|
 |iBMC|V365 or later|
 |BIOS|V105 or later|
 
->![](public_sys-resources/icon-note.gif) **NOTE**<br>
->a: To use the accelerator in the non-virtualization scenario, you need to disable SMMU. Enabling the SMMU will affect the accelerator performance. For details, see [BIOS Parameter Reference (Kunpeng 920 Processor)](https://support.huawei.com/enterprise/en/doc/EDOC1100088647/426cffd9/about-this-document).<br>
->b: KAEZstd, KAELz4, and KAESnappy can only be used on the new Kunpeng 920 processor model and Kunpeng 950 processors. Encryption and compression algorithms vary with processor models. For details, see [README_EN](../../README_EN.md#supported-algorithms-and-specifications).<br>
->c: Kunpeng 950 processors support only KAE 2.0.
+>![](public_sys-resources/icon-note.gif) **NOTE**
+>
+>- To use the accelerator in the non-virtualization scenario, you need to disable SMMU. Enabling the SMMU will affect the accelerator performance. For details, see [BIOS Parameter Reference (Kunpeng 920 Processor)](https://support.huawei.com/enterprise/en/doc/EDOC1100088647/426cffd9/about-this-document).
+>- KAEZstd, KAELz4, and KAESnappy can only be used on the new Kunpeng 920 processor model and Kunpeng 950 processors. Encryption and compression algorithms vary with processor models. For details, see "Supported Algorithms and Specifications" in [README_EN](../../README_EN.md#supported-algorithms-and-specifications).<br>
+>- Kunpeng 950 processors support only KAE 2.0.
 
 **Obtaining and Verifying Software Packages<a name="section1796432494313"></a>**
 
@@ -28,12 +29,14 @@ Before the installation, ensure that the environment meets the verified requirem
 
 |Package Type|Applicable OS|Applicable OpenSSL Version|How to Obtain|
 |--|--|--|--|
-|Source package|openEuler 22.03 LTS SP1/SP2/SP3/SP4aEulerOS-V2.0 SP12, and TencentOS 5.4|OpenSSL 1.1.1x, OpenSSL 3.0.x, Tongsuo 8.4.0, and BoringSSL|[Link](https://gitcode.com/boostkit/KAE)|
-|RPM package|openEuler 22.03 LTS SP1/SP2/SP3/SP4a|OpenSSL 1.1.1x|[Link](https://gitcode.com/boostkit/KAE/releases) (If the KAE code repository does not contain the RPM package for the corresponding OS, create an RPM package by referring to Method 2: Creating an RPM Package.)|
+|Source package|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS V2.0 SP12</li><li>TencentOS 5.4</li><li>Kernel 4.19 (user mode only)</li></ul>|<ul><li>OpenSSL 1.1.1x</li><li>OpenSSL 3.0.x</li><li>Tongsuo 8.4.0</li><li>BoringSSL</li></ul>|[Link](https://gitcode.com/boostkit/KAE)|
+|RPM package|openEuler 22.03 LTS SP1/SP2/SP3/SP4|OpenSSL 1.1.1x|[Link](https://gitcode.com/boostkit/KAE/releases)<br>If the KAE code repository does not contain the RPM package for the corresponding OS, create an RPM package by referring to [Installation Using RPM Packages](#installation-using-rpm-packages).|
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
->a: openEuler 22.03 LTS SP1 supports only KAE v2.0.3 and earlier versions.
->Note: You can obtain the software packages of earlier versions from [Release](https://gitcode.com/boostkit/KAE/releases). The name of each RPM package contains its corresponding OS version. Select a proper package based on the actual OS version in use. For example, **openeuler22.03\_sp1.zip** is the RPM installation package for openEuler 22.03 LTS SP1.
+>
+>- openEuler 22.03 LTS SP1 supports only KAE v2.0.3 and earlier versions.
+>- Under kernel 4.19, KAE 2.0 supports usage only through user-mode interfaces such as UADK, OpenSSL/Tongsuo/BoringSSL, zlib, zstd, LZ4, Snappy, and gzip. It does not support kernel-mode interfaces such as encryption/decryption and compression/decompression interfaces in the Linux kernel crypto API, dm-crypt, and SM4-XTS.
+>- You can obtain the software packages of earlier versions from [Releases](https://gitcode.com/boostkit/KAE/releases).
 
 **Other Requirements<a name="section0733155717512"></a>**
 
@@ -43,17 +46,19 @@ Before the installation, ensure that the environment meets the verified requirem
 
 ### Obtaining the License
 
-Before the installation, ensure that the environment meets the hardware and software requirements of KAE and a license has been correctly installed. The OS can detect the accelerator devices only after the license has been installed.
+Since KAE is a hardware-targeted acceleration solution, ensure that the corresponding license is properly installed before installing KAE. The OS can recognize the accelerator devices only after the license is successfully installed.
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
 >
 >- KAE is enabled by default on Kunpeng K series servers. You do not need to apply for a license.
 >- The new Kunpeng 920 processor model can use KAE without a license after the BIOS is upgraded to 21.23 or later.
 
-1. For details about how to apply for and install a license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance).
+1. For details about how to apply for and install a license, see [Huawei Server iBMC License User Guide](https://support.huawei.com/enterprise/en/management-software/ibmc-pid-8060757?category=operation-maintenance) corresponding to your actual scenario.
+
 2. Run the **lspci** command to check whether the OS has an accelerator device.
 
     >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >The accelerator description returned by the **lspci** command varies depending on the OS. In addition to filtering by keywords, you can also check whether the HPRE/SEC/ZIP accelerator SBDF information exists.
 
     1. Check whether the high-performance RSA accelerator engine HPRE exists in the system.
@@ -102,7 +107,8 @@ Before the installation, ensure that the environment meets the hardware and soft
 The KAE encryption and decryption module relies on OpenSSL. Before installing and using this module, install OpenSSL. OpenSSL 1.1.1x or 3.0.x, or Tongsuo 8.4.0 must be used.
 
 >![](public_sys-resources/icon-notice.gif) **NOTICE**
->If you do not want to use the default OpenSSL/Tongsuo, specify the installation path during OpenSSL/Tongsuo installation and enter the path in the steps in [Installation Using the Source Code](#installation-using-the-source-code).
+>
+>If you do not want to use the default OpenSSL/Tongsuo, specify the installation path during OpenSSL/Tongsuo installation and enter the path in step 6 in [Installation Using the Source Code](#installation-using-the-source-code).
 
 **Prerequisites<a name="en-us_topic_0200576865_section17733210143520"></a>**
 
@@ -147,13 +153,15 @@ For software that has not been installed, use the command-line tool of the OS to
 **Installation Procedure<a name="section1426493710530"></a>**
 
 >![](public_sys-resources/icon-notice.gif) **NOTICE**
+>
 >Run the **openssl version** command to query the OpenSSL/Tongsuo version. If the OpenSSL version is 1.1.1x or 3.0.x, or the Tongsuo version is 8.4.0, you can skip the following OpenSSL/Tongsuo installation steps.
 
 1. Use SSH to copy the OpenSSL/Tongsuo source package to a custom directory.
 
-    Download the OpenSSL source code package: [1.1.1x](https://openssl-library.org/source/old/1.1.1/index.html), [3.0.x](https://openssl-library.org/source/old/3.0/index.html), or [Tongsuo 8.4.0](https://github.com/Tongsuo-Project/Tongsuo/tags).
+    Download the OpenSSL source package: [1.1.1x](https://openssl-library.org/source/old/1.1.1/index.html), [3.0.x](https://openssl-library.org/source/old/3.0/index.html), or [Tongsuo 8.4.0](https://github.com/Tongsuo-Project/Tongsuo/tags).
 
     >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >If Tongsuo calls a custom engine by running the **speed** command, related resources cannot be released after the encryption and decryption tasks are complete, and a segmentation fault is reported. An [issue](https://github.com/Tongsuo-Project/Tongsuo/issues/688) has been submitted to the upstream community for tracking. Before using Tongsuo, you need to apply the patch and then compile it.
 
 2. Compile and install OpenSSL/Tongsuo in the OpenSSL/Tongsuo source code directory.
@@ -180,6 +188,7 @@ For software that has not been installed, use the command-line tool of the OS to
             ```
 
     >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >This step automatically generates a Makefile based on the compilation platform and environment. You can use **./config --prefix** to specify the installation path and use **-Wl** and **-rpath** to specify the paths to the libcrypto and libssl libraries that OpenSSL depends on.
 
     ```shell
@@ -187,7 +196,7 @@ For software that has not been installed, use the command-line tool of the OS to
     make install
     ```
 
-    OpenSSL/Tongsuo is installed in **/usr/local** by default. For details, see *README* in the source code directory.
+    OpenSSL/Tongsuo is installed in **/usr/local** by default. For details, see *README_EN* in the source code directory.
 
 **Verifying the Installation<a name="section17265037195318"></a>**
 
@@ -211,18 +220,18 @@ For software that has not been installed, use the command-line tool of the OS to
 
 ## Installation Methods
 
-KAE 2.0 supports installation using the source code and RPM packages. Select an appropriate installation method based on the OS.
+KAE 2.0 is the active maintenance version. It supports installation using the source code and RPM packages. Select an appropriate installation method based on the OS.
 
 **Table 1** Installation methods and OSs supported by KAE 2.0<a id="installation-methods-and-OSs-supported-by-KAE-2.0"></a>
 
 |Installation Method|Description|Supported OS|Advantage and Disadvantage|
 |--|--|--|--|
-|Installation using the source code|Run the **build.sh** script to install KAE.|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12TencentOS 5.4|Advantage: The source code can be modified for compilation and installation. Disadvantage: The operation is complex and extra configuration is required.|
-|Installation using RPM packages|To facilitate user operations, Huawei provides RPM installation packages for some commercial OSs.|openEuler 22.03 LTS-SP1/SP2/SP3/SP4EulerOS-V2.0 SP12|Advantage: After installation, you can use the KAE software without compiling the source code. Disadvantage: Only certain OSs are supported.|
+|Installation using the source code|Run the **build.sh** script to install KAE.|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>openEuler 24.03 LTS SP1/SP2/SP3</li><li>EulerOS V2.0 SP12</li><li>TencentOS 5.4</li><li>Kernel 4.19 (user mode only)</li></ul>|Advantage: The source code can be modified for compilation and installation.<br>Disadvantage: The operation is complex and extra configuration is required.|
+|Installation using RPM packages|To facilitate user operations, Huawei provides RPM installation packages for some commercial OSs.|<ul><li>openEuler 22.03 LTS SP1/SP2/SP3/SP4</li><li>EulerOS V2.0 SP12</li></ul>|Advantage: After installation, you can use the KAE software without compiling the source code.<br>Disadvantage: Only certain OSs are supported.|
 
 ## Installation Using the Source Code
 
-The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, KAEOpensslEngine, KAEZstd, KAELz4, and KAEZlib. The KAE kernel driver and UADK are mandatory, and the other modules are optional. To upgrade KAE, uninstall the old version and then install the new version.
+The KAE 2.0 source package contains the KAE kernel driver, UADK framework, KAEOpensslEngine, KAEZlib, KAEZstd, KAELz4, and KAESnappy. The KAE kernel driver and UADK are mandatory, and the other modules are optional. To upgrade KAE, uninstall the old version based on [Uninstalling KAE](#uninstalling-kae) and then install the new version.
 
 **Prerequisites<a name="section14710172717351"></a>**
 
@@ -262,7 +271,7 @@ The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, 
 **Installation Procedure<a name="section1415911025615"></a>**
 
 1. Use a remote login tool to log in to the Linux CLI as the **root** user.
-2. Download the KAE 2.0 source code package provided in [Obtaining Software Packages](#environment-deployment), copy the package to a custom path, and decompress the package. Alternatively, run the following command to download the source code package:
+2. Download the KAE 2.0 source package provided in [Obtaining Software Packages](#environment-deployment), copy the package to a custom path, and decompress the package. Alternatively, run the following command to download the source package:
 
     ```shell
     git clone https://gitcode.com/boostkit/KAE.git -b kae2
@@ -320,6 +329,7 @@ The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, 
             ```
 
         >![](public_sys-resources/icon-note.gif) **NOTE**
+        >
         >- If no device file is found after a driver is installed or the device is restarted, a possible cause is that the OS has a built-in accelerator driver. You can unload the installed driver and then reload it. Alternatively, add the command for reloading the driver to the startup script **rc.local** to ensure that the driver can be properly loaded after the device is restarted.
         >- The following commands use **hisi\_sec2** as an example.<br>
         rmmod hisi_sec2<br>
@@ -337,6 +347,7 @@ The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, 
         The UADK framework contains user-space drivers whose dynamic library files are **libwd.so** and **libwd\_crypto.so**. The default UADK installation path is **/usr/include/uadk**. The dynamic library files are stored in **/usr/local/lib**.
 
         >![](public_sys-resources/icon-note.gif) **NOTE**
+        >
         >If the UADK installation fails and a message is displayed indicating that header files are missing, install the related dependency packages and run the installation command again.
 
     2. Check whether the UADK framework has been installed.
@@ -439,6 +450,7 @@ The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, 
 8. Compile and install the KAEZlib library.
 
     >![](public_sys-resources/icon-notice.gif) **NOTICE**
+    >
     >After installing KAEZlib, you can compile and install the KAEGzip decompression tool as required. The tool integrates the KAE hardware-based acceleration API, enabling you to compress and decompress files more conveniently.
 
     1. Perform compilation and installation.
@@ -675,6 +687,7 @@ The KAE 2.0 source code package contains the KAE kernel driver, UADK framework, 
 KAE 2.0 RPM packages include **kae-driver**, **kae-openssl**, and **kae-zip**. To use encryption and decryption algorithms, install **kae-driver** and **kae-openssl**. To use KAEZip algorithms, install **kae-driver** and **kae-zip**. You are advised to install KAE 2.0 using source code. If KAE 2.0 needs to be installed on an OS other than openEuler using RPM packages, create RPM packages from source code and then install KAE 2.0. To upgrade KAE, uninstall the old version and then install the new version.
 
 >![](public_sys-resources/icon-notice.gif) **NOTICE**
+>
 >Currently, each RPM package of KAE 2.0 is built on a specified tag and dedicated to a specific OS, and does not offer the latest features of KAE 2.0.
 
 **Prerequisites<a name="section9968616173616"></a>**
@@ -706,7 +719,7 @@ KAE 2.0 RPM packages include **kae-driver**, **kae-openssl**, and **kae-zip**. T
 
     If the KAE code repository does not contain RPM packages for a specific OS, perform the following operations to create RPM packages:
 
-    1. Obtain the KAE 2.0 source code package from [GitCode](https://gitcode.com/boostkit/KAE.git) or run the following command to download it:
+    1. Obtain the KAE 2.0 source package from [GitCode](https://gitcode.com/boostkit/KAE.git) or run the following command to download it:
 
         ```shell
         git clone https://gitcode.com/boostkit/KAE.git -b kae2
@@ -748,9 +761,10 @@ KAE 2.0 RPM packages include **kae-driver**, **kae-openssl**, and **kae-zip**. T
     ```
 
     >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >If no device file is found after a driver is installed or the device is restarted, a possible cause is that the OS has a built-in accelerator driver. You can unload the installed driver and then reload it. Alternatively, add the command for reloading the driver to the startup script **rc.local** to ensure that the driver can be properly loaded after the device is restarted. The following commands use **hisi\_sec2** as an example.
     >
-    >```bash
+    >```shell
     >rmmod hisi_sec2
     >modprobe hisi_sec2
     >```
@@ -1007,6 +1021,7 @@ KAE 2.0 RPM packages include **kae-driver**, **kae-openssl**, and **kae-zip**. T
 You can run commands provided in this section to test the performance before and after the KAE encryption and decryption library is invoked in RSA (synchronous and asynchronous modes), SM3, SM4 (CBC mode), and AES (asynchronous CBC mode).
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >If Tongsuo is used for encryption and decryption, the test method is the same as that of OpenSSL.
 >The test data is obtained from an environment using the Kunpeng 920 processor and CentOS 7.6.
 
@@ -1056,6 +1071,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ```
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >After KAE is used, the signing speed is improved from 724.1 signs/s to 2,819 signs/s.
 
 **Testing the Asynchronous RSA Performance<a name="section115401118424"></a>**
@@ -1089,6 +1105,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ```
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >After KAE is used, the asynchronous RSA signing speed is improved from 735.7 signs/s to 54,384.1 signs/s.
 
 **Testing the SM4 Algorithm Performance in CBC Mode<a name="section059717381527"></a>**
@@ -1128,6 +1145,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ```
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >After KAE acceleration, the operational speed of the SM4 algorithm in CBC mode increases from 82,312.53 KB/s to 383,317.33 KB/s when the input data block size is 8 MB.
 
 **Testing the Performance of the SM3 Algorithm<a name="section1220591319313"></a>**
@@ -1166,6 +1184,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
     ```
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
+>
 >After KAE acceleration, the operational speed of the SM3 algorithm increases from 52,428.80 KB/s to 668,292.44 KB/s when the input data block size is 8 MB.
 
 **Testing the Asynchronous Performance of the AES Algorithm in CBC Mode<a name="section1018002911311"></a>**
@@ -1207,7 +1226,7 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 
 >![](public_sys-resources/icon-note.gif) **NOTE**
 >
->- The OpenSSL test data length is defined in the lengths\_list array in the **speed.c** file (in the **app** directory of the OpenSSL source code package, for example, **openssl-1.1.1a/apps/speed.c**). Testers can modify the data here and compile and [install OpenSSL](#installing-openssltongsuo). That is how the length of the test data (such as 51,200 bytes and 102,400 bytes) is calculated.
+>- The OpenSSL test data length is defined in the lengths\_list array in the **speed.c** file (in the **app** directory of the OpenSSL source package, for example, **openssl-1.1.1a/apps/speed.c**). Testers can modify the data here and compile and [install OpenSSL](#installing-openssltongsuo). That is how the length of the test data (such as 51,200 bytes and 102,400 bytes) is calculated.
 >- The AES algorithm supports only asynchronous operations with a data length of 256 KB or less.
 >- After KAE acceleration, the operational speed of the AES algorithm increases from 1,123,328.00 KB/s to 3,996,774.40 KB/s when the input data block size is 100 KB.
 
@@ -1216,16 +1235,16 @@ export LD_LIBRARY_PATH=/path/install/lib:$LD_LIBRARY_PATH
 After installing the KAEZlib library, you can test the library functions and performance based on the operations provided in this section.
 
 >![](public_sys-resources/icon-notice.gif) **NOTICE**
->Perform the test procedure in the source code directory. If KAE is installed using RPM packages, download and decompress the KAE source code package before the test.
+>
+>Perform the test procedure in the source code directory. If KAE is installed using RPM packages, download and decompress the KAE source package before the test.
 
-1. Install KAEZlib by referring to [Installation Using the Source Code](#installation-using-the-source-code) or [Installation Using RPM Packages](#installation-using-rpm-packages).
-2. Go to the test directory.
+1. Go to the test directory.
 
     ```shell
     cd KAEZlib/test/gtest/
     ```
 
-3. Test the KAEZlib library functions.
+2. Test the KAEZlib library functions.
 
     ```shell
     sh build.sh
@@ -1249,7 +1268,7 @@ After installing the KAEZlib library, you can test the library functions and per
     [  PASSED  ] 2 tests.
     ```
 
-4. Test the performance.
+3. Test the performance.
     1. Go to the performance test directory.
 
         ```shell
@@ -1361,7 +1380,8 @@ After installing the KAEZlib library, you can test the library functions and per
 
         It shows that the decompression speed rises from 1.482 GB/s to 9.422 GB/s.
 
-5. If the KAEGzip tool is installed, perform the following operations to verify its functions and performance:
+4. If the KAEGzip tool is installed, perform the following operations to verify its functions and performance:
+
     1. Obtain help information.
 
         ```shell
@@ -1460,14 +1480,13 @@ After installing the KAEZlib library, you can test the library functions and per
 
         Compared with the built-in gzip tool, the decompression time using KAEGzip is significantly reduced.
 
-6. To use and test the asynchronous APIs, refer to [README_EN](../../KAEZlib/README_EN.md) in the KAEZlib directory.
+5. To use and test the asynchronous APIs, refer to [README_EN](../../KAEZlib/README_EN.md) in the KAEZlib directory.
 
 ### Testing the KAEZstd Compression Library
 
 After installing the KAEZstd library, you can test the library functions and performance based on the operations provided in this section.
 
-1. Install KAEZstd by referring to [Installation Using the Source Code](#installation-using-the-source-code) or [Installation Using RPM Packages](#installation-using-rpm-packages).
-2. Test the functions of the zstd compression library.
+1. Test the functions of the zstd compression library.
 
     ```shell
     cd /KAE/KAEZstd/test/gtest
@@ -1477,7 +1496,7 @@ After installing the KAEZstd library, you can test the library functions and per
     ./zstd_functest
     ```
 
-3. Test the performance.
+2. Test the performance.
     - Use the built-in zstd compression library for the test.
 
         ```shell
@@ -1512,9 +1531,9 @@ After installing the KAELz4 library, you can test the library functions and perf
 
 After installing the KAELz4 library, use the test script of the open-source compression algorithm stored in **/KAE/KAELz4/open\_source/lz4-1.9.4/test** and the kunpeng-lzbench test tool to test the synchronization function and performance of the KAELz4 compression library.
 
-1. Install KAELz4 by referring to [Installation Using the Source Code](#installation-using-the-source-code) or [Installation Using RPM Packages](#installation-using-rpm-packages).
-2. Obtain lzbench source code from [Gitee](https://gitee.com/kunpeng_compute/lzbench) and run the **make** command in the source code path to compile the source code to generate a binary tool.
-3. Test the functions of the LZ4 compression library.
+1. Obtain lzbench source code from [Gitee](https://gitee.com/kunpeng_compute/lzbench) and run the **make** command in the source code path to compile the source code to generate a binary tool.
+
+2. Test the functions of the LZ4 compression library.
 
     ```shell
     cd /KAE/KAELz4/open_source/lz4-1.9.4/tests
@@ -1522,7 +1541,7 @@ After installing the KAELz4 library, use the test script of the open-source comp
     ./fullbench datagen
     ```
 
-4. Test the performance.
+3. Test the performance.
     1. Go to the lzbench source code path and check the algorithm library used by the test tool.
 
         ```shell
@@ -1606,7 +1625,7 @@ After installing the KAELz4 library, use the test script of the open-source comp
         done... (cIters=1 dIters=1 cTime=1.0 dTime=2.0 chunkSize=8KB cSpeed=0MB)
         ```
 
-5. Test the compression bandwidth.
+4. Test the compression bandwidth.
     1. Set the environment variable **LD\_LIBRARY\_PATH** and enable the LZ4 library.
 
         ```shell
@@ -1638,15 +1657,14 @@ After installing the KAELz4 library, use the test script of the open-source comp
 
 After installing the KAELz4 library, use the test script stored in **/KAE/scripts/perftest/kzip** to test the asynchronous function and performance of the KAELz4 compression library.
 
-1. Install KAELz4 by referring to [Installation Using the Source Code](#installation-using-the-source-code) or [Installation Using RPM Packages](#installation-using-rpm-packages).
-2. Test the functions of asynchronous APIs of the KAELz4 library.
+1. Test the functions of asynchronous APIs of the KAELz4 library.
 
     ```shell
     cd KAE/scripts/perftest/kzip
     sh scripts/runFunc.sh
     ```
 
-3. Enable the fast mode of the driver and set a specific valid compression window length to achieve the maximum performance.
+2. Enable the fast mode of the driver and set a specific valid compression window length to achieve the maximum performance.
 
     ```shell
     rmmod hisi_zip  
@@ -1655,7 +1673,7 @@ After installing the KAELz4 library, use the test script stored in **/KAE/script
     export KAE_LZ4_COMP_TYPE=8
     ```
 
-4. Test the performance of asynchronous APIs of the KAELz4 library.
+3. Test the performance of asynchronous APIs of the KAELz4 library.
     1. Test the performance of the asynchronous API for the 8 KB block.
 
         ```shell
@@ -1692,11 +1710,9 @@ After installing the KAELz4 library, use the test script stored in **/KAE/script
 
 After installing the KAESnappy library, you can test the library functions and performance based on the operations provided in this section.
 
-1. Install KAESnappy by referring to [Installation Using the Source Code](#installation-using-the-source-code) or [Installation Using RPM Packages](#installation-using-rpm-packages).
-   
-2. Obtain lzbench source code from [Gitee](https://gitee.com/kunpeng_compute/lzbench) and run the **make** command in the source code path to compile the source code to generate a binary tool.
+1. Obtain lzbench source code from [Gitee](https://gitee.com/kunpeng_compute/lzbench) and run the **make** command in the source code path to compile the source code to generate a binary tool.
 
-3. Test the performance.
+2. Test the performance.
     1. Go to the lzbench source code path and check the algorithm library used by the test tool.
 
         ```shell
@@ -1787,7 +1803,16 @@ This section describes how to uninstall KAE if you no longer require it or want 
 **Uninstalling KAE 2.0 Installed from Source Code<a name="section126341424597"></a>**
 
 1. Use SSH to remotely log in to the Linux CLI as the **root** user.
-2. Use a script to uninstall the accelerator driver packages and the KAE library packages that are installed using source code.
+
+2. For installation from source code, use either of the following two uninstallation methods:
+
+   Method 1: One-click uninstallation
+
+   Run the **sh build.sh cleanup** command to perform a one-click uninstallation of the KAE components from the default installation path.
+   
+   Method 2: One-by-one uninstallation
+
+   Follow the steps below to uninstall the accelerator driver packages and the KAE library packages in sequence.
 
     - Uninstall the driver.
 
@@ -1851,14 +1876,12 @@ This section describes how to uninstall KAE if you no longer require it or want 
         sh build.sh snappy clean
         ```
 
-    >![](public_sys-resources/icon-note.gif) **NOTE**
-    >You can also run **sh build.sh cleanup** to uninstall the KAE modules in the default installation paths.
-
 **Uninstalling KAE 2.0 Installed Using RPM Packages<a name="section963562418918"></a>**
 
 1. Use SSH to remotely log in to the Linux CLI as the **root** user.
+
 2. Uninstall the KAE software packages and check the uninstallation result.
-    1. Run the **rpm -e  _**Software_package_name**_** command to uninstall kae-openssl, kae-driver, and kae-zip.
+    1. Run the **rpm -e** *Software_package_name* command to uninstall kae-openssl, kae-driver, and kae-zip.
 
         ```shell
         rpm -e kae-openssl
@@ -1868,7 +1891,7 @@ This section describes how to uninstall KAE if you no longer require it or want 
 
     2. Check whether the uninstallation is successful.
 
-        Run the **rpm -qa | grep  _**Software_package_name**_** command.
+        Run the **rpm -qa | grep** *Software_package_name* command.
 
         ```shell
         rpm -qa | grep kae-openssl 

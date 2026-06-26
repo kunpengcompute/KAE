@@ -134,7 +134,7 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 |加密算法|非对称算法RSA|√|√|√|
 |加密算法|非对称算法SM2|x|√|√|
 |加密算法|密钥协商算法DH|√|√|√|
-|压缩算法|zlib（Gzip\zlib格式）|√|√|√|
+|压缩算法|zlib（Gzip/zlib格式）|√|√|√|
 |压缩算法|zlib（Deflate格式）|x|√|√|
 |压缩算法|Gzip|√|√|√|
 |压缩算法|Zstd|x|√|√|
@@ -143,9 +143,9 @@ KAESnappy是鲲鹏加速引擎的解压缩模块，使用鲲鹏硬加速模块�
 
 >![](docs/figures/icon-note.gif) **说明：**
 >
->√：表示支持；x：表示不支持。 <br>
->a：对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。 <br>
->b：ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
+>* √：表示支持；x：表示不支持。
+>* 对称加密算法SM4-XTS只支持内核态使用，不支持OpenSSL。
+>* ZSTD、LZ4和Snappy算法仅压缩功能支持硬算，解压功能目前只支持软算处理。
 
 ## 目录结构
 
@@ -243,10 +243,7 @@ KAE2.0基于UADK（User Space Accelerator Development Kit）框架提供加速�
 >
 >- 用户态使用包括通过UADK、OpenSSL/Tongsuo/BoringSSL、Zlib、ZSTD、LZ4、Snappy、Gzip等接口调用KAE加速能力。
 >- 内核态接口包括Linux内核crypto API中的加解密及压缩/解压缩接口、dm-crypt、SM4-XTS等内核模块或内核态场景。
-
->![](docs/figures/icon-notice.gif) **须知：**
->
->由于不同版本内核接口可能存在差异，不同的操作系统使能KAE需要实际编译内核驱动验证是否匹配，若特定OS内核编译KAE驱动遇到接口报错，则说明驱动不兼容。
+>- 由于不同版本内核接口可能存在差异，不同的操作系统使能KAE需要实际编译内核驱动验证是否匹配，若特定OS内核编译KAE驱动遇到接口报错，则说明驱动不兼容。
 
 **变更说明<a name="section4408930144513"></a>**
 
@@ -323,7 +320,7 @@ KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操�
   查看内核版本和内核开发包版本。
 
   ```shell
-  uname -r  
+  uname -r
   rpm -qa | grep kernel-devel
   ```
 
@@ -334,7 +331,9 @@ KAE提供源码安装和RPM包安装两种方式，支持的硬件环境、操�
   查看License是否正确安装。
 
   ```shell
-  lspci | grep HPRE lspci | grep SEC lspci | grep ZIP
+  lspci | grep HPRE
+  lspci | grep SEC
+  lspci | grep ZIP
   ```
 
   若没有任何显示则License没有正确安装或未安装。
@@ -368,7 +367,7 @@ cat /sys/class/uacce/hisi_*/available_instances
   先卸载驱动，再执行以下命令。
 
   ```bash
-  modprobe uacce 
+  modprobe uacce
   modprobe hisi_qm
   modprobe hisi_sec2 uacce_mode=2 pf_q_num=1024
   modprobe hisi_hpre uacce_mode=2 pf_q_num=1024
