@@ -1,0 +1,37 @@
+# pre-commit配置，首次使用需执行以下命令确保生效，可在代码提交前拦截并检查
+# pip install pre-commit  # 安装pre-commit工具
+# pre-commit install  # 安装git hook，请在代码仓根目录执行
+repos:
+  # ===================== 通用基础钩子（所有语言） =====================
+  # pre-commit官方检查工具
+  #- repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://gitcode.com/gh_mirrors/pr/pre-commit-hooks # 国内网络可使用gitcode镜像仓加速下载
+    rev: v6.0.0
+    hooks:
+      #- id: trailing-whitespace # 移除行尾空白字符
+      - id: check-yaml # 校验 YAML 文件语法
+        args: ["--allow-multiple-documents"] # 允许YAML文件中包含多个文档
+      - id: check-json # 校验 JSON 文件语法
+      - id: check-xml # 校验 XML 文件语法
+      - id: check-merge-conflict # 检查未解决的合并冲突标记
+      - id: detect-private-key # 检测私钥/敏感信息泄露
+      - id: check-added-large-files # 拦截超大文件提交（默认500KB）
+      #  args: ["--maxkb", "500"]  # 支持自定义修改
+      # - id: no-commit-to-branch # 禁止直接提交到main/master分支
+
+  # ===================== 敏感信息扫描 =====================
+  # detect-secrets：由 Yelp 开发，用于 在 Git 仓库中检测敏感信息，可作为gitleaks的备选
+  #- repo: https://github.com/Yelp/detect-secrets
+  - repo: https://gitcode.com/gh_mirrors/de/detect-secrets # 使用gitcode镜像加速
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+
+  # clang-format：C/C++ 代码格式化
+  - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        files: \.(c|h|cpp|hpp|cc|hh|cxx|hxx)$
+        types_or: [c, c++]
+        exclude: ^build/|^test/|^third_party/
