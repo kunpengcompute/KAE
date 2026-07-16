@@ -1,0 +1,25 @@
+# KAE C/C++ formatting rules, compatible with the clang-format 18.1.8
+# version used by pre-commit. In clang-format, "Cpp" covers both C and C++.
+BasedOnStyle: LLVM
+Language: Cpp
+
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+BreakBeforeBraces: Linux
+IndentCaseLabels: true
+
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+ColumnLimit: 120
+AlignAfterOpenBracket: DontAlign
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+
+# Avoid unrelated changes to existing includes, comments, and log strings.
+SortIncludes: false
+ReflowComments: false
+BreakStringLiterals: false
