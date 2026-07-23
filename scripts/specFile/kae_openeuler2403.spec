@@ -1,7 +1,7 @@
 Name:          kae
 Summary:       Huawei Kunpeng Accelerator Engine
-Version:       2.1.0
-Release:       2
+Version:       2.2.0
+Release:       1
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
 ExclusiveOS:   linux
@@ -460,6 +460,9 @@ echo "openssl engine uninstalled"
 /sbin/ldconfig
 
 %changelog
+* Thu Jul 23 2026 yuzhihuan <yuzhihuan@huawei.com> 2.2.0-1
+- Update KAE algorithm library versions from 2.1.0 to 2.2.0
+
 * Tue Apr 14 2026 yuzhihuan <yuzhihuan@huawei.com> 2.1.0-2
 - Update RPM spec to support optional running-kernel ko symlinks
 

@@ -18,7 +18,7 @@ ENGINE_INSTALL_PATH := /usr/local/kaesnappy
 CC=gcc
 
 LIBNAME := libkaesnappy.so
-VERSION = 2.1.0
+VERSION = 2.2.0
 TARGET = ${LIBNAME}.${VERSION}
 SOFTLINK = libkaesnappy.so
 

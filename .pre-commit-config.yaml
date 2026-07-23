@@ -1,6 +1,9 @@
 # pre-commit配置，首次使用需执行以下命令确保生效，可在代码提交前拦截并检查
 # pip install pre-commit  # 安装pre-commit工具
 # pre-commit install  # 安装git hook，请在代码仓根目录执行
+# 外部社区代码和独立脚本目录不参与任何pre-commit检查
+exclude: '^(KAEKernelDriver|uadk|scripts)/'
+
 repos:
   # ===================== 通用基础钩子（所有语言） =====================
   # pre-commit官方检查工具
