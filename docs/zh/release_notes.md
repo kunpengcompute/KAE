@@ -22,7 +22,7 @@
 </tr>
 <tr id="row615762416269"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.4.1"><p id="p12158152417260"><a name="p12158152417260"></a><a name="p12158152417260"></a>软件版本</p>
 </th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.4.1 "><p id="p51757141375"><a name="p51757141375"></a><a name="p51757141375"></a>2.1.0</p>
+<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.4.1 "><p id="p51757141375"><a name="p51757141375"></a><a name="p51757141375"></a>2.2.0</p>
 </td>
 </tr>
 </tbody>

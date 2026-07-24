@@ -3,7 +3,7 @@
 #include "func_common.h"
 
 extern "C" {
-    #include "kaezstd.h"
+#include "kaezstd.h"
 }
 
 using namespace testing;
@@ -29,7 +29,7 @@ TEST(functest_block, size_level_thread)
             for (int k = 0; k < sizeof(nbThreads) / sizeof(nbThreads[0]); ++k) {
                 CompressOut cOut = DoCompress(size[i], clevel[j], nbThreads[k]);
                 DecompressOut dOut = Decompress(cOut);
-                
+
                 ASSERT_EQ(cOut.oSize, dOut.dSize);
                 for (int i = 0; i < cOut.oSize; ++i) {
                     EXPECT_EQ(((uint8_t *)(cOut.oBuff))[i], ((uint8_t *)(dOut.dBuff))[i]);
@@ -52,7 +52,7 @@ TEST(functest_stream, size_level_thread)
             for (int k = 0; k < sizeof(nbThreads) / sizeof(nbThreads[0]); ++k) {
                 CompressOut cOut = DoCompressStream2(size[i], clevel[j], nbThreads[k]);
                 DecompressOut dOut = DecompressStream(cOut);
-                
+
                 ASSERT_EQ(cOut.oSize, dOut.dSize);
                 for (int i = 0; i < cOut.oSize; ++i) {
                     EXPECT_EQ(((uint8_t *)(cOut.oBuff))[i], ((uint8_t *)(dOut.dBuff))[i]);
@@ -70,9 +70,9 @@ TEST(functest_version, kaezstd_version)
     int ret = kaezstd_get_version(&ver);
     EXPECT_EQ(ret, 0);
     EXPECT_STREQ(ver.productName, "Kunpeng Boostkit");
-    EXPECT_STREQ(ver.productVersion, "26.0.0");
+    EXPECT_STREQ(ver.productVersion, "26.1.0");
     EXPECT_STREQ(ver.componentName, "KAEZstd");
-    EXPECT_STREQ(ver.componentVersion, "2.1.0");
+    EXPECT_STREQ(ver.componentVersion, "2.2.0");
 }
 
 // 主函数

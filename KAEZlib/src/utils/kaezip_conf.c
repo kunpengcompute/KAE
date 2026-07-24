@@ -94,8 +94,7 @@ int kaezip_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
     return -1;
 }
 
-int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, 
-                     const char *v_pszItem, char *v_pszValue)
+int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, const char *v_pszItem, char *v_pszValue)
 {
     FILE *stream;
     int retvalue = -1;
@@ -114,7 +113,6 @@ int kaezip_drv_get_item(const char *config_file, const char *v_pszSection,
     return retvalue;
 }
 
-
 static inline void versionCpy(char s1[], const char s2[])
 {
     int i = 0;
@@ -124,14 +122,14 @@ static inline void versionCpy(char s1[], const char s2[])
     s1[i] = '\0';
 }
 
-int kaezlib_get_version(KAEZlibVersion* ver)
+int kaezlib_get_version(KAEZlibVersion *ver)
 {
     if (ver == NULL) {
         return 1;
     }
     versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "26.0.0");
+    versionCpy(ver->productVersion, "26.1.0");
     versionCpy(ver->componentName, "KAEZlib");
-    versionCpy(ver->componentVersion, "2.1.0");
+    versionCpy(ver->componentVersion, "2.2.0");
     return 0;
 }

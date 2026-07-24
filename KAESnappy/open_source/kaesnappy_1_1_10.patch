@@ -54,7 +54,7 @@ diff -Naru snappy-1.1.10/CMakeLists.txt snappy-1.1.10-new/CMakeLists.txt
 +set_property(TARGET snappy
 +             APPEND PROPERTY INSTALL_RPATH
 +             /usr/local/kaesnappy/lib;/usr/local/lib)
-+target_link_libraries(snappy PRIVATE :libkaesnappy.so.2.1.0)
++target_link_libraries(snappy PRIVATE :libkaesnappy.so.2.2.0)
 +
  target_sources(snappy
    PRIVATE
@@ -65,7 +65,7 @@ diff -Naru snappy-1.1.10/CMakeLists.txt snappy-1.1.10-new/CMakeLists.txt
    )
 +
 +  target_compile_definitions(snappy_unittest PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_unittest snappy_test_support libkaesnappy.so.2.1.0)
++  target_link_libraries(snappy_unittest snappy_test_support libkaesnappy.so.2.2.0)
 +  target_include_directories(snappy_unittest PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
@@ -86,7 +86,7 @@ diff -Naru snappy-1.1.10/CMakeLists.txt snappy-1.1.10-new/CMakeLists.txt
 -  target_link_libraries(snappy_test_tool snappy_test_support)
 +  
 +  target_compile_definitions(snappy_test_tool PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_test_tool snappy_test_support libkaesnappy.so.2.1.0)
++  target_link_libraries(snappy_test_tool snappy_test_support libkaesnappy.so.2.2.0)
 +  target_include_directories(snappy_test_tool PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
@@ -104,7 +104,7 @@ diff -Naru snappy-1.1.10/CMakeLists.txt snappy-1.1.10-new/CMakeLists.txt
    target_link_libraries(snappy_benchmark snappy_test_support benchmark_main)
  
 +  target_compile_definitions(snappy_benchmark PRIVATE CONF_KAESNAPPY)
-+  target_link_libraries(snappy_benchmark snappy_test_support libkaesnappy.so.2.1.0)
++  target_link_libraries(snappy_benchmark snappy_test_support libkaesnappy.so.2.2.0)
 +  target_include_directories(snappy_benchmark PRIVATE
 +  /usr/local/kaesnappy/include
 +  )
