@@ -26,6 +26,10 @@ sh build.sh
 ./kaelz4test
 ```
 
+首次构建会自动下载并编译GoogleTest 1.11.0。脚本优先使用GoogleTest官方
+GitHub release，官方地址不可达时会切换到Gitee镜像。也可以通过
+`GTEST_DOWNLOAD_URL`指定其他可信下载地址。
+
 ## Polling异步零拷贝与非零拷贝测试
 
 `src/async_polling_case.cpp`覆盖KAELz4 polling异步压缩接口，包括零拷贝和非零拷贝两条路径。零拷贝用例使用hugetlb大页内存，并通过`/proc/self/pagemap`把虚拟地址转换为物理地址。

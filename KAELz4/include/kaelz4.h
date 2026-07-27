@@ -12,37 +12,37 @@
 #include <stddef.h>
 
 #include "kaelz4_dev.h"
-typedef   uint8_t BYTE;
-typedef   uint8_t U8;
-typedef  uint16_t U16;
-typedef  uint32_t U32;
-typedef  uint64_t U64;
+typedef uint8_t BYTE;
+typedef uint8_t U8;
+typedef uint16_t U16;
+typedef uint32_t U32;
+typedef uint64_t U64;
 
 /**
 * HW_LZ77_ZSTD: U32 offBase   U16 litLength   U16 mlBase
 * WCRYPTO_LZ77_ONLY: U32 litLength   (U16 offBase - 1)   U16 mlBase
 */
 typedef struct seqDef_s {
-    U32 litLength;   /* offBase == Offset + ZSTD_REP_NUM, or repcode 1,2,3 */
+    U32 litLength; /* offBase == Offset + ZSTD_REP_NUM, or repcode 1,2,3 */
     U16 offBase;
-    U16 mlBase;    /* mlBase == matchLength - MINMATCH */
+    U16 mlBase; /* mlBase == matchLength - MINMATCH */
 } seqDef;
 
 /* Controls whether seqStore has a single "long" litLength or matchLength. See seqStore_t. */
 typedef enum {
-    LZ4_llt_none = 0,             /* no longLengthType */
-    LZ4_llt_literalLength = 1,    /* represents a long literal */
-    LZ4_llt_matchLength = 2       /* represents a long match */
+    LZ4_llt_none = 0,          /* no longLengthType */
+    LZ4_llt_literalLength = 1, /* represents a long literal */
+    LZ4_llt_matchLength = 2    /* represents a long match */
 } LZ4_longLengthType_e;
 
 typedef struct {
-    seqDef* sequencesStart;
-    seqDef* sequences;
-    BYTE* litStart;
-    BYTE* lit;
-    BYTE* llCode;
-    BYTE* mlCode;
-    BYTE* ofCode;
+    seqDef *sequencesStart;
+    seqDef *sequences;
+    BYTE *litStart;
+    BYTE *lit;
+    BYTE *llCode;
+    BYTE *mlCode;
+    BYTE *ofCode;
     size_t maxNbSeq;
     size_t maxNbLit;
     LZ4_longLengthType_e longLengthType;
@@ -89,12 +89,12 @@ typedef enum {
     ASYNC_MODE,
 } operation_mode;
 
-extern int kaelz4_get_version(KAELz4Version* ver);
-extern int kaelz4_init(LZ4_CCtx* zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config);
-extern void kaelz4_reset(LZ4_CCtx* zc);
-extern void kaelz4_release(LZ4_CCtx* zc);
-extern void kaelz4_setstatus(LZ4_CCtx* zc, unsigned int status);
-extern int kaelz4_compress(LZ4_CCtx* zc, const void* src, size_t srcSize);
+extern int kaelz4_get_version(KAELz4Version *ver);
+extern int kaelz4_init(LZ4_CCtx *zc, int is_sgl, operation_mode mode, const kaelz4_device_config_t *config);
+extern void kaelz4_reset(LZ4_CCtx *zc);
+extern void kaelz4_release(LZ4_CCtx *zc);
+extern void kaelz4_setstatus(LZ4_CCtx *zc, unsigned int status);
+extern int kaelz4_compress(LZ4_CCtx *zc, const void *src, size_t srcSize);
 
 struct kaelz4_result {
     int status;
@@ -119,10 +119,10 @@ struct kaelz4_buffer_list {
 };
 
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
-typedef int (*sw_compress_fn)(const char* src, char* dst, int srcSize, int dstCapacity);
-typedef size_t (*sw_compress_frame_fn)(void* dstBuffer, size_t dstCapacity, const void* srcBuffer, size_t srcSize,
-                                       const void* preferences_ptr);
-typedef int (*sw_decompress_fn)(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
+typedef int (*sw_compress_fn)(const char *src, char *dst, int srcSize, int dstCapacity);
+typedef size_t (*sw_compress_frame_fn)(
+    void *dstBuffer, size_t dstCapacity, const void *srcBuffer, size_t srcSize, const void *preferences_ptr);
+typedef int (*sw_decompress_fn)(const char *source, char *dest, int compressedSize, int maxDecompressedSize);
 typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 
 /******************************** multi-thread mode APIs *******************************/
@@ -135,7 +135,7 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
  * @return: 0 success, other fail
  */
 int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                          lz4_async_callback callback, struct kaelz4_result *result);
+    lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: frame compress async api
  * @param: src [IN] : input data
@@ -146,7 +146,7 @@ int KAELZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_bu
  * @return: 0 success, other fail
  */
 int KAELZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+    lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
 /**
  *  Destroy all Task Queues and Threads on the KAE Side.
  */
@@ -158,7 +158,7 @@ void KAELZ4_teardown_async_compress(void);
  *  Note: Can not be called before fork();
  */
 int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
-                               sw_decompress_fn sw_decompress);
+    sw_decompress_fn sw_decompress);
 /**
  * @brief: block decompress async api
  * @param: src [IN] : input data
@@ -168,7 +168,7 @@ int KAELZ4_async_compress_init(iova_map_fn usr_map, sw_compress_fn sw_compress, 
  * @return: 0 success, other fail
  */
 int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                            lz4_async_callback callback, struct kaelz4_result *result);
+    lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: frame compress async api
  * @param: src [IN] : input data
@@ -179,8 +179,7 @@ int KAELZ4_decompress_async(const struct kaelz4_buffer_list *src, struct kaelz4_
  * @return: 0 success, other fail
  */
 int KAELZ4F_decompressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                  lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
-
+    lz4_async_callback callback, struct kaelz4_result *result, const void *options_ptr);
 
 /************************************** single-thread polling mode APIs *************************************/
 /**
@@ -210,7 +209,7 @@ void KAELZ4_reset_session(void *sess);
  * @return: 0 success, other fail
  */
 int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                     lz4_async_callback callback, struct kaelz4_result *result);
+    lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: Polling hardware result in session.
  * @param: sess : session
@@ -227,9 +226,9 @@ void KAELZ4_async_polling_in_session(void *sess, int budget);
  * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  */
-int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                           lz4_async_callback callback, struct kaelz4_result *result,
-                                           const void *preferences_ptr);
+int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result,
+    const void *preferences_ptr);
 /**
  * @brief: Get the recommended tuple buffer capacity for raw LZ77 compression.
  * The returned capacity is sufficient for src_len bytes when the source passed
@@ -250,8 +249,8 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
  * @return: 0 success, other fail
  */
-int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                                          lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to block
  * @param: src [IN] : input data
@@ -260,8 +259,8 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
  * @return: 0 success, other fail
  */
-int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
-                                 struct kaelz4_result *result);
+int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf,
+    struct kaelz4_buffer_list *dst, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to frame
  * @param: src [IN] : input data
@@ -271,6 +270,6 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
  * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  */
-int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
-                                 struct kaelz4_result *result, const void *preferences_ptr);
+int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf,
+    struct kaelz4_buffer_list *dst, struct kaelz4_result *result, const void *preferences_ptr);
 #endif

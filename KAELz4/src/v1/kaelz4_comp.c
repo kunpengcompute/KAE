@@ -14,20 +14,20 @@
 
 __thread struct kaelz4_async_ctrl g_async_ctrl = {0};
 
-void kaelz4_setstatus_v1(LZ4_CCtx* zc, unsigned int status)
+void kaelz4_setstatus_v1(LZ4_CCtx *zc, unsigned int status)
 {
     if (!zc) {
         US_ERR("kaelz4 ctx is NULL.");
         return;
     }
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
+    kaelz4_ctx_t *kaelz4_ctx = (kaelz4_ctx_t *)zc->kaeConfig;
     if (kaelz4_ctx) {
         kaelz4_ctx->lz4_data.blk_type = status;
         US_DEBUG("kaelz4 set status %u", status);
     }
 }
 
-static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
+static int kaelz4_data_parsing(LZ4_CCtx *zc, kaelz4_ctx_t *config)
 {
     if (!config->lz4_data.literals_start || !config->lz4_data.sequences_start) {
         US_ERR("lz4 literals or sequences start is NULL!\n");
@@ -52,7 +52,7 @@ static int kaelz4_data_parsing(LZ4_CCtx* zc, kaelz4_ctx_t* config)
     return KAE_LZ4_SUCC;
 }
 
-int kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize)
+int kaelz4_compress_v1(LZ4_CCtx *zc, const void *src, size_t srcSize)
 {
     if (zc == NULL || src == NULL || srcSize == 0 || zc->kaeConfig == 0) {
         US_ERR("compress parameter invalid\n");
@@ -64,27 +64,28 @@ int kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize)
         return KAE_LZ4_INVAL_PARA;
     }
 
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
+    kaelz4_ctx_t *kaelz4_ctx = (kaelz4_ctx_t *)zc->kaeConfig;
     US_INFO("kaelz4 compress srcSize : %lu", srcSize);
-    kaelz4_ctx->in           = (void*)src;
-    kaelz4_ctx->in_len       = (unsigned int)srcSize;
-    kaelz4_ctx->out          = NULL;
-    kaelz4_ctx->consumed     = 0;
-    kaelz4_ctx->produced     = 0;
-    kaelz4_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
-            (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
+    kaelz4_ctx->in = (void *)src;
+    kaelz4_ctx->in_len = (unsigned int)srcSize;
+    kaelz4_ctx->out = NULL;
+    kaelz4_ctx->consumed = 0;
+    kaelz4_ctx->produced = 0;
+    kaelz4_ctx->avail_out = KAEZIP_STREAM_CHUNK_OUT;
+    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH
+                        : (srcSize & 0x3)       ? WCRYPTO_FINISH
+                                                : WCRYPTO_SYNC_FLUSH;
     kaelz4_ctx->do_comp_len = kaelz4_ctx->in_len;
 
     kaelz4_set_input_data(kaelz4_ctx);
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
-    int ret = wcrypto_do_comp(kaelz4_ctx->wd_ctx, op_data, NULL);   // sync
+    int ret = wcrypto_do_comp(kaelz4_ctx->wd_ctx, op_data, NULL); // sync
     if (unlikely(ret < 0)) {
         US_ERR("lz4 wcrypto_do_comp fail! ret = %d\n", ret);
         return ret;
     } else {
-        struct wcrypto_lz77_zstd_format* lz4_data = &kaelz4_ctx->lz4_data;
+        struct wcrypto_lz77_zstd_format *lz4_data = &kaelz4_ctx->lz4_data;
         zc->seqnum = lz4_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
     }
 
@@ -99,198 +100,129 @@ int kaelz4_compress_v1(LZ4_CCtx* zc, const void* src, size_t srcSize)
 
 #define PREFL1_64B(ptr) __builtin_prefetch((ptr), 0, 0)
 #define PREFL2_64B(ptr) __builtin_prefetch((ptr), 0, 2)
-#define PREFL1L2_256B(l1ptr, l2ptr) do { \
-    PREFL1_64B((l1ptr) + 0 * 64);  \
-    PREFL2_64B((l2ptr) + 0 * 64);  \
-    PREFL1_64B((l1ptr) + 1 * 64);  \
-    PREFL2_64B((l2ptr) + 1 * 64);  \
-    PREFL1_64B((l1ptr) + 2 * 64);  \
-    PREFL2_64B((l2ptr) + 2 * 64);  \
-    PREFL1_64B((l1ptr) + 3 * 64);  \
-    PREFL2_64B((l2ptr) + 3 * 64);  \
-} while (0)
+#define PREFL1L2_256B(l1ptr, l2ptr)                                                                                    \
+    do {                                                                                                               \
+        PREFL1_64B((l1ptr) + 0 * 64);                                                                                  \
+        PREFL2_64B((l2ptr) + 0 * 64);                                                                                  \
+        PREFL1_64B((l1ptr) + 1 * 64);                                                                                  \
+        PREFL2_64B((l2ptr) + 1 * 64);                                                                                  \
+        PREFL1_64B((l1ptr) + 2 * 64);                                                                                  \
+        PREFL2_64B((l2ptr) + 2 * 64);                                                                                  \
+        PREFL1_64B((l1ptr) + 3 * 64);                                                                                  \
+        PREFL2_64B((l2ptr) + 3 * 64);                                                                                  \
+    } while (0)
 
 #ifdef KAE_USE_CRC32
-#define CRC32D_64B(crc, ptr) do { \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 0)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 1)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 2)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 3)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 4)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 5)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 6)); \
-    (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 7)); \
-} while (0)
+#define CRC32D_64B(crc, ptr)                                                                                           \
+    do {                                                                                                               \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 0));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 1));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 2));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 3));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 4));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 5));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 6));                                                   \
+        (crc) = __crc32d((crc), *(const uint64_t *)((ptr) + 8 * 7));                                                   \
+    } while (0)
 #else
-#define CRC32D_64B(crc, ptr) do { \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 0)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 1)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 2)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 3)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 4)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 5)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 6)); \
-    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 7)); \
-} while (0)
+#define CRC32D_64B(crc, ptr)                                                                                           \
+    do {                                                                                                               \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 0));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 1));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 2));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 3));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 4));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 5));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 6));                                                  \
+        (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 7));                                                  \
+    } while (0)
 #endif
 
-#define CRC32D_64B_X4(crc, ptr) do { \
-    CRC32D_64B((crc), (ptr) + 0 * 64); \
-    CRC32D_64B((crc), (ptr) + 1 * 64); \
-    CRC32D_64B((crc), (ptr) + 2 * 64); \
-    CRC32D_64B((crc), (ptr) + 3 * 64); \
-} while (0)
+#define CRC32D_64B_X4(crc, ptr)                                                                                        \
+    do {                                                                                                               \
+        CRC32D_64B((crc), (ptr) + 0 * 64);                                                                             \
+        CRC32D_64B((crc), (ptr) + 1 * 64);                                                                             \
+        CRC32D_64B((crc), (ptr) + 2 * 64);                                                                             \
+        CRC32D_64B((crc), (ptr) + 3 * 64);                                                                             \
+    } while (0)
 
 #ifdef KAE_USE_CRC32
-static const uint32_t table0_[256] = {
-    0x00000000, 0x77073096, 0xee0e612c, 0x990951ba,
-    0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
-    0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
-    0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
-    0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de,
-    0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-    0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec,
-    0x14015c4f, 0x63066cd9, 0xfa0f3d63, 0x8d080df5,
-    0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
-    0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,
-    0x35b5a8fa, 0x42b2986c, 0xdbbbc9d6, 0xacbcf940,
-    0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-    0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116,
-    0x21b4f4b5, 0x56b3c423, 0xcfba9599, 0xb8bda50f,
-    0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-    0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,
-    0x76dc4190, 0x01db7106, 0x98d220bc, 0xefd5102a,
-    0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-    0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818,
-    0x7f6a0dbb, 0x086d3d2d, 0x91646c97, 0xe6635c01,
-    0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
-    0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457,
-    0x65b0d9c6, 0x12b7e950, 0x8bbeb8ea, 0xfcb9887c,
-    0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-    0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2,
-    0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb,
-    0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
-    0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9,
-    0x5005713c, 0x270241aa, 0xbe0b1010, 0xc90c2086,
-    0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-    0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4,
-    0x59b33d17, 0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad,
-    0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
-    0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683,
-    0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8,
-    0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-    0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe,
-    0xf762575d, 0x806567cb, 0x196c3671, 0x6e6b06e7,
-    0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
-    0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5,
-    0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252,
-    0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-    0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60,
-    0xdf60efc3, 0xa867df55, 0x316e8eef, 0x4669be79,
-    0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
-    0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f,
-    0xc5ba3bbe, 0xb2bd0b28, 0x2bb45a92, 0x5cb36a04,
-    0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-    0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a,
-    0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713,
-    0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
-    0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21,
-    0x86d3d2d4, 0xf1d4e242, 0x68ddb3f8, 0x1fda836e,
-    0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-    0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c,
-    0x8f659eff, 0xf862ae69, 0x616bffd3, 0x166ccf45,
-    0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
-    0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db,
-    0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0,
-    0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-    0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6,
-    0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
-    0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
-    0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-};
+static const uint32_t table0_[256] = {0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
+    0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07,
+    0x90bf1d91, 0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+    0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa0f3d63, 0x8d080df5, 0x3b6e20c8,
+    0x4c69105e, 0xd56041e4, 0xa2677172, 0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b, 0x35b5a8fa, 0x42b2986c,
+    0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59, 0x26d930ac, 0x51de003a, 0xc8d75180,
+    0xbfd06116, 0x21b4f4b5, 0x56b3c423, 0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
+    0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190, 0x01db7106, 0x98d220bc, 0xefd5102a, 0x71b18589,
+    0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433, 0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
+    0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e, 0x6c0695ed, 0x1b01a57b, 0x8208f4c1,
+    0xf50fc457, 0x65b0d9c6, 0x12b7e950, 0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
+    0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a,
+    0x346ed9fc, 0xad678846, 0xda60b8d0, 0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
+    0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f, 0x5edef90e, 0x29d9c998, 0xb0d09822,
+    0xc7d7a8b4, 0x59b33d17, 0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
+    0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b,
+    0x9309ff9d, 0x0a00ae27, 0x7d079eb1, 0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
+    0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc, 0xf9b9df6f, 0x8ebeeff9, 0x17b7be43,
+    0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
+    0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55, 0x316e8eef, 0x4669be79, 0xcb61b38c,
+    0xbc66831a, 0x256fd2a0, 0x5268e236, 0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
+    0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d, 0x9b64c2b0, 0xec63f226, 0x756aa39c,
+    0x026d930a, 0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
+    0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242, 0x68ddb3f8, 0x1fda836e, 0x81be16cd,
+    0xf6b9265b, 0x6fb077e1, 0x18b74777, 0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
+    0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2, 0xa7672661, 0xd06016f7, 0x4969474d,
+    0x3e6e77db, 0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
+    0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf, 0xb3667a2e,
+    0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d};
 #else
-static const uint32_t table0_[256] = {
-    0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4,
-    0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
-    0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b,
-    0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
-    0x105ec76f, 0xe235446c, 0xf165b798, 0x030e349b,
-    0xd7c45070, 0x25afd373, 0x36ff2087, 0xc494a384,
-    0x9a879fa0, 0x68ec1ca3, 0x7bbcef57, 0x89d76c54,
-    0x5d1d08bf, 0xaf768bbc, 0xbc267848, 0x4e4dfb4b,
-    0x20bd8ede, 0xd2d60ddd, 0xc186fe29, 0x33ed7d2a,
-    0xe72719c1, 0x154c9ac2, 0x061c6936, 0xf477ea35,
-    0xaa64d611, 0x580f5512, 0x4b5fa6e6, 0xb93425e5,
-    0x6dfe410e, 0x9f95c20d, 0x8cc531f9, 0x7eaeb2fa,
-    0x30e349b1, 0xc288cab2, 0xd1d83946, 0x23b3ba45,
-    0xf779deae, 0x05125dad, 0x1642ae59, 0xe4292d5a,
-    0xba3a117e, 0x4851927d, 0x5b016189, 0xa96ae28a,
-    0x7da08661, 0x8fcb0562, 0x9c9bf696, 0x6ef07595,
-    0x417b1dbc, 0xb3109ebf, 0xa0406d4b, 0x522bee48,
-    0x86e18aa3, 0x748a09a0, 0x67dafa54, 0x95b17957,
-    0xcba24573, 0x39c9c670, 0x2a993584, 0xd8f2b687,
-    0x0c38d26c, 0xfe53516f, 0xed03a29b, 0x1f682198,
-    0x5125dad3, 0xa34e59d0, 0xb01eaa24, 0x42752927,
-    0x96bf4dcc, 0x64d4cecf, 0x77843d3b, 0x85efbe38,
-    0xdbfc821c, 0x2997011f, 0x3ac7f2eb, 0xc8ac71e8,
-    0x1c661503, 0xee0d9600, 0xfd5d65f4, 0x0f36e6f7,
-    0x61c69362, 0x93ad1061, 0x80fde395, 0x72966096,
-    0xa65c047d, 0x5437877e, 0x4767748a, 0xb50cf789,
-    0xeb1fcbad, 0x197448ae, 0x0a24bb5a, 0xf84f3859,
-    0x2c855cb2, 0xdeeedfb1, 0xcdbe2c45, 0x3fd5af46,
-    0x7198540d, 0x83f3d70e, 0x90a324fa, 0x62c8a7f9,
-    0xb602c312, 0x44694011, 0x5739b3e5, 0xa55230e6,
-    0xfb410cc2, 0x092a8fc1, 0x1a7a7c35, 0xe811ff36,
-    0x3cdb9bdd, 0xceb018de, 0xdde0eb2a, 0x2f8b6829,
-    0x82f63b78, 0x709db87b, 0x63cd4b8f, 0x91a6c88c,
-    0x456cac67, 0xb7072f64, 0xa457dc90, 0x563c5f93,
-    0x082f63b7, 0xfa44e0b4, 0xe9141340, 0x1b7f9043,
-    0xcfb5f4a8, 0x3dde77ab, 0x2e8e845f, 0xdce5075c,
-    0x92a8fc17, 0x60c37f14, 0x73938ce0, 0x81f80fe3,
-    0x55326b08, 0xa759e80b, 0xb4091bff, 0x466298fc,
-    0x1871a4d8, 0xea1a27db, 0xf94ad42f, 0x0b21572c,
-    0xdfeb33c7, 0x2d80b0c4, 0x3ed04330, 0xccbbc033,
-    0xa24bb5a6, 0x502036a5, 0x4370c551, 0xb11b4652,
-    0x65d122b9, 0x97baa1ba, 0x84ea524e, 0x7681d14d,
-    0x2892ed69, 0xdaf96e6a, 0xc9a99d9e, 0x3bc21e9d,
-    0xef087a76, 0x1d63f975, 0x0e330a81, 0xfc588982,
-    0xb21572c9, 0x407ef1ca, 0x532e023e, 0xa145813d,
-    0x758fe5d6, 0x87e466d5, 0x94b49521, 0x66df1622,
-    0x38cc2a06, 0xcaa7a905, 0xd9f75af1, 0x2b9cd9f2,
-    0xff56bd19, 0x0d3d3e1a, 0x1e6dcdee, 0xec064eed,
-    0xc38d26c4, 0x31e6a5c7, 0x22b65633, 0xd0ddd530,
-    0x0417b1db, 0xf67c32d8, 0xe52cc12c, 0x1747422f,
-    0x49547e0b, 0xbb3ffd08, 0xa86f0efc, 0x5a048dff,
-    0x8ecee914, 0x7ca56a17, 0x6ff599e3, 0x9d9e1ae0,
-    0xd3d3e1ab, 0x21b862a8, 0x32e8915c, 0xc083125f,
-    0x144976b4, 0xe622f5b7, 0xf5720643, 0x07198540,
-    0x590ab964, 0xab613a67, 0xb831c993, 0x4a5a4a90,
-    0x9e902e7b, 0x6cfbad78, 0x7fab5e8c, 0x8dc0dd8f,
-    0xe330a81a, 0x115b2b19, 0x020bd8ed, 0xf0605bee,
-    0x24aa3f05, 0xd6c1bc06, 0xc5914ff2, 0x37faccf1,
-    0x69e9f0d5, 0x9b8273d6, 0x88d28022, 0x7ab90321,
-    0xae7367ca, 0x5c18e4c9, 0x4f48173d, 0xbd23943e,
-    0xf36e6f75, 0x0105ec76, 0x12551f82, 0xe03e9c81,
-    0x34f4f86a, 0xc69f7b69, 0xd5cf889d, 0x27a40b9e,
-    0x79b737ba, 0x8bdcb4b9, 0x988c474d, 0x6ae7c44e,
-    0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
-};
+static const uint32_t table0_[256] = {0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c,
+    0x26a1e7e8, 0xd4ca64eb, 0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27,
+    0x5e133c24, 0x105ec76f, 0xe235446c, 0xf165b798, 0x030e349b, 0xd7c45070, 0x25afd373, 0x36ff2087, 0xc494a384,
+    0x9a879fa0, 0x68ec1ca3, 0x7bbcef57, 0x89d76c54, 0x5d1d08bf, 0xaf768bbc, 0xbc267848, 0x4e4dfb4b, 0x20bd8ede,
+    0xd2d60ddd, 0xc186fe29, 0x33ed7d2a, 0xe72719c1, 0x154c9ac2, 0x061c6936, 0xf477ea35, 0xaa64d611, 0x580f5512,
+    0x4b5fa6e6, 0xb93425e5, 0x6dfe410e, 0x9f95c20d, 0x8cc531f9, 0x7eaeb2fa, 0x30e349b1, 0xc288cab2, 0xd1d83946,
+    0x23b3ba45, 0xf779deae, 0x05125dad, 0x1642ae59, 0xe4292d5a, 0xba3a117e, 0x4851927d, 0x5b016189, 0xa96ae28a,
+    0x7da08661, 0x8fcb0562, 0x9c9bf696, 0x6ef07595, 0x417b1dbc, 0xb3109ebf, 0xa0406d4b, 0x522bee48, 0x86e18aa3,
+    0x748a09a0, 0x67dafa54, 0x95b17957, 0xcba24573, 0x39c9c670, 0x2a993584, 0xd8f2b687, 0x0c38d26c, 0xfe53516f,
+    0xed03a29b, 0x1f682198, 0x5125dad3, 0xa34e59d0, 0xb01eaa24, 0x42752927, 0x96bf4dcc, 0x64d4cecf, 0x77843d3b,
+    0x85efbe38, 0xdbfc821c, 0x2997011f, 0x3ac7f2eb, 0xc8ac71e8, 0x1c661503, 0xee0d9600, 0xfd5d65f4, 0x0f36e6f7,
+    0x61c69362, 0x93ad1061, 0x80fde395, 0x72966096, 0xa65c047d, 0x5437877e, 0x4767748a, 0xb50cf789, 0xeb1fcbad,
+    0x197448ae, 0x0a24bb5a, 0xf84f3859, 0x2c855cb2, 0xdeeedfb1, 0xcdbe2c45, 0x3fd5af46, 0x7198540d, 0x83f3d70e,
+    0x90a324fa, 0x62c8a7f9, 0xb602c312, 0x44694011, 0x5739b3e5, 0xa55230e6, 0xfb410cc2, 0x092a8fc1, 0x1a7a7c35,
+    0xe811ff36, 0x3cdb9bdd, 0xceb018de, 0xdde0eb2a, 0x2f8b6829, 0x82f63b78, 0x709db87b, 0x63cd4b8f, 0x91a6c88c,
+    0x456cac67, 0xb7072f64, 0xa457dc90, 0x563c5f93, 0x082f63b7, 0xfa44e0b4, 0xe9141340, 0x1b7f9043, 0xcfb5f4a8,
+    0x3dde77ab, 0x2e8e845f, 0xdce5075c, 0x92a8fc17, 0x60c37f14, 0x73938ce0, 0x81f80fe3, 0x55326b08, 0xa759e80b,
+    0xb4091bff, 0x466298fc, 0x1871a4d8, 0xea1a27db, 0xf94ad42f, 0x0b21572c, 0xdfeb33c7, 0x2d80b0c4, 0x3ed04330,
+    0xccbbc033, 0xa24bb5a6, 0x502036a5, 0x4370c551, 0xb11b4652, 0x65d122b9, 0x97baa1ba, 0x84ea524e, 0x7681d14d,
+    0x2892ed69, 0xdaf96e6a, 0xc9a99d9e, 0x3bc21e9d, 0xef087a76, 0x1d63f975, 0x0e330a81, 0xfc588982, 0xb21572c9,
+    0x407ef1ca, 0x532e023e, 0xa145813d, 0x758fe5d6, 0x87e466d5, 0x94b49521, 0x66df1622, 0x38cc2a06, 0xcaa7a905,
+    0xd9f75af1, 0x2b9cd9f2, 0xff56bd19, 0x0d3d3e1a, 0x1e6dcdee, 0xec064eed, 0xc38d26c4, 0x31e6a5c7, 0x22b65633,
+    0xd0ddd530, 0x0417b1db, 0xf67c32d8, 0xe52cc12c, 0x1747422f, 0x49547e0b, 0xbb3ffd08, 0xa86f0efc, 0x5a048dff,
+    0x8ecee914, 0x7ca56a17, 0x6ff599e3, 0x9d9e1ae0, 0xd3d3e1ab, 0x21b862a8, 0x32e8915c, 0xc083125f, 0x144976b4,
+    0xe622f5b7, 0xf5720643, 0x07198540, 0x590ab964, 0xab613a67, 0xb831c993, 0x4a5a4a90, 0x9e902e7b, 0x6cfbad78,
+    0x7fab5e8c, 0x8dc0dd8f, 0xe330a81a, 0x115b2b19, 0x020bd8ed, 0xf0605bee, 0x24aa3f05, 0xd6c1bc06, 0xc5914ff2,
+    0x37faccf1, 0x69e9f0d5, 0x9b8273d6, 0x88d28022, 0x7ab90321, 0xae7367ca, 0x5c18e4c9, 0x4f48173d, 0xbd23943e,
+    0xf36e6f75, 0x0105ec76, 0x12551f82, 0xe03e9c81, 0x34f4f86a, 0xc69f7b69, 0xd5cf889d, 0x27a40b9e, 0x79b737ba,
+    0x8bdcb4b9, 0x988c474d, 0x6ae7c44e, 0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351};
 #endif
 
 #define PLATFORM_IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
 
-static inline uint32_t DecodeFixed32(const char* ptr)
+static inline uint32_t DecodeFixed32(const char *ptr)
 {
     if (PLATFORM_IS_LITTLE_ENDIAN) {
         uint32_t result;
         memcpy(&result, ptr, sizeof(result));
         return result;
     } else {
-        return ((uint32_t)(ptr[0]) | ((uint32_t)(ptr[1]) << 8) | ((uint32_t)(ptr[2]) << 16) | ((uint32_t)(ptr[3]) << 24));
+        return (
+            (uint32_t)(ptr[0]) | ((uint32_t)(ptr[1]) << 8) | ((uint32_t)(ptr[2]) << 16) | ((uint32_t)(ptr[3]) << 24));
     }
 }
 
-static inline uint64_t DecodeFixed64(char* ptr)
+static inline uint64_t DecodeFixed64(char *ptr)
 {
     if (PLATFORM_IS_LITTLE_ENDIAN) {
         uint64_t result;
@@ -303,12 +235,12 @@ static inline uint64_t DecodeFixed64(char* ptr)
     }
 }
 
-static inline uint64_t LE_LOAD64(uint8_t* p)
+static inline uint64_t LE_LOAD64(uint8_t *p)
 {
-    return DecodeFixed64((char*)(p));
+    return DecodeFixed64((char *)(p));
 }
 
-static inline void Slow_CRC32(uint64_t* l, uint8_t** p)
+static inline void Slow_CRC32(uint64_t *l, uint8_t **p)
 {
 #ifdef KAE_USE_CRC32
     *l = __crc32d(*l, LE_LOAD64(*p));
@@ -328,12 +260,12 @@ static uint32_t KAELZ4CRC32(uint32_t crc, const char *data, uint64_t len)
     uint64_t crcResult = crc ^ 0xffffffffu;
     uint8_t *targetPtr = (uint8_t *)data;
 
-    #define STEP1                  \
-    do {                           \
-        int c = (crcResult & 0xff) ^ *targetPtr++; \
-        crcResult = table0_[c] ^ (crcResult >> 8); \
+#define STEP1                                                                                                          \
+    do {                                                                                                               \
+        int c = (crcResult & 0xff) ^ *targetPtr++;                                                                     \
+        crcResult = table0_[c] ^ (crcResult >> 8);                                                                     \
     } while (0)
-    #define ALIGN(n, m) ((n + ((1 << m) - 1)) & ~((1 << m) - 1))
+#define ALIGN(n, m) ((n + ((1 << m) - 1)) & ~((1 << m) - 1))
 
     uint8_t *targetPtrAlign = (uint8_t *)ALIGN((uintptr_t)targetPtr, 4);
 
@@ -374,13 +306,14 @@ static void kaelz4_compress_async_callback(struct kaelz4_compress_ctx *compress_
     result->dst_len = compress_ctx->save_info.dst_len;
     if (result->ibuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
         for (int i = 0; i < compress_ctx->src->buf_num; i++) {
-            *result->ibuf_crc = KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src->buf[i].data,
-                                            compress_ctx->src->buf[i].buf_len);
+            *result->ibuf_crc =
+                KAELZ4CRC32(*result->ibuf_crc, compress_ctx->src->buf[i].data, compress_ctx->src->buf[i].buf_len);
         }
     }
 
     if (result->obuf_crc != NULL && status == KAE_LZ4_SUCC && compress_ctx->data_format != KAELZ4_ASYNC_LZ77_RAW) {
-        *result->obuf_crc = KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->save_info.dst_len);
+        *result->obuf_crc =
+            KAELZ4CRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->save_info.dst_len);
     }
 
     if (unlikely(status != KAE_LZ4_SUCC)) {
@@ -423,13 +356,12 @@ static int kaelz4_rebuild_add_literal_seq(U32 *tempLiteralLength, U32 litLength,
     return KAE_LZ4_SUCC;
 }
 
-static int kaelz4_rebuild_get_seq_consumed(U32 litLength, U16 mlBase, size_t consumed_src,
-                                           size_t total_src_bytes, U32 *tmp_len)
+static int kaelz4_rebuild_get_seq_consumed(
+    U32 litLength, U16 mlBase, size_t consumed_src, size_t total_src_bytes, U32 *tmp_len)
 {
     size_t seq_len = (size_t)litLength + (size_t)mlBase + 4;
 
-    if (unlikely(consumed_src > total_src_bytes || seq_len > total_src_bytes - consumed_src ||
-                 seq_len > UINT32_MAX)) {
+    if (unlikely(consumed_src > total_src_bytes || seq_len > total_src_bytes - consumed_src || seq_len > UINT32_MAX)) {
         return KAE_LZ4_REBUILD_FAIL;
     }
 
@@ -437,8 +369,7 @@ static int kaelz4_rebuild_get_seq_consumed(U32 litLength, U16 mlBase, size_t con
     return KAE_LZ4_SUCC;
 }
 
-static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_result,
-                                           size_t tuple_chunk_len)
+static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_result, size_t tuple_chunk_len)
 {
     if (unlikely(tuple_chunk_len < sizeof(seq_result->seq_num))) {
         US_ERR("kaelz4 rebuild tuple chunk is shorter than its header\n");
@@ -448,25 +379,24 @@ static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_r
     size_t max_seq_num = (tuple_chunk_len - sizeof(seq_result->seq_num)) / sizeof(seqDef);
 
     if (unlikely((size_t)seq_result->seq_num > max_seq_num)) {
-        US_ERR("kaelz4 rebuild tuple seq_num %u exceeds available max %zu\n",
-               seq_result->seq_num, max_seq_num);
+        US_ERR("kaelz4 rebuild tuple seq_num %u exceeds available max %zu\n", seq_result->seq_num, max_seq_num);
         return KAE_LZ4_INVAL_PARA;
     }
 
     return KAE_LZ4_SUCC;
 }
 
-static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                  void *dest, struct kaelz4_priv_save_info *save_info)
+static int kaelz4_triples_rebuild(
+    struct kaelz4_async_req *req, const struct wd_buf_list *source, void *dest, struct kaelz4_priv_save_info *save_info)
 {
     unsigned int cur_buf_idx = 0;
-    const BYTE* ip = (const BYTE*) source->buf[0].data;
+    const BYTE *ip = (const BYTE *)source->buf[0].data;
     size_t ip_buf_remain = source->buf[0].buf_len;
-    BYTE* op = (BYTE*) dest;
+    BYTE *op = (BYTE *)dest;
     U32 offBase = 0;
     U32 litLength = 0;
     U16 mlBase = 0;
-    seqDef* sequencesPtr = req->zc.seqStore.sequencesStart;
+    seqDef *sequencesPtr = req->zc.seqStore.sequencesStart;
     U32 seqSum = 0;
     // special flag 表示硬件没有返回三元组，zc为空
     if (req->special_flag) {
@@ -483,7 +413,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
     size_t total_src_bytes = req->src_size;
     U32 seqCount = 0;
     U32 tempLiteralLength = 0;
-    BYTE* token = NULL;
+    BYTE *token = NULL;
     U32 len = 0;
     size_t consumed_src = 0;
 
@@ -500,8 +430,8 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         }
 
         if (mlBase == 0) {
-            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
-                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+            if (unlikely(
+                    kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength, total_src_bytes) != KAE_LZ4_SUCC)) {
                 return kaelz4_rebuild_invalid_seq(save_info);
             }
             continue;
@@ -514,8 +444,8 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         tempLiteralLength = 0;
 
         U32 tmp_len;
-        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
-                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src, total_src_bytes, &tmp_len) !=
+                     KAE_LZ4_SUCC)) {
             return kaelz4_rebuild_invalid_seq(save_info);
         }
 
@@ -581,7 +511,7 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
         op += tempLiteralLength;
     }
 
-    int result = (int)(((char*)op) - ((char*)dest));
+    int result = (int)(((char *)op) - ((char *)dest));
     return result;
 }
 
@@ -589,17 +519,17 @@ static int kaelz4_triples_rebuild(struct kaelz4_async_req *req, const struct wd_
 // 约束：分块原始数据内存连续
 // 1、对于非last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal信息更新至ctx中
 // 2、对于last subblock：first new seq生成时继承prev subblock的last literal；cur subblock的尾部last literal生成last seq格式
-static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                           void *dest, struct kaelz4_priv_save_info *save_info)
+static int kaelz4_triples_rebuild_64Kblock(
+    struct kaelz4_async_req *req, const struct wd_buf_list *source, void *dest, struct kaelz4_priv_save_info *save_info)
 {
     unsigned int cur_buf_idx = 0;
-    const BYTE* ip = (const BYTE*) source->buf[0].data;
+    const BYTE *ip = (const BYTE *)source->buf[0].data;
     size_t ip_buf_remain = source->buf[0].buf_len;
-    BYTE* op = (BYTE*) dest;
+    BYTE *op = (BYTE *)dest;
     U32 offBase = 0;
     U32 litLength = 0;
     U16 mlBase = 0;
-    seqDef* sequencesPtr = req->zc.seqStore.sequencesStart;
+    seqDef *sequencesPtr = req->zc.seqStore.sequencesStart;
 
     // special flag 表示硬件没有返回三元组，zc为空
     U32 seqSum = 0;
@@ -608,7 +538,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
     } else {
         seqSum = req->zc.seqnum;
     }
-    if (req->src_size + save_info->prev_last_lit_len + (req->src_size + save_info->prev_last_lit_len) / 255 + 16 >= save_info->dstCapacity - save_info->dst_len) {
+    if (req->src_size + save_info->prev_last_lit_len + (req->src_size + save_info->prev_last_lit_len) / 255 + 16 >=
+        save_info->dstCapacity - save_info->dst_len) {
         *save_info->status = KAE_LZ4_DST_BUF_OVERFLOW;
         return 0;
     }
@@ -616,7 +547,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
     size_t total_src_bytes = req->src_size;
     U32 seqCount = 0;
     U32 tempLiteralLength = 0;
-    BYTE* token = NULL;
+    BYTE *token = NULL;
     U32 len = 0;
     size_t consumed_src = 0;
 
@@ -636,8 +567,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         if (mlBase == 0) {
-            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
-                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+            if (unlikely(
+                    kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength, total_src_bytes) != KAE_LZ4_SUCC)) {
                 return kaelz4_rebuild_invalid_seq(save_info);
             }
             continue;
@@ -660,8 +591,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         U32 tmp_len;
-        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
-                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src, total_src_bytes, &tmp_len) !=
+                     KAE_LZ4_SUCC)) {
             return kaelz4_rebuild_invalid_seq(save_info);
         }
 
@@ -683,8 +614,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             struct kaelz4_buffer *last_buf = &save_info->src->buf[save_info->prev_last_lit_buf_index];
             size_t last_buf_remain = last_buf->data + last_buf->buf_len - save_info->prev_last_lit_ptr;
             kaelz4_wild_copy16_from_buffers(save_info->src, &save_info->prev_last_lit_buf_index,
-                                            (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain,
-                                            op, save_info->prev_last_lit_len);
+                (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain, op, save_info->prev_last_lit_len);
             op += save_info->prev_last_lit_len;
             save_info->prev_last_lit_ptr = NULL;
             save_info->prev_last_lit_len = 0;
@@ -730,8 +660,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
 
         if (mlBase == 0) {
-            if (unlikely(kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength,
-                                                        total_src_bytes) != KAE_LZ4_SUCC)) {
+            if (unlikely(
+                    kaelz4_rebuild_add_literal_seq(&tempLiteralLength, litLength, total_src_bytes) != KAE_LZ4_SUCC)) {
                 return kaelz4_rebuild_invalid_seq(save_info);
             }
             continue;
@@ -744,8 +674,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         tempLiteralLength = 0;
 
         U32 tmp_len;
-        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src,
-                                                     total_src_bytes, &tmp_len) != KAE_LZ4_SUCC)) {
+        if (unlikely(kaelz4_rebuild_get_seq_consumed(litLength, mlBase, consumed_src, total_src_bytes, &tmp_len) !=
+                     KAE_LZ4_SUCC)) {
             return kaelz4_rebuild_invalid_seq(save_info);
         }
 
@@ -803,7 +733,8 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
                 return kaelz4_rebuild_invalid_seq(save_info);
             }
             save_info->prev_last_lit_len += tempLiteralLength;
-        } else if (tempLiteralLength > 0) { // 本分块满足rebuild new seq:记录尾部的literal部分信息，留给后续分块的first new seq继承
+        } else if (tempLiteralLength >
+                   0) { // 本分块满足rebuild new seq:记录尾部的literal部分信息，留给后续分块的first new seq继承
             if (unlikely(cur_buf_idx >= source->buf_num)) {
                 return kaelz4_rebuild_invalid_seq(save_info);
             }
@@ -813,8 +744,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
     } else { // last subblock，生成last seq
         // 继承prev subblock的last literal
-        if (unlikely(kaelz4_rebuild_add_u32(&tempLiteralLength,
-                                            save_info->prev_last_lit_len) != KAE_LZ4_SUCC)) {
+        if (unlikely(kaelz4_rebuild_add_u32(&tempLiteralLength, save_info->prev_last_lit_len) != KAE_LZ4_SUCC)) {
             return kaelz4_rebuild_invalid_seq(save_info);
         }
 
@@ -839,8 +769,7 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
             struct kaelz4_buffer *last_buf = &save_info->src->buf[save_info->prev_last_lit_buf_index];
             size_t last_buf_remain = last_buf->data + last_buf->buf_len - save_info->prev_last_lit_ptr;
             kaelz4_wild_copy16_from_buffers(save_info->src, &save_info->prev_last_lit_buf_index,
-                                            (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain,
-                                            op, save_info->prev_last_lit_len);
+                (const BYTE **)&save_info->prev_last_lit_ptr, &last_buf_remain, op, save_info->prev_last_lit_len);
             op += save_info->prev_last_lit_len;
             tempLiteralLength -= save_info->prev_last_lit_len;
             save_info->prev_last_lit_ptr = NULL;
@@ -852,16 +781,16 @@ static int kaelz4_triples_rebuild_64Kblock(struct kaelz4_async_req *req, const s
         }
     }
 
-    int result = (int)(((char*)op) - ((char*)dest));
+    int result = (int)(((char *)op) - ((char *)dest));
 
     return result;
 }
 
 static void kaelz4_async_compress_cb(int status, void *param)
 {
-    struct kaelz4_async_req* req = param;
-    LZ4_CCtx* zc = &req->zc;
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
+    struct kaelz4_async_req *req = param;
+    LZ4_CCtx *zc = &req->zc;
+    kaelz4_ctx_t *kaelz4_ctx = (kaelz4_ctx_t *)zc->kaeConfig;
     struct wcrypto_comp_op_data *op_data = &kaelz4_ctx->op_data;
 
     if (status != WCRYPTO_STATUS_NULL) {
@@ -875,11 +804,12 @@ static void kaelz4_async_compress_cb(int status, void *param)
         return;
     }
 
-    struct wcrypto_lz77_zstd_format* lz4_data = &kaelz4_ctx->lz4_data;
+    struct wcrypto_lz77_zstd_format *lz4_data = &kaelz4_ctx->lz4_data;
     zc->seqnum = lz4_data->seq_num; // 获取硬件返回三元组数目，用于遍历解析
-    US_DEBUG("frameMode = %u, flush = %d, lit_num = %u, seq_num = %u, lit_length_overflow_cnt = %u, lit_length_overflow_pos = %u\n",
-        zc->kaeFrameMode, kaelz4_ctx->flush,
-        lz4_data->lit_num, lz4_data->seq_num, lz4_data->lit_length_overflow_cnt, lz4_data->lit_length_overflow_pos);
+    US_DEBUG(
+        "frameMode = %u, flush = %d, lit_num = %u, seq_num = %u, lit_length_overflow_cnt = %u, lit_length_overflow_pos = %u\n",
+        zc->kaeFrameMode, kaelz4_ctx->flush, lz4_data->lit_num, lz4_data->seq_num, lz4_data->lit_length_overflow_cnt,
+        lz4_data->lit_length_overflow_pos);
 
     if (op_data->stream_pos == WCRYPTO_COMP_STREAM_NEW) {
         op_data->stream_pos = WCRYPTO_COMP_STREAM_OLD;
@@ -902,7 +832,7 @@ static int kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list
     op_data->in_len = 0;
     kz_ctx->src_sgl = kz_ctx->src_sgl_buf;
     int ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->src_sgl, src,
-                           (wd_map)kz_ctx->usr_map);
+        (wd_map)kz_ctx->usr_map);
     if (ret != WD_SUCCESS) {
         kz_ctx->src_sgl = NULL;
         return KAE_LZ4_INVAL_PARA;
@@ -911,7 +841,7 @@ static int kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list
     if (dst->buf_num) {
         kz_ctx->dst_sgl_usr = kz_ctx->dst_sgl_buf;
         ret = wd_build_sgl(kz_ctx->q_node->kae_wd_queue, kz_ctx->q_node->kae_queue_mem_pool, kz_ctx->dst_sgl_usr, dst,
-                           (wd_map)kz_ctx->usr_map);
+            (wd_map)kz_ctx->usr_map);
         if (ret != WD_SUCCESS) {
             kz_ctx->dst_sgl_usr = NULL;
             return KAE_LZ4_DST_BUF_OVERFLOW;
@@ -924,7 +854,7 @@ static int kaelz4_fill_sgl_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_list
     }
     op_data->in_len += kz_ctx->do_comp_len;
     op_data->avail_out = KAEZIP_STREAM_CHUNK_OUT;
-    op_data->flush   = kz_ctx->flush;
+    op_data->flush = kz_ctx->flush;
     op_data->alg_type = kz_ctx->comp_alg_type;
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
     return KAE_LZ4_SUCC;
@@ -942,29 +872,31 @@ static void kaelz4_fill_flat_buffer(kaelz4_ctx_t *kz_ctx, const struct wd_buf_li
     }
     op_data->in_len += kz_ctx->do_comp_len;
     op_data->avail_out = KAEZIP_STREAM_CHUNK_OUT;
-    op_data->flush   = kz_ctx->flush;
+    op_data->flush = kz_ctx->flush;
     op_data->alg_type = kz_ctx->comp_alg_type;
     op_data->stream_pos = WCRYPTO_COMP_STREAM_NEW;
 }
 
-static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *src, struct wd_buf_list *dst, size_t srcSize, void *usr_data)
+static int kaelz4_compress_async_impl(
+    LZ4_CCtx *zc, const struct wd_buf_list *src, struct wd_buf_list *dst, size_t srcSize, void *usr_data)
 {
     int ret = KAE_LZ4_SUCC;
-    kaelz4_ctx_t* kaelz4_ctx = (kaelz4_ctx_t*)zc->kaeConfig;
+    kaelz4_ctx_t *kaelz4_ctx = (kaelz4_ctx_t *)zc->kaeConfig;
     if (kaelz4_ctx == NULL || src == NULL || srcSize == 0) {
         US_ERR("compress parameter invalid\n");
         return KAE_LZ4_INVAL_PARA;
     }
 
     US_INFO("kaelz4 compress srcSize : %lu", srcSize);
-    kaelz4_ctx->in           = (void*)src;
-    kaelz4_ctx->in_len       = srcSize;
-    kaelz4_ctx->out          = NULL;
-    kaelz4_ctx->consumed     = 0;
-    kaelz4_ctx->produced     = 0;
-    kaelz4_ctx->avail_out    = KAEZIP_STREAM_CHUNK_OUT;
-    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH :
-            (srcSize & 0x3) ? WCRYPTO_FINISH : WCRYPTO_SYNC_FLUSH;
+    kaelz4_ctx->in = (void *)src;
+    kaelz4_ctx->in_len = srcSize;
+    kaelz4_ctx->out = NULL;
+    kaelz4_ctx->consumed = 0;
+    kaelz4_ctx->produced = 0;
+    kaelz4_ctx->avail_out = KAEZIP_STREAM_CHUNK_OUT;
+    kaelz4_ctx->flush = (zc->kaeFrameMode == 1) ? WCRYPTO_FINISH
+                        : (srcSize & 0x3)       ? WCRYPTO_FINISH
+                                                : WCRYPTO_SYNC_FLUSH;
     kaelz4_ctx->do_comp_len = kaelz4_ctx->in_len;
     kaelz4_ctx->callback = kaelz4_async_compress_cb;
     kaelz4_ctx->param = usr_data;
@@ -979,7 +911,7 @@ static int kaelz4_compress_async_impl(LZ4_CCtx* zc, const struct wd_buf_list *sr
         kaelz4_fill_flat_buffer(kaelz4_ctx, src);
     }
     ret = wcrypto_do_comp(kaelz4_ctx->wd_ctx, &kaelz4_ctx->op_data, kaelz4_ctx);
-    if (ret != WD_SUCCESS) {   // async
+    if (ret != WD_SUCCESS) { // async
         US_ERR("compress async fail ret:%d\n", ret);
         return KAE_LZ4_HW_TIMEOUT_FAIL;
     }
@@ -1007,7 +939,6 @@ static void kaelz4_find_and_free_kz_ctx(struct kaelz4_async_ctrl *ctrl, kaelz4_c
     }
 }
 
-
 static void kaelz4_do_compress_polling(struct kaelz4_async_ctrl *ctrl, struct kaelz4_async_req *req)
 {
     if (req->special_flag != 0 || req->zc.kaeConfig == 0) {
@@ -1027,18 +958,18 @@ static void kaelz4_do_compress_polling(struct kaelz4_async_ctrl *ctrl, struct ka
     return;
 }
 
-static void KAELZ4F_writeLE32 (void* dst, uint32_t value32)
+static void KAELZ4F_writeLE32(void *dst, uint32_t value32)
 {
-    BYTE* const dstPtr = (BYTE*)dst;
+    BYTE *const dstPtr = (BYTE *)dst;
     dstPtr[0] = (BYTE)value32;
     dstPtr[1] = (BYTE)(value32 >> 8);
     dstPtr[2] = (BYTE)(value32 >> 16);
     dstPtr[3] = (BYTE)(value32 >> 24);
 }
 
-static void KAELZ4F_writeLE64 (void* dst, uint64_t value64)
+static void KAELZ4F_writeLE64(void *dst, uint64_t value64)
 {
-    BYTE* const dstPtr = (BYTE*)dst;
+    BYTE *const dstPtr = (BYTE *)dst;
     dstPtr[0] = (BYTE)value64;
     dstPtr[1] = (BYTE)(value64 >> 8);
     dstPtr[2] = (BYTE)(value64 >> 16);
@@ -1069,10 +1000,8 @@ static int KAELZ4HeaderGen(unsigned char *dstPtr, LZ4F_frameInfo_t *frameinfo_pt
     dst_len += 4;
     unsigned char *headerStart = dstPtr;
     // FLG
-    *dstPtr++ = (BYTE)(((KAELZ4_VERSION & 0x03) << 6)
-        | ((KAELZ4_BLOCK_INDEPENDENCE_FLAG & 0x01) << 5)
-        | (KAELZ4_DICTIONARY_ID_FLAG & 0x01)
-        | flag);
+    *dstPtr++ = (BYTE)(((KAELZ4_VERSION & 0x03) << 6) | ((KAELZ4_BLOCK_INDEPENDENCE_FLAG & 0x01) << 5) |
+                       (KAELZ4_DICTIONARY_ID_FLAG & 0x01) | flag);
     dst_len++;
     // BD
     *dstPtr++ = (BYTE)((KAELZ4_MAX_BLK_SIZE & 0x07) << 4);
@@ -1090,7 +1019,7 @@ static int KAELZ4HeaderGen(unsigned char *dstPtr, LZ4F_frameInfo_t *frameinfo_pt
     return dst_len;
 }
 
-static int KAELZ4FooterGen(unsigned char* dstPtr, unsigned char *srcPtr, uint32_t src_len, uint8_t checksumEnabled)
+static int KAELZ4FooterGen(unsigned char *dstPtr, unsigned char *srcPtr, uint32_t src_len, uint8_t checksumEnabled)
 {
     int dst_len = 4;
     // ENDMARK
@@ -1106,8 +1035,7 @@ static int KAELZ4FooterGen(unsigned char* dstPtr, unsigned char *srcPtr, uint32_
     return dst_len;
 }
 
-static int KAELZ4BlockHeaderGen(unsigned char *dstPtr, uint32_t compressed_len,
-                                uint8_t stored_block_flag)
+static int KAELZ4BlockHeaderGen(unsigned char *dstPtr, uint32_t compressed_len, uint8_t stored_block_flag)
 {
     int dst_len = 4;
     if (stored_block_flag) { // 场景1. 压缩异常或负压
@@ -1122,15 +1050,15 @@ static int KAELZ4BlockHeaderGen(unsigned char *dstPtr, uint32_t compressed_len,
 static int KAELZ4BlockFooterGen(unsigned char *dstPtr, uint32_t compressed_len)
 {
     int dst_len = 0;
-    uint32_t xxh = XXH32(dstPtr-compressed_len, compressed_len, 0);
+    uint32_t xxh = XXH32(dstPtr - compressed_len, compressed_len, 0);
     KAELZ4F_writeLE32(dstPtr, xxh);
     dstPtr += 4;
     dst_len += 4;
     return dst_len;
 }
 
-static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                      void *dst_tmp, struct kaelz4_priv_save_info *save_info)
+static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct wd_buf_list *source, void *dst_tmp,
+    struct kaelz4_priv_save_info *save_info)
 {
     int ret = 0;
     int padding_len = 0;
@@ -1150,11 +1078,11 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
     if (req->idx == 0) {
         int len1 = KAELZ4HeaderGen(dst_tmp, &frameinfo_ptr);
         padding_len += len1;
-        dst_after_frameheader += len1;  // 记录此时的位置
-        dst_tmp += len1;                // 真实dst空间直接进行偏移
+        dst_after_frameheader += len1; // 记录此时的位置
+        dst_tmp += len1;               // 真实dst空间直接进行偏移
     }
 
-    dst_tmp += 4;  // 直接往后偏移4个字节(KAELZ4BlockHeaderGen 的返回值), 预留block头的空间
+    dst_tmp += 4; // 直接往后偏移4个字节(KAELZ4BlockHeaderGen 的返回值), 预留block头的空间
     // 写入真实 block 数据
     ret = kaelz4_triples_rebuild(req, source, dst_tmp, save_info);
     if (ret < 0) {
@@ -1177,7 +1105,7 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
     }
     // 使用 block 数据块的真实长度ret，在真实block数据之前写入4字节的block头
     int len2 = KAELZ4BlockHeaderGen(dst_after_frameheader, ret, stored_block_flag);
-    padding_len += len2;  // 最终总数据量增加
+    padding_len += len2; // 最终总数据量增加
     dst_tmp += ret;
 
     if (bloc_checksum_enabled == 1) {
@@ -1190,17 +1118,17 @@ static int kaelz4_async_frame_padding(struct kaelz4_async_req *req, const struct
     // 如果是最后一个block块，添加frame尾部
     if (req->last == 1) {
         int contentChecksum = frameinfo_ptr.contentChecksumFlag;
-        int len4 = KAELZ4FooterGen(dst_tmp, (unsigned char *)save_info->src->buf[0].data,
-                                   save_info->src->buf[0].buf_len, contentChecksum);
+        int len4 = KAELZ4FooterGen(
+            dst_tmp, (unsigned char *)save_info->src->buf[0].data, save_info->src->buf[0].buf_len, contentChecksum);
         padding_len += len4;
     }
 
-    ret += padding_len;  // 计算本次一共生成的数据总量
+    ret += padding_len; // 计算本次一共生成的数据总量
     return ret;
 }
 
-static int kaelz4_async_lz77_post_handle(struct kaelz4_async_req *req, const struct wd_buf_list *source,
-                                         void *dst_tmp, struct kaelz4_priv_save_info *save_info)
+static int kaelz4_async_lz77_post_handle(struct kaelz4_async_req *req, const struct wd_buf_list *source, void *dst_tmp,
+    struct kaelz4_priv_save_info *save_info)
 {
     struct kaelz4_seq_result *req_result = dst_tmp;
 
@@ -1218,8 +1146,8 @@ int kaelz4_async_is_thread_do_comp_full(struct kaelz4_async_ctrl *ctrl)
     return ctrl->cur_num_in_comp < MAX_NUM_IN_COMP ? FALSE : TRUE;
 }
 
-struct kaelz4_async_ctrl *kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress, sw_compress_frame_fn sw_compress_frame,
-                                            sw_decompress_fn sw_decompress, iova_map_fn usr_map)
+struct kaelz4_async_ctrl *kaelz4_async_init(volatile int *stop, sw_compress_fn sw_compress,
+    sw_compress_frame_fn sw_compress_frame, sw_decompress_fn sw_decompress, iova_map_fn usr_map)
 {
     g_async_ctrl.stop_flag = stop;
     g_async_ctrl.sw_compress = sw_compress;
@@ -1240,7 +1168,8 @@ void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl)
     }
 }
 
-int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map, const kaelz4_device_config_t *config)
+int kaelz4_async_instances_init(
+    struct kaelz4_async_ctrl **ctrl, iova_map_fn usr_map, const kaelz4_device_config_t *config)
 {
     LZ4_CCtx ctx_body;
 
@@ -1255,7 +1184,8 @@ int kaelz4_async_instances_init(struct kaelz4_async_ctrl **ctrl, iova_map_fn usr
     new_ctrl->usr_map = usr_map;
     new_ctrl->is_polling = TRUE;
     for (int i = 0; i < MAX_NUM_IN_COMP; i++) {
-        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE, config) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
+        if (kaelz4_init(&ctx_body, is_sgl, ASYNC_MODE, config) !=
+            KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             new_ctrl->kz_ctx[i] = NULL;
             goto free_kz_ctx;
         }
@@ -1304,12 +1234,12 @@ static int kaelz4_async_sw_compress(struct kaelz4_async_ctrl *ctrl, struct kaelz
     int ret = -1;
     if (compress_ctx->data_format == KAELZ4_ASYNC_FRAME && ctrl->sw_compress_frame != NULL) {
         compress_ctx->status = KAE_LZ4_SUCC;
-        ret = ctrl->sw_compress_frame(compress_ctx->dst->buf[0].data, compress_ctx->save_info.dstCapacity, compress_ctx->src->buf[0].data,
-                                      compress_ctx->srcSize, &compress_ctx->save_info.preferences);
+        ret = ctrl->sw_compress_frame(compress_ctx->dst->buf[0].data, compress_ctx->save_info.dstCapacity,
+            compress_ctx->src->buf[0].data, compress_ctx->srcSize, &compress_ctx->save_info.preferences);
     } else if (compress_ctx->data_format <= KAELZ4_ASYNC_BLOCK && ctrl->sw_compress != NULL) {
         compress_ctx->status = KAE_LZ4_SUCC;
         ret = ctrl->sw_compress(compress_ctx->src->buf[0].data, compress_ctx->dst->buf[0].data, compress_ctx->srcSize,
-                                compress_ctx->save_info.dstCapacity);
+            compress_ctx->save_info.dstCapacity);
     }
     ret = (ret == 0) ? KAE_LZ4_SW_RETURN_0_FAIL : ret;
     return ret;
@@ -1335,15 +1265,14 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
 
         if (likely(compress_ctx->status == KAE_LZ4_SUCC)) {
             ret = compress_ctx->kaelz4_post_process_handle(req, &req->src,
-                                                           compress_ctx->dst->buf[0].data + compress_ctx->save_info.dst_len,
-                                                           &compress_ctx->save_info);
+                compress_ctx->dst->buf[0].data + compress_ctx->save_info.dst_len, &compress_ctx->save_info);
             if (ret < 0) {
                 US_ERR("kaelz4_post_process_handle err. ret=%d\n", ret);
             }
         }
 
-        if (unlikely(ret < 0 && req->idx == 0 && req->last != 0 && req->compress_ctx->status != KAE_LZ4_HW_TIMEOUT_FAIL
-                     && compress_ctx->src->buf_num == 1)) {
+        if (unlikely(ret < 0 && req->idx == 0 && req->last != 0 &&
+                     req->compress_ctx->status != KAE_LZ4_HW_TIMEOUT_FAIL && compress_ctx->src->buf_num == 1)) {
             US_WARN("KAELz4 async compress switch to soft");
             // 异常切软算处理
             ret = kaelz4_async_sw_compress(ctrl, compress_ctx);
@@ -1359,7 +1288,7 @@ int kaelz4_async_compress_polling(struct kaelz4_async_ctrl *ctrl, int budget)
             }
 
             US_ERR("kae post process fail! req index %d src size 0x%lx dst size 0x%lx last %d ret = %d status %d\n",
-                   req->idx, req->src_size, compress_ctx->save_info.dstCapacity, req->last, ret, compress_ctx->status);
+                req->idx, req->src_size, compress_ctx->save_info.dstCapacity, req->last, ret, compress_ctx->status);
         }
 
         if (!req->special_flag) {
@@ -1428,7 +1357,7 @@ void kaelz4_hw_timeout_handle(struct kaelz4_async_ctrl *ctrl)
     }
 }
 
-static struct timespec polling_timeout_10us = { 0, 10000 };  // 10us超时
+static struct timespec polling_timeout_10us = {0, 10000}; // 10us超时
 
 static void kaelz4_ctx_body_init(LZ4_CCtx *ctx_body)
 {
@@ -1457,7 +1386,8 @@ static int kaelz4_async_init_ctx(struct kaelz4_async_ctrl *ctrl, LZ4_CCtx *ctx_b
 
     if (unlikely(ctrl->kz_ctx[ctrl->ctx_index] == NULL)) {
         int is_sgl = (ctrl->usr_map != NULL) ? 1 : 0;
-        while (kaelz4_init(ctx_body, is_sgl, ASYNC_MODE, ctrl->config) != KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
+        while (kaelz4_init(ctx_body, is_sgl, ASYNC_MODE, ctrl->config) !=
+               KAE_LZ4_SUCC) { // 本质来说，这个初始化函数就初始化了其中的kaeConfig，其他是没有的，所以在外面要赋值
             struct timespec timeout;
             if (enter_polling == 0) {
                 get_time_out_spec(&timeout, &polling_timeout_10us);
@@ -1525,8 +1455,8 @@ static int kaelz4_send_async_compress(struct kaelz4_async_ctrl *ctrl, struct kae
     return ret;
 }
 
-static int kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *dst,
-                                           enum kae_lz4_async_data_format data_format)
+static int kaelz4_fill_hw_req_dst_buf_list(
+    struct kaelz4_async_req *req, const struct kaelz4_buffer_list *dst, enum kae_lz4_async_data_format data_format)
 {
     req->dst.buf = req->dst_buffers;
     req->dst.buf_num = 0;
@@ -1543,8 +1473,8 @@ static int kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const s
         }
 
         tuple_offset = (size_t)req->idx * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
-        if (unlikely(tuple_offset > dst->buf[0].buf_len ||
-                     dst->buf[0].buf_len - tuple_offset <= sizeof(unsigned int))) {
+        if (unlikely(
+                tuple_offset > dst->buf[0].buf_len || dst->buf[0].buf_len - tuple_offset <= sizeof(unsigned int))) {
             req->dst.buf[0].data = NULL;
             req->dst.buf[0].buf_len = 0;
             return KAE_LZ4_DST_BUF_OVERFLOW;
@@ -1564,7 +1494,7 @@ static int kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const s
 }
 
 static void kaelz4_fill_hw_req_src_buf_list(struct kaelz4_async_req *req, const struct kaelz4_buffer_list *src,
-                                            unsigned int *index, size_t *offset, size_t rem_len)
+    unsigned int *index, size_t *offset, size_t rem_len)
 {
     size_t req_size;
 
@@ -1689,13 +1619,14 @@ const kaelz4_post_process_handle_t g_post_process_handle[KAELZ4_ASYNC_BUTT] = {
     [KAELZ4_ASYNC_LZ77_RAW] = kaelz4_async_lz77_post_handle,
 };
 
-int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
-                          lz4_async_callback callback, struct kaelz4_result *result,
-                          enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
+int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result,
+    enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
 {
     struct kaelz4_compress_ctx *prev_tail = ctrl->tail;
     int queue_was_empty = (ctrl->ctx_head == NULL);
-    struct kaelz4_compress_ctx *compress_ctx = (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
+    struct kaelz4_compress_ctx *compress_ctx =
+        (struct kaelz4_compress_ctx *)kae_malloc(sizeof(struct kaelz4_compress_ctx));
     if (unlikely(compress_ctx == NULL)) {
         US_ERR("Alloc compress_ctx failed!\n");
         goto err_callback;
@@ -1752,8 +1683,9 @@ err_callback:
     return KAE_LZ4_ALLOC_FAIL;
 }
 
-int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf, struct kaelz4_buffer_list *dst,
-                                struct kaelz4_result *result, enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr)
+int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf,
+    struct kaelz4_buffer_list *dst, struct kaelz4_result *result, enum kae_lz4_async_data_format data_format,
+    const LZ4F_preferences_t *ptr)
 {
     size_t remainingLength = result->src_size; // 该值用于保存剩余的待压缩数据长度
     unsigned int buf_index = 0;
@@ -1797,8 +1729,7 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
          * sequence walk within the caller's actual slot capacity without a
          * duplicate pass over the source request layout.
          */
-        if (unlikely(tuple_offset > tuple_len ||
-                     tuple_len - tuple_offset < sizeof(struct kaelz4_seq_result))) {
+        if (unlikely(tuple_offset > tuple_len || tuple_len - tuple_offset < sizeof(struct kaelz4_seq_result))) {
             US_ERR("kaelz4 rebuild tuple has no header at offset %zu\n", tuple_offset);
             result->status = KAE_LZ4_INVAL_PARA;
             result->dst_len = 0;
@@ -1810,8 +1741,7 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
             tuple_chunk_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
         }
 
-        struct kaelz4_seq_result *seq_result =
-            (struct kaelz4_seq_result *)(tuple_start + tuple_offset);
+        struct kaelz4_seq_result *seq_result = (struct kaelz4_seq_result *)(tuple_start + tuple_offset);
         if (unlikely(kaelz4_check_rebuild_seq_result(seq_result, tuple_chunk_len) != KAE_LZ4_SUCC)) {
             result->status = KAE_LZ4_INVAL_PARA;
             result->dst_len = 0;
