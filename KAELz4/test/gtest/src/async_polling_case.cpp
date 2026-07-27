@@ -1121,8 +1121,8 @@ void RunResetPendingCase(MemoryMode mode)
     RunSingleCase(mode, TaskFormat::kBlock, kSmallSize, 1, true, false, 0x5000);
 }
 
-struct RebuildValidationCase {
-    RebuildValidationCase(size_t src_size, size_t tuple_len, int src_segments = 1)
+struct RebuildCase {
+    RebuildCase(size_t src_size, size_t tuple_len, int src_segments = 1)
     {
         expected = GenerateInput(src_size, 0x9000);
         src_storage.assign(src_size + 64, 0);
@@ -1165,12 +1165,6 @@ struct RebuildValidationCase {
     seqDef *FirstSeq()
     {
         return reinterpret_cast<seqDef *>(tuple_storage.data() + sizeof(uint32_t));
-    }
-
-    void ResetResult()
-    {
-        result.status = KAE_LZ4_SUCC;
-        result.dst_len = 1234;
     }
 
     std::vector<uint8_t> expected;
@@ -1255,11 +1249,6 @@ struct GuardedRebuildCase {
     kaelz4_buffer_list dst = {};
     kaelz4_result result = {};
 };
-
-size_t MaxSeqNumPerTupleChunk()
-{
-    return (KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(uint32_t)) / sizeof(seqDef);
-}
 
 std::vector<uint8_t> BuildSingleSequenceSource(size_t final_literal_len)
 {
@@ -1377,84 +1366,19 @@ TEST(KAELz4AsyncPolling, AsyncReqAllocFailurePreservesExistingQueue)
     EXPECT_EQ(existing_ctx.next, nullptr);
 }
 
-// Purpose: rebuild API entry validation. Verifies that public block/frame
-// rebuild calls reject NULL top-level arguments before touching nested fields.
-TEST(KAELz4AsyncPolling, RebuildRejectsNullArguments)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(nullptr, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    tc.ResetResult();
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, nullptr, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    tc.ResetResult();
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, nullptr, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, nullptr, &tc.preferences), KAE_LZ4_INVAL_PARA);
-}
-
-// Purpose: tuple buffer-list shape validation. Verifies that rebuild rejects
-// tuple lists that are not the single-buffer format documented by KAELz4.
-TEST(KAELz4AsyncPolling, RebuildRejectsInvalidTupleBufferList)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    tc.tuple.buf_num = 0;
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-
-    tc.ResetResult();
-    tc.tuple.buf_num = 2;
-    EXPECT_EQ(
-        KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: tuple total-length validation for block rebuild. Verifies that a
-// source requiring several 64KB tuple chunks cannot be rebuilt from a short
-// tuple buffer.
-TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferBlock)
-{
-    RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 3);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: tuple total-length validation for frame rebuild. Verifies that the
-// frame wrapper path rejects a missing tuple slot when that request is reached.
-TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferFrame)
-{
-    RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 2);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    EXPECT_EQ(
-        KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
 // Purpose: partial final tuple-slot compatibility. A 4KB request historically
 // advertises an 8KB tuple buffer; rebuild must accept it when seq_num fits the
 // bytes that are actually present instead of requiring a nominal 128KB slot.
 TEST(KAELz4AsyncPolling, RebuildAcceptsPartialTupleSlot)
 {
-    RebuildValidationCase block_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    RebuildCase block_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
     *block_tc.SeqNum() = 0;
 
     ASSERT_EQ(
         KAELZ4_rebuild_lz77_to_block(&block_tc.src, &block_tc.tuple, &block_tc.dst, &block_tc.result), KAE_LZ4_SUCC);
     ASSERT_TRUE(DecompressBlock(block_tc.dst_storage.data(), block_tc.result.dst_len, block_tc.expected));
 
-    RebuildValidationCase frame_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    RebuildCase frame_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
     *frame_tc.SeqNum() = 0;
 
     ASSERT_EQ(KAELZ4_rebuild_lz77_to_frame(
@@ -1468,7 +1392,7 @@ TEST(KAELz4AsyncPolling, RebuildAcceptsPartialTupleSlot)
 // shorter 64KB capacity.
 TEST(KAELz4AsyncPolling, RebuildAcceptsPartialFinalTupleSlot)
 {
-    RebuildValidationCase tc(kLargeSize, 2 * kLargeSize, 3);
+    RebuildCase tc(kLargeSize, 2 * kLargeSize, 3);
     *reinterpret_cast<uint32_t *>(tc.tuple_storage.data()) = 0;
     *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() + KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
     *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() + 2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
@@ -1482,97 +1406,16 @@ TEST(KAELz4AsyncPolling, RebuildAcceptsPartialFinalTupleSlot)
 // as literals, so a simple ceil(src/64KB) calculation must not demand slot 2.
 TEST(KAELz4AsyncPolling, RebuildUsesHardwareRequestSplitAtMflimitBoundary)
 {
-    RebuildValidationCase tc(kLz4BlockSize + 1, KAE_LZ77_SEQ_DATA_SIZE_PER_64K, 2);
+    RebuildCase tc(kLz4BlockSize + 1, KAE_LZ77_SEQ_DATA_SIZE_PER_64K, 2);
     *tc.SeqNum() = 0;
 
     ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
     ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
 }
 
-// Purpose: SGE-cap request splitting. A highly fragmented source can create
-// more requests than the byte-only capacity estimate. Rebuild must reject a
-// missing second slot safely and accept the same layout when that slot exists.
-TEST(KAELz4AsyncPolling, RebuildAccountsForSgeCapRequestSplit)
-{
-    const size_t fragmented_size = 256;
-    const int fragmented_segments = 256;
-
-    RebuildValidationCase short_tc(
-        fragmented_size, KAELZ4_compress_get_tuple_buf_len(fragmented_size), fragmented_segments);
-    *short_tc.SeqNum() = 0;
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&short_tc.src, &short_tc.tuple, &short_tc.dst, &short_tc.result),
-        KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(short_tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(short_tc.result.dst_len, 0U);
-
-    RebuildValidationCase complete_tc(fragmented_size, 2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K, fragmented_segments);
-    *complete_tc.SeqNum() = 0;
-    *reinterpret_cast<uint32_t *>(complete_tc.tuple_storage.data() + KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
-    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&complete_tc.src, &complete_tc.tuple, &complete_tc.dst, &complete_tc.result),
-        KAE_LZ4_SUCC);
-    ASSERT_TRUE(DecompressBlock(complete_tc.dst_storage.data(), complete_tc.result.dst_len, complete_tc.expected));
-}
-
-// Purpose: source-size validation. Verifies that callers cannot drive the
-// rebuild loop with result->src_size that differs from the actual source list.
-TEST(KAELz4AsyncPolling, RebuildRejectsSrcSizeMismatch)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize), 2);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-    tc.result.src_size = kSmallSize + 1;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: per-chunk seq_num validation. Verifies that an oversized seq_num is
-// rejected even when the tuple buffer has the documented total capacity.
-TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastTupleChunk)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = static_cast<uint32_t>(MaxSeqNumPerTupleChunk() + 1);
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: partial-slot seq_num validation. The capacity check must use the
-// advertised 8KB slot, not the nominal 128KB stride, before walking seqDef.
-TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastPartialTupleSlot)
-{
-    RebuildValidationCase tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
-    const size_t max_seq_num = (kPartialTupleBufferSize - sizeof(uint32_t)) / sizeof(seqDef);
-    *tc.SeqNum() = static_cast<uint32_t>(max_seq_num + 1);
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: embedded seqDef validation. Verifies that a tuple whose seqDef would
-// consume more bytes than the current source chunk fails before copying input.
-TEST(KAELz4AsyncPolling, RebuildRejectsMalformedSeqFields)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
-    *tc.SeqNum() = 1;
-    seqDef *seq = tc.FirstSeq();
-    seq->litLength = static_cast<U32>(kSmallSize + 1);
-    seq->offBase = 0;
-    seq->mlBase = 1;
-
-    EXPECT_NE(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
-    EXPECT_NE(tc.result.status, KAE_LZ4_SUCC);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
 // Purpose: rebuild literal copying from a guarded source segment. Verifies that
-// a malformed-but-bounds-checked tuple with a non-16-byte literal does not read
-// into the guard page while copying within the current segment.
+// a hardware-format tuple with a non-16-byte literal does not read into the
+// guard page while copying within the current segment.
 TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedDirectLiteral)
 {
     std::vector<uint8_t> input = BuildSingleSequenceSource(1);
@@ -1588,6 +1431,27 @@ TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedDirectLiteral)
 
     ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
     ASSERT_GT(tc.result.dst_len, 0U);
+}
+
+// Purpose: the sequence fits in the current SGE, but its 16-byte rounded
+// literal load would cross that SGE's guard page. The request still has the
+// required 12-byte logical tail, split as one byte here and eleven in the next
+// SGE, so the bounded wild-copy implementation must select its exact fallback.
+TEST(KAELz4AsyncPolling, RebuildCopiesGuardedDirectLiteralBeforeSegmentTail)
+{
+    std::vector<uint8_t> input = BuildSingleSequenceSource(12);
+    GuardedRebuildCase tc(input, {22, input.size() - 22});
+    ASSERT_TRUE(tc.valid);
+    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
+
+    *tc.SeqNum() = 1;
+    seqDef *seq = tc.FirstSeq();
+    seq->litLength = 17;
+    seq->offBase = 0;
+    seq->mlBase = 1;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
 }
 
 // Purpose: rebuild literal copying across guarded source segments. Verifies that

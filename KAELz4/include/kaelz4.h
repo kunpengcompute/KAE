@@ -253,6 +253,9 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
     struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to block
+ * @note: For performance, this API does not validate rebuild input. tuple_buf
+ * must be the unmodified LZ77 tuple returned by a successful KAE hardware
+ * compression request for the same src and result. Other input is unsupported.
  * @param: src [IN] : input data
  * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
@@ -263,6 +266,8 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
     struct kaelz4_buffer_list *dst, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to frame
+ * @note: For performance, this API has the same trusted-input contract as
+ * KAELZ4_rebuild_lz77_to_block().
  * @param: src [IN] : input data
  * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
