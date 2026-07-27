@@ -295,7 +295,13 @@ static void kaezip_compress_async_callback(struct kaezip_compress_ctx *compress_
     }
 
     if (result->obuf_crc != NULL && status == KAE_ZLIB_SUCC) {
-        *result->obuf_crc = KAEZIPCRC32(*result->obuf_crc, compress_ctx->dst->buf[0].data, compress_ctx->dst_len);
+        size_t remaining = compress_ctx->dst_len;
+        for (unsigned int i = 0; i < compress_ctx->dst->buf_num && remaining > 0; i++) {
+            struct kaezip_buffer *dst_buf = &compress_ctx->dst->buf[i];
+            size_t crc_len = remaining < dst_buf->buf_len ? remaining : dst_buf->buf_len;
+            *result->obuf_crc = KAEZIPCRC32(*result->obuf_crc, dst_buf->data, crc_len);
+            remaining -= crc_len;
+        }
     }
 
     if (unlikely(status != KAE_ZLIB_SUCC)) {
