@@ -97,15 +97,21 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 
 ```
 /**
- * @brief: Get tuple buffer length by src length.
- * @param: src_len [IN] : src length
+ * @brief: Get the recommended tuple buffer capacity for raw LZ77 compression.
+ * The returned capacity is sufficient for src_len bytes when the source passed
+ * to KAELZ4_compress_lz77_async_in_session contains 1 to 255 SGEs. A smaller
+ * buffer may also succeed if the actual tuple output fits; otherwise compression
+ * reports KAE_LZ4_DST_BUF_OVERFLOW.
+ * @param: src_len [IN] : total source length in bytes for one compression call.
+ * @return: Recommended tuple buffer capacity in bytes, or 0 if src_len is zero
+ * or the calculation overflows size_t.
  */
 size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
 
 /**
  * @brief: lz77 compress async api
  * @param: sess : session
- * @param: src [IN] : input data, must be sgl
+ * @param: src [IN] : input data in SGL format; buf_num must be in [1, 255].
  * @param: tuple [OUT] : tuple buf, lz77 output data, must be sgl, only support buf_num == 1 now.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.

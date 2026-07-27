@@ -88,6 +88,8 @@ const size_t kSmallSize = 32 * 1024;
 const size_t kLargeSize = 160 * 1024;
 const size_t kFrameSize = 192 * 1024;
 const size_t kLz4BlockSize = 64 * 1024;
+const size_t kPartialTupleSourceSize = 4 * 1024;
+const size_t kPartialTupleBufferSize = 2 * kPartialTupleSourceSize;
 const size_t kLiteralOnlyLz77Size = 11;
 const int kInflightTasks = 16;
 const int kBackpressureTasks = 72;
@@ -635,7 +637,8 @@ void InitFramePreferences(AsyncTask *task, bool full_checksums)
 }
 
 std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_t size, int src_segments,
-                                       bool with_crc, uint32_t seed, bool frame_full_checksums)
+                                       bool with_crc, uint32_t seed, bool frame_full_checksums,
+                                       size_t lz77_tuple_capacity = 0)
 {
     std::unique_ptr<AsyncTask> task(new AsyncTask(format));
     task->done.store(false, std::memory_order_relaxed);
@@ -681,7 +684,9 @@ std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_
     task->final_dst.usr_data = nullptr;
 
     if (task->IsLz77()) {
-        size_t tuple_len = KAELZ4_compress_get_tuple_buf_len(size);
+        size_t tuple_len = lz77_tuple_capacity != 0
+                               ? lz77_tuple_capacity
+                               : KAELZ4_compress_get_tuple_buf_len(size);
         if (mode == MemoryMode::kZeroCopy) {
             // Zero-copy LZ77 raw tuple output is also an SGL destination, so the
             // tuple buffer must be hugetlb-backed and mappable by HugeIovaMap.
@@ -919,6 +924,9 @@ int SubmitTask(void *session, AsyncTask *task)
         return ::testing::AssertionFailure() << "rebuild status=" << task->rebuild_status
                                              << " result status=" << task->result.status;
     }
+    if (task->result.status != KAE_LZ4_SUCC) {
+        return ::testing::AssertionFailure() << "final result status=" << task->result.status;
+    }
     if (task->result.dst_len == 0) {
         return ::testing::AssertionFailure() << "compressed output length is zero";
     }
@@ -951,12 +959,15 @@ int SubmitTask(void *session, AsyncTask *task)
 }
 
 void RunSingleCase(MemoryMode mode, TaskFormat format, size_t size, int segments,
-                   bool with_crc, bool frame_full_checksums, uint32_t seed)
+                   bool with_crc, bool frame_full_checksums, uint32_t seed,
+                   size_t lz77_tuple_capacity = 0)
 {
     PollingSession session(mode);
     ASSERT_NE(session.get(), nullptr);
 
-    std::unique_ptr<AsyncTask> task = PrepareTask(mode, format, size, segments, with_crc, seed, frame_full_checksums);
+    std::unique_ptr<AsyncTask> task = PrepareTask(mode, format, size, segments, with_crc,
+                                                  seed, frame_full_checksums,
+                                                  lz77_tuple_capacity);
     ASSERT_NE(task, nullptr);
 
     ASSERT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_SUCC);
@@ -1278,8 +1289,8 @@ void UnexpectedQueueRollbackCallback(kaelz4_result *result)
 
 } // namespace
 
-// Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the documented
-// 64KB chunk rounding used by async LZ77 raw output buffers.
+// Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the source-length
+// full-stride estimate and its overflow sentinel.
 TEST(KAELz4AsyncPolling, LZ77TupleBufferLengthRoundsBy64KB)
 {
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(0), 0U);
@@ -1287,6 +1298,38 @@ TEST(KAELz4AsyncPolling, LZ77TupleBufferLengthRoundsBy64KB)
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize), KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize + 1),
               2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+
+    const size_t max_chunks = SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+    const size_t max_src_len = max_chunks * kLz4BlockSize;
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(max_src_len),
+              max_chunks * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(max_src_len + 1), 0U);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(SIZE_MAX), 0U);
+}
+
+// Purpose: async compression entry-point validation. A source list with more
+// than 255 SGEs must be rejected before any hardware request is submitted.
+TEST(KAELz4AsyncPolling, LZ77CompressionRejectsTooManySourceSges)
+{
+    PollingSession session(MemoryMode::kNonZeroCopy);
+    ASSERT_NE(session.get(), nullptr);
+
+    std::unique_ptr<AsyncTask> task =
+        PrepareTask(MemoryMode::kNonZeroCopy, TaskFormat::kLz77ToBlock,
+                    256, 256, false, 0x08, false);
+    ASSERT_NE(task, nullptr);
+
+    EXPECT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_INVAL_PARA);
+    EXPECT_FALSE(task->done.load(std::memory_order_acquire));
+}
+
+// Purpose: keep the SGE-count limit specific to raw LZ77. Regular block
+// compression accepts more than 255 source SGEs and splits them across
+// multiple hardware requests internally.
+TEST(KAELz4AsyncPolling, BlockCompressionAcceptsMoreThan255SourceSges)
+{
+    RunSingleCase(MemoryMode::kNonZeroCopy, TaskFormat::kBlock,
+                  kLz4BlockSize, 256, true, false, 0x09);
 }
 
 // Purpose: async control cleanup validation. Verifies that clearing an empty
@@ -1396,7 +1439,7 @@ TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferBlock)
 }
 
 // Purpose: tuple total-length validation for frame rebuild. Verifies that the
-// frame wrapper path performs the same tuple length checks before post-processing.
+// frame wrapper path rejects a missing tuple slot when that request is reached.
 TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferFrame)
 {
     RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 2);
@@ -1407,6 +1450,96 @@ TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferFrame)
               KAE_LZ4_INVAL_PARA);
     EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
     EXPECT_EQ(tc.result.dst_len, 0U);
+}
+
+// Purpose: partial final tuple-slot compatibility. A 4KB request historically
+// advertises an 8KB tuple buffer; rebuild must accept it when seq_num fits the
+// bytes that are actually present instead of requiring a nominal 128KB slot.
+TEST(KAELz4AsyncPolling, RebuildAcceptsPartialTupleSlot)
+{
+    RebuildValidationCase block_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    *block_tc.SeqNum() = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&block_tc.src, &block_tc.tuple,
+                                           &block_tc.dst, &block_tc.result),
+              KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(block_tc.dst_storage.data(), block_tc.result.dst_len,
+                                block_tc.expected));
+
+    RebuildValidationCase frame_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    *frame_tc.SeqNum() = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_frame(&frame_tc.src, &frame_tc.tuple,
+                                           &frame_tc.dst, &frame_tc.result,
+                                           &frame_tc.preferences),
+              KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressFrame(frame_tc.dst_storage.data(), frame_tc.result.dst_len,
+                                frame_tc.expected));
+}
+
+// Purpose: fixed-stride layout with a partial final slot. Complete 64KB
+// requests retain 128KB strides, while only the final 32KB request uses its
+// shorter 64KB capacity.
+TEST(KAELz4AsyncPolling, RebuildAcceptsPartialFinalTupleSlot)
+{
+    RebuildValidationCase tc(kLargeSize, 2 * kLargeSize, 3);
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data()) = 0;
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() +
+                                  KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() +
+                                  2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result),
+              KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
+}
+
+// Purpose: request-count compatibility around MFLIMIT. Inputs up to
+// 64KB+MFLIMIT remain one hardware request because the final 12 bytes are kept
+// as literals, so a simple ceil(src/64KB) calculation must not demand slot 2.
+TEST(KAELz4AsyncPolling, RebuildUsesHardwareRequestSplitAtMflimitBoundary)
+{
+    RebuildValidationCase tc(kLz4BlockSize + 1,
+                             KAE_LZ77_SEQ_DATA_SIZE_PER_64K, 2);
+    *tc.SeqNum() = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result),
+              KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
+}
+
+// Purpose: SGE-cap request splitting. A highly fragmented source can create
+// more requests than the byte-only capacity estimate. Rebuild must reject a
+// missing second slot safely and accept the same layout when that slot exists.
+TEST(KAELz4AsyncPolling, RebuildAccountsForSgeCapRequestSplit)
+{
+    const size_t fragmented_size = 256;
+    const int fragmented_segments = 256;
+
+    RebuildValidationCase short_tc(
+        fragmented_size,
+        KAELZ4_compress_get_tuple_buf_len(fragmented_size),
+        fragmented_segments);
+    *short_tc.SeqNum() = 0;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&short_tc.src, &short_tc.tuple,
+                                            &short_tc.dst, &short_tc.result),
+              KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(short_tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(short_tc.result.dst_len, 0U);
+
+    RebuildValidationCase complete_tc(
+        fragmented_size,
+        2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K,
+        fragmented_segments);
+    *complete_tc.SeqNum() = 0;
+    *reinterpret_cast<uint32_t *>(complete_tc.tuple_storage.data() +
+                                  KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&complete_tc.src, &complete_tc.tuple,
+                                            &complete_tc.dst, &complete_tc.result),
+              KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(complete_tc.dst_storage.data(),
+                                complete_tc.result.dst_len,
+                                complete_tc.expected));
 }
 
 // Purpose: source-size validation. Verifies that callers cannot drive the
@@ -1432,6 +1565,21 @@ TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastTupleChunk)
     *tc.SeqNum() = static_cast<uint32_t>(MaxSeqNumPerTupleChunk() + 1);
 
     EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+}
+
+// Purpose: partial-slot seq_num validation. The capacity check must use the
+// advertised 8KB slot, not the nominal 128KB stride, before walking seqDef.
+TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastPartialTupleSlot)
+{
+    RebuildValidationCase tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    const size_t max_seq_num =
+        (kPartialTupleBufferSize - sizeof(uint32_t)) / sizeof(seqDef);
+    *tc.SeqNum() = static_cast<uint32_t>(max_seq_num + 1);
+
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result),
+              KAE_LZ4_INVAL_PARA);
     EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
     EXPECT_EQ(tc.result.dst_len, 0U);
 }
@@ -1535,6 +1683,17 @@ TEST(KAELz4AsyncPolling, ZeroCopy_LZ77RawToBlock_WithCRC)
 {
     KAELZ4_REQUIRE_ZERO_COPY();
     RunSingleCase(MemoryMode::kZeroCopy, TaskFormat::kLz77ToBlock, kLargeSize, 4, true, false, 0x05);
+}
+
+// Purpose: end-to-end compatibility with kzip's historical partial tuple
+// allocation. Sends a 4KB source to hardware with an actual 8KB raw tuple
+// buffer, then rebuilds, decompresses, compares bytes, and verifies CRC.
+TEST(KAELz4AsyncPolling, ZeroCopy_LZ77Raw4KBToBlock_With8KBTuple)
+{
+    KAELZ4_REQUIRE_ZERO_COPY();
+    RunSingleCase(MemoryMode::kZeroCopy, TaskFormat::kLz77ToBlock,
+                  kPartialTupleSourceSize, 1, true, false, 0x07,
+                  kPartialTupleBufferSize);
 }
 
 // Purpose: zero-copy LZ77 raw output rebuilt to frame format. Verifies tuple to

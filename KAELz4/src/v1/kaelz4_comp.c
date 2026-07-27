@@ -437,12 +437,19 @@ static int kaelz4_rebuild_get_seq_consumed(U32 litLength, U16 mlBase, size_t con
     return KAE_LZ4_SUCC;
 }
 
-static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_result)
+static int kaelz4_check_rebuild_seq_result(const struct kaelz4_seq_result *seq_result,
+                                           size_t tuple_chunk_len)
 {
-    size_t max_seq_num = (KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num)) / sizeof(seqDef);
+    if (unlikely(tuple_chunk_len < sizeof(seq_result->seq_num))) {
+        US_ERR("kaelz4 rebuild tuple chunk is shorter than its header\n");
+        return KAE_LZ4_INVAL_PARA;
+    }
+
+    size_t max_seq_num = (tuple_chunk_len - sizeof(seq_result->seq_num)) / sizeof(seqDef);
 
     if (unlikely((size_t)seq_result->seq_num > max_seq_num)) {
-        US_ERR("kaelz4 rebuild tuple seq_num %u exceeds max %zu\n", seq_result->seq_num, max_seq_num);
+        US_ERR("kaelz4 rebuild tuple seq_num %u exceeds available max %zu\n",
+               seq_result->seq_num, max_seq_num);
         return KAE_LZ4_INVAL_PARA;
     }
 
@@ -1203,7 +1210,7 @@ static int kaelz4_async_lz77_post_handle(struct kaelz4_async_req *req, const str
         req_result->seq_num = req->zc.seqnum;
     }
 
-    return KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+    return sizeof(req_result->seq_num) + req->dst.buf[0].buf_len;
 }
 
 int kaelz4_async_is_thread_do_comp_full(struct kaelz4_async_ctrl *ctrl)
@@ -1525,19 +1532,33 @@ static int kaelz4_fill_hw_req_dst_buf_list(struct kaelz4_async_req *req, const s
     req->dst.buf_num = 0;
     req->dst.usr_data = dst->usr_data;
     if (data_format == KAELZ4_ASYNC_LZ77_RAW) {
+        size_t tuple_offset;
+        size_t tuple_chunk_len;
+
         req->dst.buf_num = 1;
-        struct kaelz4_seq_result *seq_result = dst->buf[0].data + req->idx * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
-        req->dst.buf[0].data = seq_result->seq_start;
-        if (req->dst.buf[0].data >= dst->buf[0].data + dst->buf[0].buf_len) {
+        if (unlikely((size_t)req->idx > SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K)) {
+            req->dst.buf[0].data = NULL;
             req->dst.buf[0].buf_len = 0;
             return KAE_LZ4_DST_BUF_OVERFLOW;
         }
 
-        if (dst->buf[0].buf_len >= (req->idx + 1) * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) {
-            req->dst.buf[0].buf_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(seq_result->seq_num);
-        } else {
-            req->dst.buf[0].buf_len = dst->buf[0].data + dst->buf[0].buf_len - req->dst.buf[0].data;
+        tuple_offset = (size_t)req->idx * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        if (unlikely(tuple_offset > dst->buf[0].buf_len ||
+                     dst->buf[0].buf_len - tuple_offset <= sizeof(unsigned int))) {
+            req->dst.buf[0].data = NULL;
+            req->dst.buf[0].buf_len = 0;
+            return KAE_LZ4_DST_BUF_OVERFLOW;
         }
+
+        tuple_chunk_len = dst->buf[0].buf_len - tuple_offset;
+        if (tuple_chunk_len > KAE_LZ77_SEQ_DATA_SIZE_PER_64K) {
+            tuple_chunk_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        }
+
+        struct kaelz4_seq_result *seq_result =
+            (struct kaelz4_seq_result *)((unsigned char *)dst->buf[0].data + tuple_offset);
+        req->dst.buf[0].data = seq_result->seq_start;
+        req->dst.buf[0].buf_len = tuple_chunk_len - sizeof(seq_result->seq_num);
     }
     return KAE_LZ4_SUCC;
 }
@@ -1737,8 +1758,10 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
     size_t remainingLength = result->src_size; // 该值用于保存剩余的待压缩数据长度
     unsigned int buf_index = 0;
     size_t buf_offset = 0;
-    int idx = 0;
-    struct kaelz4_seq_result *seq_result = tuple_buf->buf[0].data;
+    unsigned int idx = 0;
+    unsigned char *tuple_start = tuple_buf->buf[0].data;
+    size_t tuple_len = tuple_buf->buf[0].buf_len;
+    size_t tuple_offset = 0;
     struct kaelz4_priv_save_info save_info = {0};
     int ret;
 
@@ -1756,16 +1779,45 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
         req.last = 0;
         req.idx = idx;
         kaelz4_fill_hw_req_src_buf_list(&req, src, &buf_index, &buf_offset, remainingLength);
+        if (unlikely(req.src_size == 0 || req.src_size > remainingLength)) {
+            US_ERR("kaelz4 rebuild source chunk layout is invalid\n");
+            result->status = KAE_LZ4_INVAL_PARA;
+            result->dst_len = 0;
+            return KAE_LZ4_INVAL_PARA;
+        }
+
         remainingLength -= req.src_size;
         // 最后一块实际下发给芯片的长度是 src_size - MFLIMIT
         if (remainingLength == 0) {
             req.last = 1;
         }
-        if (unlikely(kaelz4_check_rebuild_seq_result(seq_result) != KAE_LZ4_SUCC)) {
+
+        /*
+         * Validate only the tuple slot about to be consumed. This keeps the
+         * sequence walk within the caller's actual slot capacity without a
+         * duplicate pass over the source request layout.
+         */
+        if (unlikely(tuple_offset > tuple_len ||
+                     tuple_len - tuple_offset < sizeof(struct kaelz4_seq_result))) {
+            US_ERR("kaelz4 rebuild tuple has no header at offset %zu\n", tuple_offset);
             result->status = KAE_LZ4_INVAL_PARA;
             result->dst_len = 0;
             return KAE_LZ4_INVAL_PARA;
         }
+
+        size_t tuple_chunk_len = tuple_len - tuple_offset;
+        if (tuple_chunk_len > KAE_LZ77_SEQ_DATA_SIZE_PER_64K) {
+            tuple_chunk_len = KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        }
+
+        struct kaelz4_seq_result *seq_result =
+            (struct kaelz4_seq_result *)(tuple_start + tuple_offset);
+        if (unlikely(kaelz4_check_rebuild_seq_result(seq_result, tuple_chunk_len) != KAE_LZ4_SUCC)) {
+            result->status = KAE_LZ4_INVAL_PARA;
+            result->dst_len = 0;
+            return KAE_LZ4_INVAL_PARA;
+        }
+
         req.zc.seqStore.sequencesStart = (seqDef *)seq_result->seq_start;
         req.zc.seqnum = seq_result->seq_num;
         ret = g_post_process_handle[data_format](&req, &req.src, dst->buf[0].data + save_info.dst_len, &save_info);
@@ -1780,7 +1832,14 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
 
         idx++;
         save_info.dst_len += ret;
-        seq_result = (void *)seq_result + KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        if (remainingLength) {
+            if (unlikely(tuple_offset > SIZE_MAX - KAE_LZ77_SEQ_DATA_SIZE_PER_64K)) {
+                result->status = KAE_LZ4_INVAL_PARA;
+                result->dst_len = 0;
+                return KAE_LZ4_INVAL_PARA;
+            }
+            tuple_offset += KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+        }
     }
 
     if (result->ibuf_crc != NULL) {

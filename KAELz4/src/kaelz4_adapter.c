@@ -770,7 +770,9 @@ int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffe
 int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst,
                                           lz4_async_callback callback, struct kaelz4_result *result)
 {
-    if (unlikely(sess == NULL || kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
+    if (unlikely(sess == NULL || src == NULL ||
+                 src->buf_num > KAE_LZ4_RAW_MAX_SGE_NUM ||
+                 kaelz4_check_param_valid(src, dst, callback, result) != KAE_LZ4_SUCC)) {
         return KAE_LZ4_INVAL_PARA;
     }
 
@@ -849,6 +851,10 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len)
 {
     size_t freg_cnt = (src_len > 0) ? ((src_len - 1) / SMALL_BLOCK_SIZE + 1) : 0;
 
+    if (unlikely(freg_cnt > SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K)) {
+        return 0;
+    }
+
     return freg_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
 }
 
@@ -867,8 +873,6 @@ static int kaelz4_check_rebuild_param_valid(const struct kaelz4_buffer_list *src
                                             struct kaelz4_result *result)
 {
     size_t src_total = 0;
-    size_t chunk_cnt;
-    size_t tuple_len;
 
     if (unlikely(src == NULL || tuple_buf == NULL || dst == NULL || result == NULL)) {
         return kaelz4_rebuild_param_invalid(result);
@@ -894,17 +898,8 @@ static int kaelz4_check_rebuild_param_valid(const struct kaelz4_buffer_list *src
         return kaelz4_rebuild_param_invalid(result);
     }
 
-    if (unlikely(tuple_buf->buf_num != 1 || tuple_buf->buf[0].data == NULL)) {
-        return kaelz4_rebuild_param_invalid(result);
-    }
-
-    chunk_cnt = (result->src_size - 1) / SMALL_BLOCK_SIZE + 1;
-    if (unlikely(chunk_cnt > SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K)) {
-        return kaelz4_rebuild_param_invalid(result);
-    }
-
-    tuple_len = chunk_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
-    if (unlikely(tuple_buf->buf[0].buf_len < tuple_len)) {
+    if (unlikely(tuple_buf->buf_num != 1 || tuple_buf->buf[0].data == NULL ||
+                 tuple_buf->buf[0].buf_len < sizeof(uint32_t))) {
         return kaelz4_rebuild_param_invalid(result);
     }
 
