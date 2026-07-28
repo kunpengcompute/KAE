@@ -26,10 +26,8 @@ extern "C" {
 
 extern void kaelz4_ctx_clear(struct kaelz4_async_ctrl *ctrl);
 extern int kaelz4_compress_async(struct kaelz4_async_ctrl *ctrl, const struct kaelz4_buffer_list *src,
-                                 struct kaelz4_buffer_list *dst, lz4_async_callback callback,
-                                 struct kaelz4_result *result,
-                                 enum kae_lz4_async_data_format data_format,
-                                 const LZ4F_preferences_t *ptr);
+    struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result,
+    enum kae_lz4_async_data_format data_format, const LZ4F_preferences_t *ptr);
 }
 
 extern __thread struct kaelz4_async_ctrl g_async_ctrl;
@@ -48,8 +46,7 @@ extern "C" void *__real_malloc(size_t size);
 
 extern "C" void *__wrap_malloc(size_t size)
 {
-    if (g_thread_malloc_fail_point == MallocFailPoint::kAsyncReqAlloc &&
-        g_thread_malloc_fail_count > 0 &&
+    if (g_thread_malloc_fail_point == MallocFailPoint::kAsyncReqAlloc && g_thread_malloc_fail_count > 0 &&
         size == g_thread_malloc_fail_size) {
         if (g_thread_malloc_fail_skip > 0) {
             --g_thread_malloc_fail_skip;
@@ -82,12 +79,15 @@ extern "C" void *__wrap_malloc(size_t size)
 #define MAP_HUGE_1GB (30 << MAP_HUGE_SHIFT)
 #endif
 
-namespace {
+namespace
+{
 
 const size_t kSmallSize = 32 * 1024;
 const size_t kLargeSize = 160 * 1024;
 const size_t kFrameSize = 192 * 1024;
 const size_t kLz4BlockSize = 64 * 1024;
+const size_t kPartialTupleSourceSize = 4 * 1024;
+const size_t kPartialTupleBufferSize = 2 * kPartialTupleSourceSize;
 const size_t kLiteralOnlyLz77Size = 11;
 const int kInflightTasks = 16;
 const int kBackpressureTasks = 72;
@@ -96,8 +96,9 @@ const int kTimeoutMs = 30000;
 const uint64_t kPagemapPresent = 1ULL << 63;
 const uint64_t kPagemapPfnMask = (1ULL << 55) - 1;
 
-class ScopedAsyncReqMallocFailure {
-public:
+class ScopedAsyncReqMallocFailure
+{
+  public:
     explicit ScopedAsyncReqMallocFailure(int fail_count)
     {
         g_thread_malloc_fail_point = MallocFailPoint::kAsyncReqAlloc;
@@ -191,10 +192,8 @@ uint32_t Crc32cSoftware(uint32_t crc, const uint8_t *data, size_t len)
         return ::testing::AssertionSuccess();
     }
 
-    return ::testing::AssertionFailure()
-        << "CRC mismatch, observed=0x" << std::hex << observed
-        << " crc32=0x" << crc32_value
-        << " crc32c=0x" << crc32c_value << std::dec;
+    return ::testing::AssertionFailure() << "CRC mismatch, observed=0x" << std::hex << observed << " crc32=0x"
+                                         << crc32_value << " crc32c=0x" << crc32c_value << std::dec;
 }
 
 size_t OutputCapacity(size_t src_size, bool frame)
@@ -209,9 +208,12 @@ size_t OutputCapacity(size_t src_size, bool frame)
 // translation to KAELz4's iova_map_fn. For hugetlb mappings, using the first
 // base-page PFN of each hugepage plus the in-hugepage offset matches kzip's
 // hugepage zero-copy model and avoids depending on the UADK user allocator.
-class PageMap {
-public:
-    PageMap() : fd_(-1), page_size_(0), huge_page_size_(0), base_(nullptr), total_size_(0) {}
+class PageMap
+{
+  public:
+    PageMap() : fd_(-1), page_size_(0), huge_page_size_(0), base_(nullptr), total_size_(0)
+    {
+    }
     ~PageMap()
     {
         if (fd_ >= 0) {
@@ -272,7 +274,7 @@ public:
         return reinterpret_cast<void *>(phys);
     }
 
-private:
+  private:
     bool ReadEntry(size_t index, uint64_t *entry)
     {
         if (index >= entries_.size()) {
@@ -305,8 +307,9 @@ private:
 // LZ77 tuple buffers. Keeping the arena alive for the whole test process ensures
 // submitted async tasks never access freed source or tuple memory before their
 // callbacks run.
-class HugeArena {
-public:
+class HugeArena
+{
+  public:
     static HugeArena &Instance()
     {
         static HugeArena arena;
@@ -362,7 +365,7 @@ public:
         return &page_map_;
     }
 
-private:
+  private:
     HugeArena() : base_(MAP_FAILED), total_size_(0), huge_page_size_(0), offset_(0), available_(false)
     {
         // Prefer the 1GB/512MB hugepage sizes used by the kzip-style path. Fall
@@ -370,20 +373,20 @@ private:
         // while still keeping the test on hugepages rather than UADK memory.
         std::vector<HugePageChoice> choices;
         if (FileExists("/sys/devices/system/node/node0/hugepages/hugepages-1048576kB")) {
-            choices.push_back({1024UL * 1024UL * 1024UL, 1024UL * 1024UL * 1024UL,
-                               MAP_HUGE_1GB, "hugepages-1048576kB", "1GB"});
+            choices.push_back(
+                {1024UL * 1024UL * 1024UL, 1024UL * 1024UL * 1024UL, MAP_HUGE_1GB, "hugepages-1048576kB", "1GB"});
         }
         if (FileExists("/sys/devices/system/node/node0/hugepages/hugepages-524288kB")) {
-            choices.push_back({512UL * 1024UL * 1024UL, 512UL * 1024UL * 1024UL,
-                               MAP_HUGE_512MB, "hugepages-524288kB", "512MB"});
+            choices.push_back(
+                {512UL * 1024UL * 1024UL, 512UL * 1024UL * 1024UL, MAP_HUGE_512MB, "hugepages-524288kB", "512MB"});
         }
         if (FileExists("/sys/devices/system/node/node0/hugepages/hugepages-32768kB")) {
-            choices.push_back({512UL * 1024UL * 1024UL, 32UL * 1024UL * 1024UL,
-                               MAP_HUGE_32MB, "hugepages-32768kB", "32MB"});
+            choices.push_back(
+                {512UL * 1024UL * 1024UL, 32UL * 1024UL * 1024UL, MAP_HUGE_32MB, "hugepages-32768kB", "32MB"});
         }
         if (FileExists("/sys/devices/system/node/node0/hugepages/hugepages-2048kB")) {
-            choices.push_back({512UL * 1024UL * 1024UL, 2UL * 1024UL * 1024UL,
-                               MAP_HUGE_2MB, "hugepages-2048kB", "2MB"});
+            choices.push_back(
+                {512UL * 1024UL * 1024UL, 2UL * 1024UL * 1024UL, MAP_HUGE_2MB, "hugepages-2048kB", "2MB"});
         }
 
         if (choices.empty()) {
@@ -394,7 +397,7 @@ private:
         std::string last_error;
         for (size_t i = 0; i < choices.size(); ++i) {
             base_ = mmap(nullptr, choices[i].map_size, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | choices[i].flag, -1, 0);
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | choices[i].flag, -1, 0);
             if (base_ != MAP_FAILED) {
                 total_size_ = choices[i].map_size;
                 huge_page_size_ = choices[i].page_size;
@@ -448,19 +451,20 @@ void *HugeIovaMap(void *usr, void *vaddr, size_t sz)
     return page_map->Map(vaddr, sz);
 }
 
-#define KAELZ4_REQUIRE_ZERO_COPY()                                                       \
-    do {                                                                                 \
-        HugeArena &arena = HugeArena::Instance();                                        \
-        if (!arena.Available()) {                                                        \
-            if (RequireHugePage()) {                                                     \
-                FAIL() << HugePageSetupHint(arena.Error());                             \
-            }                                                                            \
-            GTEST_SKIP() << HugePageSetupHint(arena.Error());                           \
-        }                                                                                \
+#define KAELZ4_REQUIRE_ZERO_COPY()                                                                                     \
+    do {                                                                                                               \
+        HugeArena &arena = HugeArena::Instance();                                                                      \
+        if (!arena.Available()) {                                                                                      \
+            if (RequireHugePage()) {                                                                                   \
+                FAIL() << HugePageSetupHint(arena.Error());                                                            \
+            }                                                                                                          \
+            GTEST_SKIP() << HugePageSetupHint(arena.Error());                                                          \
+        }                                                                                                              \
     } while (0)
 
-class PollingSession {
-public:
+class PollingSession
+{
+  public:
     explicit PollingSession(MemoryMode mode)
         : sess_(KAELZ4_create_async_compress_session(mode == MemoryMode::kZeroCopy ? HugeIovaMap : nullptr, nullptr))
     {
@@ -483,12 +487,13 @@ public:
         KAELZ4_reset_session(sess_);
     }
 
-private:
+  private:
     void *sess_;
 };
 
-class GuardedInput {
-public:
+class GuardedInput
+{
+  public:
     static std::unique_ptr<GuardedInput> Create(const uint8_t *src, size_t len)
     {
         long page_size = sysconf(_SC_PAGESIZE);
@@ -535,9 +540,11 @@ public:
     GuardedInput(const GuardedInput &) = delete;
     GuardedInput &operator=(const GuardedInput &) = delete;
 
-private:
+  private:
     GuardedInput(void *base, size_t total, uint8_t *data, size_t size)
-        : base_(base), total_(total), data_(data), size_(size) {}
+        : base_(base), total_(total), data_(data), size_(size)
+    {
+    }
 
     void *base_;
     size_t total_;
@@ -546,12 +553,14 @@ private:
 };
 
 struct AsyncTask {
-    explicit AsyncTask(TaskFormat fmt) : format(fmt) {}
+    explicit AsyncTask(TaskFormat fmt) : format(fmt)
+    {
+    }
 
     TaskFormat format;
     std::vector<uint8_t> expected;
     std::vector<uint8_t> heap_src;
-    std::vector<std::unique_ptr<GuardedInput> > guarded_src;
+    std::vector<std::unique_ptr<GuardedInput>> guarded_src;
     void *zero_src = nullptr;
 
     std::vector<uint8_t> direct_dst_storage;
@@ -600,8 +609,8 @@ struct AsyncTask {
     AsyncTask &operator=(const AsyncTask &) = delete;
 };
 
-void BuildBufferList(void *base, size_t size, int segments, std::vector<kaelz4_buffer> *bufs,
-                     kaelz4_buffer_list *list, void *usr_data)
+void BuildBufferList(
+    void *base, size_t size, int segments, std::vector<kaelz4_buffer> *bufs, kaelz4_buffer_list *list, void *usr_data)
 {
     bufs->clear();
     int real_segments = std::max(1, std::min<int>(segments, static_cast<int>(size)));
@@ -631,11 +640,12 @@ void InitFramePreferences(AsyncTask *task, bool full_checksums)
     task->preferences.frameInfo.blockMode = LZ4F_blockIndependent;
     task->preferences.frameInfo.contentSize = task->expected.size();
     task->preferences.frameInfo.blockChecksumFlag = full_checksums ? LZ4F_blockChecksumEnabled : LZ4F_noBlockChecksum;
-    task->preferences.frameInfo.contentChecksumFlag = full_checksums ? LZ4F_contentChecksumEnabled : LZ4F_noContentChecksum;
+    task->preferences.frameInfo.contentChecksumFlag =
+        full_checksums ? LZ4F_contentChecksumEnabled : LZ4F_noContentChecksum;
 }
 
-std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_t size, int src_segments,
-                                       bool with_crc, uint32_t seed, bool frame_full_checksums)
+std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_t size, int src_segments, bool with_crc,
+    uint32_t seed, bool frame_full_checksums, size_t lz77_tuple_capacity = 0)
 {
     std::unique_ptr<AsyncTask> task(new AsyncTask(format));
     task->done.store(false, std::memory_order_relaxed);
@@ -664,7 +674,7 @@ std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_
         src_base = task->heap_src.data();
     }
     BuildBufferList(src_base, size, src_segments, &task->src_bufs, &task->src,
-                    mode == MemoryMode::kZeroCopy ? zero_copy_page_map : nullptr);
+        mode == MemoryMode::kZeroCopy ? zero_copy_page_map : nullptr);
 
     bool frame_output = task->OutputIsFrame();
     size_t dst_capacity = OutputCapacity(size, frame_output);
@@ -681,7 +691,7 @@ std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_
     task->final_dst.usr_data = nullptr;
 
     if (task->IsLz77()) {
-        size_t tuple_len = KAELZ4_compress_get_tuple_buf_len(size);
+        size_t tuple_len = lz77_tuple_capacity != 0 ? lz77_tuple_capacity : KAELZ4_compress_get_tuple_buf_len(size);
         if (mode == MemoryMode::kZeroCopy) {
             // Zero-copy LZ77 raw tuple output is also an SGL destination, so the
             // tuple buffer must be hugetlb-backed and mappable by HugeIovaMap.
@@ -715,10 +725,8 @@ std::unique_ptr<AsyncTask> PrepareTask(MemoryMode mode, TaskFormat format, size_
     return task;
 }
 
-std::unique_ptr<AsyncTask> PrepareGuardedNonZeroCopyTask(TaskFormat format,
-                                                         const std::vector<size_t> &segment_sizes,
-                                                         bool with_crc, uint32_t seed,
-                                                         bool frame_full_checksums)
+std::unique_ptr<AsyncTask> PrepareGuardedNonZeroCopyTask(TaskFormat format, const std::vector<size_t> &segment_sizes,
+    bool with_crc, uint32_t seed, bool frame_full_checksums)
 {
     size_t total_size = 0;
     for (size_t len : segment_sizes) {
@@ -795,8 +803,8 @@ void AsyncCallback(kaelz4_result *result)
     if (result->status == KAE_LZ4_SUCC && task->format == TaskFormat::kLz77ToBlock) {
         task->rebuild_status = KAELZ4_rebuild_lz77_to_block(&task->src, &task->tuple, &task->final_dst, result);
     } else if (result->status == KAE_LZ4_SUCC && task->format == TaskFormat::kLz77ToFrame) {
-        task->rebuild_status = KAELZ4_rebuild_lz77_to_frame(&task->src, &task->tuple, &task->final_dst,
-                                                            result, &task->preferences);
+        task->rebuild_status =
+            KAELZ4_rebuild_lz77_to_frame(&task->src, &task->tuple, &task->final_dst, result, &task->preferences);
     }
 
     task->done.store(true, std::memory_order_release);
@@ -808,8 +816,8 @@ int SubmitTask(void *session, AsyncTask *task)
         return KAELZ4_compress_async_in_session(session, &task->src, &task->direct_dst, AsyncCallback, &task->result);
     }
     if (task->format == TaskFormat::kFrame) {
-        return KAELZ4_compress_frame_async_in_session(session, &task->src, &task->direct_dst,
-                                                     AsyncCallback, &task->result, &task->preferences);
+        return KAELZ4_compress_frame_async_in_session(
+            session, &task->src, &task->direct_dst, AsyncCallback, &task->result, &task->preferences);
     }
     return KAELZ4_compress_lz77_async_in_session(session, &task->src, &task->tuple, AsyncCallback, &task->result);
 }
@@ -834,27 +842,24 @@ int SubmitTask(void *session, AsyncTask *task)
             return ::testing::AssertionSuccess();
         }
 
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
         if (elapsed.count() > kTimeoutMs) {
             return ::testing::AssertionFailure()
-                << "timeout waiting for polling tasks, done=" << done_count << "/" << tasks.size();
+                   << "timeout waiting for polling tasks, done=" << done_count << "/" << tasks.size();
         }
         usleep(1000);
     }
 }
 
-::testing::AssertionResult DecompressBlock(const uint8_t *compressed, size_t compressed_len,
-                                           const std::vector<uint8_t> &expected)
+::testing::AssertionResult DecompressBlock(
+    const uint8_t *compressed, size_t compressed_len, const std::vector<uint8_t> &expected)
 {
     std::vector<uint8_t> decoded(expected.size());
     int decoded_len = LZ4_decompress_safe(reinterpret_cast<const char *>(compressed),
-                                          reinterpret_cast<char *>(decoded.data()),
-                                          static_cast<int>(compressed_len),
-                                          static_cast<int>(decoded.size()));
+        reinterpret_cast<char *>(decoded.data()), static_cast<int>(compressed_len), static_cast<int>(decoded.size()));
     if (decoded_len != static_cast<int>(expected.size())) {
         return ::testing::AssertionFailure()
-            << "LZ4_decompress_safe returned " << decoded_len << ", expected " << expected.size();
+               << "LZ4_decompress_safe returned " << decoded_len << ", expected " << expected.size();
     }
     if (decoded != expected) {
         return ::testing::AssertionFailure() << "block decoded bytes differ from original input";
@@ -862,14 +867,13 @@ int SubmitTask(void *session, AsyncTask *task)
     return ::testing::AssertionSuccess();
 }
 
-::testing::AssertionResult DecompressFrame(const uint8_t *compressed, size_t compressed_len,
-                                           const std::vector<uint8_t> &expected)
+::testing::AssertionResult DecompressFrame(
+    const uint8_t *compressed, size_t compressed_len, const std::vector<uint8_t> &expected)
 {
     LZ4F_dctx *dctx = nullptr;
     size_t ret = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
     if (LZ4F_isError(ret)) {
-        return ::testing::AssertionFailure() << "LZ4F_createDecompressionContext failed: "
-                                             << LZ4F_getErrorName(ret);
+        return ::testing::AssertionFailure() << "LZ4F_createDecompressionContext failed: " << LZ4F_getErrorName(ret);
     }
 
     std::vector<uint8_t> decoded(expected.size());
@@ -878,8 +882,7 @@ int SubmitTask(void *session, AsyncTask *task)
     while (src_pos < compressed_len) {
         size_t src_size = compressed_len - src_pos;
         size_t dst_size = decoded.size() - dst_pos;
-        ret = LZ4F_decompress(dctx, decoded.data() + dst_pos, &dst_size,
-                              compressed + src_pos, &src_size, nullptr);
+        ret = LZ4F_decompress(dctx, decoded.data() + dst_pos, &dst_size, compressed + src_pos, &src_size, nullptr);
         if (LZ4F_isError(ret)) {
             const char *name = LZ4F_getErrorName(ret);
             LZ4F_freeDecompressionContext(dctx);
@@ -898,8 +901,7 @@ int SubmitTask(void *session, AsyncTask *task)
 
     LZ4F_freeDecompressionContext(dctx);
     if (dst_pos != expected.size()) {
-        return ::testing::AssertionFailure() << "frame decoded length " << dst_pos
-                                             << ", expected " << expected.size();
+        return ::testing::AssertionFailure() << "frame decoded length " << dst_pos << ", expected " << expected.size();
     }
     if (decoded != expected) {
         return ::testing::AssertionFailure() << "frame decoded bytes differ from original input";
@@ -916,8 +918,11 @@ int SubmitTask(void *session, AsyncTask *task)
         return ::testing::AssertionFailure() << "callback status=" << task->callback_status;
     }
     if (task->rebuild_status != KAE_LZ4_SUCC) {
-        return ::testing::AssertionFailure() << "rebuild status=" << task->rebuild_status
-                                             << " result status=" << task->result.status;
+        return ::testing::AssertionFailure()
+               << "rebuild status=" << task->rebuild_status << " result status=" << task->result.status;
+    }
+    if (task->result.status != KAE_LZ4_SUCC) {
+        return ::testing::AssertionFailure() << "final result status=" << task->result.status;
     }
     if (task->result.dst_len == 0) {
         return ::testing::AssertionFailure() << "compressed output length is zero";
@@ -950,13 +955,14 @@ int SubmitTask(void *session, AsyncTask *task)
     return ::testing::AssertionSuccess();
 }
 
-void RunSingleCase(MemoryMode mode, TaskFormat format, size_t size, int segments,
-                   bool with_crc, bool frame_full_checksums, uint32_t seed)
+void RunSingleCase(MemoryMode mode, TaskFormat format, size_t size, int segments, bool with_crc,
+    bool frame_full_checksums, uint32_t seed, size_t lz77_tuple_capacity = 0)
 {
     PollingSession session(mode);
     ASSERT_NE(session.get(), nullptr);
 
-    std::unique_ptr<AsyncTask> task = PrepareTask(mode, format, size, segments, with_crc, seed, frame_full_checksums);
+    std::unique_ptr<AsyncTask> task =
+        PrepareTask(mode, format, size, segments, with_crc, seed, frame_full_checksums, lz77_tuple_capacity);
     ASSERT_NE(task, nullptr);
 
     ASSERT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_SUCC);
@@ -966,8 +972,8 @@ void RunSingleCase(MemoryMode mode, TaskFormat format, size_t size, int segments
     ASSERT_TRUE(VerifyTask(task.get()));
 }
 
-void RunGuardedNonZeroCopyCase(TaskFormat format, const std::vector<size_t> &segment_sizes,
-                               bool with_crc, bool frame_full_checksums, uint32_t seed)
+void RunGuardedNonZeroCopyCase(TaskFormat format, const std::vector<size_t> &segment_sizes, bool with_crc,
+    bool frame_full_checksums, uint32_t seed)
 {
     PollingSession session(MemoryMode::kNonZeroCopy);
     ASSERT_NE(session.get(), nullptr);
@@ -983,13 +989,13 @@ void RunGuardedNonZeroCopyCase(TaskFormat format, const std::vector<size_t> &seg
     ASSERT_TRUE(VerifyTask(task.get()));
 }
 
-void RunInflightCase(MemoryMode mode, TaskFormat format, int task_count, size_t base_size, int segments,
-                     bool with_crc, bool frame_full_checksums)
+void RunInflightCase(MemoryMode mode, TaskFormat format, int task_count, size_t base_size, int segments, bool with_crc,
+    bool frame_full_checksums)
 {
     PollingSession session(mode);
     ASSERT_NE(session.get(), nullptr);
 
-    std::vector<std::unique_ptr<AsyncTask> > owned;
+    std::vector<std::unique_ptr<AsyncTask>> owned;
     std::vector<AsyncTask *> tasks;
     for (int i = 0; i < task_count; ++i) {
         TaskFormat actual_format = format;
@@ -998,15 +1004,15 @@ void RunInflightCase(MemoryMode mode, TaskFormat format, int task_count, size_t 
         }
 
         size_t size = base_size + static_cast<size_t>((i % 5) * 4096);
-        if (mode == MemoryMode::kNonZeroCopy && (actual_format == TaskFormat::kLz77ToBlock ||
-                                                 actual_format == TaskFormat::kLz77ToFrame)) {
+        if (mode == MemoryMode::kNonZeroCopy &&
+            (actual_format == TaskFormat::kLz77ToBlock || actual_format == TaskFormat::kLz77ToFrame)) {
             // The full LZ77 raw path is SGL-oriented. The non-zero-copy path only
             // covers the currently supported literal-only branch for usr_map == NULL.
             size = kLiteralOnlyLz77Size;
         }
 
-        std::unique_ptr<AsyncTask> task = PrepareTask(mode, actual_format, size, segments, with_crc,
-                                                      static_cast<uint32_t>(0x1000 + i), frame_full_checksums);
+        std::unique_ptr<AsyncTask> task = PrepareTask(
+            mode, actual_format, size, segments, with_crc, static_cast<uint32_t>(0x1000 + i), frame_full_checksums);
         ASSERT_NE(task, nullptr);
         tasks.push_back(task.get());
         owned.push_back(std::move(task));
@@ -1033,18 +1039,18 @@ void RunMixedInflightCase(MemoryMode mode)
     formats.push_back(TaskFormat::kLz77ToBlock);
     formats.push_back(TaskFormat::kLz77ToFrame);
 
-    std::vector<std::unique_ptr<AsyncTask> > owned;
+    std::vector<std::unique_ptr<AsyncTask>> owned;
     std::vector<AsyncTask *> tasks;
     for (int i = 0; i < kInflightTasks; ++i) {
         TaskFormat format = formats[static_cast<size_t>(i) % formats.size()];
         size_t size = kSmallSize + static_cast<size_t>((i % 4) * 2048);
-        if (mode == MemoryMode::kNonZeroCopy && (format == TaskFormat::kLz77ToBlock ||
-                                                 format == TaskFormat::kLz77ToFrame)) {
+        if (mode == MemoryMode::kNonZeroCopy &&
+            (format == TaskFormat::kLz77ToBlock || format == TaskFormat::kLz77ToFrame)) {
             size = kLiteralOnlyLz77Size;
         }
 
-        std::unique_ptr<AsyncTask> task = PrepareTask(mode, format, size, (i % 3) + 1, true,
-                                                      static_cast<uint32_t>(0x2000 + i), format == TaskFormat::kFrame);
+        std::unique_ptr<AsyncTask> task = PrepareTask(
+            mode, format, size, (i % 3) + 1, true, static_cast<uint32_t>(0x2000 + i), format == TaskFormat::kFrame);
         ASSERT_NE(task, nullptr);
         tasks.push_back(task.get());
         owned.push_back(std::move(task));
@@ -1065,11 +1071,11 @@ void RunQueueBackpressureCase(MemoryMode mode)
     PollingSession session(mode);
     ASSERT_NE(session.get(), nullptr);
 
-    std::vector<std::unique_ptr<AsyncTask> > owned;
+    std::vector<std::unique_ptr<AsyncTask>> owned;
     std::vector<AsyncTask *> tasks;
     for (int i = 0; i < kBackpressureTasks; ++i) {
-        std::unique_ptr<AsyncTask> task = PrepareTask(mode, TaskFormat::kBlock, 16 * 1024 + (i % 7) * 1024,
-                                                      2, true, static_cast<uint32_t>(0x3000 + i), false);
+        std::unique_ptr<AsyncTask> task = PrepareTask(
+            mode, TaskFormat::kBlock, 16 * 1024 + (i % 7) * 1024, 2, true, static_cast<uint32_t>(0x3000 + i), false);
         ASSERT_NE(task, nullptr);
         tasks.push_back(task.get());
         owned.push_back(std::move(task));
@@ -1091,11 +1097,11 @@ void RunResetPendingCase(MemoryMode mode)
         PollingSession session(mode);
         ASSERT_NE(session.get(), nullptr);
 
-        std::vector<std::unique_ptr<AsyncTask> > owned;
+        std::vector<std::unique_ptr<AsyncTask>> owned;
         std::vector<AsyncTask *> tasks;
         for (int i = 0; i < kInflightTasks; ++i) {
-            std::unique_ptr<AsyncTask> task = PrepareTask(mode, TaskFormat::kBlock, kLargeSize,
-                                                          3, true, static_cast<uint32_t>(0x4000 + i), false);
+            std::unique_ptr<AsyncTask> task =
+                PrepareTask(mode, TaskFormat::kBlock, kLargeSize, 3, true, static_cast<uint32_t>(0x4000 + i), false);
             ASSERT_NE(task, nullptr);
             tasks.push_back(task.get());
             owned.push_back(std::move(task));
@@ -1115,8 +1121,8 @@ void RunResetPendingCase(MemoryMode mode)
     RunSingleCase(mode, TaskFormat::kBlock, kSmallSize, 1, true, false, 0x5000);
 }
 
-struct RebuildValidationCase {
-    RebuildValidationCase(size_t src_size, size_t tuple_len, int src_segments = 1)
+struct RebuildCase {
+    RebuildCase(size_t src_size, size_t tuple_len, int src_segments = 1)
     {
         expected = GenerateInput(src_size, 0x9000);
         src_storage.assign(src_size + 64, 0);
@@ -1159,12 +1165,6 @@ struct RebuildValidationCase {
     seqDef *FirstSeq()
     {
         return reinterpret_cast<seqDef *>(tuple_storage.data() + sizeof(uint32_t));
-    }
-
-    void ResetResult()
-    {
-        result.status = KAE_LZ4_SUCC;
-        result.dst_len = 1234;
     }
 
     std::vector<uint8_t> expected;
@@ -1238,7 +1238,7 @@ struct GuardedRebuildCase {
 
     bool valid = true;
     std::vector<uint8_t> expected;
-    std::vector<std::unique_ptr<GuardedInput> > guarded_src;
+    std::vector<std::unique_ptr<GuardedInput>> guarded_src;
     std::vector<uint8_t> tuple_storage;
     std::vector<uint8_t> dst_storage;
     std::vector<kaelz4_buffer> src_bufs;
@@ -1249,11 +1249,6 @@ struct GuardedRebuildCase {
     kaelz4_buffer_list dst = {};
     kaelz4_result result = {};
 };
-
-size_t MaxSeqNumPerTupleChunk()
-{
-    return (KAE_LZ77_SEQ_DATA_SIZE_PER_64K - sizeof(uint32_t)) / sizeof(seqDef);
-}
 
 std::vector<uint8_t> BuildSingleSequenceSource(size_t final_literal_len)
 {
@@ -1278,15 +1273,43 @@ void UnexpectedQueueRollbackCallback(kaelz4_result *result)
 
 } // namespace
 
-// Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the documented
-// 64KB chunk rounding used by async LZ77 raw output buffers.
+// Purpose: LZ77 tuple-buffer sizing API smoke test. Verifies the source-length
+// full-stride estimate and its overflow sentinel.
 TEST(KAELz4AsyncPolling, LZ77TupleBufferLengthRoundsBy64KB)
 {
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(0), 0U);
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(1), KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
     EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize), KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
-    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize + 1),
-              2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(kLz4BlockSize + 1), 2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+
+    const size_t max_chunks = SIZE_MAX / KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
+    const size_t max_src_len = max_chunks * kLz4BlockSize;
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(max_src_len), max_chunks * KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(max_src_len + 1), 0U);
+    EXPECT_EQ(KAELZ4_compress_get_tuple_buf_len(SIZE_MAX), 0U);
+}
+
+// Purpose: async compression entry-point validation. A source list with more
+// than 255 SGEs must be rejected before any hardware request is submitted.
+TEST(KAELz4AsyncPolling, LZ77CompressionRejectsTooManySourceSges)
+{
+    PollingSession session(MemoryMode::kNonZeroCopy);
+    ASSERT_NE(session.get(), nullptr);
+
+    std::unique_ptr<AsyncTask> task =
+        PrepareTask(MemoryMode::kNonZeroCopy, TaskFormat::kLz77ToBlock, 256, 256, false, 0x08, false);
+    ASSERT_NE(task, nullptr);
+
+    EXPECT_EQ(SubmitTask(session.get(), task.get()), KAE_LZ4_INVAL_PARA);
+    EXPECT_FALSE(task->done.load(std::memory_order_acquire));
+}
+
+// Purpose: keep the SGE-count limit specific to raw LZ77. Regular block
+// compression accepts more than 255 source SGEs and splits them across
+// multiple hardware requests internally.
+TEST(KAELz4AsyncPolling, BlockCompressionAcceptsMoreThan255SourceSges)
+{
+    RunSingleCase(MemoryMode::kNonZeroCopy, TaskFormat::kBlock, kLz4BlockSize, 256, true, false, 0x09);
 }
 
 // Purpose: async control cleanup validation. Verifies that clearing an empty
@@ -1333,9 +1356,9 @@ TEST(KAELz4AsyncPolling, AsyncReqAllocFailurePreservesExistingQueue)
 
     {
         ScopedAsyncReqMallocFailure fail_once(1);
-        EXPECT_EQ(kaelz4_compress_async(&ctrl, &src, &dst, UnexpectedQueueRollbackCallback,
-                                        &result, KAELZ4_ASYNC_BLOCK, &preferences),
-                  KAE_LZ4_ALLOC_FAIL);
+        EXPECT_EQ(kaelz4_compress_async(
+                      &ctrl, &src, &dst, UnexpectedQueueRollbackCallback, &result, KAELZ4_ASYNC_BLOCK, &preferences),
+            KAE_LZ4_ALLOC_FAIL);
     }
 
     EXPECT_EQ(ctrl.ctx_head, &existing_ctx);
@@ -1343,119 +1366,148 @@ TEST(KAELz4AsyncPolling, AsyncReqAllocFailurePreservesExistingQueue)
     EXPECT_EQ(existing_ctx.next, nullptr);
 }
 
-// Purpose: rebuild API entry validation. Verifies that public block/frame
-// rebuild calls reject NULL top-level arguments before touching nested fields.
-TEST(KAELz4AsyncPolling, RebuildRejectsNullArguments)
+// Purpose: public rebuild API compatibility. NULL top-level arguments must
+// return KAE_LZ4_INVAL_PARA instead of being dereferenced, while invalid calls
+// with a result object reset its externally visible status and output length.
+TEST(KAELz4AsyncPolling, RebuildRejectsNullTopLevelArguments)
 {
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
+    RebuildCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
 
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
     EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(nullptr, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    tc.ResetResult();
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
     EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, nullptr, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    tc.ResetResult();
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
     EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, nullptr, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, nullptr, &tc.preferences),
-              KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, nullptr), KAE_LZ4_INVAL_PARA);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(
+        KAELZ4_rebuild_lz77_to_frame(nullptr, &tc.tuple, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, nullptr, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(
+        KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, nullptr, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, nullptr, &tc.preferences), KAE_LZ4_INVAL_PARA);
 }
 
-// Purpose: tuple buffer-list shape validation. Verifies that rebuild rejects
-// tuple lists that are not the single-buffer format documented by KAELz4.
-TEST(KAELz4AsyncPolling, RebuildRejectsInvalidTupleBufferList)
+// Purpose: public rebuild API buffer-list validation. Empty lists and NULL
+// buffer arrays must return KAE_LZ4_INVAL_PARA before rebuild dereferences
+// list->buf[0].
+TEST(KAELz4AsyncPolling, RebuildRejectsInvalidBufferLists)
 {
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
+    RebuildCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
+
+    auto expect_invalid = [&](const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple,
+                              struct kaelz4_buffer_list *dst) {
+        tc.result.status = KAE_LZ4_SUCC;
+        tc.result.dst_len = 1234;
+        EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(src, tuple, dst, &tc.result), KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.dst_len, 0U);
+
+        tc.result.status = KAE_LZ4_SUCC;
+        tc.result.dst_len = 1234;
+        EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(src, tuple, dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.dst_len, 0U);
+    };
+
+    struct kaelz4_buffer_list invalid_src = tc.src;
+    invalid_src.buf = nullptr;
+    expect_invalid(&invalid_src, &tc.tuple, &tc.dst);
+    invalid_src = tc.src;
+    invalid_src.buf_num = 0;
+    expect_invalid(&invalid_src, &tc.tuple, &tc.dst);
+
+    struct kaelz4_buffer_list invalid_tuple = tc.tuple;
+    invalid_tuple.buf = nullptr;
+    expect_invalid(&tc.src, &invalid_tuple, &tc.dst);
+    invalid_tuple = tc.tuple;
+    invalid_tuple.buf_num = 0;
+    expect_invalid(&tc.src, &invalid_tuple, &tc.dst);
+
+    struct kaelz4_buffer_list invalid_dst = tc.dst;
+    invalid_dst.buf = nullptr;
+    expect_invalid(&tc.src, &tc.tuple, &invalid_dst);
+    invalid_dst = tc.dst;
+    invalid_dst.buf_num = 0;
+    expect_invalid(&tc.src, &tc.tuple, &invalid_dst);
+}
+
+// Purpose: partial final tuple-slot compatibility. A 4KB request historically
+// advertises an 8KB tuple buffer; rebuild must accept it when seq_num fits the
+// bytes that are actually present instead of requiring a nominal 128KB slot.
+TEST(KAELz4AsyncPolling, RebuildAcceptsPartialTupleSlot)
+{
+    RebuildCase block_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    *block_tc.SeqNum() = 0;
+
+    ASSERT_EQ(
+        KAELZ4_rebuild_lz77_to_block(&block_tc.src, &block_tc.tuple, &block_tc.dst, &block_tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(block_tc.dst_storage.data(), block_tc.result.dst_len, block_tc.expected));
+
+    RebuildCase frame_tc(kPartialTupleSourceSize, kPartialTupleBufferSize);
+    *frame_tc.SeqNum() = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_frame(
+                  &frame_tc.src, &frame_tc.tuple, &frame_tc.dst, &frame_tc.result, &frame_tc.preferences),
+        KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressFrame(frame_tc.dst_storage.data(), frame_tc.result.dst_len, frame_tc.expected));
+}
+
+// Purpose: fixed-stride layout with a partial final slot. Complete 64KB
+// requests retain 128KB strides, while only the final 32KB request uses its
+// shorter 64KB capacity.
+TEST(KAELz4AsyncPolling, RebuildAcceptsPartialFinalTupleSlot)
+{
+    RebuildCase tc(kLargeSize, 2 * kLargeSize, 3);
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data()) = 0;
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() + KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
+    *reinterpret_cast<uint32_t *>(tc.tuple_storage.data() + 2 * KAE_LZ77_SEQ_DATA_SIZE_PER_64K) = 0;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
+}
+
+// Purpose: request-count compatibility around MFLIMIT. Inputs up to
+// 64KB+MFLIMIT remain one hardware request because the final 12 bytes are kept
+// as literals, so a simple ceil(src/64KB) calculation must not demand slot 2.
+TEST(KAELz4AsyncPolling, RebuildUsesHardwareRequestSplitAtMflimitBoundary)
+{
+    RebuildCase tc(kLz4BlockSize + 1, KAE_LZ77_SEQ_DATA_SIZE_PER_64K, 2);
     *tc.SeqNum() = 0;
 
-    tc.tuple.buf_num = 0;
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-
-    tc.ResetResult();
-    tc.tuple.buf_num = 2;
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, &tc.result, &tc.preferences),
-              KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: tuple total-length validation for block rebuild. Verifies that a
-// source requiring several 64KB tuple chunks cannot be rebuilt from a short
-// tuple buffer.
-TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferBlock)
-{
-    RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 3);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: tuple total-length validation for frame rebuild. Verifies that the
-// frame wrapper path performs the same tuple length checks before post-processing.
-TEST(KAELz4AsyncPolling, RebuildRejectsShortTupleBufferFrame)
-{
-    RebuildValidationCase tc(kLargeSize, sizeof(uint32_t), 2);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, &tc.result, &tc.preferences),
-              KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: source-size validation. Verifies that callers cannot drive the
-// rebuild loop with result->src_size that differs from the actual source list.
-TEST(KAELz4AsyncPolling, RebuildRejectsSrcSizeMismatch)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize), 2);
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = 0;
-    tc.result.src_size = kSmallSize + 1;
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: per-chunk seq_num validation. Verifies that an oversized seq_num is
-// rejected even when the tuple buffer has the documented total capacity.
-TEST(KAELz4AsyncPolling, RebuildRejectsSeqNumPastTupleChunk)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t));
-    *tc.SeqNum() = static_cast<uint32_t>(MaxSeqNumPerTupleChunk() + 1);
-
-    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
-    EXPECT_EQ(tc.result.dst_len, 0U);
-}
-
-// Purpose: embedded seqDef validation. Verifies that a tuple whose seqDef would
-// consume more bytes than the current source chunk fails before copying input.
-TEST(KAELz4AsyncPolling, RebuildRejectsMalformedSeqFields)
-{
-    RebuildValidationCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
-    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
-    *tc.SeqNum() = 1;
-    seqDef *seq = tc.FirstSeq();
-    seq->litLength = static_cast<U32>(kSmallSize + 1);
-    seq->offBase = 0;
-    seq->mlBase = 1;
-
-    EXPECT_NE(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
-    EXPECT_NE(tc.result.status, KAE_LZ4_SUCC);
-    EXPECT_EQ(tc.result.dst_len, 0U);
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
 }
 
 // Purpose: rebuild literal copying from a guarded source segment. Verifies that
-// a malformed-but-bounds-checked tuple with a non-16-byte literal does not read
-// into the guard page while copying within the current segment.
+// a hardware-format tuple with a non-16-byte literal does not read into the
+// guard page while copying within the current segment.
 TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedDirectLiteral)
 {
     std::vector<uint8_t> input = BuildSingleSequenceSource(1);
@@ -1471,6 +1523,27 @@ TEST(KAELz4AsyncPolling, RebuildCopiesGuardedUnalignedDirectLiteral)
 
     ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
     ASSERT_GT(tc.result.dst_len, 0U);
+}
+
+// Purpose: the sequence fits in the current SGE, but its 16-byte rounded
+// literal load would cross that SGE's guard page. The request still has the
+// required 12-byte logical tail, split as one byte here and eleven in the next
+// SGE, so the bounded wild-copy implementation must select its exact fallback.
+TEST(KAELz4AsyncPolling, RebuildCopiesGuardedDirectLiteralBeforeSegmentTail)
+{
+    std::vector<uint8_t> input = BuildSingleSequenceSource(12);
+    GuardedRebuildCase tc(input, {22, input.size() - 22});
+    ASSERT_TRUE(tc.valid);
+    ASSERT_GE(tc.tuple_storage.size(), sizeof(uint32_t) + sizeof(seqDef));
+
+    *tc.SeqNum() = 1;
+    seqDef *seq = tc.FirstSeq();
+    seq->litLength = 17;
+    seq->offBase = 0;
+    seq->mlBase = 1;
+
+    ASSERT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_SUCC);
+    ASSERT_TRUE(DecompressBlock(tc.dst_storage.data(), tc.result.dst_len, tc.expected));
 }
 
 // Purpose: rebuild literal copying across guarded source segments. Verifies that
@@ -1535,6 +1608,16 @@ TEST(KAELz4AsyncPolling, ZeroCopy_LZ77RawToBlock_WithCRC)
 {
     KAELZ4_REQUIRE_ZERO_COPY();
     RunSingleCase(MemoryMode::kZeroCopy, TaskFormat::kLz77ToBlock, kLargeSize, 4, true, false, 0x05);
+}
+
+// Purpose: end-to-end compatibility with kzip's historical partial tuple
+// allocation. Sends a 4KB source to hardware with an actual 8KB raw tuple
+// buffer, then rebuilds, decompresses, compares bytes, and verifies CRC.
+TEST(KAELz4AsyncPolling, ZeroCopy_LZ77Raw4KBToBlock_With8KBTuple)
+{
+    KAELZ4_REQUIRE_ZERO_COPY();
+    RunSingleCase(MemoryMode::kZeroCopy, TaskFormat::kLz77ToBlock, kPartialTupleSourceSize, 1, true, false, 0x07,
+        kPartialTupleBufferSize);
 }
 
 // Purpose: zero-copy LZ77 raw output rebuilt to frame format. Verifies tuple to
@@ -1683,7 +1766,8 @@ TEST(KAELz4AsyncPolling, NonZeroCopy_InflightFrameTasks_WithCRC)
 // CRC on the flat-buffer path.
 TEST(KAELz4AsyncPolling, NonZeroCopy_InflightLZ77RawTasks_ToBlockAndFrame)
 {
-    RunInflightCase(MemoryMode::kNonZeroCopy, TaskFormat::kLz77ToBlock, kInflightTasks, kLiteralOnlyLz77Size, 1, true, true);
+    RunInflightCase(
+        MemoryMode::kNonZeroCopy, TaskFormat::kLz77ToBlock, kInflightTasks, kLiteralOnlyLz77Size, 1, true, true);
 }
 
 // Purpose: non-zero-copy mixed-format multi-task flow. Mixes block, frame, and

@@ -31,7 +31,7 @@ To use the APIs, correctly install KAE 2.0. You are advised to install the lates
 * Notes:
   KAELz4 depends on the native LZ4 header file. Ensure that the related development kits are installed. Run the following installation command:
 
-```
+```shell
 yum install -y make kernel-devel libtool numactl-devel openssl-devel lz4-devel libzstd-devel chrpath
 ```
 
@@ -84,7 +84,7 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 
 #### 3.1.3. Session Initialization
 
-```
+```c
 /**
  * @brief: frame compress async api
  * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
@@ -95,17 +95,23 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 
 #### 3.1.4. Compression
 
-```
+```c
 /**
- * @brief: Get tuple buffer length by src length.
- * @param: src_len [IN] : src length
+ * @brief: Get the recommended tuple buffer capacity for raw LZ77 compression.
+ * The returned capacity is sufficient for src_len bytes when the source passed
+ * to KAELZ4_compress_lz77_async_in_session contains 1 to 255 SGEs. A smaller
+ * buffer may also succeed if the actual tuple output fits; otherwise compression
+ * reports KAE_LZ4_DST_BUF_OVERFLOW.
+ * @param: src_len [IN] : total source length in bytes for one compression call.
+ * @return: Recommended tuple buffer capacity in bytes, or 0 if src_len is zero
+ * or the calculation overflows size_t.
  */
 size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
 
 /**
  * @brief: lz77 compress async api
  * @param: sess : session
- * @param: src [IN] : input data, must be sgl
+ * @param: src [IN] : input data in SGL format; buf_num must be in [1, 255].
  * @param: tuple [OUT] : tuple buf, lz77 output data, must be sgl, only support buf_num == 1 now.
  * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
  * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
@@ -117,7 +123,7 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
 
 #### 3.1.5. Actively Polling the Compression Result
 
-```
+```c
 /**
  * @brief: Polling hardware result in session.
  * @param: sess : session
@@ -128,7 +134,7 @@ void KAELZ4_async_polling_in_session(void *sess, int budget);
 
 #### 3.1.6. Converting the lz77_raw Data
 
-```
+```c
 /**
  * @brief: rebuild lz77 data to block
  * @param: src [IN] : input data
@@ -153,7 +159,7 @@ int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct ka
 
 #### 3.1.7. Clearing a Session
 
-```
+```c
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session
@@ -575,7 +581,7 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 
 #### 3.2.3. Session Initialization
 
-```
+```c
 /**
  * @brief: frame compress async api
  * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
@@ -586,7 +592,7 @@ void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 
 #### 3.2.4. Compression
 
-```
+```c
 /**
  * @brief: block compress async api
  * @param: sess [IN] : this compression task session
@@ -613,7 +619,7 @@ int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffe
 
 #### 3.2.5. Actively Polling the Compression Result
 
-```
+```c
 /**
  * @brief: Polling hardware result in session.
  * @param: sess : session
@@ -624,7 +630,7 @@ void KAELZ4_async_polling_in_session(void *sess, int budget);
 
 #### 3.2.6. Clearing a Session
 
-```
+```c
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session
@@ -910,6 +916,7 @@ LZ4LIB_API void LZ4_teardown_async_compress(void);
 #### 3.3.7. Overall Usage Demo
 
 The following is an example of the asynchronous compression API in the common frame format:
+
 1. Compress a segment of memory and specify the frame format.
 2. After receiving the callback, decompress the content using open-source frame decompression API.
 3. Compare the decompressed content with the original content.
@@ -1108,6 +1115,7 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ### Software Computing Scenarios
 
 Constraints: Software computing is available only when the input data size is less than 64 KB.
+
 - Software computing can be switched automatically when the KAE driver is abnormal.
 - Software computing can be switched automatically when the KAE hardware resources are exhausted.
 - Software computing can be switched via both common and polling APIs.

@@ -1,6 +1,10 @@
 .vscode
 kae_build
 KAEZlib/open_source/zlib-1.2.11
+KAEZlib/test/gtest/gtest-download/googletest-release-1.11.0/
+KAEZlib/test/gtest/gtest-download/.googletest-download.*/
+KAELz4/test/gtest/gtest-download/googletest-release-1.11.0/
+KAELz4/test/gtest/gtest-download/.googletest-download.*/
 
 # *Test*
 *.so.*

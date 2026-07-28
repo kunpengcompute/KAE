@@ -1,12 +1,13 @@
 
 # KAELz4 异步压缩接口用户使用指南
+
 ## 一、接口概述
 
 在现代计算环境中，数据压缩常常是提升数据传输效率、存储空间节省的关键手段。然而，传统的压缩方法通常是同步执行，导致在处理大规模数据时可能造成性能瓶颈，特别是在高负载的场景下。为了更好地利用硬件加速器的能力并提高系统的响应能力，我们开发了异步LZ4压缩接口。
 
 该异步接口专为处理高并发、大数据量压缩场景设计。通过引入并发线程处理数据压缩，它能够充分发挥现代多核CPU的并行计算能力，并在硬件加速器KAE的支持下，进一步提升压缩速度。
 
-### 接口特点：
+### 接口特点
 
 * ​**异步压缩**​：在压缩过程中不阻塞主线程，可以通过回调函数在压缩完成后获得处理结果。
 * ​**硬件加速支持**​：通过硬件加速器对压缩过程加速，该接口能够显著提升压缩任务的执行效率，同时降低CPU负载。
@@ -14,7 +15,7 @@
 * ​**兼容社区LZ4格式**​：该接口生成的压缩数据格式与社区LZ4格式兼容。
 * ​**轻松集成**​：该接口可以轻松集成到现有的应用程序中，用户只需调用接口并提供回调函数，便可以快速启动异步压缩，轻松实现高性能数据压缩。
 
-### 使用场景：
+### 使用场景
 
 * ​**高并发和高负载环境**​：当需要处理大量并发数据压缩任务时，该接口能够通过多线程并发执行来有效避免单一线程阻塞，提升系统响应速度。
 * ​**低延迟需求场景**​：在需要低延迟和快速响应的系统中，该接口可以通过不阻塞主线程来保证系统的流畅性。例如，在实时数据传输、分布式存储或流媒体处理等场景中，该接口能有效避免数据压缩过程中的卡顿现象。
@@ -30,18 +31,23 @@
 * 注意事项：
   KAELz4依赖原生的Lz4头文件，确保相关开发套件的安装。安装命令如下：
 
-```
-yum install -y make kernel-devel libtool numactl-devel openssl-devel lz4-devel libzstd-devel chrpath
+```shell
+yum install -y make kernel-devel libtool numactl-devel openssl-devel \
+  lz4-devel libzstd-devel chrpath
 ```
 
 ## 三、接口函数签名和参数说明
+
 KAELz4异步接口一共支持2种模式，polling模式压缩接口、非polling模式压缩接口。
 一共支持3种压缩数据格式：block、frame、lz77_raw：其中blcok与frame格式与社区lz4标准block\frame格式兼容；lz77_raw格式需要调用对应的后处理接口进行转换成标准block\frame格式。
 以下章节分别介绍不同polling模式下，不同数据格式的接口组合方式。
 
 ### 3.1、polling模式下lz77_raw数据处理成标准lz4数据格式接口说明
+
 本小节介绍了polling模式下，输出lz77_raw格式数据所需的相关接口，以及将lz77_raw格式数据转换为lz4标准block\frame格式的接口
+
 #### 3.1.1、相关结构体
+
 ```c
 // 基本回调数据格式
 struct kaelz4_result {
@@ -66,7 +72,9 @@ struct kaelz4_buffer_list {
     void *usr_data;
 };
 ```
+
 #### 3.1.2、用户自定义函数
+
 ```c
 // 压缩任务完成后，将调用该回调函数。回调压缩的结果
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -74,8 +82,10 @@ typedef void (*lz4_async_callback)(struct kaelz4_result *result);
 // 逻辑地址与物理地址转换函数
 typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 ```
+
 #### 3.1.3、初始化session会话
-```
+
+```c
 /**
  * @brief: frame compress async api
  * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
@@ -83,28 +93,45 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
  * /
 void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 ```
+
 #### 3.1.4、压缩
-```
+
+```c
 /**
- * @brief: Get tuple buffer length by src length.
- * @param: src_len [IN] : src length
+ * @brief: Get the recommended tuple buffer capacity for raw LZ77 compression.
+ * The returned capacity is sufficient for src_len bytes when the source passed
+ * to KAELZ4_compress_lz77_async_in_session contains 1 to 255 SGEs. A smaller
+ * buffer may also succeed if the actual tuple output fits; otherwise compression
+ * reports KAE_LZ4_DST_BUF_OVERFLOW.
+ * @param: src_len [IN] : total source length in bytes for one compression call.
+ * @return: Recommended tuple buffer capacity in bytes, or 0 if src_len is zero
+ * or the calculation overflows size_t.
  */
 size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len);
 
 /**
  * @brief: lz77 compress async api
  * @param: sess : session
- * @param: src [IN] : input data, must be sgl
- * @param: tuple [OUT] : tuple buf, lz77 output data, must be sgl, only support buf_num == 1 now.
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: src [IN] : input data in SGL format; buf_num must be in [1, 255].
+ * @param: tuple [OUT] : tuple buf, lz77 output data, must be sgl,
+ * only support buf_num == 1 now.
+ * @param: callback [IN] : async callback function; it can not be NULL
+ * and must be lz4_async_callback.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
  * @return: 0 success, other fail
  */
-int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4_compress_lz77_async_in_session(void *sess,
+    const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *tuple,
+    lz4_async_callback callback,
+    struct kaelz4_result *result);
 
 ```
+
 #### 3.1.5、主动polling压缩结果
-```
+
+```c
 /**
  * @brief: Polling hardware result in session.
  * @param: sess : session
@@ -112,31 +139,47 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
  */
 void KAELZ4_async_polling_in_session(void *sess, int budget);
 ```
+
 #### 3.1.6、对lz77_raw数据进行格式转换
-```
+
+```c
 /**
  * @brief: rebuild lz77 data to block
  * @param: src [IN] : input data
  * @param: tuple [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
  * @return: 0 success, other fail
  */
-int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, struct kaelz4_buffer_list *dst, struct kaelz4_result *result);
+int KAELZ4_rebuild_lz77_to_block(
+    const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *tuple,
+    struct kaelz4_buffer_list *dst,
+    struct kaelz4_result *result);
 
 /**
  * @brief: rebuild lz77 data to frame
  * @param: src [IN] : input data
  * @param: tuple [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
- * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is available.
+ * Otherwise preferences_ptr should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  */
-int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple, struct kaelz4_buffer_list *dst, struct kaelz4_result *result, const void *preferences_ptr);
+int KAELZ4_rebuild_lz77_to_frame(
+    const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *tuple,
+    struct kaelz4_buffer_list *dst,
+    struct kaelz4_result *result,
+    const void *preferences_ptr);
 ```
+
 #### 3.1.7、清理session会话
-```
+
+```c
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session
@@ -148,8 +191,11 @@ void KAELZ4_destroy_async_compress_session(void *sess);
  */
 void KAELZ4_reset_session(void *sess);
 ```
+
 #### 3.1.8、整体使用示例Demo
+
 本demo使用polling模式接口，将测试文件压缩为lz77_raw数据格式，随后转换成标准lz4的block数据格式，最后通过解压转换为原始文件。
+
 ```c
 #include <stdio.h>
 #include <stdlib.h>
@@ -231,7 +277,8 @@ static struct cache_page_map* init_cache_page_map(void *base_vaddr, size_t total
     }
 
     // 读取该次申请到的所有条目
-    if (read(fd, cache->entries, pages_num * sizeof(uint64_t)) != (ssize_t)(pages_num * sizeof(uint64_t))) {
+    if (read(fd, cache->entries, pages_num * sizeof(uint64_t)) !=
+        (ssize_t)(pages_num * sizeof(uint64_t))) {
         perror("读取条目失败");
         close(fd);
         free(cache->entries);
@@ -262,7 +309,9 @@ static void *get_huge_pages(size_t total_size)
     return addr;
 }
 
-static uint64_t get_physical_address_cache_page_map(struct cache_page_map *cache, void *vaddr) {
+static uint64_t get_physical_address_cache_page_map(
+    struct cache_page_map *cache, void *vaddr)
+{
     uintptr_t virtual_addr = (uintptr_t)vaddr;
 
     // 计算在缓存中的条目索引
@@ -333,9 +382,12 @@ static void release_huge_pages(void *addr, size_t total_size)
 {
     munmap(addr, total_size);
 }
-static int prepare_tuple_buf(void **tuple_buf, size_t src_len, struct cache_page_map** page_cache)
+static int prepare_tuple_buf(
+    void **tuple_buf, size_t src_len, struct cache_page_map** page_cache)
 {
-    size_t tuple_buf_len = KAELZ4_compress_get_tuple_buf_len(g_file_chunk_size * 1024) * (src_len / (g_file_chunk_size * 1024) + 1) * 2;
+    size_t tuple_buf_len =
+        KAELZ4_compress_get_tuple_buf_len(g_file_chunk_size * 1024) *
+        (src_len / (g_file_chunk_size * 1024) + 1) * 2;
     size_t huge_page_num = tuple_buf_len * sizeof(Bytef) / HPAGE_SIZE + 1; // 大页大小为2M，申请大页时申请大小需为大页大小的整数倍
     size_t total_size = huge_page_num * HPAGE_SIZE;
     *tuple_buf = get_huge_pages(total_size);
@@ -367,7 +419,8 @@ static void compression_callback3(struct kaelz4_result *result) {
     // 在回调中获取压缩后的数据
     struct my_custom_data *my_data = (struct my_custom_data *)result->user_data;
 
-    if (KAELZ4_rebuild_lz77_to_block(&my_data->src_list, &my_data->tuple_list, &my_data->dst_list, result) != 0) {
+    if (KAELZ4_rebuild_lz77_to_block(&my_data->src_list,
+        &my_data->tuple_list, &my_data->dst_list, result) != 0) {
         printf("[user]KAELZ4_rebuild_lz77_to_block : %d\n", result->status);
     }
 
@@ -385,7 +438,8 @@ static void compression_callback3(struct kaelz4_result *result) {
         return;
     }
 
-    size_t ret =  LZ4_decompress_safe((char *)compressed_data, (char *)dst_buffer, compressed_size, tmp_src_len);
+    size_t ret = LZ4_decompress_safe((char *)compressed_data,
+        (char *)dst_buffer, compressed_size, tmp_src_len);
     if (ret < 0) {
         printf("Decompression failed with error code: %ld\n", ret);
         free(dst_buffer);
@@ -396,14 +450,16 @@ static void compression_callback3(struct kaelz4_result *result) {
     my_data->src_decompd_len = tmp_src_len;
 
     if (my_data->src_decompd_len != my_data->src_len) {
-        printf("Test Error: 解压后与原始长度不一样. result->src_size=%ld   原始长度=%ld   压缩后解压长度=%ld \n",
+        printf("Test Error: 解压后与原始长度不一样. "
+               "result->src_size=%ld 原始长度=%ld 压缩后解压长度=%ld\n",
             result->src_size,
             my_data->src_len,
             my_data->src_decompd_len);
     }
 
     // 比较解压后的数据和原始数据
-    if (memcmp(my_data->src_decompd, my_data->src_list.buf[0].data, result->src_size) == 0) {
+    if (memcmp(my_data->src_decompd, my_data->src_list.buf[0].data,
+        result->src_size) == 0) {
         printf("Test Success.\n");
     } else {
         printf("Test Error:Decompressed data does not match the original data.\n");
@@ -414,7 +470,8 @@ static void compression_callback3(struct kaelz4_result *result) {
     g_has_done = 1;
 }
 
-static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
+static int test_lz77_raw_polling(
+    int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
 {
     g_has_done = 0;
     size_t src_len = 0;  // 256KB
@@ -476,8 +533,9 @@ static int test_lz77_raw_polling(int contentChecksumFlag, int blockChecksumFlag,
     result.src_size = src_len;
     result.dst_len = compressed_size;
 
-    int compression_status = KAELZ4_compress_lz77_async_in_session(sess, &mydata.src_list, &mydata.tuple_list,
-                                                      compression_callback3, &result);
+    int compression_status = KAELZ4_compress_lz77_async_in_session(
+        sess, &mydata.src_list, &mydata.tuple_list,
+        compression_callback3, &result);
 
     if (compression_status != 0) {
         printf("Compression failed with error code: %d\n", compression_status);
@@ -501,10 +559,11 @@ int main()
 {
     return test_lz77_raw_polling(0, 0, 0);
 }
-```
+```c
 
 ```shell
-gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -o kaelz4_lz77_raw_dataformat_test
+gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib \
+  -llz4 -lkaelz4 -o kaelz4_lz77_raw_dataformat_test
 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ./kaelz4_lz77_raw_dataformat_test # 输出 Test Success.
 
@@ -513,7 +572,9 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ```
 
 ### 3.2、polling模式异步压缩接口
+
 本小节介绍了polling模式下，将数据压缩为lz4标准的block\frame格式所需的接口
+
 #### 3.2.1、相关结构体
 
 ```c
@@ -540,6 +601,7 @@ struct kaelz4_buffer_list {
     void *usr_data;
 };
 ```
+
 #### 3.2.2、用户自定义函数
 
 ```c
@@ -549,8 +611,10 @@ typedef void (*lz4_async_callback)(struct kaelz4_result *result);
 // 逻辑地址与物理地址转换函数
 typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 ```
+
 #### 3.2.3、初始化session会话
-```
+
+```c
 /**
  * @brief: frame compress async api
  * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses.
@@ -558,33 +622,51 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
  * /
 void *KAELZ4_create_async_compress_session(iova_map_fn usr_map);
 ```
+
 #### 3.2.4、压缩
-```
+
+```c
 /**
  * @brief: block compress async api
  * @param: sess [IN] : this compression task session
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: callback [IN] : async callback function; it can not be NULL
+ * and must be lz4_async_callback.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
  * @return: 0 success, other fail
  * /
-int KAELZ4_compress_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
+int KAELZ4_compress_async_in_session(void *sess,
+    const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst,
+    lz4_async_callback callback,
+    struct kaelz4_result *result);
 
 /**
  * @brief: frame compress async api
  * @param: sess [IN] : this compression task session
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
- * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @param: callback [IN] : async callback function; it can not be NULL
+ * and must be lz4_async_callback.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is available.
+ * Otherwise preferences_ptr should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  * /
-int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const void *preferences_ptr);
+int KAELZ4_compress_frame_async_in_session(void *sess,
+    const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst,
+    lz4_async_callback callback,
+    struct kaelz4_result *result,
+    const void *preferences_ptr);
 ```
+
 #### 3.2.5、主动polling压缩结果
-```
+
+```c
 /**
  * @brief: Polling hardware result in session.
  * @param: sess : session
@@ -592,8 +674,10 @@ int KAELZ4_compress_frame_async_in_session(void *sess, const struct kaelz4_buffe
  */
 void KAELZ4_async_polling_in_session(void *sess, int budget);
 ```
+
 #### 3.2.6、清理session会话
-```
+
+```c
 /**
  * @brief: Destroy session and hardware ctx.
  * @param: sess : session
@@ -605,9 +689,12 @@ void KAELZ4_destroy_async_compress_session(void *sess);
  */
 void KAELZ4_reset_session(void *sess);
 ```
+
 #### 3.2.7、polling接口整体使用示例Demo
+
 本demo使用polling模式接口，通过初始化session上下文，调用frame格式异步压缩接口，
 接着主动polling压缩结果，最后在callback回调函数中取得frame格式的压缩结果，并将压缩结果解压为原始数据。
+
 ```c
 #include <stdio.h>
 #include <stdlib.h>
@@ -672,7 +759,8 @@ static void compression_callback2(struct kaelz4_result *result) {
     my_data->src_decompd_len = tmp_src_len;
 
     if (my_data->src_decompd_len != my_data->src_len) {
-        printf("Test Error: 解压后与原始长度不一样. result->src_size=%ld   原始长度=%ld   压缩后解压长度=%ld \n",
+        printf("Test Error: 解压后与原始长度不一样. "
+               "result->src_size=%ld 原始长度=%ld 压缩后解压长度=%ld\n",
             result->src_size,
             my_data->src_len,
             my_data->src_decompd_len);
@@ -690,7 +778,8 @@ static void compression_callback2(struct kaelz4_result *result) {
     g_has_done = 1;
 }
 
-static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
+static int test_frame_polling(
+    int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
 {
     g_has_done = 0;
     size_t src_len = 256 * 1024;  // 256KB
@@ -752,8 +841,8 @@ static int test_frame_polling(int contentChecksumFlag, int blockChecksumFlag, in
     result.src_size = src_len;
     result.dst_len = compressed_size;
 
-    int compression_status = KAELZ4_compress_frame_async_in_session(sess, &src, &dst,
-                                                      compression_callback2, &result, &preferences);
+    int compression_status = KAELZ4_compress_frame_async_in_session(
+        sess, &src, &dst, compression_callback2, &result, &preferences);
 
     if (compression_status != 0) {
         printf("Compression failed with error code: %d\n", compression_status);
@@ -775,15 +864,20 @@ int main()
     return test_frame_polling(0, 0, 0);
 }
 ```
+
 ```shell
-gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -lkaelz4 -o kaelz4_polling_test
+gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib \
+  -llz4 -lkaelz4 -o kaelz4_polling_test
 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ./kaelz4_polling_test # 输出 Test Success.
 ```
 
 ### 3.3、非polling模式异步压缩接口
+
 本小节介绍了非polling模式下，数据通过接口直接被异步压缩处理，最终由callback函数回调压缩结果的相关接口。
+
 #### 3.3.1、相关结构体
+
 ```c
 // 基本回调数据格式
 struct kaelz4_result {
@@ -810,6 +904,7 @@ struct kaelz4_buffer_list {
 ```
 
 #### 3.3.2、用户自定义函数
+
 ```c
 // 压缩任务完成后，将调用该回调函数。回调压缩的结果
 typedef void (*lz4_async_callback)(struct kaelz4_result *result);
@@ -822,8 +917,10 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
 
 ```c
 /*! LZ4_async_compress_init(iova_map_fn usr_map) :
-*  Register software compress function, initialize Task Queues and Threads on the KAE Side.
-*  If not being called before, LZ4_compress_async will not handle any exceptions and simply return failure.
+*  Register software compress function, initialize Task Queues and Threads on
+*  the KAE Side.
+*  If not being called before, LZ4_compress_async will not handle any
+*  exceptions and simply return failure.
 *  Note: Can not be called before fork();
 * @param: usr_map [IN] : Function for converting virtual addresses to physical addresses
 */
@@ -837,11 +934,16 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
  * @brief: block compress async api
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
+ * @param: callback [IN] : async callback function; it can not be NULL
+ * and must be lz4_async_callback.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
  * @return: 0 success, other fail
  * /
- int LZ4_compress_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
+ int LZ4_compress_async(const struct kaelz4_buffer_list *src,
+     struct kaelz4_buffer_list *dst,
+     lz4_async_callback callback,
+     struct kaelz4_result *result);
 ```
 
 #### 3.3.5、frame 异步压缩
@@ -851,12 +953,19 @@ typedef void *(*iova_map_fn)(void *usr, void *vaddr, size_t sz);
  * @brief: frame compress async api
  * @param: src [IN] : input data
  * @param: dst [OUT] : output data
- * @param: callback [IN] : async callback function,it can not be NULL, must be typedef void (*lz4_async_callback)(struct kaelz4_result *result);
- * @param: result [IN OUT] : async callback  result,it can not be NULL. must be pointer of struct kaelz4_result.
- * @param: preferences_ptr [IN] : compress preferences. NULL is avaliable. if not NULL  preferences_ptr  should be struct LZ4F_preferences_t data.
+ * @param: callback [IN] : async callback function; it can not be NULL
+ * and must be lz4_async_callback.
+ * @param: result [IN OUT] : async callback result; it can not be NULL
+ * and must be a pointer to struct kaelz4_result.
+ * @param: preferences_ptr [IN] : compress preferences. NULL is available.
+ * Otherwise preferences_ptr should be struct LZ4F_preferences_t data.
  * @return: 0 success, other fail
  * /
-int LZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result, const LZ4F_preferences_t* preferencesPtr);
+int LZ4F_compressFrame_async(const struct kaelz4_buffer_list *src,
+    struct kaelz4_buffer_list *dst,
+    lz4_async_callback callback,
+    struct kaelz4_result *result,
+    const LZ4F_preferences_t* preferencesPtr);
 ​
 ```
 
@@ -868,6 +977,7 @@ int LZ4F_compressFrame_async(const struct kaelz4_buffer_list *src, struct kaelz4
  */
 LZ4LIB_API void LZ4_teardown_async_compress(void);
 ```
+
 #### 3.3.7、整体使用示例Demo
 
 本demo以普通 frame 格式异步压缩接口示例：
@@ -941,7 +1051,8 @@ void compression_callback(struct kaelz4_result *result) {
     my_data->src_decompd_len = tmp_src_len;
 
     if (my_data->src_decompd_len != my_data->src_len) {
-        printf("Test Error: 解压后与原始长度不一样. result->src_size=%ld   原始长度=%ld   压缩后解压长度=%ld \n",
+        printf("Test Error: 解压后与原始长度不一样. "
+               "result->src_size=%ld 原始长度=%ld 压缩后解压长度=%ld\n",
             result->src_size,
             my_data->src_len,
             my_data->src_decompd_len);
@@ -959,7 +1070,8 @@ void compression_callback(struct kaelz4_result *result) {
     g_has_done = 1;
 }
 
-static int test_async_frame_with_perferences(int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
+static int test_async_frame_with_perferences(
+    int contentChecksumFlag, int blockChecksumFlag, int contentSizeFlag)
 {
     g_has_done = 0;
     size_t src_len = 256 * 1024;  // 256KB
@@ -1019,8 +1131,8 @@ static int test_async_frame_with_perferences(int contentChecksumFlag, int blockC
     result.src_size = src_len;
     result.dst_len = compressed_size;
     LZ4_async_compress_init(NULL);
-    int compression_status = LZ4F_compressFrame_async(&src, &dst,
-                                                      compression_callback, &result, &preferences);
+    int compression_status = LZ4F_compressFrame_async(
+        &src, &dst, compression_callback, &result, &preferences);
 
     if (compression_status != 0) {
         printf("Compression failed with error code: %d\n", compression_status);
@@ -1045,15 +1157,15 @@ int main()
 ```
 
 ```shell
-gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib -llz4 -o kaelz4_frame_async_test
+gcc main.c -I/usr/local/kaelz4/include -L/usr/local/kaelz4/lib \
+  -llz4 -o kaelz4_frame_async_test
 export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 ./kaelz4_frame_async_test # 输出 Test Success.
 ```
 
-
 ## 四、异常说明
 
-### 错误码枚举:
+### 错误码枚举
 
 ```c
 #define KAE_LZ4_INVAL_PARA 1 # 内部通用错误
@@ -1067,13 +1179,14 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 #define KAE_LZ4_TASK_QUEUE_FULL 9 # 任务队列已满
 ```
 
-### 切软算场景：
+### 切软算场景
 
 限制：用户调用压缩接口时输入数据必须小于64k时才支持切软算
-- 1、支持在KAE驱动异常时自动切软算
-- 2、支持在KAE硬件资源耗尽时自动切软算
-- 3、支持polling接口和通用接口切软算
-- 4、不支持SGL模式分段buffer切软算
+
+* 1、支持在KAE驱动异常时自动切软算
+* 2、支持在KAE硬件资源耗尽时自动切软算
+* 3、支持polling接口和通用接口切软算
+* 4、不支持SGL模式分段buffer切软算
 
 ## 五、kzip测试工具使用说明
 
@@ -1083,19 +1196,20 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 
 * KAE并发线程数量调整：不同的并发线程数会影响压缩处理效率，过多的线程数将消耗更多的KAE队列资源。用户单个压缩进程使用12个并发，能达到较好带宽性能。
 
-    ~~~shell
-    # KAE_LZ4_ASYNC_THREAD_NUM: KAE侧单个进程并发启动的线程数量。 
-    # 默认启动12个线程去并发处理压缩任务，最大32个 
+    ```shell
+    # KAE_LZ4_ASYNC_THREAD_NUM: KAE侧单个进程并发启动的线程数量。
+    # 默认启动12个线程去并发处理压缩任务，最大32个
     export KAE_LZ4_ASYNC_THREAD_NUM=12
-    ~~~
+    ```
 
 * 绑核说明：
   * 可以使用 taskset 或 numactl 对压缩进程进行绑核，可以限制对硬件加速器的使用。
-  * 一般至少需要绑定 KAE\_LZ4\_ASYNC\_THREAD\_NUM 个 CPU供KAE侧压缩使用。考虑用户侧逻辑，需要至少绑定 KAE\_LZ4\_ASYNC\_THREAD\_NUM+1 个CPU核心
+  * 一般至少需要绑定 KAE\_LZ4\_ASYNC\_THREAD\_NUM 个 CPU供KAE侧
+    压缩使用。考虑用户侧逻辑，需要至少绑定
+    KAE\_LZ4\_ASYNC\_THREAD\_NUM+1 个CPU核心
   * 默认情况下，KAE并发的线程会自动选择进程所处NUMA以及临近NUMA上的硬件加速器以达到最大带宽。
   * 如果只想使用1个加速器，可以将压缩进程仅绑定到单一NUMA的cpu核心上
   * 开启了超线程的机器，一般连续的2个cpu核心是同一个物理。需要间隔绑核或绑定更多的CPU核心数量以达到最大带宽。
-
 
 ## 七、常见问题解答 (FAQ)
 
@@ -1106,6 +1220,6 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 在异步的lz4 block/frame 接口测试中，目前单进程下即可打满带宽，多进程并不会带来更多收益。
 如果要模拟多进程异步压缩场景，可以使用工具的 -i 参数，`inflight_num` ，最小为1，最大1024，表示当前进程同时进行中的KAE异步压缩接口的任务数量（目前的kzip工具策略：超过该值后，必须要等到前面的压缩任务完成，回调函数完成后，才可以调用接口执行新的压缩任务），相当于用户侧压缩流量控制。目前默认256，是比较高的压缩流量。
 
-
 # 声明
-- 此代码仓计划参与Lz4软件开源，仅作Lz4功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。
+
+* 此代码仓计划参与Lz4软件开源，仅作Lz4功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。
