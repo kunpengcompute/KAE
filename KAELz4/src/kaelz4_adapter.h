@@ -19,15 +19,15 @@ enum {
     HW_V3  //  unused now
 };
 
-#define MAX_TASK_NUM 32
-#define KAELZ4_TASK_THREAD_NUM 12
-#define KAELZ4_TASK_QUEUE_DEPTH 1024
-#define ENQUEUE_TIME_OUT_US 1000000
-#define SMALL_BLOCK_SIZE (64 * 1024)
-#define SMALL_BLOCK_MAX_BUF_NUM (255)
-#define KAE_LZ4_RAW_MAX_SGE_NUM (255)
+#define MAX_TASK_NUM                         32
+#define KAELZ4_TASK_THREAD_NUM               12
+#define KAELZ4_TASK_QUEUE_DEPTH              1024
+#define ENQUEUE_TIME_OUT_US                  1000000
+#define SMALL_BLOCK_SIZE                     (64 * 1024)
+#define SMALL_BLOCK_MAX_BUF_NUM              (255)
+#define KAE_LZ4_RAW_MAX_SGE_NUM              (255)
 #define ASYNC_DEQUEUE_PROCESS_DEFAULT_BUDGET 1
-#define ASYNC_POLLING_DEFAULT_BUDGET 1
+#define ASYNC_POLLING_DEFAULT_BUDGET         1
 
 typedef struct {
     const struct kaelz4_buffer_list *src;

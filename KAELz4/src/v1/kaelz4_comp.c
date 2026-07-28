@@ -1603,8 +1603,7 @@ int kaelz4_triples_rebuild_impl(const struct kaelz4_buffer_list *src, struct kae
 
         idx++;
         save_info.dst_len += ret;
-        seq_result = (struct kaelz4_seq_result *)((unsigned char *)seq_result +
-                                                  KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
+        seq_result = (struct kaelz4_seq_result *)((unsigned char *)seq_result + KAE_LZ77_SEQ_DATA_SIZE_PER_64K);
     }
 
     if (result->ibuf_crc != NULL) {

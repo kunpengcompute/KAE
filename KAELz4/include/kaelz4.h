@@ -59,20 +59,20 @@ typedef struct {
     int seqnum;
 } LZ4_CCtx;
 
-#define TUPLE_STATUS_COMPRESS 2
-#define TUPLE_STATUS_RLEBLOCK 1
+#define TUPLE_STATUS_COMPRESS   2
+#define TUPLE_STATUS_RLEBLOCK   1
 #define TUPLE_STATUS_NOCOMPRESS 0
 
-#define KAE_LZ4_SUCC 0
-#define KAE_LZ4_INVAL_PARA 1
-#define KAE_LZ4_INIT_FAIL 2
-#define KAE_LZ4_COMP_FAIL 3
-#define KAE_LZ4_RELEASE_FAIL 4
-#define KAE_LZ4_ALLOC_FAIL 5
-#define KAE_LZ4_SET_FAIL 6
-#define KAE_LZ4_HW_TIMEOUT_FAIL 7
+#define KAE_LZ4_SUCC             0
+#define KAE_LZ4_INVAL_PARA       1
+#define KAE_LZ4_INIT_FAIL        2
+#define KAE_LZ4_COMP_FAIL        3
+#define KAE_LZ4_RELEASE_FAIL     4
+#define KAE_LZ4_ALLOC_FAIL       5
+#define KAE_LZ4_SET_FAIL         6
+#define KAE_LZ4_HW_TIMEOUT_FAIL  7
 #define KAE_LZ4_DST_BUF_OVERFLOW 8
-#define KAE_LZ4_TASK_QUEUE_FULL 9
+#define KAE_LZ4_TASK_QUEUE_FULL  9
 
 #define KAE_LZ77_SEQ_DATA_SIZE_PER_64K (128UL * 1024UL)
 
@@ -253,9 +253,11 @@ int KAELZ4_compress_lz77_async_in_session(void *sess, const struct kaelz4_buffer
     struct kaelz4_buffer_list *dst, lz4_async_callback callback, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to block
- * @note: For performance, this API does not validate rebuild input. tuple_buf
- * must be the unmodified LZ77 tuple returned by a successful KAE hardware
- * compression request for the same src and result. Other input is unsupported.
+ * @note: This API rejects NULL top-level arguments, NULL buffer arrays, and
+ * empty buffer lists. For performance, tuple contents are not validated:
+ * tuple_buf must be the unmodified LZ77 tuple returned by a successful KAE
+ * hardware compression request for the same src and result. Other input is
+ * unsupported.
  * @param: src [IN] : input data
  * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.
@@ -266,8 +268,8 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
     struct kaelz4_buffer_list *dst, struct kaelz4_result *result);
 /**
  * @brief: rebuild lz77 data to frame
- * @note: For performance, this API has the same trusted-input contract as
- * KAELZ4_rebuild_lz77_to_block().
+ * @note: This API performs the same buffer-list validation and uses the same
+ * trusted-input contract as KAELZ4_rebuild_lz77_to_block().
  * @param: src [IN] : input data
  * @param: tuple_buf [OUT] : lz77 output data, only support buf_num == 1 now.
  * @param: dst [OUT] : output data, only support buf_num == 1 now.

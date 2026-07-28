@@ -44,12 +44,23 @@ if ! command -v wget >/dev/null 2>&1; then
     exit 1
 fi
 
+if [ -n "${GTEST_CA_CERT:-}" ] &&
+   { [ ! -f "${GTEST_CA_CERT}" ] || [ ! -r "${GTEST_CA_CERT}" ]; }; then
+    echo "GTEST_CA_CERT must reference a readable CA certificate file." >&2
+    exit 1
+fi
+
 download_archive()
 {
     url=$1
 
-    wget --no-check-certificate --quiet --tries=2 --timeout=10 \
-         --output-document="${archive_path}" "${url}"
+    if [ -n "${GTEST_CA_CERT:-}" ]; then
+        wget --ca-certificate="${GTEST_CA_CERT}" --quiet --tries=2 --timeout=10 \
+             --output-document="${archive_path}" "${url}"
+    else
+        wget --quiet --tries=2 --timeout=10 \
+             --output-document="${archive_path}" "${url}"
+    fi
 }
 
 if [ -n "${GTEST_DOWNLOAD_URL:-}" ]; then

@@ -30,6 +30,21 @@ sh build.sh
 GitHub release，官方地址不可达时会切换到Gitee镜像。也可以通过
 `GTEST_DOWNLOAD_URL`指定其他可信下载地址。
 
+下载默认使用系统CA信任库验证TLS证书。如果内网通过企业CA代理HTTPS，
+请将企业根证书安装到系统信任库，或通过`GTEST_CA_CERT`指定证书文件：
+
+```sh
+GTEST_CA_CERT=/path/to/internal-root-ca.pem sh run.sh
+```
+
+使用内网制品镜像时，可以同时指定下载地址和企业CA证书：
+
+```sh
+GTEST_DOWNLOAD_URL=https://mirror.example.com/googletest-release-1.11.0.zip \
+GTEST_CA_CERT=/path/to/internal-root-ca.pem \
+sh run.sh
+```
+
 ## Polling异步零拷贝与非零拷贝测试
 
 `src/async_polling_case.cpp`覆盖KAELz4 polling异步压缩接口，包括零拷贝和非零拷贝两条路径。零拷贝用例使用hugetlb大页内存，并通过`/proc/self/pagemap`把虚拟地址转换为物理地址。

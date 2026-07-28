@@ -852,9 +852,28 @@ size_t KAELZ4_compress_get_tuple_buf_len(size_t src_len)
     return freg_cnt * KAE_LZ77_SEQ_DATA_SIZE_PER_64K;
 }
 
+static int kaelz4_rebuild_param_invalid(struct kaelz4_result *result)
+{
+    if (result != NULL) {
+        result->status = KAE_LZ4_INVAL_PARA;
+        result->dst_len = 0;
+    }
+    return KAE_LZ4_INVAL_PARA;
+}
+
+static int kaelz4_rebuild_buffer_list_invalid(const struct kaelz4_buffer_list *list)
+{
+    return list == NULL || list->buf == NULL || list->buf_num == 0;
+}
+
 int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf,
     struct kaelz4_buffer_list *dst, struct kaelz4_result *result)
 {
+    if (unlikely(result == NULL || kaelz4_rebuild_buffer_list_invalid(src) ||
+                 kaelz4_rebuild_buffer_list_invalid(tuple_buf) || kaelz4_rebuild_buffer_list_invalid(dst))) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
     if (result->src_size <= SMALL_BLOCK_SIZE && src->buf_num <= SMALL_BLOCK_MAX_BUF_NUM) {
         return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_SMALL_BLOCK, NULL);
     }
@@ -865,5 +884,10 @@ int KAELZ4_rebuild_lz77_to_block(const struct kaelz4_buffer_list *src, struct ka
 int KAELZ4_rebuild_lz77_to_frame(const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple_buf,
     struct kaelz4_buffer_list *dst, struct kaelz4_result *result, const void *preferences_ptr)
 {
+    if (unlikely(result == NULL || kaelz4_rebuild_buffer_list_invalid(src) ||
+                 kaelz4_rebuild_buffer_list_invalid(tuple_buf) || kaelz4_rebuild_buffer_list_invalid(dst))) {
+        return kaelz4_rebuild_param_invalid(result);
+    }
+
     return kaelz4_triples_rebuild_impl(src, tuple_buf, dst, result, KAELZ4_ASYNC_FRAME, preferences_ptr);
 }

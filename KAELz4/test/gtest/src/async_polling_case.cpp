@@ -1366,6 +1366,98 @@ TEST(KAELz4AsyncPolling, AsyncReqAllocFailurePreservesExistingQueue)
     EXPECT_EQ(existing_ctx.next, nullptr);
 }
 
+// Purpose: public rebuild API compatibility. NULL top-level arguments must
+// return KAE_LZ4_INVAL_PARA instead of being dereferenced, while invalid calls
+// with a result object reset its externally visible status and output length.
+TEST(KAELz4AsyncPolling, RebuildRejectsNullTopLevelArguments)
+{
+    RebuildCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(nullptr, &tc.tuple, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, nullptr, &tc.dst, &tc.result), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, nullptr, &tc.result), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(&tc.src, &tc.tuple, &tc.dst, nullptr), KAE_LZ4_INVAL_PARA);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(
+        KAELZ4_rebuild_lz77_to_frame(nullptr, &tc.tuple, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, nullptr, &tc.dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+
+    tc.result.status = KAE_LZ4_SUCC;
+    tc.result.dst_len = 1234;
+    EXPECT_EQ(
+        KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, nullptr, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+    EXPECT_EQ(tc.result.dst_len, 0U);
+    EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(&tc.src, &tc.tuple, &tc.dst, nullptr, &tc.preferences), KAE_LZ4_INVAL_PARA);
+}
+
+// Purpose: public rebuild API buffer-list validation. Empty lists and NULL
+// buffer arrays must return KAE_LZ4_INVAL_PARA before rebuild dereferences
+// list->buf[0].
+TEST(KAELz4AsyncPolling, RebuildRejectsInvalidBufferLists)
+{
+    RebuildCase tc(kSmallSize, KAELZ4_compress_get_tuple_buf_len(kSmallSize));
+
+    auto expect_invalid = [&](const struct kaelz4_buffer_list *src, struct kaelz4_buffer_list *tuple,
+                              struct kaelz4_buffer_list *dst) {
+        tc.result.status = KAE_LZ4_SUCC;
+        tc.result.dst_len = 1234;
+        EXPECT_EQ(KAELZ4_rebuild_lz77_to_block(src, tuple, dst, &tc.result), KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.dst_len, 0U);
+
+        tc.result.status = KAE_LZ4_SUCC;
+        tc.result.dst_len = 1234;
+        EXPECT_EQ(KAELZ4_rebuild_lz77_to_frame(src, tuple, dst, &tc.result, &tc.preferences), KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.status, KAE_LZ4_INVAL_PARA);
+        EXPECT_EQ(tc.result.dst_len, 0U);
+    };
+
+    struct kaelz4_buffer_list invalid_src = tc.src;
+    invalid_src.buf = nullptr;
+    expect_invalid(&invalid_src, &tc.tuple, &tc.dst);
+    invalid_src = tc.src;
+    invalid_src.buf_num = 0;
+    expect_invalid(&invalid_src, &tc.tuple, &tc.dst);
+
+    struct kaelz4_buffer_list invalid_tuple = tc.tuple;
+    invalid_tuple.buf = nullptr;
+    expect_invalid(&tc.src, &invalid_tuple, &tc.dst);
+    invalid_tuple = tc.tuple;
+    invalid_tuple.buf_num = 0;
+    expect_invalid(&tc.src, &invalid_tuple, &tc.dst);
+
+    struct kaelz4_buffer_list invalid_dst = tc.dst;
+    invalid_dst.buf = nullptr;
+    expect_invalid(&tc.src, &tc.tuple, &invalid_dst);
+    invalid_dst = tc.dst;
+    invalid_dst.buf_num = 0;
+    expect_invalid(&tc.src, &tc.tuple, &invalid_dst);
+}
+
 // Purpose: partial final tuple-slot compatibility. A 4KB request historically
 // advertises an 8KB tuple buffer; rebuild must accept it when seq_num fits the
 // bytes that are actually present instead of requiring a nominal 128KB slot.
