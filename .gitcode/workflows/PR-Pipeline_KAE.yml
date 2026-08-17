@@ -2,51 +2,19 @@ name: PR-Pipeline_KAE #流水线的名称
 
 on: # 自动触发工作流运行的触发条件
   workflow_dispatch: # 如果需要界面上手动运行工作流，必须将工作流配置为在 workflow_dispatch 事件上运行。支持在脚本里或者页面上指定输入参数。
+  pull_request: #MR的合并、打开和重开、更新事件都会触发
+    types: ["merge", "open", "reopen", "update"]
+    branches: [ "kae2" ] #作用于分支上
   pull_request_target: #MR的合并、打开和重开、更新事件都会触发
   # pull_request: #MR的合并、打开和重开、更新事件都会触发
     types: ["merge", "open", "reopen", "update"]
     branches: [ "kae2" ] #作用于分支上
 
 inputs:
-  repo:
-    type: string
-    description: ""
-    default: "${{ atomgit.event.repository.name }}"
-    manual_override: true
   pr_id:
     type: string
     description: ""
     default: "${{ atomgit.event.number }}"
-    manual_override: true
-  appId_task:
-    type: string
-    description: ""
-    default: "${{ secrets.appId_task }}"
-    manual_override: true
-  secretKey_task:
-    type: string
-    description: ""
-    default: "${{ secrets.secretKey_task }}"
-    manual_override: true
-  appId_status:
-    type: string
-    description: ""
-    default: "${{ secrets.appId_status }}"
-    manual_override: true
-  secretKey_status:
-    type: string
-    description: ""
-    default: "${{ secrets.secretKey_status }}"
-    manual_override: true
-  org_name:
-    type: string
-    description: ""
-    default: "${{ vars.org_name }}"
-    manual_override: true
-  project_name:
-    type: string
-    description: ""
-    default: "${{ vars.project_name }}"
     manual_override: true
   branch:
     type: string
