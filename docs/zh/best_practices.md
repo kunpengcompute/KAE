@@ -364,13 +364,13 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
 RocksDB使用ZSTD作为compaction过程中的压缩算法时，使用KAEZstd可以对其压缩过程进行加速。本节提供RocksDB调用KAEZstd加速压缩库的使用案例和方法。
 
-具体案例请参见《元数据加速 特性指南》中的“[KAEZstd算法加速](https://www.hikunpeng.com/document/detail/zh/kunpengsdss/appAccelFeatures/metaaccel/kunpengMetadata_34_0007.html)”章节。
+具体案例请参见《[RocksDB 性能优化 安装指南](https://www.hikunpeng.com/document/detail/zh/boostsds/rocksdbperfopt/docs/zh/installation_guide.md)》。
 
 ### MySQL调用KAEZstd压缩库
 
 KAEZstd支持MySQL透明页压缩，通过使用鲲鹏硬件加速模块加速ZSTD相关压缩解压缩算法。本节提供MySQL调用KAEZstd加速压缩库的使用案例和方法。
 
-具体案例请参见《[MySQL KAEZstd页压缩解压缩优化 特性指南](https://support.huawei.com/enterprise/zh/doc/EDOC1100433078/f5fe3e32?idPath=23710424|251364417|9856629|253662285)》。
+具体案例请参见《[MySQL KAEZstd页压缩解压缩优化 特性指南](https://www.hikunpeng.com/document/detail/zh/boostdb/mysql/basic_computation_opt/docs/zh/mysql_kaezstd_page_compression_and_decompression_optimizaiton_feature_guide.md)》。
 
 ### Kafka使能KAELz4压缩库
 

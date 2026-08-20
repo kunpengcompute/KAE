@@ -367,13 +367,13 @@ For details, see:
 
 RocksDB uses zstd as the compression algorithm during data compaction, and KAEZstd can be used to accelerate the compression. The section provides use cases and methods of calling the KAEZstd compression library in RocksDB.
 
-For details, see [Installing KAEZstd](https://www.hikunpeng.com/document/detail/en/kunpengsdss/appAccelFeatures/metaaccel/kunpengMetadata_34_0007.html) in the Metadata Acceleration Feature Guide.
+For details, see [RocksDB Performance Optimization Installation Guide](https://www.hikunpeng.com/document/detail/en/boostsds/rocksdbperfopt/docs/en/installation_guide.md) .
 
 ### Calling the KAEZstd Compression Library in MySQL
 
 KAEZstd supports transparent page compression in MySQL. It uses the Kunpeng hardware-based acceleration module to accelerate zstd-related compression and decompression algorithms. The section provides use cases and methods of calling the KAEZstd compression library in MySQL.
 
-For details, see [MySQL KAEZstd Page Compression and Decompression Optimization Feature Guide](https://support.huawei.com/enterprise/en/doc/EDOC1100433077/f5fe3e32/introduction).
+For details, see [MySQL KAEZstd Page Compression and Decompression Optimization Feature Guide](https://www.hikunpeng.com/document/detail/en/boostdb/mysql/basic_computation_opt/docs/en/mysql_kaezstd_page_compression_and_decompression_optimization_feature_guide.md).
 
 ### Enabling the KAELz4 Compression Library for Kafka
 
