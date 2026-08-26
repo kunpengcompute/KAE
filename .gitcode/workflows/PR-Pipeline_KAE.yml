@@ -29,7 +29,7 @@ stages:  #阶段，不超过16个阶段，不超过256个job
       sca:
         name: sca
         if: ${{ default() }}
-        runs-on: [ dedicate-hosted, x64, 2xlarge] # X86、X64、ARM或ARM64
+        runs-on: [ dedicate-hosted, x64, 2xlarge] # X86、X64、ARM或ARM64 
         container:
           image: swr.cn-north-4.myhuaweicloud.com/mindspore/mindspore_python3.11:v0.1
         needs: [] # 依赖任务的 identifier
