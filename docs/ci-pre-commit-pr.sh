@@ -19,12 +19,13 @@ echo "          Pre-Commit CI 增量检查"
 echo "================================================"
 
 # 处理凭据认证，仅私仓需要配置，需要外部传入GIT_TOKEN
-if [ ! -f "${GIT_TOKEN}" ]; then
+if [ -n "${GIT_TOKEN}" ]; then
    echo "GIT_TOKEN已传入，开始设置代码仓凭据"
    # 自动从REPO_URL 提取域名
    REPO_DOMAIN=$(echo "${REPO_URL}" | awk -F/ '{print $3}')
    # 配置 Git 凭据
    git config --global credential.helper store
+   umask 077
    echo "https://oauth2:${GIT_TOKEN}@${REPO_DOMAIN}" > ~/.git-credentials
 fi
 
