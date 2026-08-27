@@ -367,7 +367,7 @@ For details, see:
 
 RocksDB uses zstd as the compression algorithm during data compaction, and KAEZstd can be used to accelerate the compression. The section provides use cases and methods of calling the KAEZstd compression library in RocksDB.
 
-For details, see [RocksDB Performance Optimization Installation Guide](https://www.hikunpeng.com/document/detail/en/boostsds/rocksdbperfopt/docs/en/installation_guide.md) in the Metadata Acceleration Feature Guide.
+For details, see [RocksDB Performance Optimization Installation Guide](https://www.hikunpeng.com/document/detail/en/boostsds/rocksdbperfopt/docs/en/installation_guide.md).
 
 ### Calling the KAEZstd Compression Library in MySQL
 
