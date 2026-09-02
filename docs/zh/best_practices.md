@@ -94,7 +94,7 @@
 
     在测试的同时，重新开启一个终端窗口，执行**cat /sys/class/uacce/hisi\_hpre-\*/attrs/available\_instances**命令，可以看到显示结果从256变为255，说明已经消耗掉了一个硬算队列，测试执行完后数值恢复到256，说明KAE加速器已经生效。
 
-    若KAE加速器已生效即在硬算使能情况下，性能数据无明显提高，并且available\_instances值未变化，请检查前面的步骤是否正确，若Nginx和KAE各自验证正常，可能是OPENSSL\_CONF配置文件不正确，或者权限不正确，若不能处理，请联系华为工程师。
+    若KAE加速器已生效即在硬算使能情况下，性能数据无明显提高，并且available\_instances值未变化，请检查前面的步骤是否正确。若Nginx和KAE各自验证正常，可能是OPENSSL\_CONF配置文件不正确或权限不正确。若问题仍未解决，请在KAE仓库提交Issue反馈。
 
 **数据对比<a name="section1632969175612"></a>**
 

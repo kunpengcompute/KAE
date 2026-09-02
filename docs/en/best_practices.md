@@ -96,7 +96,7 @@ This section describes how to enable Nginx acceleration using KAE in web scenari
 
     During the test, open a new terminal window and run the **cat /sys/class/uacce/hisi\_hpre-\*/attrs/available\_instances** command. The command output changes from 256 to 255, indicating that a hardware queue has been consumed. After the test is complete, the value is restored to 256. This indicates that KAE works.
 
-    If KAE works, that is, hardware computing is enabled, the performance data does not increase significantly, and the value of **available\_instances** does not change, check whether the preceding steps are properly performed. If Nginx and KAE are normal, the **OPENSSL\_CONF** configuration file may be incorrect, or its permission is incorrect. You can contact Huawei technical support to solve this problem.
+    If KAE works, that is, hardware computing is enabled, but the performance does not improve significantly and the value of **available\_instances** does not change, check whether the preceding steps are properly performed. If Nginx and KAE are normal, the **OPENSSL\_CONF** configuration file or its permissions may be incorrect. If the problem persists, submit an issue in the KAE repository.
 
 **Data Comparison<a name="section1632969175612"></a>**
 
