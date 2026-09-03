@@ -33,7 +33,7 @@ Currently, iBMC supports three types of licenses.
 
 |**License Type**|**Validity Period**|**Description**|**Applicable Scenario**|
 |--|--|--|--|
-|Commissioning license|30 days|It can be applied from the Electronic Software Delivery Platform (ESDP). You can flexibly select the number of resources.|Commissioning by Huawei engineers|
+|Commissioning license|30 days|It can be applied from the Electronic Software Delivery Platform (ESDP). You can flexibly select the number of resources.|Commissioning and testing|
 |Temporary license|60 days|It can be applied from the Electronic Software Delivery Platform (ESDP). You can flexibly select the number of resources.|Pre-sales marketing, brand exhibition, and external test; engineering delivery commissioning and network fault recovery|
 |Commercial license|Permanent|It can be applied from the ESDP. The available functions and resources are the same as those specified in the contract.|Full functions, ESN changes, product rectification, and goods feedback|
 
@@ -672,7 +672,7 @@ Can the KAE performance data be provided?
 
 **Answer<a name="section118369312588"></a>**
 
-The performance data of the KAE is for Huawei internal reference only and cannot be released. For Huawei departments, some KAE performance data and corresponding test methods can be provided based on the purpose of use.
+KAE performance varies depending on factors such as the hardware configuration, software version, and test scenario. You can use the test methods described in this document to obtain performance data in your environment.
 
 ### Checking Whether a Program Calls KAE
 
@@ -797,7 +797,7 @@ Perform the following steps:
 
         ![](figures/0000000000011111111-20230808164742-64207217660956469509462238557584.png)
 
-        Contact the local Huawei sales personnel or engineers to learn about the license charging policy.
+        Refer to the relevant product license documentation for charging information.
 
 2. Check the KAE installation mode.
 

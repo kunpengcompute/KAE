@@ -25,7 +25,7 @@ int main(int argc, char **argv)
     ERR_load_BIO_strings();
     OpenSSL_add_all_algorithms();
     
-    /*You can use ENGINE_by_id Function to get the handle of the Huawei Accelerator Engine*/
+    /*You can use ENGINE_by_id Function to get the handle of the KAE Accelerator Engine*/
     ENGINE *e = ENGINE_by_id("kae");
     /*Enable the KAE asynchronization function. This function is optional. The value 0 indicates that this function is disabled, and the value 1 (default) indicates that this function is enabled.*/
     ENGINE_ctrl_cmd_string(e, "KAE_CMD_ENABLE_ASYNC", "1", 0);
