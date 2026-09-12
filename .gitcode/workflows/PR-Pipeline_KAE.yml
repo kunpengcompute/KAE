@@ -59,7 +59,7 @@ stages:  #阶段，不超过16个阶段，不超过256个job
               project-name: "${{ atomgit.event.repository.name }}"
               # rule、debug、platform-domain 等为可选项
       pre-commit:
-        runs-on: ["codearts-hosted", "ubuntu-latest", "x64", "large"]
+        runs-on: ["ubuntu-latest", "x64", "slim"]
         steps:
           - name: Checkout
             uses: checkout
