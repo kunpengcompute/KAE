@@ -35,7 +35,7 @@ inputs:
 
 jobs:  #任务，单stage下最多100个
   sca-pr:
-    runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+    runs-on: ["ubuntu-latest", "x64", "slim"]
     steps:
       - name: Checkout
         uses: checkout
@@ -44,7 +44,7 @@ jobs:  #任务，单stage下最多100个
         with:
           project-name: "${{ atomgit.event.repository.name }}"
   malicious-scan:
-    runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+    runs-on: ["codearts-hosted", "ubuntu-latest", "x64", "large"]
     steps:
       - name: Checkout
         uses: checkout
