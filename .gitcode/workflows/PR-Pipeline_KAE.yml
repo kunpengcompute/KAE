@@ -4,11 +4,18 @@ on: # 自动触发工作流运行的触发条件
   workflow_dispatch: # 如果需要界面上手动运行工作流，必须将工作流配置为在 workflow_dispatch 事件上运行。支持在脚本里或者页面上指定输入参数。
   pull_request: #MR的合并、打开和重开、更新事件都会触发
     types: ["merge", "open", "reopen", "update"]
-    branches: [ "kae2", "kae_260817" ] #作用于分支上
+    branches: [ "kae2" ] #作用于分支上
   pull_request_target: #MR的合并、打开和重开、更新事件都会触发
   # pull_request: #MR的合并、打开和重开、更新事件都会触发
     types: ["merge", "open", "reopen", "update"]
-    branches: [ "kae2", "kae_260817" ] #作用于分支上
+    branches: [ "kae2" ] #作用于分支上
+  pr_comment:
+    types: [ created ]
+    keyword: '^(?:\/)?compile*'
+  pull_request_comment:
+    types: [created]
+    branches: [ '*' ]
+    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan']
 
 permissions:
   repository: read
@@ -25,7 +32,6 @@ inputs:
     description: ""
     default: "${{ atomgit.event.pull_request.base.ref }}"
     manual_override: true
-
 stages:  #阶段，不超过16个阶段，不超过256个job
   stage0:  #stage identifier 仅支持大小写英文字母、数字、“-”或“_”，长度介于1~128之间
     name: 校验阶段 # 阶段名称
@@ -40,3 +46,193 @@ stages:  #阶段，不超过16个阶段，不超过256个job
             uses: openlibing/sca-action/sca-pr-action@v1.0.0
             with:
               project-name: "${{ atomgit.event.repository.name }}"
+      malicious-scan:
+        runs-on: ["codearts-hosted", "ubuntu-latest", "x64", "large"]
+        steps:
+          - name: Checkout
+            uses: checkout
+          - name: Run malicious code scan
+            uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
+            with:
+              repository-name: "${{ atomgit.event.repository.full_name }}"
+              pr-id: "${{ atomgit.event.pull_request.number }}"
+              project-name: "${{ atomgit.event.repository.name }}"
+              # rule、debug、platform-domain 等为可选项
+      pre-commit:
+        name: pre-commit
+        if: ${{ default() }}
+        runs-on: [ dedicate-hosted, x64, 2xlarge] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/mindspore/mindspore_python3.11:v0.1
+        select: selected_by_default
+        needs: [] # 依赖任务的 identifier
+        steps: # 单个job下最多16个step
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: ${{atomgit.ref}}
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: pre-commit
+            run: |-
+              echo 'hello'
+              ls -lart
+              set -euo pipefail
+              # set -x 保留打印执行命令，方便排错
+              set -x
+
+              export REPO_URL=${{atomgit.repositoryurl}}
+              export PR_ID=${pr_id}
+              export TARGET_BRANCH=${branch}
+
+              # 初始化标志位：0 表示未找到，1 表示找到
+              found_script=0
+
+              # 查找 ci-pre-commit-pr.sh
+              while IFS= read -r -d '' script_file; do
+                  found_script=1
+                  # echo "[INFO] 赋予执行权限: $script_file"
+                  chmod +x "$script_file"
+                  
+                  # echo "[INFO] 开始执行脚本: $script_file"
+                  bash "$script_file" || exit "$?"
+              done < <(find . -type f -name "ci-pre-commit-pr.sh" -print0)
+
+              if [[ "$found_script" -eq 0 ]]; then
+                  # echo "[WARN] 未找到 ci-pre-commit-pr.sh，检查 pre-commit 配置文件"
+                  if [[ -f .pre-commit-config.yaml ]]; then
+                      # echo "[INFO] 检测到 .pre-commit-config.yaml，执行 pre-commit 检查"
+                      if [[ ! -f .git/hooks/pre-commit ]]; then
+                          pre-commit install --install-hooks
+                      fi
+                      pre-commit run --all-files || exit "$?"
+                  else
+                      # echo "[INFO] 未找到 .pre-commit-config.yaml，无 pre-commit 配置，跳过检查"
+                      exit 0
+                  fi
+              fi
+              echo "codecheck finish"
+      build:
+        name: build
+        if: ${{ default() }}
+        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
+        select: selected_by_default
+        needs: [ sca-pr, malicious-scan, pre-commit]
+        steps:
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: ${{atomgit.ref}}
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: build
+            run: |-
+                echo 'hello'
+                ls -lart
+
+                yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+                
+                # su  root
+                
+                lscpu
+                
+                export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+                export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+                
+                chmod +x build.sh
+                
+                
+                sh build.sh uadk
+                sh build.sh engine
+                sh build.sh zlib
+                sh build.sh gzip
+                
+                
+                ls /usr/local/
+                ls /usr/local/lib
+                ls /usr/local/lib/engines-1.1/kae.so
+                ls /usr/local/kaezip/lib/libkaezip.so.*
+                ls /usr/local/kaegzip/gzip
+                
+                sh build.sh uadk clean
+                sh build.sh engine clean
+                sh build.sh zlib clean
+                sh build.sh gzip clean
+      ut:
+        name: ut
+        if: ${{ default() }}
+        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
+        select: selected_by_default
+        needs: [ sca, pre-commit]
+        steps:
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: ${{atomgit.ref}}
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: ut
+            run: |-
+                echo 'hello'
+                yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+
+                lscpu
+
+                export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+                export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+
+                chmod +x build.sh
+
+
+                sh build.sh uadk
+                # sh build.sh engine
+                sh build.sh zlib
+                # sh build.sh gzip
+
+
+                # ls /usr/local/
+                # ls /usr/local/lib
+                # ls /usr/local/lib/engines-1.1/kae.so
+                # ls /usr/local/kaezip/lib/libkaezip.so.*
+                # ls /usr/local/kaegzip/gzip
+
+                # sh build.sh uadk clean
+                # sh build.sh engine clean
+                # sh build.sh zlib clean
+                # sh build.sh gzip clean
+
+                LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
+                cd KAEZlib/test/gtest
+                sh build.sh
+
+
+
