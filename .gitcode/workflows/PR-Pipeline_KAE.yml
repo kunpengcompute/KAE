@@ -31,17 +31,12 @@ stages:  #阶段，不超过16个阶段，不超过256个job
     name: 校验阶段 # 阶段名称
     select: selected_by_default  # always, selected_by_default，不配置的话默认为selected_by_default(任务根据其所属阶段的 select 属性或全局配置决定是否默认选中)
     jobs:  #任务，单stage下最多100个
-      sca:
-        name: sca
-        if: ${{ default() }}
-        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
-        container:
-          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
-          options: --cpus 4 --user root
-        select: selected_by_default
-        needs: [] # 依赖任务的 identifier
-        steps: # 单个job下最多16个step
-          - name: atomgit.event.pull_request context
-            env:
-              ATOMGIT_CONTEXT: ${{ toJson(atomgit.event.pull_request) }}
-            run: echo "$ATOMGIT_CONTEXT"
+      sca-pr:
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        steps:
+          - name: Checkout
+            uses: checkout
+          - name: Run SCA PR scan
+            uses: openlibing/sca-action/sca-pr-action@v1.0.0
+            with:
+              project-name: "${{ atomgit.event.repository.name }}"
