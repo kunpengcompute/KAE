@@ -130,3 +130,63 @@ stages:  #阶段，不超过16个阶段，不超过256个job
                 sh build.sh engine clean
                 sh build.sh zlib clean
                 sh build.sh gzip clean
+      ut:
+        name: ut
+        if: ${{ default() }}
+        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
+        select: selected_by_default
+        needs: [ sca-pr, malicious-scan, pre-commit]
+        steps:
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: ${{atomgit.ref}}
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: ut
+            run: |-
+                echo 'hello'
+                yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+
+                lscpu
+
+                export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+                export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+
+                chmod +x build.sh
+
+
+                sh build.sh uadk
+                # sh build.sh engine
+                sh build.sh zlib
+                # sh build.sh gzip
+
+
+                # ls /usr/local/
+                # ls /usr/local/lib
+                # ls /usr/local/lib/engines-1.1/kae.so
+                # ls /usr/local/kaezip/lib/libkaezip.so.*
+                # ls /usr/local/kaegzip/gzip
+
+                # sh build.sh uadk clean
+                # sh build.sh engine clean
+                # sh build.sh zlib clean
+                # sh build.sh gzip clean
+
+                LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
+                cd KAEZlib/test/gtest
+                sh build.sh
+
+
+
