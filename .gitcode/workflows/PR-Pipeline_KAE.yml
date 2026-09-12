@@ -81,7 +81,7 @@ stages:  #阶段，不超过16个阶段，不超过256个job
         container:
           image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
         select: selected_by_default
-        needs: [ sca-pr, malicious-scan, pre-commit]
+        #needs: [ sca-pr, malicious-scan, pre-commit]
         steps:
           - name: fast_checkout
             identifier: fast_checkout
@@ -137,7 +137,7 @@ stages:  #阶段，不超过16个阶段，不超过256个job
         container:
           image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
         select: selected_by_default
-        needs: [ sca-pr, malicious-scan, pre-commit]
+        #needs: [ sca-pr, malicious-scan, pre-commit]
         steps:
           - name: fast_checkout
             identifier: fast_checkout
