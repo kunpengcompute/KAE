@@ -58,3 +58,19 @@ stages:  #阶段，不超过16个阶段，不超过256个job
               pr-id: "${{ atomgit.event.pull_request.number }}"
               project-name: "${{ atomgit.event.repository.name }}"
               # rule、debug、platform-domain 等为可选项
+      pre-commit:
+        runs-on: ["codearts-hosted", "ubuntu-latest", "x64", "large"]
+        steps:
+          - name: Checkout
+            uses: checkout
+          - name: Setup Python
+            uses: setup-python
+            with:
+              python-version: "3.14"
+          - name: Run pre-commit
+            uses: openlibing/pre-commit-action@v1.0.0
+            # 不传 extra_args 时为自动模式：PR 事件检查 PR 增量文件，非 PR 事件全量检查
+            # with:
+              # extra_args: --all-files
+              # 指定检查文件时必须写成单个以 -- 开头的 token：
+              # extra_args: --files=path/to/file
