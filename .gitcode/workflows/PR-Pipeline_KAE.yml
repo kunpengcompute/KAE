@@ -17,10 +17,6 @@ on: # 自动触发工作流运行的触发条件
     branches: [ '*' ]
     comments: [ '^(?:\/)?compile*' , 'sca-pr-scan']
 
-permissions:
-  repository: read
-  id-token: write
-
 inputs:
   pr_id:
     type: string
@@ -36,6 +32,11 @@ stages:  #阶段，不超过16个阶段，不超过256个job
   stage0:  #stage identifier 仅支持大小写英文字母、数字、“-”或“_”，长度介于1~128之间
     name: 校验阶段 # 阶段名称
     select: selected_by_default  # always, selected_by_default，不配置的话默认为selected_by_default(任务根据其所属阶段的 select 属性或全局配置决定是否默认选中)
+
+    permissions:
+      repository: read
+      id-token: write
+      
     jobs:  #任务，单stage下最多100个
       sca-pr:
         runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
