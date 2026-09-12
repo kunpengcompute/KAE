@@ -39,6 +39,17 @@ jobs:  #任务，单stage下最多100个
     steps:
       - name: Checkout
         uses: checkout
+        with: # 啥都不用写, 默认下载当前流水线触发仓
+        # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+          ref: ${{atomgit.ref}}
+        # path: repo
+        # token: 代码仓token
+        # ssh-key: ""
+        # endpoint_id: ""
+        # fetch-depth: 1
+        # submodules: "false"
+        # lfs: "false"
+        # clean: "true"
       - name: Run SCA PR scan
         uses: openlibing/sca-action/sca-pr-action@v1.0.0
         with:
@@ -48,6 +59,17 @@ jobs:  #任务，单stage下最多100个
     steps:
       - name: Checkout
         uses: checkout
+        with: # 啥都不用写, 默认下载当前流水线触发仓
+        # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+          ref: ${{atomgit.ref}}
+        # path: repo
+        # token: 代码仓token
+        # ssh-key: ""
+        # endpoint_id: ""
+        # fetch-depth: 1
+        # submodules: "false"
+        # lfs: "false"
+        # clean: "true"
       - name: Run malicious code scan
         uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
         with:
@@ -60,6 +82,17 @@ jobs:  #任务，单stage下最多100个
     steps:
       - name: Checkout
         uses: checkout
+        with: # 啥都不用写, 默认下载当前流水线触发仓
+        # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+          ref: ${{atomgit.ref}}
+        # path: repo
+        # token: 代码仓token
+        # ssh-key: ""
+        # endpoint_id: ""
+        # fetch-depth: 1
+        # submodules: "false"
+        # lfs: "false"
+        # clean: "true"
       - name: Setup Python
         uses: setup-python
         with:
