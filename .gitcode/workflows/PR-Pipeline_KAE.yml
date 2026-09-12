@@ -9,17 +9,6 @@ on: # 自动触发工作流运行的触发条件
   # pull_request: #MR的合并、打开和重开、更新事件都会触发
     types: ["merge", "open", "reopen", "update"]
     branches: [ "kae2", "kae_260817" ] #作用于分支上
-  pr_comment:
-    types: [ created ]
-    keyword: '^(?:\/)?compile*'
-  pull_request_comment:
-    types: [created]
-    branches: [ '*' ]
-    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan']
-
-permissions:
-  repository: read
-  id-token: write
 
 inputs:
   pr_id:
