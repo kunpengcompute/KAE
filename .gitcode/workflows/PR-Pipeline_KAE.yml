@@ -2,9 +2,9 @@ name: PR-Pipeline_KAE #流水线的名称
 
 on: # 自动触发工作流运行的触发条件
   workflow_dispatch: # 如果需要界面上手动运行工作流，必须将工作流配置为在 workflow_dispatch 事件上运行。支持在脚本里或者页面上指定输入参数。
-  #pull_request: #MR的合并、打开和重开、更新事件都会触发
-  #  types: ["merge", "open", "reopen", "update"]
-  #  branches: [ "kae2" ] #作用于分支上
+  pull_request: #MR的合并、打开和重开、更新事件都会触发
+    types: ["merge", "open", "reopen", "update"]
+    branches: [ "kae2" ] #作用于分支上
   pull_request_target: #MR的合并、打开和重开、更新事件都会触发默认分支的配置文件
   # pull_request: #MR的合并、打开和重开、更新事件都会触发
     types: ["merge", "open", "reopen", "update"]
