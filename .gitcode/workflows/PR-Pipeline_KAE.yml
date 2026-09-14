@@ -1,0 +1,198 @@
+name: PR-Pipeline_KAE #流水线的名称
+
+on: # 自动触发工作流运行的触发条件
+  workflow_dispatch: # 如果需要界面上手动运行工作流，必须将工作流配置为在 workflow_dispatch 事件上运行。支持在脚本里或者页面上指定输入参数。
+  #pull_request: #MR的合并、打开和重开、更新事件都会触发
+  #  types: ["merge", "open", "reopen", "update"]
+  #  branches: [ "kae2" ] #作用于分支上
+  pull_request_target: #MR的合并、打开和重开、更新事件都会触发默认分支的配置文件
+  # pull_request: #MR的合并、打开和重开、更新事件都会触发
+    types: ["merge", "open", "reopen", "update"]
+    branches: [ "*" ] #作用于分支上
+  pr_comment:
+    types: [ created ]
+    keyword: '^(?:\/)?compile*'
+  pull_request_comment:
+    types: [created]
+    branches: [ '*' ]
+    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan']
+
+permissions:
+  repository: read
+  id-token: write
+
+inputs:
+  pr_id:
+    type: string
+    description: ""
+    default: "${{ atomgit.event.pull_request.number }}"
+    manual_override: true
+  branch:
+    type: string
+    description: ""
+    default: "${{ atomgit.event.pull_request.base.ref }}"
+    manual_override: true
+
+stages:  #阶段，不超过16个阶段，不超过256个job
+  stage0:  #stage identifier 仅支持大小写英文字母、数字、“-”或“_”，长度介于1~128之间
+    name: 校验阶段 # 阶段名称
+    select: selected_by_default  # always, selected_by_default，不配置的话默认为selected_by_default(任务根据其所属阶段的 select 属性或全局配置决定是否默认选中)
+
+    jobs:  #任务，单stage下最多100个
+      sca-pr:
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        steps:
+          - name: Run SCA PR scan
+            uses: openlibing/sca-action/sca-pr-action@v1.0.0
+            with:
+              project-name: "boostkit"
+      malicious-scan:
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        steps:
+          - name: Run malicious code scan
+            uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
+            with:
+              project-name: "boostkit"
+      pre-commit:
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        steps:
+          - name: Checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: Setup Python
+            uses: setup-python
+            with:
+              python-version: "3.14"
+          - name: Run pre-commit
+            uses: openlibing/pre-commit-action@v1.0.0
+            # 不传 extra_args 时为自动模式：PR 事件检查 PR 增量文件，非 PR 事件全量检查
+            # with:
+              # extra_args: --all-files
+              # 指定检查文件时必须写成单个以 -- 开头的 token：
+              # extra_args: --files=path/to/file
+      build:
+        name: build
+        if: ${{ default() }}
+        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
+        select: selected_by_default
+        needs: [ sca-pr, malicious-scan, pre-commit]
+        steps:
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: build
+            run: |-
+                echo 'hello'
+                ls -lart
+
+                yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+                
+                # su  root
+                
+                lscpu
+                
+                export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+                export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+                
+                chmod +x build.sh
+                
+                
+                sh build.sh uadk
+                sh build.sh engine
+                sh build.sh zlib
+                sh build.sh gzip
+                
+                
+                ls /usr/local/
+                ls /usr/local/lib
+                ls /usr/local/lib/engines-1.1/kae.so
+                ls /usr/local/kaezip/lib/libkaezip.so.*
+                ls /usr/local/kaegzip/gzip
+                
+                sh build.sh uadk clean
+                sh build.sh engine clean
+                sh build.sh zlib clean
+                sh build.sh gzip clean
+      ut:
+        name: ut
+        if: ${{ default() }}
+        runs-on: [ self-hosted, os=euler] # X86、X64、ARM或ARM64
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base
+        select: selected_by_default
+        needs: [ sca-pr, malicious-scan, pre-commit]
+        steps:
+          - name: fast_checkout
+            identifier: fast_checkout
+            uses: checkout
+            with: # 啥都不用写, 默认下载当前流水线触发仓
+            # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+            # path: repo
+            # token: 代码仓token
+            # ssh-key: ""
+            # endpoint_id: ""
+            # fetch-depth: 1
+            # submodules: "false"
+            # lfs: "false"
+            # clean: "true"
+          - name: ut
+            run: |-
+                echo 'hello'
+                yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+
+                lscpu
+
+                export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+                export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+
+                chmod +x build.sh
+
+
+                sh build.sh uadk
+                # sh build.sh engine
+                sh build.sh zlib
+                # sh build.sh gzip
+
+
+                # ls /usr/local/
+                # ls /usr/local/lib
+                # ls /usr/local/lib/engines-1.1/kae.so
+                # ls /usr/local/kaezip/lib/libkaezip.so.*
+                # ls /usr/local/kaegzip/gzip
+
+                # sh build.sh uadk clean
+                # sh build.sh engine clean
+                # sh build.sh zlib clean
+                # sh build.sh gzip clean
+
+                LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
+                cd KAEZlib/test/gtest
+                sh build.sh
+
+
+
