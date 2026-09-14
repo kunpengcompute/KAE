@@ -1,4 +1,31 @@
-# 常见问题
+# 常见问题和故障案例
+
+本文提供KAE常见问题和故障案例，涵盖日志、硬件、License、安装KAE、验证KAE等类别内容。
+
+## 日志相关
+
+### 如何查询KAE日志
+
+**问题**
+
+如何查询KAE日志？
+
+**回答**
+
+掌握日志查询方法以便您在遇到故障时对故障根因进行准确定位和分析。
+
+KAE涉及日志信息如[**表 1** 日志信息](#日志信息)所示。
+
+**表 1** 日志信息<a id="日志信息"></a>
+
+|目录|文件名|文件内容说明|
+|--|--|--|
+|/var/log/|kae.log|OpenSSL引擎日志默认打印等级为error级别。<br>如需要设置日志级别，按照如下操作：<br>1.设置环境变量：<br>```export KAE_CONF_ENV=/var/log/```<br> 2.在/var/log/下创建kae.cnf文件。<br>3.在kae.cnf文件中设置如下：<br>```[LogSection]```<br>```debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaezip.log|KAEZlib压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作:<br>1.设置环境变量.<br>```export KAEZIP_CONF_ENV=/var/log/```<br>2.在/var/log/下创建文件kaezip.cnf。<br>3.在kaezip.cnf文件中设置如下：<br>```[LogSection]```<br>```debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaezstd.log|KAEZstd压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作设置:<br>1.设置环境变量：<br>```export KAEZSTD_CONF_ENV=/var/log/```<br>2.在/var/log/下创建kaezstd.cnf文件。<br>3.在kaezstd.cnf文件中设置如下：```[LogSection]debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaelz4.log|KAELz4压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作:<br>1.设置环境变量：```export KAELZ4_CONF_ENV=/var/log/```<br>2.在/var/log/下创建kaelz4.cnf文件。<br>3.在kaelz4.cnf文件中设置如下：<br>```[LogSection]```<br>```debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|kaesnappy.log|KAESnappy压缩库日志默认不打印。<br>如需要设置日志级别，按照如下操作:<br>1.设置环境变量：<br>```export KAESNAPPY_CONF_ENV=/var/log/```<br> 2.在/var/log/下创建kaesnappy.cnf文件。<br>3.并在kaesnappy.cnf文件中设置如下：<br>```[LogSection]```<br>```debug_level=error```。<br>debug_level取值范围：none、error、info、warning、debug。正常情况下不建议开启info或debug级别日志，否则会导致加速器性能的下降。|
+|/var/log/|message/syslog|CentOS，SUSE，Euler等OS内核日志路径为/var/log/message。Ubuntu等OS内核日志路径为/var/log/syslog。或通过dmesg > /var/log/dmesg.log日志收集内核相关日志，包含驱动及内核态日志。|
 
 ## 硬件相关
 
@@ -910,7 +937,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
     回显如下表示加载成功。若无对应模块显示，则查看安装过程是否异常，需要重新安装。
 
-    ```text
+    ```output
     uacce                  262144  2 hisi_hpre,hisi_qm,hisi_sec2,hisi_rde,hisi_zip
     ```
 
@@ -931,7 +958,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         如果有正确安装显示如：
 
-        ```text
+        ```output
         lrwxrwxrwx. 1 root root     22 Nov 12 02:33 kae.so -> kae.so.1.0.1
         lrwxrwxrwx. 1 root root     22 Nov 12 02:33 kae.so.0 -> kae.so.1.0.1
         -rwxr-xr-x. 1 root root 112632 May 25  2019 kae.so.1.0.1
@@ -945,7 +972,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         如果有正确安装显示如下内容。
 
-        ```text
+        ```output
         lrwxrwxrwx.  1 root root       14 Nov 12 02:33 libwd.so -> libwd.so.1.0.1
         lrwxrwxrwx.  1 root root       14 Nov 12 02:33 libwd.so.0 -> libwd.so.1.0.1
         -rwxr-xr-x.  1 root root   137120 May 25  2019 libwd.so.1.0.1
@@ -992,7 +1019,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
     正常情况下有如下相应的加速器设备。
 
-    ```text
+    ```output
     total 0
     lrwxrwxrwx. 1 root root 0 Nov 14 03:45 hisi_hpre-2 -> ../../devices/pci0000:78/0000:78:00.0/0000:79:00.0/uacce/hisi_hpre-2
     lrwxrwxrwx. 1 root root 0 Nov 14 03:45 hisi_hpre-3 -> ../../devices/pci0000:b8/0000:b8:00.0/0000:b9:00.0/uacce/hisi_hpre-3
@@ -1014,7 +1041,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         显示结果如下：
 
-        ```text
+        ```output
         79:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         b9:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon HPRE Engine (rev 21)
         ```
@@ -1027,7 +1054,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         显示结果如下：
 
-        ```text
+        ```output
         76:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         b6:00.0 Network and computing encryption device: Huawei Technologies Co., Ltd. HiSilicon SEC Engine (rev 21)
         ```
@@ -1040,7 +1067,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         显示结果如下：
 
-        ```text
+        ```output
         78:01.0 RAID bus controller: Huawei Technologies Co., Ltd. HiSilicon RDE Engine (rev 21)
         b8:01.0 RAID bus controller: Huawei Technologies Co., Ltd. HiSilicon RDE Engine (rev 21)
         ```
@@ -1053,7 +1080,7 @@ modprobe: ERROR: could not insert hisi zip': Invalid argument make:[Makefile:70:
 
         显示结果如下：
 
-        ```text
+        ```output
         75:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         b5:00.0 Processing accelerators: Huawei Technologies Co., Ltd. HiSilicon ZIP Engine (rev 21)
         ```
@@ -1262,3 +1289,10 @@ KAEZlib模块提供了与zlib开源库兼容的部分压缩与解压缩接口。
 对于uncompress块解压接口，调用时需传入目标缓冲区的容量作为参数。这意味着调用者必须确保目标缓冲区的容量大于解压后的数据量。如果目标缓冲区容量不足，执行解压缩操作可能触发未定义行为，导致程序出现不可预测的运行结果。
 
 因此，在解压缩原始数据大小未知的场景下，建议优先采用流式解压模式（inflate）进行处理。如果必须使用块解压接口（uncompress），则必须分配足够大的目标缓冲区，以保证其容量绝对充足。
+
+## 修订记录
+
+|文档版本|发布日期|修改说明|
+|---|---|---|
+|02|2026-09-10| 第二次正式发布。<br>文档优化：补充日志相关问题和故障案例。|
+|01|2026-06-30| 第一次正式发布。<br>文档内容继承上个版本未进行修改，跟随鲲鹏BoostKit 26.1.RC1版本发布文档。|
