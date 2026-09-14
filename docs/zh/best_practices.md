@@ -1,10 +1,10 @@
 # 最佳实践
 
-## 简介
-
 本文档提供了鲲鹏加速引擎（KAE）加解密模块、压缩模块和一些场景化使用示例，旨在帮助用户实现在具体场景中正确快速地调用KAE。
 
-部分算法在使用过程中的限制如下所示：
+## 约束与限制
+
+KAE部分算法在使用过程中的限制如下所示：
 
 - 如果用户未购买KAE加速引擎许可证，建议用户不要通过KAE加速引擎调用相应算法，否则会影响OpenSSL加密算法的性能。
 - SM4-XTS模式仅支持内核态使用，具体使用方法请参见[使用KAE提升SM4-XTS算法性能](#使用kae提升sm4-xts算法性能)。
@@ -153,7 +153,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```text
+    ```output
     1+0 records in
     1+0 records out
     4096 bytes (4.1 kB, 4.0 KiB) copied, 7.635e-05 s, 23.6 MB/s
@@ -199,7 +199,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```text
+    ```output
     meta-data=/dev/mapper/sx_disk    isize=512    agcount=16, agsize=4562368 blks
              =                       sectsz=512   attr=2, projid32bit=1
              =                       crc=1        finobt=1, sparse=0, rmapbt=0, reflink=0
@@ -226,7 +226,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```text
+    ```output
     Filesystem              Size  Used Avail Use% Mounted on
     devtmpfs                 63G     0   63G   0% /dev
     tmpfs                    63G     0   63G   0% /dev/shm
@@ -254,7 +254,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```text
+    ```output
     NAME           MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
     loop0            7:0    0   5.5G  1 loop  /os_lhl
     sda              8:0    0   2.2T  0 disk
@@ -274,7 +274,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果如下：
 
-    ```text
+    ```output
     /dev/mapper/sx_disk is active and is in use.
       type:    LUKS1
       cipher:  sm4-xts-plain64
@@ -309,7 +309,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果为：
 
-    ```text
+    ```output
     NAME           MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
     loop0            7:0    0   5.5G  1 loop  /os_lhl
     sda              8:0    0   2.2T  0 disk
@@ -335,7 +335,7 @@ dm-crypt算法注册在crypto模块中，hisi\_sec2驱动安装后，SM4-XTS算�
 
     显示结果如下：
 
-    ```text
+    ```output
     total 0
     crw---- 1 root root 10, 236 Jul 31 22:27 control
     lrwxrwxrwx 1 root root       7 Jul 31 22:27 vg_os-root -> ../dm-1
@@ -495,7 +495,7 @@ KAE支持在KVM（Kernel-based Virtual Machine）虚拟机中使用，使用前�
 
     显示如下，说明挂载的VF已经在虚拟机上读取成功。
 
-    ```text
+    ```output
     hisi_sec-0
     ```
 
@@ -572,3 +572,10 @@ KAE支持在Docker中使用，使用前要求HostOS上已经建立Docker容器�
 ### 使用Java调用KAE
 
 如需实现使用Java调用KAE的功能，请使用毕昇JDK的KAE Provider特性，调用方式请参见《[BishengJDK-8 KAE Provider用户使用手册](https://atomgit.com/openeuler/bishengjdk-8/wiki/KAE_Provider%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8C.md)》或《[BishengJDK-11 KAE Provider用户使用手册](https://atomgit.com/openeuler/bishengjdk-11/wiki/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3%2FKAE_Provider%E7%94%A8%E6%88%B7%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8C.md)》。
+
+## 修订记录
+
+|文档版本|发布日期|修改说明|
+|---|---|---|
+|02|2026-09-10| 第二次正式发布。<br>文档优化：补充摘要、修订记录等内容。|
+|01|2026-06-30| 第一次正式发布。<br>文档内容继承上个版本未进行修改，跟随鲲鹏BoostKit 26.1.RC1版本发布文档。|
