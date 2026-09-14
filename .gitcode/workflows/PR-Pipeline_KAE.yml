@@ -42,10 +42,6 @@ stages:  #阶段，不超过16个阶段，不超过256个job
       sca-pr:
         runs-on: ["ubuntu-latest", "x64", "slim"]
         steps:
-          - name: Checkout
-            uses: checkout
-            with:
-              ref: refs/merge-requests/${{ env.pr_id }}/merge
           - name: Run SCA PR scan
             uses: openlibing/sca-action/sca-pr-action@v1.0.0
             with:
@@ -53,17 +49,10 @@ stages:  #阶段，不超过16个阶段，不超过256个job
       malicious-scan:
         runs-on: ["ubuntu-latest", "x64", "slim"]
         steps:
-          - name: Checkout
-            uses: checkout
-            with:
-              ref: refs/merge-requests/${{ env.pr_id }}/merge
           - name: Run malicious code scan
             uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
             with:
-              repository-name: "${{ atomgit.event.repository.full_name }}"
-              pr-id: "${{ atomgit.event.pull_request.number }}"
               project-name: "boostkit"
-              # rule、debug、platform-domain 等为可选项
       pre-commit:
         runs-on: ["ubuntu-latest", "x64", "slim"]
         steps:
