@@ -1,32 +1,17 @@
 # 版本说明书
 
+本文给出KAE 2.2.0的版本说明书，配套鲲鹏BoostKit 26.1.RC1版本，支持鲲鹏920处理器、鲲鹏920新型号处理器、鲲鹏950处理器。
+
 ## 版本配套说明
 
 ### 产品版本信息
 
-<a name="table62675726"></a>
-<table><tbody><tr id="row41561572"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.1.1"><p id="p11044137"><a name="p11044137"></a><a name="p11044137"></a>产品名称</p>
-</th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.1.1 "><p id="p48427257"><a name="p48427257"></a><a name="p48427257"></a>Kunpeng BoostKit</p>
-</td>
-</tr>
-<tr id="row24726251"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.2.1"><p id="p56669300"><a name="p56669300"></a><a name="p56669300"></a>产品版本</p>
-</th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.2.1 "><p id="p16166112734513"><a name="p16166112734513"></a><a name="p16166112734513"></a><span id="text1726192733514"><a name="text1726192733514"></a><a name="text1726192733514"></a>26.1.RC1</span></p>
-</td>
-</tr>
-<tr id="row5497143514612"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.3.1"><p id="p162251517551"><a name="p162251517551"></a><a name="p162251517551"></a>软件名称</p>
-</th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.3.1 "><p id="p51757141375"><a name="p51757141375"></a><a name="p51757141375"></a>KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）</p>
-</td>
-</tr>
-<tr id="row615762416269"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.4.1"><p id="p12158152417260"><a name="p12158152417260"></a><a name="p12158152417260"></a>软件版本</p>
-</th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.4.1 "><p id="p51757141375"><a name="p51757141375"></a><a name="p51757141375"></a>2.2.0</p>
-</td>
-</tr>
-</tbody>
-</table>
+|项目|说明|
+|--|--|
+|产品名称|Kunpeng BoostKit|
+|产品版本|26.1.RC1|
+|软件名称|KAE（Kunpeng Accelerator Engine，鲲鹏加速引擎）|
+|软件版本|2.2.0|
 
 ### 硬件版本配套说明
 
@@ -258,3 +243,10 @@
 ### 获取文档的方法
 
 您可以通过[开源仓](https://gitcode.com/boostkit/KAE)浏览和获取相关文档。
+
+## 修订记录
+
+|文档版本|发布日期|修改说明|
+|---|---|---|
+|02|2026-09-10| 第二次正式发布。<br>文档优化：补充摘要、修订记录等内容。|
+|01|2026-06-30| 第一次正式发布。<br>文档内容继承上个版本未进行修改，跟随鲲鹏BoostKit 26.1.RC1版本发布文档。|
