@@ -21,6 +21,9 @@
 
 #include "uadk/v1/wd_ecc.h"
 #include "../../wdmngr/wd_queue_memory.h"
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include "utils/sm2_soft_provider.h"
+#endif
 
 #ifndef KAE_GMSSL
 extern KAE_QUEUE_POOL_HEAD_S *g_hpre_sm2_qnode_pool;
@@ -142,6 +145,9 @@ struct hpre_sm2_priv_ctx {
 	/* The update status of digest method, changed (1), not changed (0) */
 	int md_update_status;
 	hpre_sm2_engine_ctx_t *e_hpre_sm2_ctx;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	struct kae_sm2_soft_ctx soft;
+#endif
 };
 
 typedef struct hpre_sm2_priv_ctx hpre_sm2_priv_ctx_t;
@@ -161,4 +167,3 @@ KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void);
 EVP_PKEY_METHOD *get_sm2_pkey_meth(void);
 
 #endif
-

@@ -425,9 +425,14 @@ static void bind_kae_soft_alg(ENGINE *e, kae_alg_type_e kae_alg_type, int dev_nu
         case KAE_CIPHER_TYPE:
 			ENGINE_set_ciphers(e, sec_engine_soft_ciphers);
             break;
-        case KAE_DIGEST_TYPE:
+		case KAE_DIGEST_TYPE:
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 			ENGINE_set_digests(e, sec_engine_soft_digests);
-            break;
+#else
+			/* OpenSSL 3 provider fallback must not be intercepted by a
+			 * legacy digest method when no digest device is available. */
+#endif
+			break;
 		case KAE_RSA_TYPE:
 			ENGINE_set_RSA(e, RSA_get_default_method());
             break;

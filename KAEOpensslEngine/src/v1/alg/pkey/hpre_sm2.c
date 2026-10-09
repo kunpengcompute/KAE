@@ -57,6 +57,21 @@ static int g_known_pkey_nids[] = {
 // static struct hpre_pkey_meth g_pkey_meth;
 static EVP_PKEY_METHOD *g_hpre_sm2_method;
 
+static EC_KEY *hpre_sm2_get_ec_key(EVP_PKEY_CTX *ctx)
+{
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	hpre_sm2_priv_ctx_t *sm2ctx = EVP_PKEY_CTX_get_data(ctx);
+
+	if (!sm2ctx)
+		return NULL;
+	return kae_sm2_get_legacy_ec(pkey, &sm2ctx->soft);
+#else
+	return EVP_PKEY_get0(pkey);
+#endif
+}
+
 // 回调函数，返回值不按OPENSSL规范
 static int hpre_sm2_get_rand(char *out, size_t out_len, void *usr)
 {
@@ -256,7 +271,11 @@ const EVP_PKEY_METHOD *hpre_get_openssl_pkey_meth(int nid)
 #endif
 }
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 static int hpre_sm2_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src)
+#else
+static int hpre_sm2_copy(EVP_PKEY_CTX *dst, const EVP_PKEY_CTX *src)
+#endif
 {
 	hpre_sm2_priv_ctx_t *dctx, *sctx;
 
@@ -285,6 +304,9 @@ static int hpre_sm2_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src)
 	dctx->ctx.id_len = sctx->ctx.id_len;
 	dctx->ctx.id_set = sctx->ctx.id_set;
 	dctx->ctx.md = sctx->ctx.md;
+	dctx->md_nid = sctx->md_nid;
+	dctx->md_update_status = sctx->md_update_status;
+	dctx->init_status = sctx->init_status;
 
 	return OPENSSL_SUCCESS;
 }
@@ -355,6 +377,11 @@ static void hpre_sm2_cb(const void *message, void *tag)
 
 static int hpre_sm2_update_sess(struct hpre_sm2_priv_ctx *smctx)
 {
+	hpre_sm2_engine_ctx_t *e_sm2_ctx;
+	struct wd_queue *queue;
+	BIGNUM *order = NULL;
+	void *sess;
+	int type;
 	const unsigned char sm2_order[] = {
 		0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -366,17 +393,12 @@ static int hpre_sm2_update_sess(struct hpre_sm2_priv_ctx *smctx)
 		smctx->e_hpre_sm2_ctx = wd_sm2_get_engine_ctx(smctx);
 		if (smctx->e_hpre_sm2_ctx == NULL) {
 			US_WARN("hpre sm2 failed to get engine ctx, switch to soft cipher");
-            return OPENSSL_FAIL;
+			goto soft;
 		}
 	}
 
-	// struct wcrypto_ecc_ctx_setup setup;
-	hpre_sm2_engine_ctx_t * e_sm2_ctx = smctx->e_hpre_sm2_ctx;
-	void * sess;
-	BIGNUM *order;
-	int type;
-
-	struct wd_queue *queue = smctx->e_hpre_sm2_ctx->qlist->kae_wd_queue;
+	e_sm2_ctx = smctx->e_hpre_sm2_ctx;
+	queue = e_sm2_ctx->qlist->kae_wd_queue;
 
 	if (smctx->ctx.md) {
 		/* Set hash method */
@@ -384,24 +406,22 @@ static int hpre_sm2_update_sess(struct hpre_sm2_priv_ctx *smctx)
 		e_sm2_ctx->setup.hash.usr = (void *)smctx->ctx.md;
 		type = hpre_sm2_get_hash_type(smctx->md_nid);
 		if (type < 0) {
-			wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
 			fprintf(stderr, "uadk not support hash nid %d\n", smctx->md_nid);
-			return OPENSSL_FAIL;
+			goto soft;
 		}
 		e_sm2_ctx->setup.hash.type = type;
 	}
 
 	order = BN_bin2bn((void *)sm2_order, sizeof(sm2_order), NULL);
+	if (!order)
+		goto soft;
 	e_sm2_ctx->setup.rand.cb = hpre_sm2_get_rand;
 	e_sm2_ctx->setup.rand.usr = (void *)order;
 	e_sm2_ctx->setup.cb = (wcrypto_cb)hpre_sm2_cb;
 	sess = wcrypto_create_ecc_ctx(queue, &e_sm2_ctx->setup);
 	if (!sess) {
 		fprintf(stderr, "failed to alloc sess\n");
-		wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
-		BN_free(order);
-		smctx->init_status = HPRE_SM2_INIT_FAIL;
-		return OPENSSL_FAIL;
+		goto soft;
 	}
 
 	/* Free old session before setting new session */
@@ -414,9 +434,24 @@ static int hpre_sm2_update_sess(struct hpre_sm2_priv_ctx *smctx)
 
 	smctx->prikey = NULL;
 	smctx->pubkey = NULL;
+	BN_free(smctx->order);
 	smctx->order = order;
+	smctx->md_update_status = MD_UNCHANGED;
 
 	return OPENSSL_SUCCESS;
+
+soft:
+	if (smctx->e_hpre_sm2_ctx) {
+		wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
+		smctx->e_hpre_sm2_ctx = NULL;
+	}
+	BN_free(order);
+	BN_free(smctx->order);
+	smctx->order = NULL;
+	smctx->prikey = NULL;
+	smctx->pubkey = NULL;
+	smctx->init_status = HPRE_SM2_INIT_FAIL;
+	return OPENSSL_FAIL;
 }
 
 static int hpre_sm2_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
@@ -482,9 +517,9 @@ static int hpre_sm2_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
 		return OPENSSL_FAIL;
 	}
 set_data:
+	/* Accepted parameters remain usable when hardware setup fails. */
 	if (smctx->init_status == HPRE_SM2_INIT_SUCC && smctx->md_update_status)
-		if (!hpre_sm2_update_sess(smctx))
-			return OPENSSL_FAIL;
+		(void)hpre_sm2_update_sess(smctx);
 
 	EVP_PKEY_CTX_set_data(ctx, smctx);
 	return OPENSSL_SUCCESS;
@@ -742,9 +777,8 @@ free_hash:
 static int hpre_sm2_digest_custom(EVP_PKEY_CTX *ctx, EVP_MD_CTX *mctx)
 {
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
 	const EVP_MD *md = EVP_MD_CTX_md(mctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = hpre_sm2_get_ec_key(ctx);
 	uint8_t z[EVP_MAX_MD_SIZE];
 	int mdlen = EVP_MD_size(md);
 
@@ -752,6 +786,8 @@ static int hpre_sm2_digest_custom(EVP_PKEY_CTX *ctx, EVP_MD_CTX *mctx)
 		fprintf(stderr, "smctx not set in digest custom\n");
 		return OPENSSL_FAIL;
 	}
+	if (!ec)
+		return OPENSSL_FAIL;
 
     if (!smctx->ctx.id_set)
         (void)hpre_sm2_ctrl(ctx, EVP_PKEY_CTRL_SET1_ID, SM2_DEFAULT_USERID_LEN
@@ -793,6 +829,9 @@ static void hpre_sm2_cleanup(EVP_PKEY_CTX *ctx)
 	}
 
 	BN_free(smctx->order);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	kae_sm2_soft_cleanup(&smctx->soft);
+#endif
 	free(smctx);
 	EVP_PKEY_CTX_set_data(ctx, NULL);
 }
@@ -806,6 +845,12 @@ static int openssl_soft_encrypt(EVP_PKEY_CTX *ctx,
 			   unsigned char *out, size_t *outlen,
 			   const unsigned char *in, size_t inlen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	hpre_sm2_priv_ctx_t *sm2ctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+	return kae_sm2_soft_encrypt(&sm2ctx->soft, pkey, out, outlen, in, inlen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_DEC enc_pfunc = NULL;
 
@@ -817,12 +862,19 @@ static int openssl_soft_encrypt(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*enc_pfunc)(ctx, out, outlen, in, inlen);
+#endif
 }
 
 static int openssl_soft_decrypt(EVP_PKEY_CTX *ctx,
 			   unsigned char *out, size_t *outlen,
 			   const unsigned char *in, size_t inlen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	hpre_sm2_priv_ctx_t *sm2ctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+	return kae_sm2_soft_decrypt(&sm2ctx->soft, pkey, out, outlen, in, inlen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_ENC dec_pfunc = NULL;
 
@@ -834,6 +886,7 @@ static int openssl_soft_decrypt(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*dec_pfunc)(ctx, out, outlen, in, inlen);
+#endif
 }
 
 static size_t sm2_field_size(const EC_GROUP *group)
@@ -890,12 +943,14 @@ static int hpre_sm2_smctx_check(struct hpre_sm2_priv_ctx *smctx)
 		fprintf(stderr, "smctx is NULL\n");
 		return OPENSSL_FAIL;
 	}
+	if (smctx->init_status != HPRE_SM2_INIT_SUCC)
+		return OPENSSL_FAIL;
 
 	if (!smctx->e_hpre_sm2_ctx) {
 		hpre_sm2_update_sess(smctx);
 	}
 
-	if (!smctx->e_hpre_sm2_ctx->wd_ctx) {
+	if (!smctx->e_hpre_sm2_ctx || !smctx->e_hpre_sm2_ctx->wd_ctx) {
 		return OPENSSL_FAIL;
 	}
 
@@ -908,14 +963,15 @@ static int hpre_sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 {
 	US_DEBUG("sm2_encrypt_check started.\n");
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = hpre_sm2_get_ec_key(ctx);
 	const EVP_MD *md;
 	int c3_size;
 
 	if (!hpre_sm2_smctx_check(smctx)) {
 		return OPENSSL_FAIL;
 	}
+	if (!ec)
+		return OPENSSL_FAIL;
 
 	md = (smctx->ctx.md == NULL) ? EVP_sm3() : smctx->ctx.md;
 	c3_size = EVP_MD_size(md);
@@ -1008,12 +1064,13 @@ int hpre_sm2_set_public_key(void *sess, const EC_KEY *eckey)
 static int hpre_sm2_update_public_key(EVP_PKEY_CTX *ctx)
 {
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *eckey = EVP_PKEY_get0(p_key);
+	EC_KEY *eckey = hpre_sm2_get_ec_key(ctx);
 	const EC_GROUP *group;
 	const EC_POINT *point;
 	int ret;
 
+	if (!eckey)
+		return OPENSSL_FAIL;
 	point = EC_KEY_get0_public_key(eckey);
 	if (!point) {
 		fprintf(stderr, "pubkey not set!\n");
@@ -1374,11 +1431,12 @@ int hpre_sm2_set_private_key(void * sess, const EC_KEY *eckey)
 static int hpre_sm2_update_private_key(EVP_PKEY_CTX *ctx)
 {
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *eckey = EVP_PKEY_get0(p_key);
+	EC_KEY *eckey = hpre_sm2_get_ec_key(ctx);
 	const BIGNUM *d;
 	int ret;
 
+	if (!eckey)
+		return OPENSSL_FAIL;
 	d = EC_KEY_get0_private_key(eckey);
 	if (!d) {
 		fprintf(stderr, "private key not set\n");
@@ -1581,26 +1639,24 @@ static int hpre_sm2_sign_check(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *si
 		  const unsigned char *tbs, size_t tbslen)
 {
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
-	const int sig_sz = ECDSA_size(ec);
+	EC_KEY *ec = hpre_sm2_get_ec_key(ctx);
+	int sig_sz;
 
-	/*
-	 * If 'sig' is NULL, users can use sm2_decrypt API to obtain the valid 'siglen' first,
-	 * then users use the value of 'signlen' to alloc the memory of 'sig' and call the
-	 * sm2_decrypt API a second time to do the decryption task.
-	 */
+	if (!ec)
+		return OPENSSL_FAIL;
+	sig_sz = ECDSA_size(ec);
+	if (sig_sz <= 0) {
+		fprintf(stderr, "sig_sz error\n");
+		return OPENSSL_FAIL;
+	}
+
+	/* A size query does not need a hardware session. */
 	if (sig == NULL) {
 		*siglen = (size_t)sig_sz;
 		return OPENSSL_SUCCESS;
 	}
 
 	if (!hpre_sm2_smctx_check(smctx)) {
-		return OPENSSL_FAIL;
-	}
-
-	if (sig_sz <= 0) {
-		fprintf(stderr, "sig_sz error\n");
 		return OPENSSL_FAIL;
 	}
 
@@ -1672,6 +1728,12 @@ free_sig:
 static int openssl_soft_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 			const unsigned char *tbs, size_t tbslen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	hpre_sm2_priv_ctx_t *sm2ctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+	return kae_sm2_soft_sign(&sm2ctx->soft, pkey, sig, siglen, tbs, tbslen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_SIGN sign_pfunc = NULL;
 
@@ -1683,6 +1745,7 @@ static int openssl_soft_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *sigl
 	}
 
 	return (*sign_pfunc)(ctx, sig, siglen, tbs, tbslen);
+#endif
 }
 
 static int hpre_sm2_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
@@ -1697,6 +1760,8 @@ static int hpre_sm2_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 	ret = hpre_sm2_sign_check(ctx, sig, siglen, tbs, tbslen);
 	if (!ret)
 		goto do_soft;
+	if (!sig)
+		return OPENSSL_SUCCESS;
 
 	if (smctx->init_status != HPRE_SM2_INIT_SUCC) {
 		goto do_soft;
@@ -1852,6 +1917,12 @@ static int openssl_soft_verify(EVP_PKEY_CTX *ctx,
 			  const unsigned char *sig, size_t siglen,
 			  const unsigned char *tbs, size_t tbslen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	hpre_sm2_priv_ctx_t *sm2ctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+	return kae_sm2_soft_verify(&sm2ctx->soft, pkey, sig, siglen, tbs, tbslen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_VERIFY verify_pfunc = NULL;
 
@@ -1863,6 +1934,7 @@ static int openssl_soft_verify(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*verify_pfunc)(ctx, sig, siglen, tbs, tbslen);
+#endif
 }
 
 
@@ -1874,8 +1946,7 @@ static int hpre_sm2_verify(EVP_PKEY_CTX *ctx,
 	struct hpre_sm2_priv_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 	unsigned char buf_r[SM2_MAX_KEY_BYTES] = {0};
 	unsigned char buf_s[SM2_MAX_KEY_BYTES] = {0};
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = hpre_sm2_get_ec_key(ctx);
 	struct wd_dtb e = {0};
 	struct wd_dtb r = {0};
 	struct wd_dtb s = {0};
@@ -1892,6 +1963,8 @@ static int hpre_sm2_verify(EVP_PKEY_CTX *ctx,
 		ret = OPENSSL_FAIL;
 		goto do_soft;
 	}
+	if (!ec)
+		goto do_soft;
 
 	r.data = (void *)buf_r;
 	s.data = (void *)buf_s;

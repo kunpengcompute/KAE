@@ -23,6 +23,13 @@
 #include <openssl/err.h>
 #include <limits.h>
 #include <stdint.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <strings.h>
+#include <openssl/core_dispatch.h>
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
+#include <openssl/provider.h>
+#endif
 #include <uadk/wd_ecc.h>
 #include <uadk/wd_sched.h>
 #include "v2/uadk.h"
@@ -66,6 +73,13 @@ struct sm2_ctx {
 	int md_nid;
 	/* The update status of digest method, changed (1), not changed (0) */
 	int md_update_status;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	void *soft_key;
+	const EVP_PKEY *soft_pkey;
+	int soft_key_has_private;
+	EC_KEY *legacy_ec;
+	const EVP_PKEY *legacy_pkey;
+#endif
 };
 
 typedef struct sm2_ciphertext {
@@ -127,6 +141,402 @@ typedef int (*PFUNC_DEC)(EVP_PKEY_CTX *ctx,
 			 size_t *outlen,
 			 const unsigned char *in,
 			 size_t inlen);
+
+static EC_KEY *sm2_get_ec_key(EVP_PKEY_CTX *ctx)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+	const OSSL_PROVIDER *provider;
+	const EC_POINT *public_point;
+	EC_POINT *point = NULL;
+	EC_KEY *ec = NULL;
+	BIGNUM *private_key = NULL;
+	unsigned char *public_key = NULL;
+	char group_name[32];
+	size_t public_key_len = 0;
+
+	if (!smctx || !pkey)
+		return NULL;
+	provider = EVP_PKEY_get0_provider(pkey);
+	if (!provider)
+		return (EC_KEY *)EVP_PKEY_get0_EC_KEY(pkey);
+	if (smctx->legacy_ec && smctx->legacy_pkey == pkey)
+		return smctx->legacy_ec;
+
+	if (!EVP_PKEY_get_utf8_string_param(pkey, OSSL_PKEY_PARAM_GROUP_NAME,
+					    group_name, sizeof(group_name), NULL) ||
+	    strcasecmp(group_name, "SM2"))
+		return NULL;
+	if (!EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
+					     NULL, 0, &public_key_len) ||
+	    !public_key_len)
+		return NULL;
+	public_key = OPENSSL_malloc(public_key_len);
+	ec = EC_KEY_new_by_curve_name(NID_sm2);
+	if (!public_key || !ec ||
+	    !EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
+					     public_key, public_key_len,
+					     &public_key_len))
+		goto err;
+
+	point = EC_POINT_new(EC_KEY_get0_group(ec));
+	if (!point || !EC_POINT_oct2point(EC_KEY_get0_group(ec), point,
+					 public_key, public_key_len, NULL) ||
+	    !EC_KEY_set_public_key(ec, point))
+		goto err;
+
+	if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_PRIV_KEY, &private_key) &&
+	    !EC_KEY_set_private_key(ec, private_key))
+		goto err;
+
+	public_point = EC_KEY_get0_public_key(ec);
+	if (!public_point)
+		goto err;
+	EC_KEY_free(smctx->legacy_ec);
+	smctx->legacy_ec = ec;
+	smctx->legacy_pkey = pkey;
+	EC_POINT_free(point);
+	BN_clear_free(private_key);
+	OPENSSL_free(public_key);
+	return ec;
+err:
+	EC_POINT_free(point);
+	EC_KEY_free(ec);
+	BN_clear_free(private_key);
+	OPENSSL_free(public_key);
+	return NULL;
+#else
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+
+	return EVP_PKEY_get0(pkey);
+#endif
+}
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+struct sm2_soft_methods {
+	OSSL_LIB_CTX *libctx;
+	OSSL_PROVIDER *provider;
+	void *provctx;
+	OSSL_FUNC_keymgmt_new_fn *key_new;
+	OSSL_FUNC_keymgmt_free_fn *key_free;
+	OSSL_FUNC_keymgmt_import_fn *key_import;
+	OSSL_FUNC_signature_newctx_fn *sig_newctx;
+	OSSL_FUNC_signature_freectx_fn *sig_freectx;
+	OSSL_FUNC_signature_sign_init_fn *sign_init;
+	OSSL_FUNC_signature_sign_fn *sign;
+	OSSL_FUNC_signature_verify_init_fn *verify_init;
+	OSSL_FUNC_signature_verify_fn *verify;
+	OSSL_FUNC_asym_cipher_newctx_fn *cipher_newctx;
+	OSSL_FUNC_asym_cipher_freectx_fn *cipher_freectx;
+	OSSL_FUNC_asym_cipher_encrypt_init_fn *encrypt_init;
+	OSSL_FUNC_asym_cipher_encrypt_fn *encrypt;
+	OSSL_FUNC_asym_cipher_decrypt_init_fn *decrypt_init;
+	OSSL_FUNC_asym_cipher_decrypt_fn *decrypt;
+	int ready;
+};
+
+static struct sm2_soft_methods g_sm2_soft;
+static CRYPTO_ONCE g_sm2_soft_once = CRYPTO_ONCE_STATIC_INIT;
+
+static const OSSL_DISPATCH *sm2_soft_find_algorithm(OSSL_PROVIDER *provider,
+						     int operation)
+{
+	const OSSL_ALGORITHM *algs;
+	int no_cache = 0;
+
+	algs = OSSL_PROVIDER_query_operation(provider, operation, &no_cache);
+	if (!algs)
+		return NULL;
+
+	for (; algs->algorithm_names; algs++) {
+		const char *name = algs->algorithm_names;
+
+		while (*name) {
+			const char *end = strchr(name, ':');
+
+			if (!end)
+				end = name + strlen(name);
+			if (end - name == 3 && !strncasecmp(name, "SM2", 3))
+				return algs->implementation;
+			name = *end == ':' ? end + 1 : end;
+		}
+	}
+
+	return NULL;
+}
+
+static void sm2_soft_load_methods(void)
+{
+	const OSSL_DISPATCH *dispatch;
+
+	g_sm2_soft.libctx = OSSL_LIB_CTX_new();
+	if (!g_sm2_soft.libctx)
+		return;
+	g_sm2_soft.provider = OSSL_PROVIDER_load(g_sm2_soft.libctx, "default");
+	if (!g_sm2_soft.provider) {
+		OSSL_LIB_CTX_free(g_sm2_soft.libctx);
+		g_sm2_soft.libctx = NULL;
+		return;
+	}
+	g_sm2_soft.provctx = OSSL_PROVIDER_get0_provider_ctx(g_sm2_soft.provider);
+
+	dispatch = sm2_soft_find_algorithm(g_sm2_soft.provider, OSSL_OP_KEYMGMT);
+	for (; dispatch && dispatch->function_id; dispatch++) {
+		switch (dispatch->function_id) {
+		case OSSL_FUNC_KEYMGMT_NEW:
+			g_sm2_soft.key_new = OSSL_FUNC_keymgmt_new(dispatch);
+			break;
+		case OSSL_FUNC_KEYMGMT_FREE:
+			g_sm2_soft.key_free = OSSL_FUNC_keymgmt_free(dispatch);
+			break;
+		case OSSL_FUNC_KEYMGMT_IMPORT:
+			g_sm2_soft.key_import = OSSL_FUNC_keymgmt_import(dispatch);
+			break;
+		default:
+			break;
+		}
+	}
+
+	dispatch = sm2_soft_find_algorithm(g_sm2_soft.provider, OSSL_OP_SIGNATURE);
+	for (; dispatch && dispatch->function_id; dispatch++) {
+		switch (dispatch->function_id) {
+		case OSSL_FUNC_SIGNATURE_NEWCTX:
+			g_sm2_soft.sig_newctx = OSSL_FUNC_signature_newctx(dispatch);
+			break;
+		case OSSL_FUNC_SIGNATURE_FREECTX:
+			g_sm2_soft.sig_freectx = OSSL_FUNC_signature_freectx(dispatch);
+			break;
+		case OSSL_FUNC_SIGNATURE_SIGN_INIT:
+			g_sm2_soft.sign_init = OSSL_FUNC_signature_sign_init(dispatch);
+			break;
+		case OSSL_FUNC_SIGNATURE_SIGN:
+			g_sm2_soft.sign = OSSL_FUNC_signature_sign(dispatch);
+			break;
+		case OSSL_FUNC_SIGNATURE_VERIFY_INIT:
+			g_sm2_soft.verify_init = OSSL_FUNC_signature_verify_init(dispatch);
+			break;
+		case OSSL_FUNC_SIGNATURE_VERIFY:
+			g_sm2_soft.verify = OSSL_FUNC_signature_verify(dispatch);
+			break;
+		default:
+			break;
+		}
+	}
+
+	dispatch = sm2_soft_find_algorithm(g_sm2_soft.provider,
+					   OSSL_OP_ASYM_CIPHER);
+	for (; dispatch && dispatch->function_id; dispatch++) {
+		switch (dispatch->function_id) {
+		case OSSL_FUNC_ASYM_CIPHER_NEWCTX:
+			g_sm2_soft.cipher_newctx = OSSL_FUNC_asym_cipher_newctx(dispatch);
+			break;
+		case OSSL_FUNC_ASYM_CIPHER_FREECTX:
+			g_sm2_soft.cipher_freectx = OSSL_FUNC_asym_cipher_freectx(dispatch);
+			break;
+		case OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT:
+			g_sm2_soft.encrypt_init = OSSL_FUNC_asym_cipher_encrypt_init(dispatch);
+			break;
+		case OSSL_FUNC_ASYM_CIPHER_ENCRYPT:
+			g_sm2_soft.encrypt = OSSL_FUNC_asym_cipher_encrypt(dispatch);
+			break;
+		case OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT:
+			g_sm2_soft.decrypt_init = OSSL_FUNC_asym_cipher_decrypt_init(dispatch);
+			break;
+		case OSSL_FUNC_ASYM_CIPHER_DECRYPT:
+			g_sm2_soft.decrypt = OSSL_FUNC_asym_cipher_decrypt(dispatch);
+			break;
+		default:
+			break;
+		}
+	}
+
+	g_sm2_soft.ready = g_sm2_soft.key_new && g_sm2_soft.key_free &&
+		g_sm2_soft.key_import && g_sm2_soft.sig_newctx &&
+		g_sm2_soft.sig_freectx && g_sm2_soft.sign_init &&
+		g_sm2_soft.sign && g_sm2_soft.verify_init &&
+		g_sm2_soft.verify && g_sm2_soft.cipher_newctx &&
+		g_sm2_soft.cipher_freectx && g_sm2_soft.encrypt_init &&
+		g_sm2_soft.encrypt && g_sm2_soft.decrypt_init &&
+		g_sm2_soft.decrypt;
+}
+
+static int sm2_soft_methods_ready(void)
+{
+	if (!CRYPTO_THREAD_run_once(&g_sm2_soft_once, sm2_soft_load_methods))
+		return 0;
+	return g_sm2_soft.ready;
+}
+
+static void sm2_soft_free_key(struct sm2_ctx *smctx)
+{
+	if (smctx->soft_key && g_sm2_soft.key_free)
+		g_sm2_soft.key_free(smctx->soft_key);
+	smctx->soft_key = NULL;
+	smctx->soft_pkey = NULL;
+	smctx->soft_key_has_private = 0;
+}
+
+static void *sm2_soft_import_key(EVP_PKEY_CTX *ctx, int need_private)
+{
+	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
+	EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(ctx);
+	EC_KEY *ec = NULL;
+	const EC_GROUP *group;
+	const EC_POINT *point;
+	const BIGNUM *private_key = NULL;
+	OSSL_PARAM_BLD *bld = NULL;
+	OSSL_PARAM *params = NULL;
+	unsigned char *public_key = NULL;
+	void *soft_key = NULL;
+	size_t public_key_len;
+	int selection;
+
+	if (!smctx || !pkey || !sm2_soft_methods_ready())
+		return NULL;
+
+	if (smctx->soft_key && smctx->soft_pkey == pkey &&
+	    (!need_private || smctx->soft_key_has_private))
+		return smctx->soft_key;
+
+	ec = sm2_get_ec_key(ctx);
+	if (!ec)
+		return NULL;
+	private_key = EC_KEY_get0_private_key(ec);
+	if (need_private && !private_key)
+		return NULL;
+	group = EC_KEY_get0_group(ec);
+	point = EC_KEY_get0_public_key(ec);
+	if (!group || !point || EC_GROUP_get_curve_name(group) != NID_sm2)
+		return NULL;
+
+	public_key_len = EC_POINT_point2oct(group, point,
+					    POINT_CONVERSION_UNCOMPRESSED,
+					    NULL, 0, NULL);
+	public_key = OPENSSL_malloc(public_key_len);
+	bld = OSSL_PARAM_BLD_new();
+	if (!public_key_len || !public_key || !bld ||
+	    EC_POINT_point2oct(group, point, POINT_CONVERSION_UNCOMPRESSED,
+			       public_key, public_key_len, NULL) != public_key_len ||
+	    !OSSL_PARAM_BLD_push_utf8_string(bld, OSSL_PKEY_PARAM_GROUP_NAME,
+					    "SM2", 0) ||
+	    !OSSL_PARAM_BLD_push_octet_string(bld, OSSL_PKEY_PARAM_PUB_KEY,
+					     public_key, public_key_len))
+		goto out;
+
+	selection = OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS |
+		OSSL_KEYMGMT_SELECT_PUBLIC_KEY;
+	if (private_key) {
+		if (!OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PRIV_KEY,
+					    private_key))
+			goto out;
+		selection |= OSSL_KEYMGMT_SELECT_PRIVATE_KEY;
+	}
+
+	params = OSSL_PARAM_BLD_to_param(bld);
+	soft_key = g_sm2_soft.key_new(g_sm2_soft.provctx);
+	if (!params || !soft_key ||
+	    !g_sm2_soft.key_import(soft_key, selection, params)) {
+		if (soft_key)
+			g_sm2_soft.key_free(soft_key);
+		soft_key = NULL;
+		goto out;
+	}
+
+	sm2_soft_free_key(smctx);
+	smctx->soft_key = soft_key;
+	smctx->soft_pkey = pkey;
+	smctx->soft_key_has_private = need_private || private_key != NULL;
+out:
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
+	OPENSSL_free(public_key);
+	return soft_key;
+}
+
+static int openssl3_sign(EVP_PKEY_CTX *ctx, unsigned char *sig,
+			 size_t *siglen, const unsigned char *tbs, size_t tbslen)
+{
+	void *key = sm2_soft_import_key(ctx, 1);
+	void *soft_ctx;
+	size_t sigsize;
+	int ret;
+
+	if (!key || !siglen)
+		return -1;
+	soft_ctx = g_sm2_soft.sig_newctx(g_sm2_soft.provctx,
+					  "provider=default");
+	if (!soft_ctx)
+		return -1;
+	sigsize = sig ? *siglen : 0;
+	ret = g_sm2_soft.sign_init(soft_ctx, key, NULL) &&
+		g_sm2_soft.sign(soft_ctx, sig, siglen, sigsize, tbs, tbslen);
+	g_sm2_soft.sig_freectx(soft_ctx);
+	return ret;
+}
+
+static int openssl3_verify(EVP_PKEY_CTX *ctx, const unsigned char *sig,
+			   size_t siglen, const unsigned char *tbs,
+			   size_t tbslen)
+{
+	void *key = sm2_soft_import_key(ctx, 0);
+	void *soft_ctx;
+	int ret;
+
+	if (!key)
+		return -1;
+	soft_ctx = g_sm2_soft.sig_newctx(g_sm2_soft.provctx,
+					  "provider=default");
+	if (!soft_ctx)
+		return -1;
+	ret = g_sm2_soft.verify_init(soft_ctx, key, NULL) &&
+		g_sm2_soft.verify(soft_ctx, sig, siglen, tbs, tbslen);
+	g_sm2_soft.sig_freectx(soft_ctx);
+	return ret;
+}
+
+static int openssl3_encrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+			    size_t *outlen, const unsigned char *in,
+			    size_t inlen)
+{
+	void *key = sm2_soft_import_key(ctx, 0);
+	void *soft_ctx;
+	size_t outsize;
+	int ret;
+
+	if (!key || !outlen)
+		return -1;
+	soft_ctx = g_sm2_soft.cipher_newctx(g_sm2_soft.provctx);
+	if (!soft_ctx)
+		return -1;
+	outsize = out ? *outlen : 0;
+	ret = g_sm2_soft.encrypt_init(soft_ctx, key, NULL) &&
+		g_sm2_soft.encrypt(soft_ctx, out, outlen, outsize, in, inlen);
+	g_sm2_soft.cipher_freectx(soft_ctx);
+	return ret;
+}
+
+static int openssl3_decrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+			    size_t *outlen, const unsigned char *in,
+			    size_t inlen)
+{
+	void *key = sm2_soft_import_key(ctx, 1);
+	void *soft_ctx;
+	size_t outsize;
+	int ret;
+
+	if (!key || !outlen)
+		return -1;
+	soft_ctx = g_sm2_soft.cipher_newctx(g_sm2_soft.provctx);
+	if (!soft_ctx)
+		return -1;
+	outsize = out ? *outlen : 0;
+	ret = g_sm2_soft.decrypt_init(soft_ctx, key, NULL) &&
+		g_sm2_soft.decrypt(soft_ctx, out, outlen, outsize, in, inlen);
+	g_sm2_soft.cipher_freectx(soft_ctx);
+	return ret;
+}
+#endif
 
 static int get_hash_type(int nid_hash)
 {
@@ -232,12 +642,13 @@ static int sm2_update_sess(struct sm2_ctx *smctx)
 static int update_public_key(EVP_PKEY_CTX *ctx)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *eckey = EVP_PKEY_get0(p_key);
+	EC_KEY *eckey = sm2_get_ec_key(ctx);
 	const EC_GROUP *group;
 	const EC_POINT *point;
 	int ret;
 
+	if (!eckey)
+		return -EINVAL;
 	point = EC_KEY_get0_public_key(eckey);
 	if (!point) {
 		fprintf(stderr, "pubkey not set!\n");
@@ -262,11 +673,12 @@ static int update_public_key(EVP_PKEY_CTX *ctx)
 static int update_private_key(EVP_PKEY_CTX *ctx)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *eckey = EVP_PKEY_get0(p_key);
+	EC_KEY *eckey = sm2_get_ec_key(ctx);
 	const BIGNUM *d;
 	int ret;
 
+	if (!eckey)
+		return -EINVAL;
 	d = EC_KEY_get0_private_key(eckey);
 	if (!d) {
 		fprintf(stderr, "private key not set\n");
@@ -287,6 +699,9 @@ static int update_private_key(EVP_PKEY_CTX *ctx)
 static int openssl_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 			const unsigned char *tbs, size_t tbslen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	return openssl3_sign(ctx, sig, siglen, tbs, tbslen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_SIGN sign_pfunc = NULL;
 
@@ -303,12 +718,16 @@ static int openssl_sign(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 	}
 
 	return (*sign_pfunc)(ctx, sig, siglen, tbs, tbslen);
+#endif
 }
 
 static int openssl_verify(EVP_PKEY_CTX *ctx,
 			  const unsigned char *sig, size_t siglen,
 			  const unsigned char *tbs, size_t tbslen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	return openssl3_verify(ctx, sig, siglen, tbs, tbslen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_VERIFY verify_pfunc = NULL;
 
@@ -325,12 +744,16 @@ static int openssl_verify(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*verify_pfunc)(ctx, sig, siglen, tbs, tbslen);
+#endif
 }
 
 static int openssl_encrypt(EVP_PKEY_CTX *ctx,
 			   unsigned char *out, size_t *outlen,
 			   const unsigned char *in, size_t inlen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	return openssl3_encrypt(ctx, out, outlen, in, inlen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_DEC enc_pfunc = NULL;
 
@@ -347,12 +770,16 @@ static int openssl_encrypt(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*enc_pfunc)(ctx, out, outlen, in, inlen);
+#endif
 }
 
 static int openssl_decrypt(EVP_PKEY_CTX *ctx,
 			   unsigned char *out, size_t *outlen,
 			   const unsigned char *in, size_t inlen)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	return openssl3_decrypt(ctx, out, outlen, in, inlen);
+#else
 	const EVP_PKEY_METHOD *openssl_meth;
 	PFUNC_ENC dec_pfunc = NULL;
 
@@ -369,6 +796,7 @@ static int openssl_decrypt(EVP_PKEY_CTX *ctx,
 	}
 
 	return (*dec_pfunc)(ctx, out, outlen, in, inlen);
+#endif
 }
 
 static int sm2_sign_init(EVP_PKEY_CTX *ctx)
@@ -715,9 +1143,12 @@ static int sm2_sign_check(EVP_PKEY_CTX *ctx, unsigned char *sig, size_t *siglen,
 		  const unsigned char *tbs, size_t tbslen)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
-	const int sig_sz = ECDSA_size(ec);
+	EC_KEY *ec = sm2_get_ec_key(ctx);
+	int sig_sz;
+
+	if (!ec)
+		return UADK_DO_SOFT;
+	sig_sz = ECDSA_size(ec);
 
 	/*
 	 * If 'sig' is NULL, users can use sm2_decrypt API to obtain the valid 'siglen' first,
@@ -867,8 +1298,7 @@ static int sm2_verify(EVP_PKEY_CTX *ctx,
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
 	unsigned char buf_r[UADK_ECC_MAX_KEY_BYTES] = {0};
 	unsigned char buf_s[UADK_ECC_MAX_KEY_BYTES] = {0};
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = sm2_get_ec_key(ctx);
 	struct wd_ecc_req req = {0};
 	struct wd_dtb e = {0};
 	struct wd_dtb r = {0};
@@ -878,6 +1308,10 @@ static int sm2_verify(EVP_PKEY_CTX *ctx,
 	ret = sm2_verify_check(ctx, sig, siglen, tbs, tbslen);
 	if (ret)
 		goto do_soft;
+	if (!ec) {
+		ret = UADK_DO_SOFT;
+		goto do_soft;
+	}
 
 	r.data = (void *)buf_r;
 	s.data = (void *)buf_s;
@@ -947,8 +1381,7 @@ static int sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 			     const unsigned char *in, size_t inlen)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = sm2_get_ec_key(ctx);
 	const EVP_MD *md;
 	int c3_size;
 
@@ -961,6 +1394,8 @@ static int sm2_encrypt_check(EVP_PKEY_CTX *ctx,
 		fprintf(stderr, "sm2 ctx init failed\n");
 		return UADK_DO_SOFT;
 	}
+	if (!ec)
+		return UADK_DO_SOFT;
 
 	md = (smctx->ctx.md == NULL) ? EVP_sm3() : smctx->ctx.md;
 	c3_size = EVP_MD_size(md);
@@ -1225,6 +1660,10 @@ static void sm2_cleanup(EVP_PKEY_CTX *ctx)
 		wd_ecc_free_sess(smctx->sess);
 
 	BN_free(smctx->order);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	sm2_soft_free_key(smctx);
+	EC_KEY_free(smctx->legacy_ec);
+#endif
 	free(smctx);
 	EVP_PKEY_CTX_set_data(ctx, NULL);
 }
@@ -1239,7 +1678,6 @@ static int sm2_init(EVP_PKEY_CTX *ctx)
 		fprintf(stderr, "failed to alloc sm2 ctx\n");
 		return 0;
 	}
-
 	ret = uadk_e_ecc_get_support_state(SM2_SUPPORT);
 	if (!ret) {
 		fprintf(stderr, "sm2 is not supported\n");
@@ -1612,14 +2050,17 @@ free_hash:
 static int sm2_digest_custom(EVP_PKEY_CTX *ctx, EVP_MD_CTX *mctx)
 {
 	struct sm2_ctx *smctx = EVP_PKEY_CTX_get_data(ctx);
-	EVP_PKEY *p_key = EVP_PKEY_CTX_get0_pkey(ctx);
 	const EVP_MD *md = EVP_MD_CTX_md(mctx);
-	EC_KEY *ec = EVP_PKEY_get0(p_key);
+	EC_KEY *ec = sm2_get_ec_key(ctx);
 	uint8_t z[EVP_MAX_MD_SIZE];
 	int mdlen = EVP_MD_size(md);
 
 	if (!smctx) {
 		fprintf(stderr, "smctx not set in digest custom\n");
+		return 0;
+	}
+	if (!ec) {
+		fprintf(stderr, "failed to export sm2 key\n");
 		return 0;
 	}
 
