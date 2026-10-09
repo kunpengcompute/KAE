@@ -30,11 +30,13 @@ repos:
     hooks:
       - id: detect-secrets
 
-  # clang-format：C/C++ 代码格式化
+  # clang-format：仅手动执行，避免历史代码的整文件格式差异阻断提交和 PR 检查
+  # pre-commit run clang-format --hook-stage manual --files <file> ...
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format
     rev: v18.1.8
     hooks:
       - id: clang-format
+        stages: [manual]
         files: \.(c|h|cpp|hpp|cc|hh|cxx|hxx)$
         types_or: [c, c++]
         exclude: ^build/|^test/|^third_party/
