@@ -60,6 +60,10 @@ stages:  #阶段，不超过16个阶段，不超过256个job
             uses: checkout
             with: # 啥都不用写, 默认下载当前流水线触发仓
             # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+            #拒绝从 'pull_request_target' 工作流中检出 fork 拉取请求代码.
+            #拦截原因: ref('refs/merge-requests/584/merge')匹配PR的预合并分支. 此工作流使用基仓库的 token、secrets 和 runner 访问权限运行, 
+            #在可信上下文中获取和执行 fork 代码通常会导致 "pwn request" 漏洞. 如需检出, 请评估风险并在 checkout 步骤设置 'allow-unsafe-pr-checkout: true'
+              allow-unsafe-pr-checkout: true
               ref: refs/merge-requests/${{ env.pr_id }}/merge
             # path: repo
             # token: 代码仓token
@@ -94,6 +98,10 @@ stages:  #阶段，不超过16个阶段，不超过256个job
             uses: checkout
             with: # 啥都不用写, 默认下载当前流水线触发仓
             # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+            #拒绝从 'pull_request_target' 工作流中检出 fork 拉取请求代码.
+            #拦截原因: ref('refs/merge-requests/584/merge')匹配PR的预合并分支. 此工作流使用基仓库的 token、secrets 和 runner 访问权限运行, 
+            #在可信上下文中获取和执行 fork 代码通常会导致 "pwn request" 漏洞. 如需检出, 请评估风险并在 checkout 步骤设置 'allow-unsafe-pr-checkout: true'
+              allow-unsafe-pr-checkout: true
               ref: refs/merge-requests/${{ env.pr_id }}/merge
             # path: repo
             # token: 代码仓token
@@ -150,6 +158,10 @@ stages:  #阶段，不超过16个阶段，不超过256个job
             uses: checkout
             with: # 啥都不用写, 默认下载当前流水线触发仓
             # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+            #拒绝从 'pull_request_target' 工作流中检出 fork 拉取请求代码.
+            #拦截原因: ref('refs/merge-requests/584/merge')匹配PR的预合并分支. 此工作流使用基仓库的 token、secrets 和 runner 访问权限运行, 
+            #在可信上下文中获取和执行 fork 代码通常会导致 "pwn request" 漏洞. 如需检出, 请评估风险并在 checkout 步骤设置 'allow-unsafe-pr-checkout: true'
+              allow-unsafe-pr-checkout: true
               ref: refs/merge-requests/${{ env.pr_id }}/merge
             # path: repo
             # token: 代码仓token
