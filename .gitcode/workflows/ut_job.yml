@@ -1,0 +1,58 @@
+name: UT Job
+
+on:
+  workflow_call:
+    inputs:
+      runs_on_flavor:
+        required: true
+        type: string
+      docker_img:
+        required: true
+        type: string
+      pr_id:
+        required: true
+        type: string
+
+jobs:
+  JOB_Compile:
+    name: Compile
+    select: selected_by_default
+    runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, "${{ inputs.runs_on_flavor }}" ]
+    container:
+      image: ${{ inputs.docker_img }}
+    steps:
+      - name: fast_checkout
+        identifier: fast_checkout
+        uses: checkout
+        with: # 啥都不用写, 默认下载当前流水线触发仓
+        # repository: 'https://test.gitcode.net/test_enterprise/label_test.git'
+        #拒绝从 'pull_request_target' 工作流中检出 fork 拉取请求代码.
+        #拦截原因: ref('refs/merge-requests/584/merge')匹配PR的预合并分支. 此工作流使用基仓库的 token、secrets 和 runner 访问权限运行, 
+        #在可信上下文中获取和执行 fork 代码通常会导致 "pwn request" 漏洞. 如需检出, 请评估风险并在 checkout 步骤设置 'allow-unsafe-pr-checkout: true'
+          allow-unsafe-pr-checkout: true
+          ref: refs/merge-requests/${{ inputs.pr_id }}/merge
+        # path: repo
+        # token: 代码仓token
+        # ssh-key: ""
+        # endpoint_id: ""
+        # fetch-depth: 1
+        # submodules: "false"
+        # lfs: "false"
+        # clean: "true"
+      - name: ut
+        run: |-
+            echo 'hello'
+            echo "${{ inputs.runs_on_flavor }}"
+            yum install gcc make kernel-devel libtool numactl-devel openssl-devel chrpath patch perl bzip2 make automake autoconf libtool m4 pkg-config  -y
+
+            export OPENSSL_ENGINES=/usr/local/lib/engines-1.1
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+            chmod +x build.sh
+
+            sh build.sh uadk
+            sh build.sh zlib
+
+            LD_LIBRARY_PATH=/usr/local/kaezip/lib:/usr/local/lib:$LD_LIBRARY_PATH
+            cd KAEZlib/test/gtest
+            sh build.sh
