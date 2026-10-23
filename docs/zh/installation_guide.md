@@ -223,6 +223,65 @@ KAE加解密模块是基于OpenSSL的，因此在安装和使用KAE加解密模�
     OpenSSL 1.1.1a 20 Nov 2018 
     ```
 
+### 镜像方式部署
+
+KAE提供基于openEuler 22.03 LTS SP3的预构建容器镜像，镜像内已包含KAE源码编译与测试所需的全部依赖，可通过容器镜像快速搭建编译环境。获取镜像有以下两种方式：
+
+- 方式一：从华为云镜像仓库拉取预构建镜像（推荐）。
+- 方式二：从Dockerfile构建镜像。
+
+#### 方式一：拉取预构建镜像
+
+1. 拉取镜像。
+
+    ```bash
+    docker pull swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:kae_26.3.0.02
+    ```
+
+2. 创建并启动容器。其中“/path/to/KAE”为宿主机上KAE源码目录，请根据实际路径替换。
+
+    ```bash
+    docker run -itd --name kae_container -v /path/to/KAE:/workspace swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:kae_26.3.0.02
+    ```
+
+3. 进入容器。
+
+    ```bash
+    docker exec -it kae_container bash
+    ```
+
+#### 方式二：从Dockerfile构建镜像
+
+通过Dockerfile可快速构建镜像。[Dockerfile](../../.gitcode/dockerfiles/Dockerfile)位于代码仓的“.gitcode/dockerfiles”目录下，用户可根据实际需求修改Dockerfile中的路径参数。
+
+1. 拉取源码。
+
+    ```bash
+    git clone https://gitcode.com/boostkit/KAE.git -b kae2
+    ```
+
+2. 进入源码目录，构建镜像。
+
+    ```bash
+    cd KAE
+    docker build -f .gitcode/dockerfiles/Dockerfile -t your_image_name:your_image_tag .
+    ```
+
+3. 创建并进入容器。
+
+    ```bash
+    docker run -itd --name kae_container -v /path/to/KAE:/workspace your_image_name:your_image_tag
+    docker exec -it kae_container bash
+    ```
+
+>![](public_sys-resources/icon-note.gif) **说明：**
+>
+>- 镜像内已内置gcc、make、cmake、kernel-devel、libtool、numactl-devel、openssl-devel、lz4-devel、zstd-devel、libunwind-devel、chrpath等编译依赖（均安装于系统默认目录），并预置了位于/opt/gtest目录的Googletest 1.11.0源码。
+>- 预构建镜像与Dockerfile均基于openEuler 22.03 LTS SP3制作。若需在源码安装支持的其他OS（请参见[KAE软件包的获取与已验证环境](#KAE软件包的获取与已验证环境)）上搭建编译环境，可自行制作镜像：将Dockerfile中FROM指令的基础镜像替换为目标OS的基础镜像，并根据目标OS的软件源调整依赖安装命令，随后按照本节步骤构建和使用镜像即可。
+>- 镜像构建时已创建内核模块编译所需的内核版本软链接并执行ldconfig，进入容器后无需再安装依赖，可直接进行编译。
+>- 镜像内未预置KAE源码，请通过-v参数将宿主机上的KAE源码目录挂载至容器的/workspace目录。
+>- 进入容器后，请参考[方式一：源码安装](#方式一源码安装)章节完成编译与安装。
+
 ## 安装方式说明
 
 KAE2.0为当前维护版本，支持源码安装和RPM包安装两种方式，安装前请根据实际使用操作系统选择合适的安装方式。

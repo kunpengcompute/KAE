@@ -218,6 +218,65 @@ For software that has not been installed, use the command-line tool of the OS to
     OpenSSL 1.1.1a 20 Nov 2018 
     ```
 
+### Deployment Using Container Images
+
+KAE provides a pre-built container image based on openEuler 22.03 LTS SP3. The image contains all dependencies required for KAE source code compilation and testing, so you can quickly set up the compilation environment using the container image. You can obtain the image in either of the following ways:
+
+- Method 1: Pull the pre-built image from the Huawei Cloud image repository (recommended).
+- Method 2: Build an image from the Dockerfile.
+
+#### Method 1: Pulling the Pre-built Image
+
+1. Pull the image.
+
+    ```shell
+    docker pull swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:kae_26.3.0.02
+    ```
+
+2. Create and start a container. /path/to/KAE indicates the KAE source code directory on the host. Replace it with the actual path.
+
+    ```shell
+    docker run -itd --name kae_container -v /path/to/KAE:/workspace swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler22.03_lts_sp3:kae_26.3.0.02
+    ```
+
+3. Enter the container.
+
+    ```shell
+    docker exec -it kae_container bash
+    ```
+
+#### Method 2: Building an Image from the Dockerfile
+
+You can quickly build an image using the Dockerfile. The [Dockerfile](../../.gitcode/dockerfiles/Dockerfile) is stored in the .gitcode/dockerfiles directory of the code repository. You can modify the path parameters in the Dockerfile based on actual requirements.
+
+1. Download the source code.
+
+    ```shell
+    git clone https://gitcode.com/boostkit/KAE.git -b kae2
+    ```
+
+2. Go to the source code directory and build the image.
+
+    ```shell
+    cd KAE
+    docker build -f .gitcode/dockerfiles/Dockerfile -t your_image_name:your_image_tag .
+    ```
+
+3. Create and enter a container.
+
+    ```shell
+    docker run -itd --name kae_container -v /path/to/KAE:/workspace your_image_name:your_image_tag
+    docker exec -it kae_container bash
+    ```
+
+>![](public_sys-resources/icon-note.gif) **NOTE**
+>
+>- Compilation dependencies such as gcc, make, cmake, kernel-devel, libtool, numactl-devel, openssl-devel, lz4-devel, zstd-devel, libunwind-devel, and chrpath are preset in the image (installed in the system default directories), and the Googletest 1.11.0 source code is preset in the /opt/gtest directory.
+>- Both the pre-built image and the Dockerfile are based on openEuler 22.03 LTS SP3. To set up the compilation environment on another OS supported for source code installation (see [Obtaining and Verifying Software Packages](#obtaining-and-verifying-software-packages)), you can build your own image: replace the base image in the FROM instruction of the Dockerfile with that of the target OS, adjust the dependency installation commands based on the software sources of the target OS, and then build and use the image by following the steps in this section.
+>- The kernel version soft link required for kernel module compilation has been created and ldconfig has been executed during image build. You can compile the code directly in the container without installing dependencies again.
+>- The KAE source code is not preset in the image. Use the -v option to mount the KAE source code directory on the host to /workspace in the container.
+>- After entering the container, compile and install KAE by referring to [Installation Using the Source Code](#installation-using-the-source-code).
+
 ## Installation Methods
 
 KAE 2.0 is the active maintenance version. It supports installation using the source code and RPM packages. Select an appropriate installation method based on the OS.
