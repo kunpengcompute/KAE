@@ -95,7 +95,8 @@ function build_check_OS_version()
 {
     local KERNEL_VERSION=""
     if command -v rpm >/dev/null 2>&1; then
-        KERNEL_VERSION=`rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel 2>/dev/null | head -n 1 || true`
+        # RPM may print query failures to stdout; discard them before falling back to uname.
+        KERNEL_VERSION=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel 2>/dev/null | head -n 1) || KERNEL_VERSION=""
     fi
     if [ -z "$KERNEL_VERSION" ]; then
         KERNEL_VERSION=`uname -r`
