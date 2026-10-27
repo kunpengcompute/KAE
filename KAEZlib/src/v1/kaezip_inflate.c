@@ -104,6 +104,12 @@ int ZEXPORT kz_inflate_v1(z_streamp strm, int flush)
     kaezip_ctx_t *kaezip_ctx = (kaezip_ctx_t *)getInflateKaezipCtx(strm);
     KAEZIP_RETURN_FAIL_IF(kaezip_ctx == NULL, "kaezip ctx is NULL.", Z_ERRNO);
 
+    /* Pending output needs space; preserve checksum errors and trailer handling. */
+    if (strm->avail_out == 0 && kaezip_ctx->remain != 0 &&
+        kaezip_ctx->status != KAEZIP_DECOMP_VERIFY_ERR) {
+        return Z_BUF_ERROR;
+    }
+
     do {
         ret = kaezip_do_inflate(strm, flush);
         if (ret != KAEZIP_SUCCESS) {
