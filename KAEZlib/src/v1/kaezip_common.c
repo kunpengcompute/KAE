@@ -321,7 +321,8 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
     // 此时append的尾部需要特殊处理(极特殊情况, spark场景下发现)
     if (unlikely(kz_ctx->status == KAEZIP_COMP_INIT)) {
         KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_zeroInput_end_block, sizeof(wd_deflate_zeroInput_end_block));
-    } else if (alg_type != WCRYPTO_RAW_DEFLATE) {
+    } else {
+        /* Raw deflate still needs a final block, even without a wrapper trailer. */
         KAEZIP_APPEND_BLOCK(kz_ctx, 0, wd_deflate_end_block, sizeof(wd_deflate_end_block));
     }
 
@@ -351,7 +352,7 @@ static void kaezip_append_fmt_tail(kaezip_ctx_t *kz_ctx)
 
 void kaezip_set_fmt_tail(kaezip_ctx_t *kaezip_ctx)
 {
-    if (kaezip_ctx->status == KAEZIP_COMP_END || kaezip_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE) {
+    if (kaezip_ctx->status == KAEZIP_COMP_END) {
         return;
     }
 
@@ -375,8 +376,8 @@ void kaezip_set_fmt_tail(kaezip_ctx_t *kaezip_ctx)
 
 void kaezip_deflate_addcrc(kaezip_ctx_t *kz_ctx)
 {
-    if ((kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) || (kz_ctx->comp_alg_type == WCRYPTO_RAW_DEFLATE)) {
-        US_DEBUG("kaezip status wrong or its RAW_DEFLATE, not crc uncheck");
+    if (kz_ctx->status != KAEZIP_COMP_CRC_UNCHECK) {
+        US_DEBUG("kaezip status wrong, not crc uncheck");
         return;
     }
 
