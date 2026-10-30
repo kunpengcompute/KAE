@@ -182,16 +182,12 @@ static void kaezip_deflate_set_fmt_header(z_streamp strm, int comp_alg_type)
     const uint32_t fmt_header_sz = kaezip_fmt_header_sz(comp_alg_type, kaezip_ctx->comp_type, NULL);
     const char*    fmt_header    = kaezip_ctx->header;
 
-    //that means the outout avail buf is even not enough for a header
-    if (strm->avail_out < fmt_header_sz - kaezip_ctx->header_pos) {
-        kaezip_ctx->header_pos += strm->avail_out;
-        return;
-    }
+    const uint32_t header_remain = fmt_header_sz - kaezip_ctx->header_pos;
+    const uint32_t copy_size = strm->avail_out < header_remain ? strm->avail_out : header_remain;
 
-    memcpy(strm->next_out, fmt_header, fmt_header_sz);
-    KAEZIP_UPDATE_ZSTREAM_OUT(strm, fmt_header_sz);
-
-    kaezip_ctx->header_pos = fmt_header_sz;
+    memcpy(strm->next_out, fmt_header + kaezip_ctx->header_pos, copy_size);
+    KAEZIP_UPDATE_ZSTREAM_OUT(strm, copy_size);
+    kaezip_ctx->header_pos += copy_size;
 }
 
 static int kaezip_do_deflate(z_streamp strm, int flush)

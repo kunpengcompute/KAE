@@ -374,6 +374,9 @@ void kaezip_set_comp_status(kaezip_ctx_t *kz_ctx)
                     KAEZIP_DECOMP_NO_CRC :
                     KAEZIP_DECOMP_NO_CRC_BUT_DATAREMAIN);
                 break;
+            /* Both statuses require resubmission after pending output drains.
+             * Reuse the existing continuation states, including zero input. */
+            case WCRYPTO_DECOMP_END_NOSPACE:
             case WCRYPTO_DECOMP_BLK_NOSTART:
                 kz_ctx->status = (kz_ctx->remain == 0 ?
                     KAEZIP_DECOMP_BLK_NOSTART :
