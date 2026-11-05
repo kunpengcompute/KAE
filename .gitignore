@@ -1,15 +1,30 @@
-.vscode
-kae_build
-KAEZlib/open_source/zlib-1.2.11
-KAEZlib/test/gtest/gtest-download/googletest-release-1.11.0/
-KAEZlib/test/gtest/gtest-download/.googletest-download.*/
-KAELz4/test/gtest/gtest-download/googletest-release-1.11.0/
-KAELz4/test/gtest/gtest-download/.googletest-download.*/
+# Editor configuration
+/.vscode/
 
-# *Test*
-*.so.*
+# Build outputs
+/kae_build/
+/KAEGzip/gzip
 *.a
 *.o
-lz4.h
-lz4frame.h
-xxhash.*
+*.so
+*.so.*
+
+# Upstream sources extracted by component build scripts
+/KAEGzip/open_source/gzip-1.13/
+/KAELz4/open_source/lz4-1.9.4/
+/KAESnappy/open_source/snappy-1.1.10/
+/KAEZlib/open_source/zlib-1.2.11/
+/KAEZstd/open_source/zstd-1.5.4/
+/KAEZstd/open_source/zstd/
+
+# Upstream files copied by KAELz4/build.sh
+/KAELz4/src/utils/lz4.h
+/KAELz4/src/utils/lz4frame.h
+/KAELz4/src/utils/xxhash.c
+/KAELz4/src/utils/xxhash.h
+
+# Downloaded GoogleTest sources and temporary directories
+/KAELz4/test/gtest/gtest-download/.googletest-download.*/
+/KAELz4/test/gtest/gtest-download/googletest-release-1.11.0/
+/KAEZlib/test/gtest/gtest-download/.googletest-download.*/
+/KAEZlib/test/gtest/gtest-download/googletest-release-1.11.0/

@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2025. Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Description:    This file provides the implementation for KAE engine rsa
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +12,41 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ */
+
+/*
+ * Upstream copyright and source attribution:
+ *
+ * BoringSSL reference revision:
+ * https://github.com/google/boringssl/tree/562ed3183a23592d841f115136fb69f51efaac43
+ *
+ * crypto/fipsmodule/rsa/padding.cc.inc (type 1 padding, no-padding
+ * encoding and PKCS1_MGF1):
+ * Copyright 2005-2016 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * crypto/rsa/rsa_crypt.cc (random padding, type 2 padding and OAEP),
+ * crypto/internal.h (constant-time helpers, macros and OPENSSL_memcpy),
+ * crypto/mem.cc (CRYPTO_memcmp):
+ * Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * OpenSSL reference release:
+ * https://github.com/openssl/openssl/tree/openssl-3.0.16
+ *
+ * crypto/rsa/rsa_pk1.c (RSA_padding_check_PKCS1_type_1):
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * crypto/rsa/rsa_none.c (RSA_padding_check_none):
+ * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * crypto/rsa/rsa_meth.c (RSA_METHOD allocation and cleanup):
+ * Copyright 2016-2020 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * These references identify matching upstream implementations, not confirmed
+ * original import revisions. The referenced files are licensed under
+ * Apache-2.0; see LICENSE in the KAEOpensslEngine directory.
+ *
+ * Upstream portions have been modified by Huawei Technologies Co., Ltd.
+ * for KAE. The Huawei copyright notice applies to Huawei's contributions.
  */
 
 #include <openssl/rsa.h>

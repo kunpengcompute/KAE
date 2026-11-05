@@ -31,5 +31,13 @@ yum install -y make kernel-devel libtool numactl-devel openssl-devel lz4-devel l
 
 随后可通过LD_LIBRARY_PATH指定依赖库地址，让应用程序链接至KAESnappy的动态库，并通过ldd命令查看是否链接成功。具体步骤可参见[安装指南](../docs/zh/installation_guide.md)。
 
+## 许可证
+
+除文件另有声明外，本目录中 `open_source/` 之外的自研代码和配套文件采用 Apache License 2.0，详见 [LICENSE](LICENSE)。其中，`src/` 和 `include/` 下的代码为面向硬件加速的自研 Snappy 适配实现。
+
+`open_source/` 中的 Snappy 1.1.10 源码包、适配补丁以及编译时生成的修改版 Snappy 源码继续适用上游 Google Snappy 的许可条款，主要为 BSD-3-Clause。上游的版权和许可声明予以保留，完整的上游 `COPYING` 内容见 [LICENSE.snappy](LICENSE.snappy)。
+
+上游 `COPYING` 还包含部分 `testdata/` 测试数据的 CC-BY、MIT 和公有领域说明，这些说明也完整保留在 `LICENSE.snappy` 中。应用本项目补丁后的 Snappy 是 KAE 修改版。
+
 ## 声明
 - 此代码仓计划参与Snappy软件开源，仅作Snappy性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。

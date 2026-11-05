@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2019. Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Description: This file provides the implementation for the KAE engine async task queue
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

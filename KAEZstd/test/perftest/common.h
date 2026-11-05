@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * Upstream code is licensed under the BSD 3-Clause License; see LICENSE.zstd
+ * in the KAEZstd directory for the full license text.
+ */
+
 #ifndef COMMON_H
 #define COMMON_H
 

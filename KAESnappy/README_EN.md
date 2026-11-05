@@ -34,6 +34,14 @@ After installing KAE 2.0, install KAESnappy in the KAE 2.0 directory.
 
 Then, use **LD_LIBRARY_PATH** to specify the path of the dependency library so that the application can link to the KAESnappy dynamic library. Run the ldd command to check whether the linking is successful. For details, see the [Installation Guide](../docs/en/installation_guide.md).
 
+## License
+
+Unless otherwise stated in individual files, the original code and supporting files outside `open_source/` are licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE). The code in `src/` and `include/` is our original implementation for hardware-accelerated Snappy integration.
+
+The Snappy 1.1.10 source archive, integration patch, and modified Snappy source generated during compilation in `open_source/` remain subject to the upstream Google Snappy licensing terms, primarily BSD-3-Clause. Upstream copyright and license notices are preserved. See [LICENSE.snappy](LICENSE.snappy) for the complete upstream `COPYING` file.
+
+The upstream `COPYING` file also includes CC-BY, MIT, and public-domain notices for some benchmark data in `testdata/`. These notices are preserved in full in `LICENSE.snappy`. After applying this project's patches, Snappy is a KAE-modified version.
+
 ## Statements
 
 - This code repository contributes to the Snappy open-source project solely for performance optimization. It strictly adheres to the coding style and methods, as well as security design of the native open-source software. Any vulnerability and security issues of the software shall be resolved by the corresponding upstream communities according to their response mechanisms. Please pay attention to the notifications and version updates released by the upstream communities. The Kunpeng computing community does not assume any responsibility for software vulnerabilities and security issues.

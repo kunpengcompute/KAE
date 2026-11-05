@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2019. Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Description:  This file provides the implementation for switch to soft ciphers
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +14,6 @@
  * limitations under the License.
  */
 
-/*****************************************************************************
- * @file sec_ciphers_soft.c
- *
- * This file provides the implementation for switch to soft ciphers
- *
- *****************************************************************************/
 #include "../../utils/engine_types.h"
 #include "../../../utils/engine_log.h"
 #include "sec_ciphers_soft.h"
