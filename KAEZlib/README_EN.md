@@ -591,6 +591,14 @@ The command output is as follows:
 
 You can use the kzip tool to test the functions and performance of asynchronous APIs. For details, see `scripts/perftest/kzip/README_EN.md`.
 
+## License
+
+The original KAEZlib adapter code in `src/` and `include/` is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+
+The zlib 1.2.11 distribution bundled in `open_source/`, and upstream zlib code retained in the patches, remain subject to the original zlib License. Their copyright and license notices are preserved; see the [zlib license](LICENSE.zlib) and the original notices in the upstream source.
+
+After applying this project's patches, zlib is a KAE-modified version, not an unmodified upstream zlib release.
+
 ## Statements
 
 - This code repository contributes to the zlib open-source project solely for performance optimization. It strictly adheres to the coding style and methods, as well as security design of the native open-source software. Any vulnerability and security issues of the software shall be resolved by the corresponding upstream communities according to their response mechanisms. Please pay attention to the notifications and version updates released by the upstream communities. The Kunpeng computing community does not assume any responsibility for software vulnerabilities and security issues.

@@ -18,7 +18,7 @@ using namespace testing;
 using namespace std;
 
 const int g_windowBitsArr[] = {-15, 15, 31};
-const string g_testfiles_name[] = {"itemdata", "ooffice", "osdb", "samba", "webster", "xml", "x-ray"};
+const string g_testfiles_name[] = {"itemdata", "osdb", "samba", "webster", "xml", "x-ray"};
 
 // 随机生成指定长度的数据
 static void generate_random_data(Bytef* data, unsigned long long length) {

@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2019. Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Description:  This file provides the cipher interface for soft ciphers
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-/*****************************************************************************
- * @file sec_ciphers_soft.h
- *
- * This file provides the cipher interface for soft ciphers
- *
- *****************************************************************************/
 
 #ifndef SEC_CIPHERS_SOFT_H
 #define SEC_CIPHERS_SOFT_H

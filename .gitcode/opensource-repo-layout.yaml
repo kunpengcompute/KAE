@@ -1,0 +1,56 @@
+# Use the upstream project identity referenced by the repository READMEs.
+project: boostkit/KAE
+version: "1.0"
+
+# No source allow-list: files outside the exclusions below remain in scope.
+# These rules describe copyright-header scan scope, not license changes.
+directories:
+  # Linux kernel driver code maintained against the supported kernel versions.
+  - path: "./KAEKernelDriver/"
+    type: upstream
+
+  # Imported UADK code, including its upstream copyright and license notices.
+  - path: "./uadk/"
+    type: upstream
+
+  # Repository build, packaging, performance-test and other helper scripts.
+  - path: "./scripts/"
+    type: scripts
+
+  # OpenSSL/Tongsuo-derived code and KAE adaptations. Directory rules cannot
+  # exclude arm_arch.h and sm4-armv8.S individually. This also excludes
+  # ce_sm4.c, ce_sm4.h and sm4-armv8.h, which already carry Huawei notices.
+  - path: "./KAEOpensslEngine/src/v1/alg/ciphers/asm/"
+    type: third_party
+
+  # OpenSSL/GmSSL-derived code: arm_arch.h, evp_locl.h, internal/evp_int.h,
+  # modes_lcl.h and the upstream-derived vpsms4_ex-armv8.s implementation.
+  # This directory rule also excludes e_sms4_gcm.c and its Huawei adaptations.
+  - path: "./KAEOpensslEngine/src/v1/alg/ciphers/sw/"
+    type: third_party
+
+  # Explicit test rules are needed because there is no source allow-list.
+  # The engine test rule also covers test/bssl_test/src/rsa/rsa_demo.h.
+  - path: "./KAEOpensslEngine/test/"
+    type: test
+  - path: "./KAELz4/test/"
+    type: test
+  - path: "./KAESnappy/test/"
+    type: test
+  - path: "./KAEZlib/test/"
+    type: test
+  - path: "./KAEZstd/test/"
+    type: test
+
+  - path: "./docs/"
+    type: docs
+  - path: "./KAEOpensslEngine/docs/"
+    type: docs
+
+files:
+  # The Apache-2.0 appendix supplies the default copyright-header template.
+  # Component-specific upstream licenses remain documented in their READMEs.
+  - path: "./LICENSE"
+    type: license
+  - path: "./.gitcode/opensource-repo-layout.yaml"
+    type: compliance-config

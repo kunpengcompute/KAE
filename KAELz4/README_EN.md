@@ -1151,6 +1151,21 @@ When using Lz4 for testing the KAELz4 synchronous APIs for compressing data in t
 In tests with KAELz4 asynchronous APIs for compressing data in the block or frame format, a single process can fully use the bandwidth. Multiple processes do not add more benefits.
 To simulate multi-process asynchronous compression, you can use the **-i** parameter of the tool. Set `inflight_num` between 1 and 1024 to control the number of concurrent KAE asynchronous compression API tasks in a process. If the limit is reached, the API can be called to execute a new compression task only after the previous one completes and its callback function runs. This controls the compression traffic on the user side. The default value is 256, which indicates high compression traffic.
 
+# Open Source Licenses
+
+Original KAELz4 code is licensed under the Apache License 2.0; see [LICENSE](LICENSE) for the full terms. This covers original source files, headers, build scripts and test code, as well as original additions in `open_source/kaelz4_1_9_4.patch`. It does not replace the copyright or license notices on upstream code.
+
+Third-party code retains its own licenses:
+
+* `open_source/lz4-1.9.4.tar.gz`: the original upstream source archive is preserved. LZ4's `lib` directory uses BSD-2-Clause; command-line programs, tests and examples use GPL as stated upstream. Individual file notices determine the applicable versions and exceptions.
+* `src/utils/xxhash.c`, `src/utils/xxhash.h`, `src/utils/lz4.h` and `src/utils/lz4frame.h`: `build.sh` copies these files from upstream code. They retain BSD-2-Clause and their original copyright notices and are excluded from the original-code license scope above.
+* `test/kzip/datagen.c`, `test/kzip/datagen.h`, `test/kzip/platform.h` and `test/kzip/util.h`: these files come directly from upstream LZ4 and retain their original GPL-2.0-or-later license and copyright notices.
+* Other third-party dependencies that are downloaded or linked, such as GoogleTest, retain their respective licenses.
+
+[LICENSE.lz4](LICENSE.lz4) preserves the upstream license scope overview, BSD terms and copyright notices, and the complete, identical `COPYING` text from `programs`, `tests` and `examples`. It also includes the full GPLv3 text. Paths starting with `lz4-1.9.4/` in that file refer to paths inside the upstream source archive.
+
+When distributing `kzip` or the LZ4 command-line program combined with KAELz4's Apache-2.0 code, select GPLv3 for the combined program under the relevant upstream files' "GPL version 2 or any later version" option, and meet its corresponding-source and other distribution requirements. Apache-2.0 is incompatible with GPLv2-only but can be combined with GPLv3; see the [Apache compatibility guidance](https://www.apache.org/licenses/GPL-compatibility.html). Distributions must still preserve the Apache-2.0 and upstream copyright and license notices and include the applicable license texts. This distribution choice does not change the Apache-2.0 license on the original KAELz4 files or the BSD-2-Clause license on upstream library files used separately.
+
 # Statements
 
 - This code repository contributes to the Lz4 open-source project solely for performance optimization. It strictly adheres to the coding style and methods, as well as security design of the native open-source software. Any vulnerability and security issues of the software shall be resolved by the corresponding upstream communities according to their response mechanisms. Please pay attention to the notifications and version updates released by the upstream communities. The Kunpeng computing community does not assume any responsibility for software vulnerabilities and security issues.

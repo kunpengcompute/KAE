@@ -571,5 +571,13 @@ export LD_LIBRARY_PATH=/usr/local/kaezip/lib:$LD_LIBRARY_PATH
 可使用kzip工具对异步API进行功能和性能测试，该部分内容请参见 `scripts/perftest/kzip/README.md`
 
 
+## 许可证
+
+KAEZlib 在 `src/` 和 `include/` 下的自研适配代码采用 Apache License 2.0，详见 [LICENSE](LICENSE)。
+
+`open_source/` 中随附的 zlib 1.2.11，以及补丁中保留的上游 zlib 代码，仍适用原有的 zlib License。相关版权和许可声明予以保留，详见 [zlib 许可证](LICENSE.zlib) 及上游源码中的原始声明。
+
+应用本项目补丁后的 zlib 是 KAE 修改版，并非未经修改的上游 zlib 发行版。
+
 ## 声明
 - 此代码仓计划参与Zlib软件开源，仅作Zlib功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。

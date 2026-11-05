@@ -7,6 +7,27 @@
  * https://www.openssl.org/source/license.html
  */
 
+/*
+ * Additional upstream attribution for the PAC and BTI macro blocks.
+ * These additions match crypto/arm_arch.h in OpenSSL openssl-3.3.1:
+ * https://github.com/openssl/openssl/blob/openssl-3.3.1/crypto/arm_arch.h
+ * This is a comparison reference, not a confirmed original import revision.
+ *
+ * These upstream definitions have been integrated with legacy OpenSSL code
+ * for KAE. The Apache-2.0 notice below applies to these additions only; see
+ * LICENSE in the KAEOpensslEngine directory. The existing portions retain
+ * the legacy OpenSSL and Original SSLeay terms in LICENSE.openssl.
+ */
+
+/*
+ * Copyright 2011-2024 The OpenSSL Project Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * this file except in compliance with the License.  You can obtain a copy
+ * in the file LICENSE in the source distribution or at
+ * https://www.openssl.org/source/license.html
+ */
+
 #ifndef __ARM_ARCH_H__
 # define __ARM_ARCH_H__
 

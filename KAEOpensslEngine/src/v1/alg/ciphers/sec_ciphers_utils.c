@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2019. Huawei Technologies Co.,Ltd.All rights reserved.
- *
- * Description:  This file provides the implementation for KAE engine utils dealing with wrapdrive
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-/*****************************************************************************
- * @file sec_ciphers_utils.c
- *
- * This file provides the interface for SEC engine dealing with wrapdrive
- *
- *****************************************************************************/
-
 
 #include "sec_ciphers_utils.h"
 #include "sec_ciphers_soft.h"

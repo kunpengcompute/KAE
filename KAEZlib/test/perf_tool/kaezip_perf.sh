@@ -14,7 +14,7 @@ compression_level="1 2 3 4 5 6 7 8 9"
 # 测试文件名称
 # test_file_name="itemdata"
 BASE_TESTDATA_ADD="../../../KAE/scripts/compressTestDataset/"
-test_file_name="itemdata ooffice osdb samba webster xml x-ray"
+test_file_name="itemdata osdb samba webster xml x-ray"
 
 # 测试函数
 function run_test() {

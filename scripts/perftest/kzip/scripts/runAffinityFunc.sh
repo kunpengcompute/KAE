@@ -14,7 +14,7 @@ buildParams="kae"
 sh build.sh $buildParams
 
 Algthm=("kaelz4async_block" "kaelz4async_frame")
-Datasets=("calgary" "itemdata" "ooffice" "osdb"  "samba" "webster" "xml" "x-ray")
+Datasets=("calgary" "itemdata" "osdb"  "samba" "webster" "xml" "x-ray")
 BlockSize=("4" "8" "60""128" "512" "1024")
 Cpu_core_ranges=("0-20" "40-79" "0-79" "120-159")
 

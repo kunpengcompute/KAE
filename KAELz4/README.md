@@ -1220,6 +1220,21 @@ export LD_LIBRARY_PATH=/usr/local/kaelz4/lib:$LD_LIBRARY_PATH
 在异步的lz4 block/frame 接口测试中，目前单进程下即可打满带宽，多进程并不会带来更多收益。
 如果要模拟多进程异步压缩场景，可以使用工具的 -i 参数，`inflight_num` ，最小为1，最大1024，表示当前进程同时进行中的KAE异步压缩接口的任务数量（目前的kzip工具策略：超过该值后，必须要等到前面的压缩任务完成，回调函数完成后，才可以调用接口执行新的压缩任务），相当于用户侧压缩流量控制。目前默认256，是比较高的压缩流量。
 
+# 开源许可证
+
+KAELz4 自研代码采用 Apache License 2.0，完整条款见 [LICENSE](LICENSE)。该许可适用于自研源文件、头文件、构建脚本和测试代码，以及 `open_source/kaelz4_1_9_4.patch` 中的自研新增内容；不替换上游代码的版权和许可声明。
+
+第三方代码继续适用各自的许可证：
+
+* `open_source/lz4-1.9.4.tar.gz`：保留原始上游源码包。LZ4 的 `lib` 目录采用 BSD-2-Clause；命令行程序、测试和示例按上游声明适用 GPL，具体版本及例外以各文件声明为准。
+* `src/utils/xxhash.c`、`src/utils/xxhash.h`、`src/utils/lz4.h` 和 `src/utils/lz4frame.h`：这些文件由 `build.sh` 从上游代码复制而来，保留 BSD-2-Clause 许可及原始版权声明，不属于上述自研代码许可范围。
+* `test/kzip/datagen.c`、`test/kzip/datagen.h`、`test/kzip/platform.h` 和 `test/kzip/util.h`：直接来自上游 LZ4，保留原始 GPL-2.0-or-later 许可及版权声明。
+* 下载或链接的其他第三方依赖（例如 GoogleTest）继续适用各自的许可证。
+
+[LICENSE.lz4](LICENSE.lz4) 集中保留上游许可范围说明、BSD 许可及版权声明、`programs` / `tests` / `examples` 中内容相同的完整 `COPYING`，并附 GPLv3 全文。该文件中以 `lz4-1.9.4/` 开头的路径指向上游源码包内的路径。
+
+发布与 KAELz4 Apache-2.0 代码组合的 `kzip` 或 LZ4 命令行程序时，应根据相关上游文件允许的“GPL 第 2 版或任意后续版本”选项，选择 GPLv3 作为组合程序的发行许可，并履行其对应源码提供等发行要求。Apache-2.0 与 GPLv2-only 不兼容，但可以与 GPLv3 组合，参见 [Apache 官方兼容性说明](https://www.apache.org/licenses/GPL-compatibility.html)。发行时仍须保留 Apache-2.0 和上游版权、许可声明及相应许可全文。该组合发行方式不改变自研文件本身的 Apache-2.0 许可，也不改变单独使用的上游库文件的 BSD-2-Clause 许可。
+
 # 声明
 
 * 此代码仓计划参与Lz4软件开源，仅作Lz4功能扩展或性能提升，编码风格遵照原生开源软件，继承原生开源软件安全设计，不破坏原生开源软件设计及编码风格和方式，软件的任何漏洞与安全问题，均由相应的上游社区根据其漏洞和安全响应机制解决。请密切关注上游社区发布的通知和版本更新。鲲鹏计算社区对软件的漏洞及安全问题不承担任何责任。
