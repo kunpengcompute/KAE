@@ -385,13 +385,16 @@ diff -Naru zlib-1.2.11/inflate.h zlib-1.2.11_new/inflate.h
 diff -Naru zlib-1.2.11/Makefile.in zlib-1.2.11_new/Makefile.in
 --- zlib-1.2.11/Makefile.in	2017-01-16 01:29:40.000000000 +0800
 +++ zlib-1.2.11_new/Makefile.in	2025-04-28 17:14:24.200499160 +0800
-@@ -26,7 +26,15 @@
+@@ -26,7 +26,18 @@
  
  SFLAGS=-O
  LDFLAGS=
 +
 +KAEZIP_CFLAGS=-I/usr/local/kaezip/include -I$(KAEZLIBPATH)/include -I. -DCONF_KAEZIP -fstack-protector-strong
-+KAEZIP_LDFLAGS=-L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib -L$(KAEBUILDPATH)/lib -L$(KAEZLIBPATH) -Wl,-rpath,/usr/lib64:/usr/local/lib:/usr/local/kaezip/lib:$(KAEBUILDPATH)/lib:$(KAEZLIBPATH) -l:libkaezip.so.2.2.0 -lwd -lwd_comp -Wl,-z,relro,-z,now
++KAEZIP_LDFLAGS = -L/usr/lib64 -L/usr/local/lib -L/usr/local/kaezip/lib \
++	$(addprefix -L,$(addsuffix /lib,$(KAEBUILDPATH)) $(KAEZLIBPATH)) \
++	-Wl,-rpath,/usr/lib64:/usr/local/lib:/usr/local/kaezip/lib$(if $(strip $(KAEBUILDPATH)),:$(KAEBUILDPATH)/lib)$(if $(strip $(KAEZLIBPATH)),:$(KAEZLIBPATH)) \
++	-l:libkaezip.so.@KAE_VERSION@ -lwd -lwd_comp -Wl,-z,relro,-z,now
 +CFLAGS+=$(KAEZIP_CFLAGS)
 +SFLAGS+=$(KAEZIP_CFLAGS)
 +LDFLAGS+=$(KAEZIP_LDFLAGS)
@@ -401,7 +404,7 @@ diff -Naru zlib-1.2.11/Makefile.in zlib-1.2.11_new/Makefile.in
  LDSHARED=$(CC)
  CPP=$(CC) -E
  
-@@ -292,10 +300,10 @@
+@@ -292,10 +303,10 @@
  	$(CC) $(CFLAGS) -o $@ minigzip.o $(TEST_LDFLAGS)
  
  examplesh$(EXE): example.o $(SHAREDLIBV)

@@ -17,8 +17,8 @@ ENGINE_INSTALL_PATH := /usr/local/kaezip
 CC=gcc
 
 LIBNAME := libkaezip.so
-VERSION = 2.2.0
-TARGET = ${LIBNAME}.${VERSION}
+include ../scripts/kae-version.mk
+TARGET = ${LIBNAME}.${KAE_VERSION}
 SOFTLINK = libkaezip.so
 
 ifndef SILENCE
@@ -83,9 +83,9 @@ symlinks : $(TARGET)
 
 # Rules for producing the objects.
 objs : $(OBJS)
-%.o : %.c
+%.o : %.c $(KAE_VERSION_DEPS)
 	@echo compiling $(notdir $<)
-	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
+	$(SILENCE) $(CC) -c $(KAE_VERSION_CPPFLAGS) $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
 $(TARGET): $(OBJS)
 	@echo Linking $@
@@ -93,7 +93,7 @@ $(TARGET): $(OBJS)
 rebuild: clean all
 
 clean :
-	@-$(RM) *.d *.a *.so *.symbol $(TARGET)
+	@-$(RM) *.d *.a *.so *.symbol $(LIBNAME).*
 	@-$(RM) $(SOFTLINK) $(SOFTLINK).0
 	@-$(RM)
 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;

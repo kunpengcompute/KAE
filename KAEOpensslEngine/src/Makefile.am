@@ -1,4 +1,6 @@
-VERSION = 2:2:0
+KAE_VERSION_FILE = $(top_srcdir)/../VERSION
+KAE_VERSION_SCRIPT = $(top_srcdir)/../scripts/kae-version.sh
+KAE_LIBTOOL_VERSION = $(shell sh "$(KAE_VERSION_SCRIPT)" --libtool)
 ACLOCAL_AMFLAGS = -I m4
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -11,7 +13,9 @@ AM_LDFLAGS = -L$(DEPSHEADDIR)/../lib
 
 if WD_KAE_BORINGSSL
 kae_bssl_la_LIBADD=-ldl $(WD_LIBS) -lpthread
-kae_bssl_la_LDFLAGS=-module -version-number $(VERSION)
+kae_bssl_la_LDFLAGS=-module -version-number $(KAE_LIBTOOL_VERSION)
+# Extend Automake's dependencies; never replace its .la link rule.
+EXTRA_kae_bssl_la_DEPENDENCIES = $(KAE_VERSION_FILE) $(KAE_VERSION_SCRIPT)
 kae_bssl_la_CFLAGS=$(WD_CFLAGS)
 lib_LTLIBRARIES=kae_bssl.la
 kae_bssl_la_CFLAGS += -DKAE_BORINGSSL
@@ -38,7 +42,8 @@ kae_bssl_include_HEADERS = bssl/kae_bssl.h
 else  #WD_KAE_BORINGSSL
 
 kae_la_LIBADD=-ldl $(WD_LIBS) -lpthread
-kae_la_LDFLAGS=-module -version-number $(VERSION)
+kae_la_LDFLAGS=-module -version-number $(KAE_LIBTOOL_VERSION)
+EXTRA_kae_la_DEPENDENCIES = $(KAE_VERSION_FILE) $(KAE_VERSION_SCRIPT)
 kae_la_CFLAGS=$(WD_CFLAGS)
 lib_LTLIBRARIES=kae.la
 

@@ -29,25 +29,17 @@ typedef enum ARCH_TYPE {
 } ARCH_TYPE;
 static int g_kaelz4Initialized = 0;
 
-static inline void versionCpy(char str1[], const char str2[])
-{
-    int i = 0;
-    while (i < VERSION_STRUCT_LEN - 1 && str2[i] != '\0') {
-        str1[i] = str2[i];
-        ++i;
-    }
-    str1[i] = '\0';
-}
-
 int kaelz4_get_version(KAELz4Version *ver)
 {
     if (ver == NULL) {
         return KAE_LZ4_INVAL_PARA;
     }
-    versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "26.1.0");
-    versionCpy(ver->componentName, "KAELz4");
-    versionCpy(ver->componentVersion, "2.2.0");
+    snprintf(ver->productName, sizeof(ver->productName), "%s", "Kunpeng Boostkit");
+    snprintf(ver->productVersion, sizeof(ver->productVersion), "%.*s",
+             (int)sizeof(ver->productVersion) - 1, KAE_VERSION_STRING);
+    snprintf(ver->componentName, sizeof(ver->componentName), "%s", "KAELz4");
+    snprintf(ver->componentVersion, sizeof(ver->componentVersion), "%.*s",
+             (int)sizeof(ver->componentVersion) - 1, KAE_VERSION_STRING);
     return KAE_LZ4_SUCC;
 }
 

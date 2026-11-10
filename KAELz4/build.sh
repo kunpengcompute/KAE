@@ -16,14 +16,17 @@
 set -e
 #set -x
 SRC_PATH=$(pwd)
-BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
+KAE_VERSION=$(sh "${SRC_PATH}/../scripts/kae-version.sh")
 
 function Target_lz4()
 {
     cd "${SRC_PATH}"/open_source
     rm -rf lz4-1.9.4
     tar -zxvf lz4-1.9.4.tar.gz
-    patch -p0 < kaelz4_1_9_4.patch
+    (
+        set -o pipefail
+        sed "s/@KAE_VERSION@/${KAE_VERSION}/g" kaelz4_1_9_4.patch | patch -p0
+    )
     cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.h "${SRC_PATH}"/src/utils
     cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/xxhash.c "${SRC_PATH}"/src/utils
     cp "${SRC_PATH}"/open_source/lz4-1.9.4/lib/lz4.h "${SRC_PATH}"/src/utils
@@ -82,7 +85,7 @@ function Uninstall_kaelz4()
         fi
     fi
 
-    local kaelz4_path=$(ls /usr/local/kaelz4/lib | grep libkaelz4.so.${BUILDVERSION})
+    local kaelz4_path=$(ls /usr/local/kaelz4/lib | grep libkaelz4.so.${KAE_VERSION})
     if [ -n "${kaelz4_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"

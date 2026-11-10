@@ -16,14 +16,17 @@
 set -e
 #set -x
 SRC_PATH=$(pwd)
-BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
+KAE_VERSION=$(sh "${SRC_PATH}/../scripts/kae-version.sh")
 
 function Target_zstd()
 {
     cd "${SRC_PATH}"/open_source
     rm -rf zstd
     tar -zxvf zstd-1.5.4.tar.gz
-    patch -p0 < kaezstd_1_5_4.patch
+    (
+        set -o pipefail
+        sed "s/@KAE_VERSION@/${KAE_VERSION}/g" kaezstd_1_5_4.patch | patch -p0
+    )
     patch -p0 < zstd_decompress.patch
     mv zstd-1.5.4 zstd
     cd "${SRC_PATH}"/open_source/zstd/
@@ -81,7 +84,7 @@ function Uninstall_kaezstd()
         fi
     fi
 
-    local kaezstd_path=$(ls /usr/local/kaezstd/lib | grep libkaezstd.so.${BUILDVERSION})
+    local kaezstd_path=$(ls /usr/local/kaezstd/lib | grep libkaezstd.so.${KAE_VERSION})
     if [ -n "${kaezstd_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"

@@ -70,4 +70,5 @@ if [ "$PACKAGING" = scripts/debian ]; then
     mv "$SOURCE/scripts/debian" "$SOURCE/debian"
     cd "$SOURCE"
 fi
+python3 debian/prepare-version.py
 exec dpkg-buildpackage -b -us -uc "$@"

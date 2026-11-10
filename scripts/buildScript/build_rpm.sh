@@ -65,8 +65,36 @@ source "$SCRIPT_DIR/build_package_components.sh"
 function build_rpm()
 {
     local kernel_version
-    kernel_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel | head -n 1)
+    kae_require_cmd rpm
+    if ! kernel_version=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-devel); then
+        kae_die "failed to query kernel-devel; check the RPM database and install the development package matching the target kernel"
+    fi
+    kernel_version=${kernel_version%%$'\n'*}
+    [ -n "$kernel_version" ] || kae_die "kernel-devel query returned an empty version; check the installed development package"
     build_package_components "$kernel_version"
+}
+
+function build_rpmpack()
+{
+    local version work spec
+    version=$(sh "$SRC_PATH/scripts/kae-version.sh")
+    mkdir -p "$KAE_BUILD/rpmpack"
+    work=$(mktemp -d "$KAE_BUILD/rpmpack/run.XXXXXX")
+    mkdir -p "$work"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+    spec="$work/SPECS/$(basename "$KAE_SPEC_FILE")"
+    sed "s/@KAE_VERSION@/$version/g" "$KAE_SPEC_FILE" > "$spec"
+    printf 'RPM build tree and packages: %s\n' "$work"
+    # Exclude previous build products, including libraries from an older VERSION.
+    tar -C "$SRC_PATH" --exclude=.git --exclude=kae_build --exclude=kae_output --exclude=.vscode \
+        --exclude=.DS_Store --exclude='._*' \
+        --exclude='*.o' --exclude='*.ko' --exclude='*.a' --exclude='*.so' \
+        --exclude='*.so.*' --exclude='*.lo' --exclude='*.la' \
+        --exclude=.libs --exclude=.deps --exclude=autom4te.cache \
+        --exclude=config.status --exclude=config.cache \
+        -czf "$work/SOURCES/kae-$version.tar.gz" .
+    rpmbuild -ba "$spec" --define "_topdir $work" \
+        --define "kae_allow_non_kunpeng ${KAE_ALLOW_NON_KUNPENG_BUILD:-0}"
+    cp "$work"/RPMS/aarch64/kae-*.rpm "$KAE_BUILD/"
 }
 
 # Main execution logic
@@ -77,15 +105,10 @@ ACTION=$1
 
 case "$ACTION" in
     "rpm")  
-        set +e  
         build_rpm  
         ;;
     "rpmpack")  
-        rm -rf /root/rpmbuild/SOURCES/kae* /root/rpmbuild/RPMS/aarch64/kae-* "$KAE_BUILD"
-        mkdir -p "$KAE_BUILD" /root/rpmbuild/SOURCES  
-        tar --exclude=kae_output -zcvf /root/rpmbuild/SOURCES/kae-2.2.0.tar.gz .
-        rpmbuild -bb "$KAE_SPEC_FILE" --define "kae_allow_non_kunpeng ${KAE_ALLOW_NON_KUNPENG_BUILD:-0}"  
-        cp /root/rpmbuild/RPMS/aarch64/kae* "$KAE_BUILD"  
+        build_rpmpack
         ;;
     "all_sva")
         build_all_comp_sva

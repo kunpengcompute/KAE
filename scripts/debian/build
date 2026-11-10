@@ -12,6 +12,7 @@ MODULES=(uacce hisi_qm hisi_sec2 hisi_hpre hisi_zip)
 fail() { echo "kae build: $*" >&2; exit 1; }
 
 build_components() {
+    python3 "$ROOT/debian/prepare-version.py" --check
     [ "$(dpkg-architecture -qDEB_HOST_ARCH)" = arm64 ] || fail 'ARM64 is required'
     [ "$(dpkg-architecture -qDEB_BUILD_ARCH)" = arm64 ] || fail 'use a native ARM64 builder'
     local release=${KERNEL_RELEASE:-$(uname -r)}
@@ -42,11 +43,12 @@ build_components() {
     printf '%s\n' "$release" > "$WORK/kernel-release"
     # A build must not modify the checkout or install anything on the builder.
     tar -C "$ROOT" --exclude=.git --exclude='*.o' --exclude='*.ko' \
+        --exclude='*.a' --exclude='*.so' --exclude='*.so.*' --exclude='*.lo' --exclude='*.la' \
         --exclude='*.mod' --exclude='*.mod.c' --exclude='.*.cmd' --exclude='*.o.d' \
         --exclude=Module.symvers --exclude=modules.order --exclude=.libs \
         --exclude=.deps --exclude=autom4te.cache --exclude=config.status \
         --exclude=config.cache -cf - KAEKernelDriver uadk KAEOpensslEngine \
-        KAEZlib KAEGzip KAEZstd KAELz4 KAESnappy scripts |
+        KAEZlib KAEGzip KAEZstd KAELz4 KAESnappy scripts VERSION |
         tar -C "$SOURCE" -xf -
     (
         source "$SOURCE/scripts/buildScript/common.sh"
@@ -113,8 +115,9 @@ EOF
 
 install_zip() {
     local pkg="$ROOT/debian/kae-zip"
+    local man_dir="$pkg/usr/share/man/man1"
     mkdir -p "$pkg$PRIVATE_LIBDIR" "$pkg/usr/libexec/kae" "$pkg/usr/bin" \
-        "$pkg/usr/share/doc/kae-zip/upstream-man" "$pkg$LIBDIR/pkgconfig"
+        "$man_dir" "$pkg/usr/share/doc/kae-zip/upstream-man" "$pkg$LIBDIR/pkgconfig"
     local component name file
     for component in kaezip kaezstd kaelz4 kaesnappy; do
         case "$component" in kaezip) name=zlib ;; *) name=${component#kae} ;; esac
@@ -143,10 +146,13 @@ export PATH
 exec /usr/libexec/kae/$name "\$@"
 EOF
         chmod 755 "$pkg/usr/bin/kae$name"
-        mkdir -p "$pkg/usr/share/man/man1"
-        printf '.so man1/kae-tools.1\n' > "$pkg/usr/share/man/man1/kae$name.1"
+        printf '.so man1/kae-tools.1\n' > "$man_dir/kae$name.1"
+        chmod 644 "$man_dir/kae$name.1"
     done
-    install -m644 "$ROOT/debian/kae-tools.1" "$pkg/usr/share/man/man1/"
+    local version
+    version=$(sh "$ROOT/scripts/kae-version.sh")
+    sed "s/@KAE_VERSION@/$version/g" "$ROOT/debian/kae-tools.1" > "$man_dir/kae-tools.1"
+    chmod 644 "$man_dir/kae-tools.1"
     python3 "$ROOT/debian/install-metadata.py" "$STAGE" "$pkg" "$LIBDIR"
 }
 

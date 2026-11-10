@@ -229,14 +229,19 @@ diff -Nur zstd-1.5.4/lib/compress/zstd_compress_internal.h zstd/lib/compress/zst
 diff -Nur zstd-1.5.4/lib/libzstd.mk zstd/lib/libzstd.mk
 --- zstd-1.5.4/lib/libzstd.mk	2023-02-10 08:41:50.000000000 +0800
 +++ zstd/lib/libzstd.mk	2026-01-06 19:39:32.191002580 +0800
-@@ -107,6 +107,11 @@
+@@ -107,6 +107,16 @@
  LDFLAGS  += $(MOREFLAGS)
  FLAGS     = $(CPPFLAGS) $(CFLAGS) $(ASFLAGS) $(LDFLAGS)
  
-+KAEZSTD_CFLAGS=-I/usr/local/kaezstd/include -I$(KAEZSTDPATH)/include -I. -I../lib -DCONF_KAEZSTD
-+KAEZSTD_LDFLAGS=-L/usr/local/kaezstd/lib -L$(KAEBUILDPATH)/lib -L$(KAEZSTDPATH) -Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaezstd.so.2.2.0
-+CFLAGS+=$(KAEZSTD_CFLAGS)
-+LDFLAGS+=$(KAEZSTD_LDFLAGS)
++# A bare -L consumes the next linker option when a build path is unset.
++KAEZSTD_CFLAGS = -I/usr/local/kaezstd/include \
++	$(addprefix -I,$(addsuffix /include,$(KAEZSTDPATH))) -I. -I../lib -DCONF_KAEZSTD
++KAEZSTD_LDFLAGS = -L/usr/local/kaezstd/lib \
++	$(addprefix -L,$(addsuffix /lib,$(KAEBUILDPATH)) $(KAEZSTDPATH)) \
++	-Wl,-rpath,/usr/local/kaezstd/lib:/usr/local/lib$(if $(KAEBUILDPATH),:$(KAEBUILDPATH)/lib) \
++	-l:libkaezstd.so.@KAE_VERSION@
++CFLAGS += $(KAEZSTD_CFLAGS)
++LDFLAGS += $(KAEZSTD_LDFLAGS)
 +
  ifndef ALREADY_APPENDED_NOEXECSTACK
  export ALREADY_APPENDED_NOEXECSTACK := 1

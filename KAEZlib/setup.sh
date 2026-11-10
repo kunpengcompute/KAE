@@ -17,6 +17,7 @@
 set -e
 #set -x
 SRC_PATH=$(pwd)
+KAE_VERSION=$(sh "${SRC_PATH}/../scripts/kae-version.sh")
 BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
 
 function Install_warpdrive()
@@ -44,7 +45,10 @@ function Target_zlib()
     cd "${SRC_PATH}"/open_source/zlib-1.2.11/
     patch -Np1 < ../../patch/kaezip_for_sec_CVE-2018-25032.patch
     patch -Np1 < ../../patch/kaezip_for_sec_CVE-2022-37434.patch
-    patch -Np1 < ../../patch/kaezip_for_zlib-1.2.11.patch
+    (
+        set -o pipefail
+        sed "s/@KAE_VERSION@/${KAE_VERSION}/g" ../../patch/kaezip_for_zlib-1.2.11.patch | patch -Np1
+    )
     # ./configure
     # make
 }
@@ -112,7 +116,7 @@ function Uninstall_kaezip()
 #        fi
 #    fi
 
-    local kaezip_path=$(ls /usr/local/kaezip/lib | grep libkaezip.so.${BUILDVERSION})
+    local kaezip_path=$(ls /usr/local/kaezip/lib | grep libkaezip.so.${KAE_VERSION})
     if [ -n "${kaezip_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"
