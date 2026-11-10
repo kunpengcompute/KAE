@@ -3,6 +3,21 @@
 
 # Build outputs
 /kae_build/
+/kae_output/
+# Debian outputs after promoting scripts/debian to the Ubuntu repository root
+/debian/.build/
+/debian/.debhelper/
+/debian/kae-driver/
+/debian/kae-openssl/
+/debian/kae-zip/
+/debian/*.debhelper
+/debian/*.substvars
+/debian/kae-driver.preinst
+/debian/kae-driver.postinst
+/debian/kae-driver.prerm
+/debian/kae-driver.postrm
+/debian/files
+/debian/debhelper-build-stamp
 /KAEGzip/gzip
 *.a
 *.o

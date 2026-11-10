@@ -1,0 +1,40 @@
+Source: kae
+Section: libs
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: yuzhihuan <yuzhihuan@huawei.com>
+Build-Depends: debhelper-compat (= 13),
+ autoconf, automake, libtool, pkg-config, cmake,
+ libnuma-dev, libssl-dev (>= 3.0), libssl-dev (<< 3.1),
+ liblz4-dev, zlib1g-dev, patchelf, kmod, python3
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://gitcode.com/boostkit/KAE
+Vcs-Git: https://git.launchpad.net/~jinze-team/ubuntu/+source/kae/+git/kae
+Vcs-Browser: https://code.launchpad.net/~jinze-team/ubuntu/+source/kae/+git/kae
+
+Package: kae-driver
+Architecture: arm64
+Depends: ${shlibs:Depends}, ${misc:Depends}, kmod, initramfs-tools
+Conflicts: libwd
+Description: Kunpeng accelerator kernel modules and UADK libraries
+ Precompiled uacce, hisi_qm, hisi_sec2, hisi_hpre and hisi_zip modules,
+ UADK libraries, driver plugins and development headers.
+ This build requires the exact running kernel ${kae:KernelRelease}.
+ Installation verifies both module lookup paths and loaded module identities.
+
+Package: kae-openssl
+Architecture: arm64
+Depends: kae-driver (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: Kunpeng accelerator engine for OpenSSL 3.0
+ KAE ENGINE extension for the system OpenSSL 3.0 library. Applications
+ explicitly select the kae engine; the system OpenSSL configuration is
+ not changed by this package.
+
+Package: kae-zip
+Architecture: arm64
+Depends: kae-driver (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: Kunpeng accelerated compression libraries and tools
+ KAE implementations of zlib, gzip, zstd, lz4 and snappy, with their
+ development headers and libraries. Accelerated compression libraries
+ are installed in a private directory, alongside the system libraries.

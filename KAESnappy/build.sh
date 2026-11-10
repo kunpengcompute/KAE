@@ -41,7 +41,7 @@ function Build_kaesnappy()
     cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=ON
-    make -j
+    make -j"${BUILD_JOBS:-$(nproc)}"
     echo "build snappy success"
 }
 
@@ -63,7 +63,7 @@ function Dev_Build_kaesnappy()
     -DKAEBUILDPATH="${SRC_PATH}/../kae_build/" \
     -DCMAKE_INSTALL_PREFIX="${SRC_PATH}/../kae_build/kaesnappy" \
     -DKAESNAPPY_INCLUDE_DIR="${SRC_PATH}/include/;${SRC_PATH}/src/utils/"
-    make -j
+    make -j"${BUILD_JOBS:-$(nproc)}"
     make install
     echo "build snappy success"
 }
@@ -86,7 +86,7 @@ function Install_kaesnappy()
         -DCMAKE_INSTALL_PREFIX=/usr/local/kaesnappy \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DBUILD_SHARED_LIBS=ON
-        make -j
+        make -j"${BUILD_JOBS:-$(nproc)}"
         make install
     fi
     echo "install snappy success"

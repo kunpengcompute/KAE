@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+case "$1" in
+    configure)
+        /usr/lib/kae/kae-modules load
+        update-initramfs -u -k '@KERNEL_RELEASE@'
+        ;;
+esac
+#DEBHELPER#

@@ -1,0 +1,40 @@
+KAE - Kunpeng Accelerator Engine
+Upstream source: https://gitcode.com/boostkit/KAE
+
+Original KAE contributions include:
+Copyright (c) 2026 Huawei Technologies Co., Ltd.
+Copyright 2020-2021 Huawei Technologies Co., Ltd. (UADK)
+Copyright (c) 2019 HiSilicon Limited. (kernel queue manager)
+Individual files retain their dates, authors and third-party attributions.
+
+KAE user-space contributions, UADK and this Debian packaging use Apache-2.0.
+The full Apache-2.0 text is in /usr/share/common-licenses/Apache-2.0.
+Kernel drivers retain GPL-2.0-only or GPL-2.0-or-later, as specified by each
+source file; UAPI headers additionally retain the Linux-syscall-note exception.
+The full GPL version 2 text is in /usr/share/common-licenses/GPL-2.
+
+The bundled zlib is Copyright Jean-loup Gailly and Mark Adler and uses the
+zlib license. Zstandard is Copyright Meta Platforms, Inc. and affiliates;
+KAE selects its BSD-3-Clause option as recorded in LICENSE.zstd. LZ4 libraries
+are Copyright Yann Collet and use BSD-2-Clause; its command-line code retains
+GPL-2.0-or-later. The upstream KAELz4 notice selects GPLv3 when combining that
+command-line code with the Apache-2.0 KAE contributions. Snappy is Copyright
+Google Inc. and uses BSD-3-Clause, with additional test-data exceptions noted
+in its upstream inventory. gzip retains its Free Software Foundation and
+individual contributor notices and GPL-3.0-or-later terms. The full GPL version
+3 text is in /usr/share/common-licenses/GPL-3.
+
+Legacy OpenSSL-derived and GmSSL-derived source portions retain their original
+licenses and attributions. The file-specific scope, full license texts and
+upstream acknowledgements are reproduced unchanged in the following files
+under this package's /usr/share/doc directory:
+
+ licenses/KAEOpensslEngine-LICENSE.openssl
+ licenses/KAEOpensslEngine-LICENSE.gmssl
+ licenses/KAEZlib-LICENSE.zlib
+ licenses/KAEZstd-LICENSE.zstd
+ licenses/KAELz4-LICENSE.lz4
+ licenses/KAESnappy-LICENSE.snappy
+
+The source package also preserves all per-file notices, component LICENSE
+files, and the upstream source archives and their license inventories.

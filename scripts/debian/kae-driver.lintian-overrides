@@ -1,0 +1,8 @@
+# The requested RPM-compatible split keeps UADK runtime libraries and headers
+# together in kae-driver. It intentionally has no fourth -dev/SONAME package.
+kae-driver: package-name-doesnt-match-sonames libwd-comp2 libwd-crypto2 libwd-dae2 libwd-udma2 libwd2
+kae-driver: link-to-shared-library-in-wrong-package usr/lib/aarch64-linux-gnu/libwd.so.2.10.0 [usr/lib/aarch64-linux-gnu/libwd.so]
+kae-driver: link-to-shared-library-in-wrong-package usr/lib/aarch64-linux-gnu/libwd_comp.so.2.10.0 [usr/lib/aarch64-linux-gnu/libwd_comp.so]
+kae-driver: link-to-shared-library-in-wrong-package usr/lib/aarch64-linux-gnu/libwd_crypto.so.2.10.0 [usr/lib/aarch64-linux-gnu/libwd_crypto.so]
+kae-driver: link-to-shared-library-in-wrong-package usr/lib/aarch64-linux-gnu/libwd_dae.so.2.10.0 [usr/lib/aarch64-linux-gnu/libwd_dae.so]
+kae-driver: link-to-shared-library-in-wrong-package usr/lib/aarch64-linux-gnu/libwd_udma.so.2.10.0 [usr/lib/aarch64-linux-gnu/libwd_udma.so]

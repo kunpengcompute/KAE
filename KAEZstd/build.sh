@@ -38,7 +38,7 @@ function Build_kaezstd()
     echo "install kaezstd"
 
     cd -
-    make -j
+    make -j"${BUILD_JOBS:-$(nproc)}"
     echo "build zstd success"
 }
 
@@ -51,7 +51,7 @@ function Dev_Build_kaezstd()
     echo "install kaezstd"
 
     cd -
-    make -j KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAEZSTDPATH=${SRC_PATH}
+    make -j"${BUILD_JOBS:-$(nproc)}" KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAEZSTDPATH=${SRC_PATH}
     make PREFIX="${SRC_PATH}/../kae_build/kaezstd" install
     echo "build zstd success"
 }

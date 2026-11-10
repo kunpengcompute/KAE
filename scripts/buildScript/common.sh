@@ -102,7 +102,7 @@ function build_check_OS_version()
         KERNEL_VERSION=`uname -r`
     fi
 
-    if [[ "$KERNEL_VERSION" == 6.6.* ]]; then
+    if [[ "$KERNEL_VERSION" == 6.6.* || "$KERNEL_VERSION" == 6.8.* ]]; then
         KAE_KERNEL_DIR=${SRC_PATH}/KAEKernelDriver/KAEKernelDriver-OLK-6.6
         KAE_SPEC_FILE=${SRC_PATH}/scripts/specFile/kae_openeuler2403.spec
         OPENSSL_CONFIGURE_FLAG="--libdir=/usr/local/lib/engines-3.0 --enable-kae --enable-engine --with-openssl_install_dir=/usr/"

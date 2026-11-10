@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in prereqs) exit 0 ;; esac
+[ "${version:-}" = '@KERNEL_RELEASE@' ] || exit 0
+. /usr/share/initramfs-tools/hook-functions
+: "${DESTDIR:?missing initramfs staging directory}"
+image_root=$(readlink -f "$DESTDIR")
+[ -n "$image_root" ] && [ "$image_root" != / ] || exit 1
+for module in uacce hisi_qm hisi_sec2 hisi_hpre hisi_zip; do
+    expected="/lib/modules/$version/updates/kae/$module.ko"
+    actual=$(modinfo -k "$version" -F filename "$module")
+    if [ "$(readlink -f "$actual")" != "$(readlink -f "$expected")" ]; then
+        echo "kae-driver: refusing initramfs with unexpected $module: $actual" >&2
+        exit 1
+    fi
+    # Other hooks may already have copied the distribution's same-name module.
+    # Remove only those copies inside the image, never files on the host.
+    for directory in "$DESTDIR/lib/modules/$version" "$DESTDIR/usr/lib/modules/$version"; do
+        [ -d "$directory" ] || continue
+        directory=$(readlink -f "$directory")
+        case "$directory" in "$image_root"/*) ;; *) exit 1 ;; esac
+        find "$directory" -type f -name "$module.ko*" -delete
+    done
+    # Recent Ubuntu initramfs-tools defers module copying until all hooks have
+    # run. Request an immediate copy so that this hook can check its contents.
+    STAGE_KERNEL_MODULE_COPYING=0 force_load "$module"
+    image_module="$DESTDIR$expected"
+    [ -f "$image_module" ] || image_module="$DESTDIR/usr$expected"
+    cmp -s "$expected" "$image_module" || {
+        echo "kae-driver: wrong initramfs copy for $module" >&2
+        exit 1
+    }
+done
+# copy_file returns 1 when a standard hook already copied the same file.
+copy_file config /usr/lib/modprobe.d/kae.conf || [ "$?" = 1 ]
+copy_file config /usr/lib/depmod.d/kae.conf || [ "$?" = 1 ]
