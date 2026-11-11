@@ -1,0 +1,9 @@
+kae (2.2.0-1ubuntu1) noble; urgency=medium
+
+  * Package the complete RPM component set as kae-driver, kae-openssl and
+    kae-zip for Ubuntu ARM64 and OpenSSL 3.0.
+  * Build precompiled modules against the running Linux 6.8 kernel without
+    requiring Kunpeng hardware on the build machine.
+  * Verify packaged module selection and identity during installation.
+
+ -- yuzhihuan <yuzhihuan@huawei.com>  Tue, 10 Nov 2026 12:00:00 +0800

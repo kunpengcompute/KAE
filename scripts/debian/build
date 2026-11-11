@@ -1,0 +1,188 @@
+#!/bin/bash
+# Debian orchestration. All upstream patching/building happens in a private copy.
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+WORK="$ROOT/debian/.build"
+SOURCE="$WORK/source"
+STAGE="$SOURCE/kae_build"
+TRIPLET=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+LIBDIR="/usr/lib/$TRIPLET"
+PRIVATE_LIBDIR="$LIBDIR/kae"
+MODULES=(uacce hisi_qm hisi_sec2 hisi_hpre hisi_zip)
+fail() { echo "kae build: $*" >&2; exit 1; }
+
+build_components() {
+    [ "$(dpkg-architecture -qDEB_HOST_ARCH)" = arm64 ] || fail 'ARM64 is required'
+    [ "$(dpkg-architecture -qDEB_BUILD_ARCH)" = arm64 ] || fail 'use a native ARM64 builder'
+    local release=${KERNEL_RELEASE:-$(uname -r)}
+    local headers=${KERNEL_DIR:-/lib/modules/$release/build}
+    [[ "$release" =~ ^6\.8\.[A-Za-z0-9.+_-]+$ ]] || fail "expected a Linux 6.8 kernel, got $release"
+    [ -r "$headers/Makefile" ] || fail "install the matching kernel headers: $headers"
+    [ -s "$headers/Module.symvers" ] || fail "missing $headers/Module.symvers from the target kernel build"
+    [ "$(cat "$headers/include/config/kernel.release")" = "$release" ] || fail 'kernel headers do not match the target release'
+    local config="$headers/include/config/auto.conf"
+    [ -r "$config" ] || fail "missing configured kernel headers: $config"
+    grep -qx 'CONFIG_ARM64=y' "$config" || fail 'kernel headers must be ARM64'
+    for option in UACCE CRYPTO_DEV_HISI_QM CRYPTO_DEV_HISI_SEC2 CRYPTO_DEV_HISI_HPRE CRYPTO_DEV_HISI_ZIP; do
+        if grep -qx "CONFIG_${option}=y" "$config"; then
+            fail "CONFIG_${option}=y is built into the kernel and cannot be replaced by a ko"
+        fi
+    done
+    case "$(pkg-config --modversion libcrypto)" in
+        3.0.*) ;;
+        *) fail 'OpenSSL 3.0 development files are required' ;;
+    esac
+    local jobs=${BUILD_JOBS:-$(nproc)}
+    for option in ${DEB_BUILD_OPTIONS:-}; do
+        case "$option" in parallel=*) jobs=${option#parallel=} ;; esac
+    done
+    [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail 'invalid build parallelism'
+    rm -rf "$WORK"
+    mkdir -p "$SOURCE"
+    printf '%s\n' "$release" > "$WORK/kernel-release"
+    # A build must not modify the checkout or install anything on the builder.
+    tar -C "$ROOT" --exclude=.git --exclude='*.o' --exclude='*.ko' \
+        --exclude='*.mod' --exclude='*.mod.c' --exclude='.*.cmd' --exclude='*.o.d' \
+        --exclude=Module.symvers --exclude=modules.order --exclude=.libs \
+        --exclude=.deps --exclude=autom4te.cache --exclude=config.status \
+        --exclude=config.cache -cf - KAEKernelDriver uadk KAEOpensslEngine \
+        KAEZlib KAEGzip KAEZstd KAELz4 KAESnappy scripts |
+        tar -C "$SOURCE" -xf -
+    (
+        source "$SOURCE/scripts/buildScript/common.sh"
+        source "$SOURCE/scripts/buildScript/build_package_components.sh"
+        KAE_KERNEL_DIR="$SOURCE/KAEKernelDriver/KAEKernelDriver-OLK-6.6"
+        export KAE_KERNEL_BUILD_DIR="$headers"
+        export BUILD_JOBS="$jobs" KAE_ALLOW_NON_KUNPENG_BUILD=1
+        export MAKEFLAGS="-j$jobs"
+        export LD_LIBRARY_PATH="$KAE_BUILD/uadk/lib:$KAE_BUILD/kaezip/lib:$KAE_BUILD/lib"
+        OPENSSL_CONFIGURE_FLAG="--prefix=/usr --libdir=$LIBDIR/engines-3 --enable-kae --enable-engine LIBS=-lcrypto"
+        build_package_components "$release"
+    )
+}
+
+render() { sed "s|@KERNEL_RELEASE@|$RELEASE|g" "$1"; }
+
+install_driver() {
+    local pkg="$ROOT/debian/kae-driver"
+    local modules="/lib/modules/$RELEASE/updates/kae"
+    local identity="/usr/share/kae-driver/$RELEASE"
+    mkdir -p "$pkg$modules" "$pkg$identity" "$pkg$LIBDIR/uadk" \
+        "$pkg/usr/include/uadk" "$pkg/usr/lib/depmod.d" \
+        "$pkg/usr/lib/modprobe.d" "$pkg/usr/lib/modules-load.d" \
+        "$pkg/usr/lib/kae" "$pkg/usr/share/initramfs-tools/hooks" \
+        "$pkg$LIBDIR/pkgconfig"
+    cp -a "$STAGE/uadk/lib/"libwd*.so* "$pkg$LIBDIR/"
+    cp -a "$STAGE/uadk/lib/"libhisi*.so* "$STAGE/uadk/lib/"libisa*.so* "$pkg$LIBDIR/uadk/"
+    cp -a "$STAGE/uadk/include/." "$pkg/usr/include/uadk/"
+    for module in "${MODULES[@]}"; do
+        local file="$STAGE/driver/$module.ko"
+        [[ "$(modinfo -F vermagic "$file")" = "$RELEASE "* ]] || fail "wrong vermagic: $file"
+        install -m644 "$file" "$pkg$modules/"
+        objcopy --dump-section ".note.gnu.build-id=$pkg$identity/$module.build-id" "$file" /dev/null
+        [ -s "$pkg$identity/$module.build-id" ] || fail "missing build ID: $file"
+        # Escape dots: depmod's kernel selector is a regular expression.
+        local release_pattern=${RELEASE//./\\.}
+        release_pattern=${release_pattern//+/\\+}
+        printf 'override %s ^%s$ updates/kae\n' "$module" "$release_pattern" >> "$pkg/usr/lib/depmod.d/kae.conf"
+        printf '%s\n' "$module" >> "$pkg/usr/lib/modules-load.d/kae.conf"
+    done
+    for module in hisi_sec2 hisi_hpre hisi_zip; do
+        printf 'options %s uacce_mode=2 pf_q_num=256\n' "$module" >> "$pkg/usr/lib/modprobe.d/kae.conf"
+    done
+    render "$ROOT/debian/kae-modules" > "$pkg/usr/lib/kae/kae-modules"
+    render "$ROOT/debian/kae.initramfs-hook" > "$pkg/usr/share/initramfs-tools/hooks/kae"
+    chmod 755 "$pkg/usr/lib/kae/kae-modules" "$pkg/usr/share/initramfs-tools/hooks/kae"
+    for script in preinst postinst prerm postrm; do
+        render "$ROOT/debian/kae-driver.$script.in" > "$ROOT/debian/kae-driver.$script"
+    done
+    for lib in wd wd_comp wd_crypto; do
+        cat > "$pkg$LIBDIR/pkgconfig/lib$lib.pc" <<EOF
+prefix=/usr
+libdir=$LIBDIR
+includedir=/usr/include/uadk
+
+Name: lib$lib
+Description: KAE UADK $lib library
+Version: 2.10.0
+Libs: -L\${libdir} -l$lib
+Cflags: -I\${includedir}
+EOF
+    done
+}
+
+install_zip() {
+    local pkg="$ROOT/debian/kae-zip"
+    mkdir -p "$pkg$PRIVATE_LIBDIR" "$pkg/usr/libexec/kae" "$pkg/usr/bin" \
+        "$pkg/usr/share/doc/kae-zip/upstream-man" "$pkg$LIBDIR/pkgconfig"
+    local component name file
+    for component in kaezip kaezstd kaelz4 kaesnappy; do
+        case "$component" in kaezip) name=zlib ;; *) name=${component#kae} ;; esac
+        mkdir -p "$pkg/usr/include/kae/$name"
+        cp -a "$STAGE/$component/include/." "$pkg/usr/include/kae/$name/"
+        for file in "$STAGE/$component/lib/"*.so* "$STAGE/$component/lib/"*.a; do
+            [ -e "$file" ] || continue
+            cp -a "$file" "$pkg$PRIVATE_LIBDIR/"
+        done
+        if [ -d "$STAGE/$component/bin" ]; then
+            cp -a "$STAGE/$component/bin/." "$pkg/usr/libexec/kae/"
+        fi
+        if [ -d "$STAGE/$component/share/man" ]; then
+            mkdir -p "$pkg/usr/share/doc/kae-zip/upstream-man/$name"
+            cp -a "$STAGE/$component/share/man/." "$pkg/usr/share/doc/kae-zip/upstream-man/$name/"
+        fi
+    done
+    install -m755 "$STAGE/kaegzip/gzip" "$pkg/usr/libexec/kae/gzip"
+    # Keep all upstream helpers in one private PATH (e.g. zstdgrep calls zstd).
+    for file in "$pkg/usr/libexec/kae/"*; do
+        name=$(basename "$file")
+        cat > "$pkg/usr/bin/kae$name" <<EOF
+#!/bin/sh
+PATH=/usr/libexec/kae:\$PATH
+export PATH
+exec /usr/libexec/kae/$name "\$@"
+EOF
+        chmod 755 "$pkg/usr/bin/kae$name"
+        mkdir -p "$pkg/usr/share/man/man1"
+        printf '.so man1/kae-tools.1\n' > "$pkg/usr/share/man/man1/kae$name.1"
+    done
+    install -m644 "$ROOT/debian/kae-tools.1" "$pkg/usr/share/man/man1/"
+    python3 "$ROOT/debian/install-metadata.py" "$STAGE" "$pkg" "$LIBDIR"
+}
+
+install_components() {
+    [ -f "$WORK/kernel-release" ] || fail 'run the build target first'
+    RELEASE=$(cat "$WORK/kernel-release")
+    for package in kae-driver kae-openssl kae-zip; do
+        rm -rf "$ROOT/debian/$package"
+    done
+    install_driver
+    local engine="$ROOT/debian/kae-openssl$LIBDIR/engines-3"
+    mkdir -p "$engine"
+    cp -a "$STAGE/KAEOpensslEngine/lib/"*.so* "$engine/"
+    install_zip
+    local package file
+    for package in kae-driver kae-openssl kae-zip; do
+        local licenses="$ROOT/debian/$package/usr/share/doc/$package/licenses"
+        mkdir -p "$licenses"
+        # Preserve upstream inventories and attributions alongside the concise
+        # Debian copyright file, which refers to common license texts.
+        for file in KAEOpensslEngine/LICENSE.openssl KAEOpensslEngine/LICENSE.gmssl \
+            KAEZlib/LICENSE.zlib KAEZstd/LICENSE.zstd KAELz4/LICENSE.lz4 KAESnappy/LICENSE.snappy; do
+            install -m644 "$ROOT/$file" "$licenses/${file//\//-}"
+        done
+        while IFS= read -r -d '' file; do
+            readelf -d "$file" 2>/dev/null | grep -q '(NEEDED)' || continue
+            case "$package" in
+                kae-zip) patchelf --set-rpath "$PRIVATE_LIBDIR" "$file" ;;
+                *) patchelf --remove-rpath "$file" ;;
+            esac
+        done < <(find "$ROOT/debian/$package" -type f ! -name '*.ko' ! -name '*.a' -print0)
+    done
+}
+
+case "${1:-}" in
+    build) build_components ;;
+    install) install_components ;;
+    *) fail 'usage: debian/build {build|install}' ;;
+esac

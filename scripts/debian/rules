@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+# UADK defines _FORTIFY_SOURCE itself. Keep the other distribution flags.
+export DEB_CPPFLAGS_MAINT_STRIP = -D_FORTIFY_SOURCE=3 -D_FORTIFY_SOURCE=2
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@ --buildsystem=none
+
+override_dh_auto_build:
+	bash debian/build build
+
+override_dh_auto_install:
+	bash debian/build install
+
+override_dh_auto_clean:
+	rm -rf debian/.build
+
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym -X.ko
+
+# The three-package layout deliberately does not ship a separate debug package.
+override_dh_dwz:
+
+override_dh_makeshlibs:
+	dh_makeshlibs -pkae-driver -X/uadk/
+
+override_dh_shlibdeps:
+	dh_shlibdeps -l$(CURDIR)/debian/kae-driver/usr/lib/$(DEB_HOST_MULTIARCH):$(CURDIR)/debian/kae-zip/usr/lib/$(DEB_HOST_MULTIARCH)/kae -- -xkae-zip
+
+override_dh_gencontrol:
+	dh_gencontrol -- -Vkae:KernelRelease=$$(cat debian/.build/kernel-release)

@@ -1,0 +1,41 @@
+.TH KAE-TOOLS 1 "November 2026" "KAE 2.2.0"
+.SH NAME
+kaegzip, kaezstd, kaelz4, kaeunzstd, kaezstdcat, kaezstdmt, kaezstdgrep, kaezstdless \- Kunpeng accelerated compression tools
+.SH SYNOPSIS
+.B kaegzip
+.RI [ gzip-options ] " [files]"
+.br
+.B kaezstd
+.RI [ zstd-options ] " [files]"
+.br
+.B kaelz4
+.RI [ lz4-options ] " [files]"
+.SH DESCRIPTION
+These commands invoke the KAE variants of gzip, Zstandard and LZ4.
+Their options and data formats follow the corresponding upstream tools.
+Use the command's --help option for the complete option list.
+The kae-prefixed Zstandard helper commands provide the corresponding
+unzstd, zstdcat, zstdmt, zstdgrep and zstdless operations.
+.PP
+Executables are stored in /usr/libexec/kae. The wrappers set PATH to use
+the matching private helper programs. KAE compression libraries are
+stored in the architecture-specific /usr/lib directory's kae subdirectory.
+The system compression programs and libraries are not replaced.
+.PP
+Hardware acceleration requires supported Kunpeng accelerator devices and
+the matching kae-driver package. Running without devices tests software
+operation only.
+.SH EXAMPLES
+.nf
+kaegzip -c input > input.gz
+kaegzip -d -c input.gz > restored
+kaezstd -c input > input.zst
+kaelz4 -c input > input.lz4
+.fi
+.SH SEE ALSO
+.BR gzip (1),
+.BR zstd (1),
+.BR lz4 (1)
+.PP
+The upstream manuals are also supplied under
+/usr/share/doc/kae-zip/upstream-man.

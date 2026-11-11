@@ -40,7 +40,7 @@ function Build_kaelz4()
     echo "install kaelz4"
 
     cd -
-    make -j KAELZ4PATH=${SRC_PATH}
+    make -j"${BUILD_JOBS:-$(nproc)}" KAELZ4PATH=${SRC_PATH}
     echo "build lz4 success"
 }
 
@@ -53,7 +53,7 @@ function Dev_Build_kaelz4()
     echo "install kaelz4"
 
     cd -
-    make -j KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAELZ4PATH=${SRC_PATH}
+    make -j"${BUILD_JOBS:-$(nproc)}" KAEBUILDPATH=${SRC_PATH}/../kae_build/ KAELZ4PATH=${SRC_PATH}
     echo "build lz4 success"
 }
 

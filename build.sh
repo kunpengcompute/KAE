@@ -62,6 +62,7 @@ Commands:
   General:
     all                     Install all components (excluding gmssl/tongsuo/boringssl)
     rpmpack                 Build RPM package (excluding gmssl/tongsuo/boringssl)
+    debpack                 Build Ubuntu ARM64 packages for the running 6.8 kernel
     cleanup                 Clean up all components
 
   Driver:
@@ -101,6 +102,11 @@ EOF
 }
 
 main() {  
+    # Debian package builds need neither a Kunpeng CPU nor a loaded accelerator.
+    if [ "${1:-}" = "debpack" ] || [ "${1:-}" = "deb" ]; then
+        shift
+        exec bash "$SCRIPT_DIR/scripts/buildScript/build_deb.sh" "$@"
+    fi
     check_environment  
     build_check_OS_version
     export LD_LIBRARY_PATH=/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}

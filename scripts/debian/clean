@@ -1,0 +1,4 @@
+debian/kae-driver.preinst
+debian/kae-driver.postinst
+debian/kae-driver.prerm
+debian/kae-driver.postrm

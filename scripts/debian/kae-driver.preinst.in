@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+case "$1" in
+    install|upgrade)
+        if [ "$(uname -r)" != '@KERNEL_RELEASE@' ]; then
+            echo 'kae-driver requires the running kernel @KERNEL_RELEASE@; rebuild the package for your kernel.' >&2
+            exit 1
+        fi
+        ;;
+esac
+#DEBHELPER#

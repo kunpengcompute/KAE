@@ -1,0 +1,5 @@
+# KAEZstd contains the accelerator integration from kaezstd_1_5_4.patch and
+# zstd_decompress.patch. It cannot use the unmodified system libzstd. Keep it
+# private, and review/update the bundled version as part of KAE maintenance.
+kae-zip: embedded-library libzstd [usr/lib/aarch64-linux-gnu/kae/libzstd.so.1.5.4]
+kae-zip: embedded-library libzstd [usr/libexec/kae/zstd]

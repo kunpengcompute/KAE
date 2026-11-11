@@ -1,0 +1,67 @@
+#!/bin/sh
+# Only the ko files shipped by this package may satisfy a successful load.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+KVER='@KERNEL_RELEASE@'
+MODULE_DIR="/lib/modules/$KVER/updates/kae"
+IDENTITY_DIR="/usr/share/kae-driver/$KVER"
+MODULES='uacce hisi_qm hisi_sec2 hisi_hpre hisi_zip'
+die() { echo "kae-driver: $*" >&2; exit 1; }
+
+check_kernel() {
+    [ "$(uname -r)" = "$KVER" ] || die "built for $KVER; running $(uname -r). Rebuild for this kernel."
+}
+
+check_paths() {
+    for module in $MODULES; do
+        expected="$MODULE_DIR/$module.ko"
+        [ -f "$expected" ] || die "missing $expected"
+        actual=$(modinfo -k "$KVER" -F filename "$module")
+        [ "$(readlink -f "$actual")" = "$(readlink -f "$expected")" ] ||
+            die "$module resolves to $actual, expected $expected"
+    done
+}
+
+unload_modules() {
+    # First reject external holders, including migration/VFIO modules.
+    for module in $MODULES; do
+        for holder in /sys/module/"$module"/holders/*; do
+            [ -e "$holder" ] || continue
+            case " $MODULES " in
+                *" ${holder##*/} "*) ;;
+                *) die "$module is held by ${holder##*/}; stop its users before retrying" ;;
+            esac
+        done
+    done
+    for module in hisi_zip hisi_hpre hisi_sec2 hisi_qm uacce; do
+        if [ -d "/sys/module/$module" ]; then
+            rmmod "$module" || die "cannot unload $module; stop accelerator users and retry"
+        fi
+    done
+}
+
+verify_loaded() {
+    check_paths
+    for module in $MODULES; do
+        note="/sys/module/$module/notes/.note.gnu.build-id"
+        [ -r "$note" ] && cmp -s "$IDENTITY_DIR/$module.build-id" "$note" ||
+            die "$module is absent or the loaded build ID differs from the packaged ko"
+        echo "kae-driver: verified $module ($MODULE_DIR/$module.ko)"
+    done
+}
+
+case "${1:-}" in
+    load)
+        check_kernel
+        depmod -a "$KVER"
+        check_paths
+        unload_modules
+        for module in $MODULES; do modprobe "$module"; done
+        verify_loaded
+        ;;
+    unload)
+        if [ "$(uname -r)" = "$KVER" ]; then unload_modules; fi
+        ;;
+    verify) check_kernel; verify_loaded ;;
+    *) die 'usage: kae-modules {load|unload|verify}' ;;
+esac

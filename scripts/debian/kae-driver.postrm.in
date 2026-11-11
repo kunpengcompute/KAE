@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+case "$1" in
+    remove|purge|abort-install)
+        if [ -d '/lib/modules/@KERNEL_RELEASE@' ]; then
+            depmod -a '@KERNEL_RELEASE@'
+            update-initramfs -u -k '@KERNEL_RELEASE@'
+        fi
+        ;;
+esac
+#DEBHELPER#

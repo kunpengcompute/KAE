@@ -1,0 +1,35 @@
+KAE Debian source layout
+========================
+
+The upstream KAE repository stores these files in scripts/debian. The
+`bash build.sh debpack` entry point copies the working source into a unique
+kae_output/debpack/run.XXXXXX/source directory and moves the packaging copy to
+its root debian directory before invoking dpkg-buildpackage. The original
+checkout keeps scripts/debian only. Build output and failed builds remain in
+that run directory, outside the disposable kae_build staging directory used
+by RPM builds. Remove old run directories explicitly when no longer needed.
+
+In the Ubuntu packaging repository, move scripts/debian to the root debian
+directory and maintain only that copy. Internal packaging paths deliberately
+use the standard debian/ layout. With that layout, dpkg-buildpackage can run
+directly, and the debpack wrapper also uses it without staging another copy.
+Source uploads should be prepared from this standard Ubuntu layout; the orig
+archive must match it as well.
+
+The binary build uses the running 6.8 ARM64 kernel and its configured headers.
+Custom kernel headers cannot be named generically in Build-Depends; they must
+be provisioned before building. For a distribution builder, declare the exact
+headers dependency in the publishing branch and set KERNEL_RELEASE/KERNEL_DIR.
+The debpack wrapper resolves a relative KERNEL_DIR from the caller's working
+directory and reports an invalid or inaccessible directory before staging.
+The builder's host kernel must not be mistaken for the deployment kernel.
+Install the other dependencies listed in control before running the build.
+
+Upstream patch scripts and bundled compression archives are reused in a
+private debian/.build/source tree. No network downloads or module operations
+are needed during the build. The parent checkout remains unchanged.
+
+Use an orig.tar matching the complete upstream snapshot, including the shared
+package build scripts. If using an older upstream release tarball instead,
+represent its upstream-file differences as quilt patches in debian/patches.
+Generated objects, staged packages and debian/.build are not source files.
