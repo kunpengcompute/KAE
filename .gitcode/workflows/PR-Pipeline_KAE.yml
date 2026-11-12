@@ -7,7 +7,7 @@ on: # 自动触发工作流运行的触发条件
   #  branches: [ "kae2" ] #作用于分支上
   pull_request_target: #MR的合并、打开和重开、更新事件都会触发默认分支的配置文件
   # pull_request: #MR的合并、打开和重开、更新事件都会触发
-    types: [ "open", "reopen", "update"]
+    types: [ "open", "reopen", "update" ]
     branches: [ "*" ] #作用于分支上
   pr_comment: # 用于评论刷新预合并分支
     types: [ created ]
@@ -17,13 +17,22 @@ on: # 自动触发工作流运行的触发条件
     branches: [ '*' ]
     comments: [ '^(?:\/)?compile*' , 'sca-pr-scan' ]
 
+concurrency: # 并发控制（GitCode 原生语法）
+  enable: true             # 启用并发控制
+  max: 3                   # 最大并发运行数（范围 1-5）
+  exceed-action: QUEUE     # 超出并发上限：排队等待
+  preemption:              # 抢占策略：新事件取消同组旧运行
+    enable: true
+    events: [mr_id]        # 按 MR 隔离
+
 permissions:
   repository: read
-  id-token: write
+  pr: read
 
 env:
   pr_id: ${{ atomgit.event.pull_request.number }}
   branch: ${{ atomgit.event.pull_request.base.ref }}
+  default_branch: ${{ atomgit.event.repository.default_branch }}
 
 stages:  #阶段，不超过16个阶段，不超过256个job
   stage0:  #stage identifier 仅支持大小写英文字母、数字、“-”或“_”，长度介于1~128之间
@@ -75,7 +84,6 @@ stages:  #阶段，不超过16个阶段，不超过256个job
               base: ${{ env.branch }}
               repo: ${{ atomgit.repository }}
               number: ${{ env.pr_id }}
-              token: ${{ secrets.GIT_TOKEN }}
               list-files: json
               predicate-quantifier: every
               filters: |
@@ -101,14 +109,20 @@ stages:  #阶段，不超过16个阶段，不超过256个job
                 echo "need_build=yes" >> "$ATOMGIT_OUTPUT"
               fi
       sca-pr:
+        name: sca-pr
         runs-on: [ "ubuntu-latest", "x64", "slim" ]
+        permissions:
+          id-token: write # 仅本作业需要 OIDC 令牌
         steps:
           - name: Run SCA PR scan
             uses: openlibing/sca-action/sca-pr-action@v1.0.0
             with:
               project-name: "boostkit"
-      malicious-scan:
+      antipoison-scan:
+        name: antipoison-scan
         runs-on: [ "ubuntu-latest", "x64", "slim" ]
+        permissions:
+          id-token: write # 仅本作业需要 OIDC 令牌
         steps:
           - name: Run malicious code scan
             uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
@@ -138,6 +152,19 @@ stages:  #阶段，不超过16个阶段，不超过256个job
             uses: setup-python
             with:
               python-version: "3.14"
+          - name: Setup Go
+            uses: setup-go
+            with:
+              go-version: '1.26.1'
+          - name: install gitleaks
+            run: |
+              export GO111MODULE=on
+              export GOPROXY=https://mirrors.huaweicloud.com/repository/goproxy/
+              export GONOSUMDB=*
+              cd ${ATOMGIT_WORKSPACE}
+              wget --no-host-directories -c --no-check-certificate https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta-codecheck/gitleaks
+              chmod +x gitleaks
+              cd -
           - name: Run pre-commit
             uses: openlibing/pre-commit-action@v1.0.0
             # 不传 extra_args 时为自动模式：PR 事件检查 PR 增量文件，非 PR 事件全量检查
@@ -148,21 +175,25 @@ stages:  #阶段，不超过16个阶段，不超过256个job
       build:
         name: build
         if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
-        needs: [ Detect_file_changes, sca-pr, malicious-scan, pre-commit]
+        needs: [ Detect_file_changes, sca-pr, antipoison-scan, pre-commit]
         uses: .gitcode/workflows/build_job.yml
         with:
           runs_on_flavor: "flavor=small"
           docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base"
           pr_id: "${{ env.pr_id }}"
+          branch: "${{ env.branch }}"
+          default_branch: "${{ env.default_branch }}"
       ut:
         name: ut
         if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
-        needs: [ Detect_file_changes, sca-pr, malicious-scan, pre-commit]
+        needs: [ Detect_file_changes, sca-pr, antipoison-scan, pre-commit]
         uses: .gitcode/workflows/ut_job.yml
         with:
           runs_on_flavor: "flavor=small"
           docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:base"
           pr_id: "${{ env.pr_id }}"
+          branch: "${{ env.branch }}"
+          default_branch: "${{ env.default_branch }}"
 
 post:
   jobs:
