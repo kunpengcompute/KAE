@@ -12,6 +12,12 @@ on:
       pr_id:
         required: true
         type: string
+      branch:
+        required: true
+        type: string
+      default_branch:
+        required: true
+        type: string
 
 jobs:
   JOB_Compile:
