@@ -33,6 +33,50 @@
 #include <openssl/types.h>
 #include "prov.h"
 
+#if defined(KAE_OPENSSL_3_5) || defined(KAE_PKEY_PUBLIC_DISPATCH)
+#define KAE_DEFAULT_PKEY_METHOD(nm, alg, suffix, type)                         \
+    static KAE_PKEY_##type default_##nm##_##suffix;                           \
+    static CRYPTO_ONCE once_##nm##_##suffix = CRYPTO_ONCE_STATIC_INIT;        \
+    static void init_default_##nm##_##suffix(void)                           \
+    {                                                                       \
+        EVP_##type *method = EVP_##type##_fetch(kae_soft_libctx(), #alg, "provider=default"); \
+        if (method != NULL) {                                               \
+            kae_copy_pkey_dispatch(&default_##nm##_##suffix,                \
+                EVP_##type##_get0_provider(method), OSSL_OP_##type, #alg);   \
+            EVP_##type##_free(method);                                      \
+        }                                                                   \
+    }                                                                       \
+    static KAE_PKEY_##type get_default_##nm##_##suffix(void)                  \
+    {                                                                       \
+        CRYPTO_THREAD_run_once(&once_##nm##_##suffix, init_default_##nm##_##suffix); \
+        KAE_PKEY_##type result = default_##nm##_##suffix;                    \
+        result.prov = kae_soft_provider();                                  \
+        return result;                                                      \
+    }
+#else
+/* Keep the OpenSSL 3.0 callback layout and fetch behaviour unchanged. */
+#define KAE_DEFAULT_PKEY_METHOD(nm, alg, suffix, type)                         \
+    static KAE_PKEY_##type get_default_##nm##_##suffix(void)                  \
+    {                                                                       \
+        static KAE_PKEY_##type cached;                                       \
+        static int initialized;                                             \
+        if (!initialized) {                                                 \
+            KAE_PKEY_##type *method = (KAE_PKEY_##type *)                     \
+                EVP_##type##_fetch(kae_soft_libctx(), #alg, "provider=default"); \
+            if (method != NULL) {                                           \
+                cached = *method;                                           \
+                EVP_##type##_free((EVP_##type *)method);                     \
+                initialized = 1;                                            \
+            } else {                                                        \
+                fprintf(stderr, "failed to EVP_" #type "_fetch default provider\n"); \
+            }                                                               \
+        }                                                                   \
+        KAE_PKEY_##type result = cached;                                     \
+        result.prov = kae_soft_provider();                                  \
+        return result;                                                      \
+    }
+#endif
+
 enum {
 	KEYMGMT_SM2 = 0x0, 
 	KEYMGMT_MAX = 0x6 
@@ -136,24 +180,7 @@ typedef struct {
     static OSSL_FUNC_keymgmt_export_types_fn kae_keymgmt_##nm##_export_types;                                  \
     static OSSL_FUNC_keymgmt_dup_fn kae_keymgmt_##nm##_dup;                                                    \
     static OSSL_FUNC_keymgmt_query_operation_name_fn kae_keymgmt_##nm##_query_operation_name;                  \
-    static KAE_PKEY_KEYMGMT get_default_##nm##_keymgmt(void)                                                   \
-    {                                                                                                          \
-        static KAE_PKEY_KEYMGMT s_keymgmt;                                                                     \
-        static int initilazed;                                                                                 \
-                                                                                                               \
-        if (!initilazed) {                                                                                     \
-            KAE_PKEY_KEYMGMT *keymgmt = (KAE_PKEY_KEYMGMT *)EVP_KEYMGMT_fetch(NULL, #alg, "provider=default"); \
-                                                                                                               \
-            if (keymgmt) {                                                                                     \
-                s_keymgmt = *keymgmt;                                                                          \
-                EVP_KEYMGMT_free((EVP_KEYMGMT *)keymgmt);                                                      \
-                initilazed = 1;                                                                                \
-            } else {                                                                                           \
-                fprintf(stderr, "failed to EVP_KEYMGMT_fetch default provider\n");                             \
-            }                                                                                                  \
-        }                                                                                                      \
-        return s_keymgmt;                                                                                      \
-    }                                                                                                          \
+    KAE_DEFAULT_PKEY_METHOD(nm, alg, keymgmt, KEYMGMT)                                                          \
     const OSSL_DISPATCH kae_##nm##_keymgmt_functions[] = {                                                     \
         {OSSL_FUNC_KEYMGMT_NEW, (void (*)(void))kae_keymgmt_##nm##_new},                                       \
         {OSSL_FUNC_KEYMGMT_FREE, (void (*)(void))kae_keymgmt_##nm##_free},                                     \
@@ -212,25 +239,7 @@ typedef struct {
     static OSSL_FUNC_asym_cipher_gettable_ctx_params_fn kae_asym_cipher_##nm##_gettable_ctx_params;              \
     static OSSL_FUNC_asym_cipher_set_ctx_params_fn kae_asym_cipher_##nm##_set_ctx_params;                        \
     static OSSL_FUNC_asym_cipher_settable_ctx_params_fn kae_asym_cipher_##nm##_settable_ctx_params;              \
-    static KAE_PKEY_ASYM_CIPHER get_default_##nm##_asym_cipher(void)                                             \
-    {                                                                                                            \
-        static KAE_PKEY_ASYM_CIPHER s_asym_cipher;                                                               \
-        static int initilazed;                                                                                   \
-                                                                                                                 \
-        if (!initilazed) {                                                                                       \
-            KAE_PKEY_ASYM_CIPHER *asym_cipher =                                                                  \
-                (KAE_PKEY_ASYM_CIPHER *)EVP_ASYM_CIPHER_fetch(NULL, #alg, "provider=default");                   \
-                                                                                                                 \
-            if (asym_cipher) {                                                                                   \
-                s_asym_cipher = *asym_cipher;                                                                    \
-                EVP_ASYM_CIPHER_free((EVP_ASYM_CIPHER *)asym_cipher);                                            \
-                initilazed = 1;                                                                                  \
-            } else {                                                                                             \
-                fprintf(stderr, "failed to EVP_ASYM_CIPHER_fetch default provider\n");                           \
-            }                                                                                                    \
-        }                                                                                                        \
-        return s_asym_cipher;                                                                                    \
-    }                                                                                                            \
+    KAE_DEFAULT_PKEY_METHOD(nm, alg, asym_cipher, ASYM_CIPHER)                                                     \
     const OSSL_DISPATCH kae_##nm##_asym_cipher_functions[] = {                                                   \
         {OSSL_FUNC_ASYM_CIPHER_NEWCTX, (void (*)(void))kae_asym_cipher_##nm##_newctx},                           \
         {OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, (void (*)(void))kae_asym_cipher_##nm##_encrypt_init},               \
@@ -280,7 +289,9 @@ typedef struct {
     OSSL_FUNC_signature_settable_ctx_md_params_fn *settable_ctx_md_params;
 } KAE_PKEY_SIGNATURE;
 
-#define KAE_PKEY_SIGNATURE_DESCR(nm, alg)                                                                              \
+#define KAE_PKEY_SIGNATURE_DESCR(nm, alg) KAE_PKEY_SIGNATURE_DESCR_EX(nm, alg, )
+
+#define KAE_PKEY_SIGNATURE_DESCR_EX(nm, alg, ...)                                                                      \
     static OSSL_FUNC_signature_newctx_fn kae_signature_##nm##_newctx;                                                  \
     static OSSL_FUNC_signature_sign_init_fn kae_signature_##nm##_sign_init;                                            \
     static OSSL_FUNC_signature_verify_init_fn kae_signature_##nm##_verify_init;                                        \
@@ -304,24 +315,7 @@ typedef struct {
     static OSSL_FUNC_signature_gettable_ctx_md_params_fn kae_signature_##nm##_gettable_ctx_md_params;                  \
     static OSSL_FUNC_signature_set_ctx_md_params_fn kae_signature_##nm##_set_ctx_md_params;                            \
     static OSSL_FUNC_signature_settable_ctx_md_params_fn kae_signature_##nm##_settable_ctx_md_params;                  \
-    static KAE_PKEY_SIGNATURE get_default_##nm##_signature(void)                                                       \
-    {                                                                                                                  \
-        static KAE_PKEY_SIGNATURE s_signature;                                                                         \
-        static int initilazed;                                                                                         \
-                                                                                                                       \
-        if (!initilazed) {                                                                                             \
-            KAE_PKEY_SIGNATURE *signature = (KAE_PKEY_SIGNATURE *)EVP_SIGNATURE_fetch(NULL, #alg, "provider=default"); \
-                                                                                                                       \
-            if (signature) {                                                                                           \
-                s_signature = *signature;                                                                              \
-                EVP_SIGNATURE_free((EVP_SIGNATURE *)signature);                                                        \
-                initilazed = 1;                                                                                        \
-            } else {                                                                                                   \
-                fprintf(stderr, "failed to EVP_SIGNATURE_fetch default provider\n");                                   \
-            }                                                                                                          \
-        }                                                                                                              \
-        return s_signature;                                                                                            \
-    }                                                                                                                  \
+    KAE_DEFAULT_PKEY_METHOD(nm, alg, signature, SIGNATURE)                                                                \
     const OSSL_DISPATCH kae_##nm##_signature_functions[] = {                                                           \
         {OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))kae_signature_##nm##_newctx},                                     \
         {OSSL_FUNC_SIGNATURE_SIGN_INIT, (void (*)(void))kae_signature_##nm##_sign_init},                               \
@@ -346,6 +340,7 @@ typedef struct {
         {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS, (void (*)(void))kae_signature_##nm##_gettable_ctx_md_params},     \
         {OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS, (void (*)(void))kae_signature_##nm##_set_ctx_md_params},               \
         {OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS, (void (*)(void))kae_signature_##nm##_settable_ctx_md_params},     \
+        __VA_ARGS__                                                                                                 \
         {0, NULL}}
 
 typedef struct {
@@ -378,23 +373,7 @@ typedef struct {
     static OSSL_FUNC_keyexch_settable_ctx_params_fn kae_keyexch_##nm##_settable_ctx_params;                    \
     static OSSL_FUNC_keyexch_get_ctx_params_fn kae_keyexch_##nm##_get_ctx_params;                              \
     static OSSL_FUNC_keyexch_gettable_ctx_params_fn kae_keyexch_##nm##_gettable_ctx_params;                    \
-    static KAE_PKEY_KEYEXCH get_default_##nm##_keyexch(void)                                                   \
-    {                                                                                                          \
-        KAE_PKEY_KEYEXCH s_keyexch;                                                                            \
-        static int initilazed;                                                                                 \
-                                                                                                               \
-        if (!initilazed) {                                                                                     \
-            KAE_PKEY_KEYEXCH *keyexch = (KAE_PKEY_KEYEXCH *)EVP_KEYEXCH_fetch(NULL, #alg, "provider=default"); \
-            if (keyexch) {                                                                                     \
-                s_keyexch = *keyexch;                                                                          \
-                EVP_KEYEXCH_free((EVP_KEYEXCH *)keyexch);                                                      \
-                initilazed = 1;                                                                                \
-            } else {                                                                                           \
-                fprintf(stderr, "failed to EVP_KEYEXCH_fetch default provider\n");                             \
-            }                                                                                                  \
-        }                                                                                                      \
-        return s_keyexch;                                                                                      \
-    }                                                                                                          \
+    KAE_DEFAULT_PKEY_METHOD(nm, alg, keyexch, KEYEXCH) \
     const OSSL_DISPATCH kae_##nm##_keyexch_functions[] = {                                                     \
         {OSSL_FUNC_KEYEXCH_NEWCTX, (void (*)(void))kae_keyexch_##nm##_newctx},                                 \
         {OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS, (void (*)(void))kae_keyexch_##nm##_set_ctx_params},                 \

@@ -22,8 +22,10 @@
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/crypto.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
+#include <openssl/rand.h>
 #include <openssl/types.h>
 
 #include "prov_nosva/prov.h"
@@ -37,6 +39,19 @@
 
 static const char KAE_DEFAULT_PROPERTIES[] = "provider=kae_provider";
 static OSSL_PROVIDER *prov = NULL;
+static OSSL_LIB_CTX *soft_libctx;
+static pthread_mutex_t provider_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned int provider_users;
+
+OSSL_LIB_CTX *kae_soft_libctx(void)
+{
+    return soft_libctx;
+}
+
+OSSL_PROVIDER *kae_soft_provider(void)
+{
+    return prov;
+}
 
 /* Functions provided by the core */
 static OSSL_FUNC_core_gettable_params_fn *c_gettable_params;
@@ -49,7 +64,7 @@ struct kae_provider_params {
 
 static int uadk_rsa_nosva;
 static int uadk_sm2_nosva;
-// static int uadk_dh_nosva;
+
 static int uadk_digest_nosva;
 static int uadk_cipher_nosva;
 
@@ -61,7 +76,7 @@ int rsa_switch_soft = 0;
 
 int sm2_switch_soft = 0;
 
-// int dh_switch_soft = 0;
+int dh_switch_soft = 0;
 
 int digest_switch_soft = 0;
 
@@ -131,8 +146,6 @@ static const OSSL_ALGORITHM *kae_prov_keymgmt_query()
     }
     algs[i++] =
         (OSSL_ALGORITHM){"RSA", KAE_DEFAULT_PROPERTIES, kae_rsa_keymgmt_functions, "kae RSA Keymgmt implementation."};
-    // algs[i++] =
-    //     (OSSL_ALGORITHM){"DH", KAE_DEFAULT_PROPERTIES, kae_dh_keymgmt_functions, "kae DH Keymgmt implementation."};
     algs[i] = (OSSL_ALGORITHM){NULL, NULL, NULL, NULL};
 
     return algs;
@@ -156,27 +169,15 @@ static const OSSL_ALGORITHM *kae_prov_asym_cipher_query()
 
 static const OSSL_ALGORITHM *kae_query(void *provctx, int operation_id, int *no_cache)
 {
-    static int prov_init;
-
-    if (!prov)
-        prov = (OSSL_PROVIDER *)OSSL_PROVIDER_load(NULL, "default");
-    if (!prov_init) {
-        prov_init = 1;
-        /* kae_provider takes the highest priority
-         * and overwrite the openssl.cnf property.
-         */
-        EVP_set_default_properties(NULL, "?provider=kae_provider");
-    }
-
     *no_cache = 0;
     switch (operation_id) {
         case OSSL_OP_DIGEST:
             if (!uadk_digest_nosva)
-                return prov->query_operation(provctx, operation_id, no_cache);
+                return NULL;
             return kae_prov_digests;
         case OSSL_OP_CIPHER:
             if (!uadk_cipher_nosva)
-                return prov->query_operation(provctx, operation_id, no_cache);
+                return NULL;
             return kae_prov_ciphers;
         case OSSL_OP_SIGNATURE:
             return kae_prov_signature;
@@ -184,10 +185,11 @@ static const OSSL_ALGORITHM *kae_query(void *provctx, int operation_id, int *no_
             return kae_prov_keymgmt;
         case OSSL_OP_ASYM_CIPHER:
             return kae_prov_asym_cipher;
-        // case OSSL_OP_KEYEXCH:
-        //     return kae_prov_keyexch;
+        case OSSL_OP_KEYEXCH:
+            return NULL;
         case OSSL_OP_STORE:
-            return prov->query_operation(provctx, operation_id, no_cache);
+            /* Let the default provider own its STORE callbacks and context. */
+            return NULL;
     }
     return NULL;
 }
@@ -195,12 +197,21 @@ static const OSSL_ALGORITHM *kae_query(void *provctx, int operation_id, int *no_
 static void kae_teardown(void *provctx)
 {
     struct kae_prov_ctx *ctx = (struct kae_prov_ctx *)provctx;
-    OPENSSL_free(ctx);
-
+    if (ctx->default_provider != NULL)
+        OSSL_PROVIDER_unload(ctx->default_provider);
     BIO_meth_free(ctx->corebiometh);
-    kae_checking_q_sync_destroy();
-    OSSL_PROVIDER_unload(prov);
-    async_poll_task_free_v1();
+    OPENSSL_free(ctx);
+    pthread_mutex_lock(&provider_lock);
+    if (--provider_users == 0) {
+        async_module_uninit_v1();
+        kae_checking_q_sync_destroy();
+        /* Free dependencies while their own method store is still alive. */
+        OSSL_PROVIDER_unload(prov);
+        OSSL_LIB_CTX_free(soft_libctx);
+        prov = NULL;
+        soft_libctx = NULL;
+    }
+    pthread_mutex_unlock(&provider_lock);
 }
 
 static const OSSL_DISPATCH kae_dispatch_table[] = {{OSSL_FUNC_PROVIDER_QUERY_OPERATION, (void (*)(void))kae_query},
@@ -270,22 +281,13 @@ static void ossl_prov_core_from_dispatch(const OSSL_DISPATCH *fns)
     }
 }
 
-int OSSL_provider_init(
-    const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *oin, const OSSL_DISPATCH **out, void **provctx)
+static void kae_init_algorithms(void)
 {
-    struct kae_prov_ctx *ctx;
-    int ret;
     int dev_num;
 
-    if (oin == NULL) {
-        US_ERR("failed to get dispatch in.");
-        return 0;
-    }
-
-    ossl_prov_bio_from_dispatch(oin);
-    ossl_prov_core_from_dispatch(oin);
-
-    kae_debug_init_log();
+    rsa_switch_soft = sm2_switch_soft = dh_switch_soft = 0;
+    cipher_switch_soft = digest_switch_soft = 0;
+    uadk_rsa_nosva = uadk_sm2_nosva = uadk_cipher_nosva = uadk_digest_nosva = 0;
 
     dev_num = wd_get_available_dev_num("rsa");
     if (dev_num > 0) {
@@ -300,34 +302,6 @@ int OSSL_provider_init(
         US_ERR("no available rsa dev, switch to soft.");
         rsa_switch_soft = 1;
     }
-
-    // dev_num = wd_get_available_dev_num("sm2");
-    // if (dev_num > 0) {
-    //     if (!hpre_module_sm2_init()) {
-    //         US_ERR("kae nosva sm2 module init fail, switch to soft.");
-    //         sm2_switch_soft = 1;
-    //     } else {
-    //         uadk_sm2_nosva = 1;
-    //         US_DEBUG("kae nosva sm2 module init success.\n");
-    //     }
-    // } else {
-    //     US_ERR("no available sm2 dev, switch to soft.");
-    //     sm2_switch_soft = 1;
-    // }
-
-    // dev_num = wd_get_available_dev_num("dh");
-    // if (dev_num > 0) {
-    //     if (!hpre_module_dh_init()) {
-    //         US_ERR("kae nosva dh module init fail, switch to soft.");
-    //         dh_switch_soft = 1;
-    //     } else {
-    //         uadk_dh_nosva = 1;
-    //         US_DEBUG("kae nosva dh module init success.");
-    //     }
-    // } else {
-    //     US_ERR("no available dh dev, switch to soft.");
-    //     dh_switch_soft = 1;
-    // }
 
     dev_num = wd_get_available_dev_num("digest");
     if (dev_num > 0) {
@@ -357,9 +331,64 @@ int OSSL_provider_init(
         cipher_switch_soft = 1;
     }
 
-    /* get parameters from kae_provider.cnf */
-    if (!kae_get_params_from_core(handle))
+    async_module_init_v1();
+    kae_prov_signature = kae_prov_signature_query();
+    kae_prov_keymgmt = kae_prov_keymgmt_query();
+    kae_prov_asym_cipher = kae_prov_asym_cipher_query();
+}
+
+static void kae_register_atfork(void)
+{
+    pthread_atfork(NULL, NULL, provider_init_child_at_fork_handler);
+}
+
+static int kae_prefer_in_default_context(struct kae_prov_ctx *ctx)
+{
+    OSSL_LIB_CTX *appctx = OSSL_LIB_CTX_get0_global_default();
+    OPENSSL_CORE_CTX *owner;
+    int marked, rand_configured;
+
+    /* Apply the CLI defaults only to the global context that loaded KAE. */
+    if (appctx == NULL || c_get_libctx == NULL)
+        return 1;
+    owner = c_get_libctx(ctx->handle);
+    if (owner == NULL)
+        owner = (OPENSSL_CORE_CTX *)OSSL_LIB_CTX_set0_default(NULL);
+    if (owner != (OPENSSL_CORE_CTX *)appctx ||
+        EVP_default_properties_is_fips_enabled(appctx))
+        return 1;
+
+    ctx->default_provider = OSSL_PROVIDER_load(appctx, "default");
+    if (ctx->default_provider == NULL)
         return 0;
+
+    /*
+     * An OpenSSL thread-local DRBG is shared by the ASYNC jobs on that
+     * thread. Its cipher must finish without suspending the DRBG operation.
+     */
+    marked = ERR_set_mark();
+    rand_configured = RAND_set_DRBG_type(appctx, NULL, "provider=default", NULL, NULL);
+    if (marked)
+        ERR_pop_to_mark();
+    else if (!rand_configured)
+        ERR_clear_error();
+
+    /* If the application's DRBG is already in use, keep implicit selection unchanged. */
+    if (!rand_configured)
+        return 1;
+    return EVP_set_default_properties(appctx, "?provider=kae_provider");
+}
+
+int OSSL_provider_init(
+    const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *oin, const OSSL_DISPATCH **out, void **provctx)
+{
+    static pthread_once_t atfork_once = PTHREAD_ONCE_INIT;
+    struct kae_prov_ctx *ctx;
+
+    if (oin == NULL)
+        return 0;
+    ossl_prov_bio_from_dispatch(oin);
+    kae_debug_init_log();
 
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx == NULL) {
@@ -367,23 +396,39 @@ int OSSL_provider_init(
         return 0;
     }
 
-    /* Set handle from core to get core functions */
     ctx->handle = handle;
-    ctx->libctx = (OSSL_LIB_CTX *)c_get_libctx(handle);
-
-    ret = kae_prov_ctx_set_core_bio_method(ctx);
-    if (!ret)
+    if (!kae_prov_ctx_set_core_bio_method(ctx))
+        goto err;
+    pthread_mutex_lock(&provider_lock);
+    ossl_prov_core_from_dispatch(oin);
+    if (!kae_get_params_from_core(handle))
+        goto unlock;
+    if (provider_users == 0) {
+        soft_libctx = OSSL_LIB_CTX_new();
+        if (soft_libctx == NULL || (prov = OSSL_PROVIDER_load(soft_libctx, "default")) == NULL) {
+            OSSL_LIB_CTX_free(soft_libctx);
+            soft_libctx = NULL;
+            goto unlock;
+        }
+        kae_init_algorithms();
+    }
+    ctx->libctx = soft_libctx;
+    provider_users++;
+    if (!kae_prefer_in_default_context(ctx)) {
+        pthread_mutex_unlock(&provider_lock);
+        kae_teardown(ctx);
         return 0;
-
-    async_module_init_v1();
-
-    pthread_atfork(NULL, NULL, provider_init_child_at_fork_handler);
-
-    kae_prov_signature = kae_prov_signature_query();
-    kae_prov_keymgmt = kae_prov_keymgmt_query();
-    kae_prov_asym_cipher = kae_prov_asym_cipher_query();
+    }
+    pthread_mutex_unlock(&provider_lock);
+    pthread_once(&atfork_once, kae_register_atfork);
     *provctx = (void *)ctx;
     *out = kae_dispatch_table;
 
     return 1;
+unlock:
+    pthread_mutex_unlock(&provider_lock);
+err:
+    BIO_meth_free(ctx->corebiometh);
+    OPENSSL_free(ctx);
+    return 0;
 }

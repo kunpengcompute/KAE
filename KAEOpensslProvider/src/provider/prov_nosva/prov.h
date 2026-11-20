@@ -17,6 +17,17 @@
 #ifndef KAE_PROVIDER_H
 #define KAE_PROVIDER_H
 #include <openssl/core_dispatch.h>
+#include <openssl/opensslv.h>
+
+int kae_copy_pkey_dispatch(void *dst, const OSSL_PROVIDER *provider,
+    int operation, const char *algorithm);
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+#define KAE_OPENSSL_3_5 1
+#define KAE_COPY_PKEY(dst, src, type, op, alg) \
+    kae_copy_pkey_dispatch(&(dst), EVP_##type##_get0_provider((EVP_##type *)(src)), op, alg)
+#else
+#define KAE_COPY_PKEY(dst, src, type, op, alg) ((dst) = *(src))
+#endif
 
 #define FUNC_MAX_NUM 32
 
@@ -25,6 +36,9 @@
 
 #define OPENSSL_SUCCESS (1)
 #define OPENSSL_FAIL (0)
+
+OSSL_LIB_CTX *kae_soft_libctx(void);
+OSSL_PROVIDER *kae_soft_provider(void);
 
 struct ossl_provider_st {
     /* Flag bits */
@@ -107,6 +121,7 @@ typedef struct kae_prov_ctx {
     const OSSL_CORE_HANDLE *handle;
     OSSL_LIB_CTX *libctx;
     KAE_BIO_METHOD *corebiometh;
+    OSSL_PROVIDER *default_provider;
 } KAE_PROV_CTX;
 
 static inline OSSL_LIB_CTX *prov_libctx_of(struct kae_prov_ctx *ctx)

@@ -60,11 +60,14 @@ int async_poll_task_init_v1(void)
     int ret;
 
     kae_memset(&g_async_poll_queue, 0, sizeof(g_async_poll_queue));
+    if (pthread_mutex_init(&g_async_poll_queue.async_task_mutex, NULL) != 0)
+        return 0;
 
     g_async_poll_queue.async_poll_task_queue_head =
         (async_poll_task *)malloc(sizeof(async_poll_task) * ASYNC_POLL_TASK_NUM);
     if (g_async_poll_queue.async_poll_task_queue_head == NULL) {
         US_ERR("no enough memory for task queue, errno=%d", errno);  // lint !e666
+        pthread_mutex_destroy(&g_async_poll_queue.async_task_mutex);
         return 0;
     }
     kae_memset(g_async_poll_queue.async_poll_task_queue_head, 0, sizeof(async_poll_task) * ASYNC_POLL_TASK_NUM);
@@ -78,13 +81,16 @@ int async_poll_task_init_v1(void)
 
     if (sem_init(&g_async_poll_queue.full_sem, 0, 0) != 0) {
         US_ERR("fail to init full semaphore, errno=%d", errno);  // lint !e666
+        sem_destroy(&g_async_poll_queue.empty_sem);
         goto _err;
     }
 
     US_DEBUG("async poll task init done.");
     return 1;
 _err:
-    async_poll_task_free_v1();
+    OPENSSL_free(g_async_poll_queue.async_poll_task_queue_head);
+    g_async_poll_queue.async_poll_task_queue_head = NULL;
+    pthread_mutex_destroy(&g_async_poll_queue.async_task_mutex);
     return 0;
 }
 
@@ -172,6 +178,8 @@ void async_poll_task_free_v1(void)
 {
     int error;
 
+    if (g_async_poll_queue.async_poll_task_queue_head == NULL)
+        return;
     error = pthread_mutex_lock(&g_async_poll_queue.async_task_mutex);
     if (error != 0) {
         US_ERR("lock mutex failed, errno=%d", errno);  // lint !e666

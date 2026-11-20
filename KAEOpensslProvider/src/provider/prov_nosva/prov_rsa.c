@@ -23,8 +23,11 @@
 #include <openssl/rsa.h>
 #include <openssl/types.h>
 #include <openssl/sha.h>
+#include <openssl/provider.h>
+#include <limits.h>
 
 #include "prov.h"
+#define KAE_PKEY_PUBLIC_DISPATCH
 #include "prov_pkey.h"
 #include "../../adapter/common/kae_log.h"
 #include "../../adapter/common/kae_types.h"
@@ -37,11 +40,6 @@ KAE_PKEY_ASYM_CIPHER_DESCR(rsa, RSA);
 static void kae_rsa_clear_flags(RSA *r, int flags)
 {
     r->flags &= ~flags;
-}
-
-static int kae_rsa_test_flags(const RSA *r, int flags)
-{
-    return r->flags & flags;
 }
 
 static void kae_rsa_set_flags(RSA *r, int flags)
@@ -74,33 +72,12 @@ static void clean_tbuf(PROV_RSA_SIG_CTX *ctx)
         OPENSSL_cleanse(ctx->tbuf, kae_rsa_size(ctx->rsa));
 }
 
-static void free_tbuf(PROV_RSA_SIG_CTX *ctx)
-{
-    clean_tbuf(ctx);
-    OPENSSL_free(ctx->tbuf);
-    ctx->tbuf = NULL;
-}
-
 static RSA *ossl_rsa_new_with_ctx(OSSL_LIB_CTX *libctx)
 {
-    RSA *ret = OPENSSL_zalloc(sizeof(*ret));
+    KAE_PKEY_KEYMGMT method = get_default_rsa_keymgmt();
 
-    if (ret == NULL) {
-        US_WARN("failed to alloc rsa.");
-        return NULL;
-    }
-
-    ret->references = 1;
-    ret->lock = CRYPTO_THREAD_lock_new();
-    if (ret->lock == NULL) {
-        US_WARN("failed to new crypto thread lock.");
-        OPENSSL_free(ret);
-        return NULL;
-    }
-
-    ret->libctx = libctx;
-
-    return ret;
+    (void)libctx;
+    return method.new_fun ? method.new_fun(OSSL_PROVIDER_get0_provider_ctx(method.prov)) : NULL;
 }
 
 static int rsa_gencb(int p, int n, BN_GENCB *cb)
@@ -110,17 +87,14 @@ static int rsa_gencb(int p, int n, BN_GENCB *cb)
 
     params[0] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_POTENTIAL, &p);
     params[1] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_ITERATION, &n);
-    return gctx->cb(params, gctx->cbarg);
+    return gctx->cb == NULL || gctx->cb(params, gctx->cbarg);
 }
 
 static void *kae_keymgmt_rsa_new(void *provctx)
 {
-    if (!get_default_rsa_keymgmt().new_fun) {
-        US_WARN("failed to get rsa keymgmt new function.");
-        return NULL;
-    }
+    KAE_PKEY_KEYMGMT method = get_default_rsa_keymgmt();
 
-    return get_default_rsa_keymgmt().new_fun(provctx);
+    return method.new_fun ? method.new_fun(OSSL_PROVIDER_get0_provider_ctx(method.prov)) : NULL;
 }
 
 static void kae_keymgmt_rsa_free(void *keydata)
@@ -175,12 +149,10 @@ static const OSSL_PARAM *kae_keymgmt_rsa_settable_params(ossl_unused void *provc
 
 static void *kae_keymgmt_rsa_gen_init(void *provctx, int selection, const OSSL_PARAM params[])
 {
-    if (!get_default_rsa_keymgmt().gen_init) {
-        US_WARN("failed to get rsa keymgmt gen init function.");
-        return NULL;
-    }
+    KAE_PKEY_KEYMGMT method = get_default_rsa_keymgmt();
 
-    return get_default_rsa_keymgmt().gen_init(provctx, selection, params);
+    return method.gen_init ? method.gen_init(OSSL_PROVIDER_get0_provider_ctx(method.prov),
+        selection, params) : NULL;
 }
 
 static int kae_keymgmt_rsa_gen_set_template(void *genctx, void *templates)
@@ -225,6 +197,9 @@ static void *kae_keymgmt_rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbar
         return NULL;
     }
 
+    if (gctx->primes != 2 || gctx->rsa_type != RSA_FLAG_TYPE_RSA)
+        goto soft;
+
     rsa = ossl_rsa_new_with_ctx(gctx->libctx);
     if (rsa == NULL)
         return NULL;
@@ -236,7 +211,7 @@ static void *kae_keymgmt_rsa_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbar
         BN_GENCB_set(gencb, rsa_gencb, genctx);
 
     ret = hpre_rsa_keygen(rsa, (int)gctx->nbits, gctx->pub_exp, gencb);
-    if (ret == KAE_CRYPTO_FAIL) {
+    if (ret != OPENSSL_SUCCESS) {
         BN_GENCB_free(gencb);
         kae_keymgmt_rsa_free(rsa);
         goto soft;
@@ -280,12 +255,9 @@ static void *kae_keymgmt_rsa_load(const void *reference, size_t reference_sz)
 
 static int kae_keymgmt_rsa_has(const void *keydata, int selection)
 {
-    if (!get_default_rsa_keymgmt().has) {
-        US_WARN("failed to get rsa keymgmt has function.");
-    }
-        return KAE_P_FAIL;
+    KAE_PKEY_KEYMGMT method = get_default_rsa_keymgmt();
 
-    return get_default_rsa_keymgmt().has(keydata, selection);
+    return method.has ? method.has(keydata, selection) : KAE_P_FAIL;
 }
 
 static int kae_keymgmt_rsa_validate(const void *keydata, int selection, int checktype)
@@ -370,39 +342,18 @@ static const char *kae_keymgmt_rsa_query_operation_name(int operation_id)
 
 static void *kae_asym_cipher_rsa_newctx(void *provctx)
 {
-    PROV_RSA_ASYM_CTX *priv = NULL;
+    KAE_PKEY_ASYM_CIPHER method = get_default_rsa_asym_cipher();
 
-    priv = OPENSSL_zalloc(sizeof(*priv));
-    if (priv == NULL) {
-        US_WARN("failed to alloc rsa asym ctx.");
-        return NULL;
-    }
-
-    priv->libctx = prov_libctx_of(provctx);
-
-    return priv;
+    return method.newctx ? method.newctx(OSSL_PROVIDER_get0_provider_ctx(method.prov)) : NULL;
 }
 
 static int kae_rsa_asym_init(void *vprsactx, void *vrsa, const OSSL_PARAM params[], int operation)
 {
-    PROV_RSA_ASYM_CTX *priv = (PROV_RSA_ASYM_CTX *)vprsactx;
+    KAE_PKEY_ASYM_CIPHER method = get_default_rsa_asym_cipher();
 
-    priv->rsa = vrsa;
-    priv->operation = operation;
-
-    switch (kae_rsa_test_flags(priv->rsa, RSA_FLAG_TYPE_MASK)) {
-        case RSA_FLAG_TYPE_RSA:
-            priv->pad_mode = RSA_PKCS1_PADDING;
-            break;
-        case RSA_FLAG_TYPE_RSASSAPSS:
-            priv->pad_mode = RSA_PKCS1_PSS_PADDING;
-            break;
-        default:
-            US_WARN("invalid: unknown rsa flag type.");
-            return OPENSSL_FAIL;
-    }
-
-    return OPENSSL_SUCCESS;
+    if (operation == EVP_PKEY_OP_ENCRYPT)
+        return method.encrypt_init ? method.encrypt_init(vprsactx, vrsa, params) : 0;
+    return method.decrypt_init ? method.decrypt_init(vprsactx, vrsa, params) : 0;
 }
 
 static int kae_asym_cipher_rsa_encrypt_init(void *vprsactx, void *vrsa, const OSSL_PARAM params[])
@@ -427,11 +378,32 @@ static int kae_asym_cipher_rsa_encrypt(
         return OPENSSL_SUCCESS;
     }
 
-    ret = hpre_rsa_public_encrypt(inlen, in, out, priv->rsa, priv->pad_mode);
+    len = kae_rsa_size(priv->rsa);
+    if (outsize < len || inlen > INT_MAX)
+        return OPENSSL_FAIL;
+    if (RSA_get_multi_prime_extra_count(priv->rsa) > 0)
+        goto soft;
+    if (priv->pad_mode == RSA_PKCS1_OAEP_PADDING) {
+        unsigned char *encoded = OPENSSL_malloc(len);
+
+        if (encoded == NULL || priv->oaep_labellen > INT_MAX) {
+            OPENSSL_free(encoded);
+            return OPENSSL_FAIL;
+        }
+        ret = RSA_padding_add_PKCS1_OAEP_mgf1(encoded, len, in, inlen,
+            priv->oaep_label, priv->oaep_labellen, priv->oaep_md, priv->mgf1_md);
+        if (ret > 0)
+            ret = hpre_rsa_public_encrypt(len, encoded, out, priv->rsa, RSA_NO_PADDING);
+        OPENSSL_clear_free(encoded, len);
+    } else {
+        ret = hpre_rsa_public_encrypt(inlen, in, out, priv->rsa, priv->pad_mode);
+    }
     if (ret == KAE_CRYPTO_FAIL) {
         goto soft;
     }
 
+    if (ret <= 0)
+        goto soft;
     *outlen = ret;
 
     return OPENSSL_SUCCESS;
@@ -472,11 +444,38 @@ static int kae_asym_cipher_rsa_decrypt(
         return OPENSSL_FAIL;
     }
 
-    ret = hpre_rsa_private_decrypt(inlen, in, out, priv->rsa, priv->pad_mode);
+    if (inlen != len || inlen > INT_MAX)
+        return OPENSSL_FAIL;
+    if (RSA_get_multi_prime_extra_count(priv->rsa) > 0)
+        goto soft;
+    /* Preserve the default provider's implicit rejection and TLS checks. */
+#ifdef KAE_OPENSSL_3_5
+    if (priv->pad_mode == RSA_PKCS1_PADDING && priv->implicit_rejection)
+        goto soft;
+#endif
+    if (priv->pad_mode == RSA_PKCS1_WITH_TLS_PADDING)
+        goto soft;
+    if (priv->pad_mode == RSA_PKCS1_OAEP_PADDING) {
+        unsigned char *encoded = OPENSSL_malloc(len);
+
+        if (encoded == NULL || priv->oaep_labellen > INT_MAX) {
+            OPENSSL_free(encoded);
+            return OPENSSL_FAIL;
+        }
+        ret = hpre_rsa_private_decrypt(inlen, in, encoded, priv->rsa, RSA_NO_PADDING);
+        if (ret > 0)
+            ret = RSA_padding_check_PKCS1_OAEP_mgf1(out, len, encoded, ret, len,
+                priv->oaep_label, priv->oaep_labellen, priv->oaep_md, priv->mgf1_md);
+        OPENSSL_clear_free(encoded, len);
+    } else {
+        ret = hpre_rsa_private_decrypt(inlen, in, out, priv->rsa, priv->pad_mode);
+    }
     if (ret == KAE_CRYPTO_FAIL) {
         goto soft;
     }
 
+    if (ret <= 0)
+        goto soft;
     *outlen = ret;
 
     return OPENSSL_SUCCESS;
@@ -493,21 +492,25 @@ soft:
 
 static void kae_asym_cipher_rsa_freectx(void *vprsactx)
 {
-    PROV_RSA_ASYM_CTX *priv = (PROV_RSA_ASYM_CTX *)vprsactx;
-
-    if (priv == NULL)
-        return;
-
-    OPENSSL_free(priv);
+    if (get_default_rsa_asym_cipher().freectx)
+        get_default_rsa_asym_cipher().freectx(vprsactx);
 }
 
 static void *kae_asym_cipher_rsa_dupctx(void *vprsactx)
 {
-    if (!get_default_rsa_asym_cipher().dupctx) {
-        US_WARN("failed to get rsa asym dupctx function.");
+    KAE_PKEY_ASYM_CIPHER method = get_default_rsa_asym_cipher();
+    PROV_RSA_ASYM_CTX *src = vprsactx;
+    PROV_RSA_ASYM_CTX *dst = method.dupctx ? method.dupctx(vprsactx) : NULL;
+
+    /* OpenSSL 3.0.16 duplicates the label pointer without taking ownership. */
+    if (dst != NULL && src->oaep_label != NULL && dst->oaep_label == src->oaep_label) {
+        dst->oaep_label = OPENSSL_memdup(src->oaep_label, src->oaep_labellen);
+        if (dst->oaep_label == NULL) {
+            kae_asym_cipher_rsa_freectx(dst);
+            return NULL;
+        }
     }
-        return KAE_P_FAIL;
-    return get_default_rsa_asym_cipher().dupctx(vprsactx);
+    return dst;
 }
 
 static int kae_asym_cipher_rsa_get_ctx_params(void *vprsactx, OSSL_PARAM *params)
@@ -552,61 +555,20 @@ static const OSSL_PARAM *kae_asym_cipher_rsa_settable_ctx_params(void *vprsactx,
 
 static void *kae_signature_rsa_newctx(void *provctx, const char *propq)
 {
-    PROV_RSA_SIG_CTX *priv = OPENSSL_zalloc(sizeof(PROV_RSA_SIG_CTX));
-    char *propq_copy = NULL;
+    KAE_PKEY_SIGNATURE method = get_default_rsa_signature();
 
-    if (priv == NULL) {
-        US_WARN("invalid: signature ctx is NULL.");
-        goto err;
-    }
-
-    if (propq != NULL) {
-        propq_copy = OPENSSL_strdup(propq);
-        if (propq_copy == NULL) {
-            US_WARN("failed to dup propq.");
-            goto err;
-        }
-    }
-
-    priv->libctx = prov_libctx_of(provctx);
-    priv->flag_allow_md = 1;
-    priv->propq = propq_copy;
-    return priv;
-
-err:
-    OPENSSL_free(priv);
-    return NULL;
+    /* RSA hashes are software dependencies, not another KAE signature fetch. */
+    return method.newctx ? method.newctx(OSSL_PROVIDER_get0_provider_ctx(method.prov),
+        "provider=default") : NULL;
 }
 
 static int kae_rsa_init(void *vprsactx, void *vrsa, const OSSL_PARAM params[], int operation)
 {
-    PROV_RSA_SIG_CTX *priv = (PROV_RSA_SIG_CTX *)vprsactx;
+    KAE_PKEY_SIGNATURE method = get_default_rsa_signature();
 
-    if (priv == NULL || vrsa == NULL) {
-        US_WARN("invalid: sig ctx or rsa is NULL.");
-        return OPENSSL_FAIL;
-    }
-
-    priv->rsa = vrsa;
-    priv->operation = operation;
-
-    /* Maximum for sign, auto for verify */
-    priv->saltlen = RSA_PSS_SALTLEN_AUTO;
-    priv->min_saltlen = -1;
-
-    switch (kae_rsa_test_flags(priv->rsa, RSA_FLAG_TYPE_MASK)) {
-        case RSA_FLAG_TYPE_RSA:
-            priv->pad_mode = RSA_PKCS1_PADDING;
-            break;
-        case RSA_FLAG_TYPE_RSASSAPSS:
-            priv->pad_mode = RSA_PKCS1_PSS_PADDING;
-            break;
-        default:
-            US_WARN("invalid: unknown rsa flag type.");
-            return OPENSSL_FAIL;
-    }
-
-    return OPENSSL_SUCCESS;
+    if (operation == EVP_PKEY_OP_SIGN)
+        return method.sign_init ? method.sign_init(vprsactx, vrsa, params) : 0;
+    return method.verify_init ? method.verify_init(vprsactx, vrsa, params) : 0;
 }
 
 static int kae_signature_rsa_sign_init(void *vprsactx, void *vrsa, const OSSL_PARAM params[])
@@ -801,7 +763,7 @@ int KAE_RSA_sign(
         goto err;
     }
     encrypt_len = hpre_rsa_private_encrypt((int)encoded_len, encoded, sigret, rsa, RSA_PKCS1_PADDING);
-    if (encoded_len == KAE_CRYPTO_FAIL) {
+    if (encrypt_len <= 0) {
         ret = KAE_CRYPTO_FAIL;
         goto err;
     }
@@ -869,6 +831,10 @@ static int kae_signature_rsa_sign(
     size_t rsasize = kae_rsa_size(priv->rsa);
     int ret;
 
+#ifdef KAE_OPENSSL_3_5
+    if (tbslen > INT_MAX)
+        return OPENSSL_FAIL;
+#endif
     if (sig == NULL) {
         *siglen = rsasize;
         return OPENSSL_SUCCESS;
@@ -879,6 +845,10 @@ static int kae_signature_rsa_sign(
         return OPENSSL_FAIL;
     }
 
+#ifdef KAE_OPENSSL_3_5
+    if (RSA_get_multi_prime_extra_count(priv->rsa) > 0)
+        goto soft;
+#endif
     size_t mdsize = rsa_get_md_size(priv);
     if (mdsize == 0) {
         ret = hpre_rsa_private_encrypt(tbslen, tbs, sig, priv->rsa, priv->pad_mode);
@@ -931,7 +901,11 @@ static int kae_signature_rsa_sign(
                     goto soft;
                 }
                 if (ret <= 0) {
+#ifdef KAE_OPENSSL_3_5
+                    goto soft;
+#else
                     goto err;
+#endif
                 }
                 ret = sltmp;
             } break;
@@ -976,7 +950,11 @@ static int kae_signature_rsa_sign(
     }
 
     if (ret < 0)
+#ifdef KAE_OPENSSL_3_5
+        return OPENSSL_FAIL;
+#else
         return ret;
+#endif
 
     *siglen = ret;
 
@@ -993,7 +971,20 @@ soft:
         return KAE_P_FAIL;
     }
 
+#ifdef KAE_OPENSSL_3_5
+    /* DigestSignFinal has already hashed tbs; do not hash it a second time. */
+    int operation = priv->operation;
+    unsigned int oneshot = priv->flag_allow_oneshot;
+
+    priv->operation = EVP_PKEY_OP_SIGN;
+    priv->flag_allow_oneshot = 1;
+    ret = get_default_rsa_signature().sign(vprsactx, sig, siglen, sigsize, tbs, tbslen);
+    priv->operation = operation;
+    priv->flag_allow_oneshot = oneshot;
+    return ret;
+#else
     return get_default_rsa_signature().sign(vprsactx, sig, siglen, sigsize, tbs, tbslen);
+#endif
 }
 
 int KAE_RSA_verify(int type, const unsigned char *m, unsigned int m_len, unsigned char *rm, size_t *prm_len,
@@ -1015,7 +1006,11 @@ int KAE_RSA_verify(int type, const unsigned char *m, unsigned int m_len, unsigne
     }
 
     len = hpre_rsa_public_decrypt((int)siglen, sigbuf, decrypt_buf, rsa, RSA_PKCS1_PADDING);
+#ifdef KAE_OPENSSL_3_5
+    if (len <= 0) {
+#else
     if (len == KAE_CRYPTO_FAIL) {
+#endif
         OPENSSL_clear_free(decrypt_buf, siglen);
         return KAE_CRYPTO_FAIL;
     }
@@ -1110,6 +1105,12 @@ static int kae_signature_rsa_verify(
     size_t rslen = 0;
     int ret = 0;
 
+#ifdef KAE_OPENSSL_3_5
+    if (siglen != (size_t)kae_rsa_size(priv->rsa) || tbslen > INT_MAX)
+        return OPENSSL_FAIL;
+    if (RSA_get_multi_prime_extra_count(priv->rsa) > 0)
+        goto soft;
+#endif
     if (priv->md != NULL) {
         switch (priv->pad_mode) {
             case RSA_PKCS1_PADDING:
@@ -1119,7 +1120,11 @@ static int kae_signature_rsa_verify(
                     goto soft;
                 }
                 if (!ret) {
+#ifdef KAE_OPENSSL_3_5
+                    goto soft;
+#else
                     return OPENSSL_FAIL;
+#endif
                 }
                 return OPENSSL_SUCCESS;
             case RSA_X931_PADDING:
@@ -1149,10 +1154,14 @@ static int kae_signature_rsa_verify(
                     goto soft;
                 }
                 if (ret <= 0) {
+#ifdef KAE_OPENSSL_3_5
+                    goto soft;
+#else
                     return OPENSSL_FAIL;
+#endif
                 }
-                ret =
-                    RSA_padding_add_PKCS1_PSS_mgf1(priv->rsa, priv->tbuf, tbs, priv->md, priv->mgf1_md, priv->saltlen);
+                ret = RSA_verify_PKCS1_PSS_mgf1(priv->rsa, tbs, priv->md,
+                    priv->mgf1_md, priv->tbuf, priv->saltlen);
                 if (ret <= 0) {
                     return OPENSSL_FAIL;
                 }
@@ -1170,7 +1179,11 @@ static int kae_signature_rsa_verify(
             goto soft;
         }
         if (ret <= 0) {
+#ifdef KAE_OPENSSL_3_5
+            goto soft;
+#else
             return OPENSSL_FAIL;
+#endif
         }
         rslen = (size_t)ret;
     }
@@ -1187,7 +1200,19 @@ soft:
         return KAE_P_FAIL;
     }
 
+#ifdef KAE_OPENSSL_3_5
+    int operation = priv->operation;
+    unsigned int oneshot = priv->flag_allow_oneshot;
+
+    priv->operation = EVP_PKEY_OP_VERIFY;
+    priv->flag_allow_oneshot = 1;
+    ret = get_default_rsa_signature().verify(vprsactx, sig, siglen, tbs, tbslen);
+    priv->operation = operation;
+    priv->flag_allow_oneshot = oneshot;
+    return ret;
+#else
     return get_default_rsa_signature().verify(vprsactx, sig, siglen, tbs, tbslen);
+#endif
 }
 
 static int kae_signature_rsa_verify_recover_init(void *vprsactx, void *vrsa, const OSSL_PARAM params[])
@@ -1203,6 +1228,13 @@ static int kae_signature_rsa_verify_recover_init(void *vprsactx, void *vrsa, con
 static int kae_signature_rsa_verify_recover(
     void *vprsactx, unsigned char *rout, size_t *routlen, size_t routsize, const unsigned char *sig, size_t siglen)
 {
+#ifdef KAE_OPENSSL_3_5
+    /* Native recovery validates output capacity and supplies all padding modes. */
+    KAE_PKEY_SIGNATURE method = get_default_rsa_signature();
+
+    return method.verify_recover ? method.verify_recover(vprsactx, rout, routlen,
+        routsize, sig, siglen) : 0;
+#else
     // if (!get_default_rsa_signature().verify_recover) {
     //     US_WARN("failed to get rsa signature verify recover function.");
     //     return KAE_P_FAIL;
@@ -1271,6 +1303,7 @@ static int kae_signature_rsa_verify_recover(
     }
     *routlen = ret;
     return 1;
+#endif
 }
 static int kae_signature_rsa_digest_sign_init(void *vprsactx, const char *mdname, void *vrsa, const OSSL_PARAM params[])
 {
@@ -1284,6 +1317,11 @@ static int kae_signature_rsa_digest_sign_init(void *vprsactx, const char *mdname
 
 static int kae_signature_rsa_digest_sign_update(void *vprsactx, const unsigned char *data, size_t datalen)
 {
+#ifdef KAE_OPENSSL_3_5
+    KAE_PKEY_SIGNATURE method = get_default_rsa_signature();
+
+    return method.digest_sign_update ? method.digest_sign_update(vprsactx, data, datalen) : 0;
+#else
     PROV_RSA_SIG_CTX *priv = (PROV_RSA_SIG_CTX *)vprsactx;
 
     if (priv == NULL || priv->mdctx == NULL) {
@@ -1292,6 +1330,7 @@ static int kae_signature_rsa_digest_sign_update(void *vprsactx, const unsigned c
     }
 
     return EVP_DigestUpdate(priv->mdctx, data, datalen);
+#endif
 }
 
 static int kae_signature_rsa_digest_sign_final(void *vprsactx, unsigned char *sig, size_t *siglen, size_t sigsize)
@@ -1307,6 +1346,10 @@ static int kae_signature_rsa_digest_sign_final(void *vprsactx, unsigned char *si
 
     priv->flag_allow_md = 1;
 
+#ifdef KAE_OPENSSL_3_5
+    if (!priv->flag_allow_final)
+        return OPENSSL_FAIL;
+#endif
     /*
      * If sig is NULL then we're just finding out the sig size. Other fields
      * are ignored. Defer to rsa_sign.
@@ -1320,6 +1363,11 @@ static int kae_signature_rsa_digest_sign_final(void *vprsactx, unsigned char *si
             US_WARN("rsa sign digest final failed.");
             return OPENSSL_FAIL;
         }
+#ifdef KAE_OPENSSL_3_5
+        priv->flag_allow_update = 0;
+        priv->flag_allow_final = 0;
+        priv->flag_allow_oneshot = 0;
+#endif
     }
 
     return kae_signature_rsa_sign(vprsactx, sig, siglen, sigsize, digest, (size_t)dlen);
@@ -1359,6 +1407,10 @@ static int kae_signature_rsa_digest_verify_final(void *vprsactx, const unsigned 
 
     priv->flag_allow_md = 1;
 
+#ifdef KAE_OPENSSL_3_5
+    if (!priv->flag_allow_final)
+        return OPENSSL_FAIL;
+#endif
     /*
      * The digests used here are all known (see rsa_get_md_nid()), so they
      * should not exceed the internal buffer size of EVP_MAX_MD_SIZE.
@@ -1367,21 +1419,19 @@ static int kae_signature_rsa_digest_verify_final(void *vprsactx, const unsigned 
         US_WARN("rsa verify digest final failed.");
         return OPENSSL_FAIL;
     }
+#ifdef KAE_OPENSSL_3_5
+    priv->flag_allow_update = 0;
+    priv->flag_allow_final = 0;
+    priv->flag_allow_oneshot = 0;
+#endif
 
     return kae_signature_rsa_verify(vprsactx, sig, siglen, digest, (size_t)dlen);
 }
 
 static void kae_signature_rsa_freectx(void *vprsactx)
 {
-    PROV_RSA_SIG_CTX *priv = (PROV_RSA_SIG_CTX *)vprsactx;
-
-    if (priv == NULL) {
-        US_WARN("invalid: sig ctx is NULL.");
-        return;
-    }
-
-    free_tbuf(priv);
-    OPENSSL_clear_free(priv, sizeof(*priv));
+    if (get_default_rsa_signature().freectx)
+        get_default_rsa_signature().freectx(vprsactx);
 }
 
 static void *kae_signature_rsa_dupctx(void *vprsactx)
