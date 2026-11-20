@@ -49,7 +49,8 @@ typedef struct SM3state_st {
 static OSSL_FUNC_digest_init_fn kae_digest_init;
 static OSSL_FUNC_digest_update_fn kae_digest_update;
 static OSSL_FUNC_digest_final_fn kae_digest_final;
-static OSSL_FUNC_digest_digest_fn kae_digest_digest;
+static int kae_digest_oneshot(void *dctx, const unsigned char *in, size_t inl,
+    unsigned char *out, size_t *outl, size_t outsz);
 static OSSL_FUNC_digest_freectx_fn kae_digest_freectx;
 static OSSL_FUNC_digest_dupctx_fn kae_digest_dupctx;
 static OSSL_FUNC_digest_gettable_params_fn kae_digest_gettable_params;
@@ -61,7 +62,6 @@ static int kae_digest_default_get_params(OSSL_PARAM params[], size_t blksz, size
     static void *kae_##name##_newctx(void *provctx)                                                                 \
     {                                                                                                               \
         sec_digest_priv *ctx = OPENSSL_zalloc(sizeof(*ctx));                                                        \
-        memset((void *)ctx, 0, sizeof(sec_digest_priv));                                                            \
         if (!ctx)                                                                                                   \
             return NULL;                                                                                            \
                                                                                                                     \
@@ -70,6 +70,14 @@ static int kae_digest_default_get_params(OSSL_PARAM params[], size_t blksz, size
         ctx->blk_size = blksize;                                                                                    \
         return ctx;                                                                                                 \
     }                                                                                                               \
+    static int kae_##name##_digest(void *provctx, const unsigned char *in, size_t inl,                               \
+        unsigned char *out, size_t *outl, size_t outsz)                                                            \
+    {                                                                                                            \
+        void *ctx = kae_##name##_newctx(provctx);                                                                  \
+        int ret = ctx != NULL && kae_digest_oneshot(ctx, in, inl, out, outl, outsz);                                \
+        kae_digest_freectx(ctx);                                                                                  \
+        return ret;                                                                                              \
+    }                                                                                                            \
     static OSSL_FUNC_digest_get_params_fn kae_##name##_get_params;                                                  \
     static int kae_##name##_get_params(OSSL_PARAM params[])                                                         \
     {                                                                                                               \
@@ -81,7 +89,7 @@ static int kae_digest_default_get_params(OSSL_PARAM params[], size_t blksz, size
         {OSSL_FUNC_DIGEST_INIT, (void (*)(void))kae_digest_init},                                                   \
         {OSSL_FUNC_DIGEST_UPDATE, (void (*)(void))kae_digest_update},                                               \
         {OSSL_FUNC_DIGEST_FINAL, (void (*)(void))kae_digest_final},                                                 \
-        {OSSL_FUNC_DIGEST_DIGEST, (void (*)(void))kae_digest_digest},                                               \
+        {OSSL_FUNC_DIGEST_DIGEST, (void (*)(void))kae_##name##_digest},                                              \
         {OSSL_FUNC_DIGEST_GET_PARAMS, (void (*)(void))kae_##name##_get_params},                                     \
         {OSSL_FUNC_DIGEST_GETTABLE_PARAMS, (void (*)(void))kae_digest_gettable_params},                             \
         {0, NULL}}

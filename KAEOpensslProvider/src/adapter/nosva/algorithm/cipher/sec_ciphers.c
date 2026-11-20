@@ -105,10 +105,13 @@ int sec_ciphers_init_priv_ctx(
         }
 
         if (priv_ctx->ecb_encryto->key2_len == 32) {  // 256-xts key2len is 32
-            priv_ctx->ecb_encryto->cipher_type = EVP_aes_256_ecb();
+            priv_ctx->ecb_encryto->cipher_type = EVP_CIPHER_fetch(NULL, "AES-256-ECB", "provider=default");
         } else {
-            priv_ctx->ecb_encryto->cipher_type = EVP_aes_128_ecb();
+            priv_ctx->ecb_encryto->cipher_type = EVP_CIPHER_fetch(NULL, "AES-128-ECB", "provider=default");
         }
+        SEC_CIPHERS_GOTO_FAIL_IF(priv_ctx->ecb_encryto->cipher_type == NULL, "fetch ecb cipher failed", ERR);
+    }
+    if (priv_ctx->ecb_encryto) {
         priv_ctx->ecb_encryto->countNum = 0;
         kae_memcpy(priv_ctx->ecb_encryto->key2,
             priv_ctx->key + priv_ctx->ecb_encryto->key2_len,
@@ -133,46 +136,43 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx *priv_ctx)
     if (do_cipher_len == 0)
         return;
 
-    int iv_bytes = priv_ctx->e_cipher_ctx->op_data.iv_bytes;  // equels 16
-    unsigned char K[iv_bytes];                                // next iv in OFB c_mode
-    if (priv_ctx->c_mode == OFB) {
-        int ofb_offset = priv_ctx->do_cipher_len - iv_bytes;
-        int i;
-        for (i = 0; i < iv_bytes; i++) {
-            K[i] =
-                *((unsigned char *)priv_ctx->in + ofb_offset + i) ^ *((unsigned char *)priv_ctx->out + ofb_offset + i);
-        }
-    }
-
-    priv_ctx->in += priv_ctx->do_cipher_len;
-    priv_ctx->out += priv_ctx->do_cipher_len;
-    priv_ctx->left_len -= priv_ctx->do_cipher_len;
+    priv_ctx->in += do_cipher_len;
+    priv_ctx->out += do_cipher_len;
+    priv_ctx->left_len -= do_cipher_len;
 
     switch (priv_ctx->c_mode) {
         case ECB:
             break;
         case CFB:
-        case CBC:
-            if (priv_ctx->encrypt == OPENSSL_ENCRYPTION)
-                kae_memcpy(priv_ctx->iv, priv_ctx->out - 16, 16);  // hardware need 16-byte alignment
-            else
-                kae_memcpy(priv_ctx->iv, priv_ctx->in - 16, 16);  // hardware need 16-byte alignment
+        case CBC: {
+            const struct wcrypto_cipher_op_data *data = &priv_ctx->e_cipher_ctx->op_data;
+            const unsigned char *feedback = priv_ctx->encrypt == OPENSSL_ENCRYPTION ? data->out : data->in;
+            memcpy(priv_ctx->iv, feedback + do_cipher_len - IV_LEN, IV_LEN);
             break;
+        }
         case CTR:
             increase_counter = (do_cipher_len + priv_ctx->offset) >> 4;  // right shift 4
             sec_ciphers_ctr_iv_inc(priv_ctx->iv, increase_counter);
             priv_ctx->offset = (priv_ctx->offset + (do_cipher_len & 0xf)) % 16;  // hardware need 16-byte alignment
             break;
         case XTS:
-            if (priv_ctx->c_alg == AES) {
+            /* The provider restores the data-unit IV after the final chunk. */
+            if (priv_ctx->c_alg == AES && priv_ctx->left_len != 0) {
                 priv_ctx->ecb_encryto->countNum = (priv_ctx->do_cipher_len + priv_ctx->offset) >> 4;  // right shift 4
                 sec_ciphers_xts_iv_inc(priv_ctx);
                 priv_ctx->offset = (priv_ctx->offset + (do_cipher_len & 0xf)) % 16;  // hardware need 16-byte alignment
             }
             break;
-        case OFB:
-            kae_memcpy(priv_ctx->iv, K, priv_ctx->e_cipher_ctx->op_data.iv_bytes);
+        case OFB: {
+            const struct wcrypto_cipher_op_data *data = &priv_ctx->e_cipher_ctx->op_data;
+            const unsigned char *in = (const unsigned char *)data->in + do_cipher_len - IV_LEN;
+            const unsigned char *out = (const unsigned char *)data->out + do_cipher_len - IV_LEN;
+
+            /* The DMA buffers retain the input even when the caller uses in-place output. */
+            for (size_t i = 0; i < IV_LEN; ++i)
+                priv_ctx->iv[i] = in[i] ^ out[i];
             break;
+        }
         default:
             US_WARN("mode=%d don't support.", priv_ctx->c_mode);
             break;
@@ -183,18 +183,13 @@ static void sec_ciphers_update_priv_ctx(cipher_priv_ctx *priv_ctx)
 
 static int sec_ciphers_before_dociphers_cb(cipher_priv_ctx *priv_ctx)
 {
-    if (priv_ctx->c_mode == XTS && priv_ctx->c_alg == AES) {
-        sec_ciphers_ecb_encryt(
+    if (priv_ctx->c_mode == XTS && priv_ctx->c_alg == AES &&
+        priv_ctx->left_len > priv_ctx->do_cipher_len) {
+        return sec_ciphers_ecb_encryt(
             priv_ctx->ecb_encryto, priv_ctx->ecb_encryto->encryto_iv, priv_ctx->iv, priv_ctx->iv_len);
     }
 
     return KAE_SUCCESS;
-}
-
-static int sec_ciphers_after_dociphers_cb(EVP_CIPHER_CTX *ctx)
-{
-    // sync priv ctx to next cipher, in case next cipher may be soft cipher
-    return sec_ciphers_sw_hw_ctx_sync(ctx, SEC_CIHPER_SYNC_H2S);
 }
 
 int sec_ciphers_sync_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, cipher_priv_ctx *priv_ctx)
@@ -204,8 +199,13 @@ int sec_ciphers_sync_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, cipher_priv_ct
 
     while (leftlen != 0) {
         priv_ctx->do_cipher_len = wd_ciphers_get_do_cipher_len(priv_ctx->offset, leftlen);
+        /* XTS ciphertext stealing needs a full block beside the final partial block. */
+        if (priv_ctx->c_mode == XTS && leftlen > priv_ctx->do_cipher_len &&
+            leftlen - priv_ctx->do_cipher_len < IV_LEN)
+            priv_ctx->do_cipher_len -= IV_LEN;
 
-        (void)sec_ciphers_before_dociphers_cb(e_cipher_ctx->priv_ctx);
+        if (sec_ciphers_before_dociphers_cb(priv_ctx) != KAE_SUCCESS)
+            return KAE_FAIL;
 
         wd_ciphers_set_input_data(e_cipher_ctx);
 
@@ -217,8 +217,7 @@ int sec_ciphers_sync_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, cipher_priv_ct
 
         // after cipher cycle should update: in, out, iv, key, length.
         sec_ciphers_update_priv_ctx(priv_ctx);
-
-        // (void)sec_ciphers_after_dociphers_cb(priv_ctx->sw_ctx);  // todo how?
+        priv_ctx->sw_update = 0;
 
         leftlen -= priv_ctx->do_cipher_len;
     }
@@ -238,7 +237,8 @@ int sec_ciphers_async_do_crypto(cipher_engine_ctx_t *e_cipher_ctx, op_done_t *op
 
     priv_ctx->do_cipher_len = wd_ciphers_get_do_cipher_len(priv_ctx->offset, priv_ctx->left_len);
 
-    (void)sec_ciphers_before_dociphers_cb(e_cipher_ctx->priv_ctx);
+    if (sec_ciphers_before_dociphers_cb(priv_ctx) != KAE_SUCCESS)
+        return KAE_FAIL;
 
     wd_ciphers_set_input_data(e_cipher_ctx);
 
@@ -333,7 +333,7 @@ static int sec_ciphers_do_crypto(cipher_priv_ctx *priv_ctx)
 
     // after cipher cycle should update: in, out, iv, key, length.
     sec_ciphers_update_priv_ctx(priv_ctx);
-    (void)sec_ciphers_after_dociphers_cb(priv_ctx->sw_ctx);
+    priv_ctx->sw_update = 0;
 
     return KAE_SUCCESS;
 err:
@@ -419,6 +419,7 @@ int sec_ciphers_priv_ctx_cleanup(cipher_priv_ctx *priv_ctx)
 
     kae_free(priv_ctx->next_iv);
     if (priv_ctx->ecb_encryto) {
+        EVP_CIPHER_free(priv_ctx->ecb_encryto->cipher_type);
         if (priv_ctx->ecb_encryto->ecb_ctx != NULL) {
             EVP_CIPHER_CTX_free(priv_ctx->ecb_encryto->ecb_ctx);
             priv_ctx->ecb_encryto->ecb_ctx = NULL;

@@ -48,7 +48,7 @@ typedef enum sec_cipher_priv_ctx_syncto sec_cipher_priv_ctx_syncto_t;
 
 typedef struct xts_ecb_data_strcut {
     EVP_CIPHER_CTX *ecb_ctx;
-    const EVP_CIPHER *cipher_type;
+    EVP_CIPHER *cipher_type;
     uint8_t *key2;
     uint8_t key2_len;
     uint8_t *iv_out;
@@ -90,7 +90,9 @@ typedef struct {
     EVP_CIPHER *sw_cipher;
     unsigned char key[MAX_KEY_LEN];
     unsigned char iv[IV_LEN];
-    // int sw_init;
+    unsigned char oiv[IV_LEN];
+    unsigned char updated_iv[IV_LEN];
+    int sw_init;
     int sw_update;
     int use_hw;
 } cipher_priv_ctx;

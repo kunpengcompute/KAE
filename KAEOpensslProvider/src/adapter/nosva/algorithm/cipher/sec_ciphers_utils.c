@@ -23,6 +23,9 @@
  *
  *****************************************************************************/
 
+#include <endian.h>
+#include <string.h>
+
 #include "sec_ciphers_utils.h"
 #include "sec_ciphers_soft.h"
 #include "../../../common/kae_log.h"
@@ -144,16 +147,20 @@ static unsigned int __iv_to_engine_counter(const uint8_t *iv)
 }
 
 /* increment counter (128-bit int) by c */
-void sec_ciphers_ctr_iv_inc(uint8_t *counter, uint32_t c)
+void sec_ciphers_ctr_iv_inc(uint8_t *counter, uint32_t blocks)
 {
-    uint32_t n = 16;
+    uint64_t high, low, next;
 
-    do {
-        --n;
-        c += counter[n];
-        counter[n] = (uint8_t)c;
-        c >>= 8;  // right shift 8
-    } while (n);
+    memcpy(&high, counter, sizeof(high));
+    memcpy(&low, counter + sizeof(high), sizeof(low));
+    high = be64toh(high);
+    low = be64toh(low);
+    next = low + blocks;
+    high += next < low;
+    high = htobe64(high);
+    next = htobe64(next);
+    memcpy(counter, &high, sizeof(high));
+    memcpy(counter + sizeof(high), &next, sizeof(next));
 }
 
 void sec_ciphers_xts_iv_inc(cipher_priv_ctx *priv_ctx)
@@ -222,7 +229,7 @@ int sec_ciphers_is_iv_may_overflow(cipher_priv_ctx *priv_ctx)
     unsigned int will_inc_counter = 0;
     unsigned int current_counter = 0;
 
-    if (sec_ciphers_get_cipher_mode(priv_ctx->nid) == CTR) {
+    if (priv_ctx->c_mode == CTR) {
         // （input length + prev offset）/ 16 = will_inc_counter
         will_inc_counter = (priv_ctx->inl + priv_ctx->offset) >> 4;  // right shift 4
         current_counter = __iv_to_engine_counter(priv_ctx->iv);
