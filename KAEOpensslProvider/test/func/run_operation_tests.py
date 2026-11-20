@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import resource
+import secrets
 import shlex
 import signal
 import statistics
@@ -21,7 +22,7 @@ CIPHERS += ['aes-128-xts','aes-256-xts']+[f'sm4-{mode}' for mode in ('cbc','ecb'
 LENGTHS = [16,64,256,1024,8192,16384]
 PKEYS = ['rsa1024','rsa2048','rsa3072','rsa4096','sm2','dh2048','dh3072','dh4096']
 FORMATS = ['pem','der','enc.pem','enc.der']
-PASSWORD = 'pass:public-test-fixture-only'
+FIXTURE_PASSPHRASE_ENV = 'KAE_TEST_FILE_PASSPHRASE'
 
 
 def sha(path):
@@ -45,6 +46,7 @@ class Suite:
         if not (self.lib/'libcrypto.so').exists() and not (self.lib/'libcrypto.dylib').exists():
             self.lib=args.openssl_prefix/'lib64'
         self.records=[]
+        self.fixture_passphrase=secrets.token_hex(16)
         self.cases=json.loads(args.cases.read_text()) if args.cases else None
         if self.cases is not None:
             if args.phase!='speed' or args.smoke or not isinstance(self.cases,list) or not self.cases:
@@ -92,6 +94,7 @@ class Suite:
                 env.pop(key,None)
         env.update(OPENSSL_CONF='/dev/null',
             LD_LIBRARY_PATH=f'{self.lib}:/usr/local/lib',TMPDIR=str(self.scratch))
+        env[FIXTURE_PASSPHRASE_ENV]=self.fixture_passphrase
         if self.args.provider_dir:
             env['OPENSSL_MODULES']=str(self.args.provider_dir)
         if self.args.engine_dir:
@@ -184,6 +187,7 @@ class Suite:
             self.cli_files(backend)
 
     def cli_files(self,backend):
+        passin=['-passin',f'env:{FIXTURE_PASSPHRASE_ENV}']
         msg=self.scratch/'message.bin'
         msg.write_bytes(bytes(range(64)))
         def command(be,*args):
@@ -202,7 +206,7 @@ class Suite:
                 folder=self.scratch/alg
                 form='DER' if fmt.endswith('der') else 'PEM'
                 public='pub.der' if form=='DER' else 'pub.pem'
-                private=['-keyform',form,'-inkey',folder/('key.'+fmt),'-passin',PASSWORD]
+                private=['-keyform',form,'-inkey',folder/('key.'+fmt),*passin]
                 pub=['-pubin','-keyform',form,'-inkey',folder/('key.'+public)]
                 stem=f'cli-{backend}-{alg}-{fmt}'
                 if alg.startswith('rsa'):
@@ -240,7 +244,7 @@ class Suite:
                 else:
                     for name,be,priv,peer in [('kae',backend,'key','peer'),('reference','default','peer','key')]:
                         self.run(f'{stem}-{name}',command(be,'-derive','-keyform',form,
-                            '-inkey',folder/(priv+'.'+fmt),'-passin',PASSWORD,'-peerform',form,
+                            '-inkey',folder/(priv+'.'+fmt),*passin,'-peerform',form,
                             '-peerkey',folder/(peer+'.'+public),'-pkeyopt','dh_pad:1','-out',self.scratch/(name+'.bin')),
                             be,kind='file-cli',algorithm=alg,format=fmt,operation='derive',trace=True)
                     secret=(self.scratch/'kae.bin').read_bytes()

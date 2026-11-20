@@ -25,7 +25,7 @@
 
 static ENGINE *engine;
 static const char *backend, *keytype, *prop;
-static const char fixture_password[] = "public-test-fixture-only";
+static const char *fixture_password;
 
 struct operation {
     EVP_PKEY *key, *pub, *peer_key, *peer_pub;
@@ -368,6 +368,11 @@ int main(int argc, char **argv)
     } else {
         fprintf(stderr, "Usage: %s prepare ALG DIRECTORY\n       %s check|bench ALG FORMAT BACKEND MODE DIRECTORY ACTION BYTES SECONDS\n",
             argv[0], argv[0]);
+        return 2;
+    }
+    fixture_password = getenv("KAE_TEST_FILE_PASSPHRASE");
+    if (fixture_password == NULL || fixture_password[0] == '\0') {
+        fprintf(stderr, "Set KAE_TEST_FILE_PASSPHRASE to the same value for prepare and check/bench\n");
         return 2;
     }
     setvbuf(stdout, NULL, _IONBF, 0);
