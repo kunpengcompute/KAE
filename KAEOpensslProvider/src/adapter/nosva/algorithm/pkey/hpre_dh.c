@@ -152,7 +152,7 @@ end_soft:
 
 int hpre_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh)
 {
-    int bits = DH_bits(dh);
+    int bits;
     const BIGNUM *p = NULL;
     const BIGNUM *g = NULL;
     const BIGNUM *q = NULL;
@@ -167,15 +167,15 @@ int hpre_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh)
         return OPENSSL_FAIL;
     }
 
+    bits = DH_bits(dh);
+    /* The provider validates the peer (including q) before selecting it. */
+
     hpre_dh_soft_get_pg(dh, &p, &g, &q);
     if (p == NULL || g == NULL) {
         KAEerr(KAE_F_HPRE_DH_KEYCOMP, KAE_R_DH_INVALID_PARAMETER);
         US_ERR("invalid g or p.");
         return OPENSSL_FAIL;
     }
-
-    // check whether it is dsa parameter.
-    CHECK_AND_GOTO(q != NULL, end_soft, "q is not null, then switch to soft!");
 
     // check whether bits exceeds the limit.
     if (bits > OPENSSL_DH_MAX_MODULUS_BITS) {

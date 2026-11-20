@@ -146,6 +146,8 @@ static const OSSL_ALGORITHM *kae_prov_keymgmt_query()
     }
     algs[i++] =
         (OSSL_ALGORITHM){"RSA", KAE_DEFAULT_PROPERTIES, kae_rsa_keymgmt_functions, "kae RSA Keymgmt implementation."};
+    algs[i++] =
+        (OSSL_ALGORITHM){"DH", KAE_DEFAULT_PROPERTIES, kae_dh_keymgmt_functions, "kae DH Keymgmt implementation."};
     algs[i] = (OSSL_ALGORITHM){NULL, NULL, NULL, NULL};
 
     return algs;
@@ -186,7 +188,7 @@ static const OSSL_ALGORITHM *kae_query(void *provctx, int operation_id, int *no_
         case OSSL_OP_ASYM_CIPHER:
             return kae_prov_asym_cipher;
         case OSSL_OP_KEYEXCH:
-            return NULL;
+            return kae_prov_keyexch;
         case OSSL_OP_STORE:
             /* Let the default provider own its STORE callbacks and context. */
             return NULL;
@@ -302,6 +304,11 @@ static void kae_init_algorithms(void)
         US_ERR("no available rsa dev, switch to soft.");
         rsa_switch_soft = 1;
     }
+
+    dev_num = wd_get_available_dev_num("dh");
+    dh_switch_soft = dev_num <= 0 || !hpre_module_dh_init();
+    if (dh_switch_soft)
+        US_WARN("no available dh hardware, switch to soft.");
 
     dev_num = wd_get_available_dev_num("digest");
     if (dev_num > 0) {

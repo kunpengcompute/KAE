@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#include <stdint.h>
+#include <time.h>
+
+#include <openssl/async.h>
 #include <openssl/core_names.h>
 #include <openssl/dh.h>
 #include <openssl/kdf.h>
@@ -22,7 +26,6 @@
 #define KAE_PKEY_PUBLIC_DISPATCH
 #include "prov_pkey.h"
 #include <openssl/provider.h>
-#include "internal/prov_ffc.h"
 #include "../../adapter/common/kae_log.h"
 #include "../../adapter/common/kae_types.h"
 #include "../../adapter/nosva/algorithm/pkey/hpre_dh.h"
@@ -249,648 +252,236 @@ static const char *kae_keymgmt_dh_query_operation_name(int operation_id)
 }
 
 typedef struct {
+    uint64_t hpre_ns;
+    uint64_t software_ns;
+    unsigned int next_sample;
+} KAE_DH_SYNC_COST;
+
+typedef struct {
     void *soft;
     DH *key;
     DH *peer;
     unsigned int pad;
     int use_kdf;
+    KAE_DH_SYNC_COST sync_cost;
 } KAE_DH_CTX;
 
-static FFC_PARAMS *ossl_dh_get0_params(DH *dh)
+static void *dh_default_ctx(void)
 {
-    if (dh == NULL)
-        return NULL;
-
-    return &dh->params;
+    return OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keyexch().prov);
 }
 
 static void *kae_keyexch_dh_newctx(void *provctx)
 {
-    PROV_DH_KEYEXCH_CTX *pdhctx;
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
+    KAE_DH_CTX *ctx = OPENSSL_zalloc(sizeof(*ctx));
 
-    pdhctx = OPENSSL_zalloc(sizeof(PROV_DH_KEYEXCH_CTX));
-    if (pdhctx == NULL) {
-        US_ERR("failed to alloc pdhctx.");
+    if (ctx == NULL)
+        return NULL;
+    if (method.newctx == NULL || (ctx->soft = method.newctx(dh_default_ctx())) == NULL) {
+        OPENSSL_free(ctx);
         return NULL;
     }
-
-    /* The libctx maybe NULL, if libctx is NULL, will use default ctx. */
-    pdhctx->libctx = prov_libctx_of(provctx);
-    pdhctx->kdf_type = PROV_DH_KDF_NONE;
-
-    return pdhctx;
+    return ctx;
 }
 
-static int prov_dh_locate_kdf_type(PROV_DH_KEYEXCH_CTX *pdhctx, const OSSL_PARAM params[])
+static int kae_keyexch_dh_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
-    char name[DH_MAX_PARAM_LEN + 1] = {'\0'};
+    KAE_DH_CTX *ctx = vctx;
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
     const OSSL_PARAM *p;
-    char *str;
+    unsigned int pad = ctx->pad;
 
-    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_TYPE);
-    if (p != NULL) {
-        str = name;
-        if (!OSSL_PARAM_get_utf8_string(p, &str, sizeof(name)))
-            return KAE_P_FAIL;
-
-        if (name[0] == '\0')
-            pdhctx->kdf_type = PROV_DH_KDF_NONE;
-        else if (strcmp(name, OSSL_KDF_NAME_X942KDF_ASN1) == 0)
-            pdhctx->kdf_type = PROV_DH_KDF_X9_42_ASN1;
-        else
-            return KAE_P_FAIL;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int prov_dh_locate_kdf_digest(PROV_DH_KEYEXCH_CTX *pdhctx, const OSSL_PARAM params[])
-{
-    char mdprops[DH_MAX_PARAM_LEN + 1] = {'\0'};
-    char name[DH_MAX_PARAM_LEN + 1] = {'\0'};
-    const OSSL_PARAM *p;
-    char *str;
-
-    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_DIGEST);
-    if (p != NULL) {
-        str = name;
-        if (!OSSL_PARAM_get_utf8_string(p, &str, sizeof(name)))
-            return KAE_P_FAIL;
-
-        str = mdprops;
-        p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_DIGEST_PROPS);
-        if (p != NULL)
-            if (!OSSL_PARAM_get_utf8_string(p, &str, sizeof(mdprops)))
-                return KAE_P_FAIL;
-
-        if (pdhctx->kdf_md)
-            EVP_MD_free(pdhctx->kdf_md);
-
-        pdhctx->kdf_md = EVP_MD_fetch(pdhctx->libctx, name, mdprops);
-        if (pdhctx->kdf_md == NULL)
-            return KAE_P_FAIL;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int prov_dh_locate_kdf_outlen(PROV_DH_KEYEXCH_CTX *pdhctx, const OSSL_PARAM params[])
-{
-    const OSSL_PARAM *p;
-    size_t outlen = 0;
-
-    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_OUTLEN);
-    if (p != NULL) {
-        if (!OSSL_PARAM_get_size_t(p, &outlen))
-            return KAE_P_FAIL;
-        pdhctx->kdf_outlen = outlen;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int prov_dh_locate_kdf_ukm(PROV_DH_KEYEXCH_CTX *pdhctx, const OSSL_PARAM params[])
-{
-    const OSSL_PARAM *p;
-    void *tmp_ukm = NULL;
-    size_t tmp_ukmlen;
-
-    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_UKM);
-    if (p != NULL) {
-        if (pdhctx->kdf_ukm)
-            OPENSSL_free(pdhctx->kdf_ukm);
-        pdhctx->kdf_ukm = NULL;
-        pdhctx->kdf_ukmlen = 0;
-
-        /* ukm is an optional field so it can be NULL */
-        if (p->data != NULL && p->data_size != 0) {
-            if (!OSSL_PARAM_get_octet_string(p, &tmp_ukm, 0, &tmp_ukmlen))
-                return KAE_P_FAIL;
-            pdhctx->kdf_ukm = tmp_ukm;
-            pdhctx->kdf_ukmlen = tmp_ukmlen;
-        }
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int prov_dh_locate_kdf_pad(PROV_DH_KEYEXCH_CTX *pdhctx, const OSSL_PARAM params[])
-{
-    const OSSL_PARAM *p;
-    unsigned int pad = 0;
-
-    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_PAD);
-    if (p != NULL) {
-        if (!OSSL_PARAM_get_uint(p, &pad))
-            return KAE_P_FAIL;
-        pdhctx->pad = pad ? 1 : 0;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int kae_keyexch_dh_set_ctx_params(void *dhctx, const OSSL_PARAM params[])
-{
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-    int ret = KAE_P_FAIL;
-
-    if (pdhctx == NULL) {
-        US_ERR("invalid: dh ctx is NULL.");
-        return ret;
-    }
-
-    /* If params is NULL, no need to set */
     if (params == NULL)
-        return KAE_P_SUCCESS;
-
-    // pthread_mutex_lock(&dh_mutex);
-    ret = prov_dh_locate_kdf_type(pdhctx, params);
-    if (ret == KAE_P_FAIL) {
-        US_ERR("failed to locate kdf type.");
-        goto end;
-    }
-
-    ret = prov_dh_locate_kdf_digest(pdhctx, params);
-    if (ret == KAE_P_FAIL) {
-        US_ERR("failed to locate kdf digest.");
-        goto end;
-    }
-
-    ret = prov_dh_locate_kdf_outlen(pdhctx, params);
-    if (ret == KAE_P_FAIL) {
-        US_ERR("failed to locate kdf outlen.");
-        goto end;
-    }
-
-    ret = prov_dh_locate_kdf_ukm(pdhctx, params);
-    if (ret == KAE_P_FAIL) {
-        US_ERR("failed to locate kdf ukm.");
-        goto end;
-    }
-
-    ret = prov_dh_locate_kdf_pad(pdhctx, params);
-    if (ret == KAE_P_FAIL)
-        US_ERR("failed to locate kdf pad.");
-
-end:
-    // pthread_mutex_unlock(&dh_mutex);
-    return ret;
-}
-
-static int kae_keyexch_dh_init(void *dhctx, void *dh, const OSSL_PARAM params[])
-{
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-
-    if (pdhctx == NULL) {
-        US_ERR("invalid: dhctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (dh == NULL || !DH_up_ref(dh)) {
-        US_ERR("invalid: dh is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    // pthread_mutex_lock(&dh_mutex);
-    if (pdhctx->dh) {
-        DH_free(pdhctx->dh);
-        pdhctx->dh = NULL;
-    }
-
-    pdhctx->dh = dh;
-    pdhctx->kdf_type = PROV_DH_KDF_NONE;
-    // pthread_mutex_unlock(&dh_mutex);
-
-    return kae_keyexch_dh_set_ctx_params(pdhctx, params);
-}
-
-static int kae_dh_sw_derive(void *dhctx, unsigned char *secret, size_t *psecretlen, size_t outlen)
-{
-    if (!get_default_dh_keyexch().derive) {
-        US_WARN("failed to get dh keyexch derive function.");
-        return KAE_P_FAIL;
-    }
-
-    return get_default_dh_keyexch().derive(dhctx, secret, psecretlen, outlen);
-}
-
-static int dh_compute_key_padded(unsigned char *key, const BIGNUM *pub_key, DH *dh)
-{
-    size_t dhsize;
-    int rv, pad;
-
-    /* rv is constant unless compute_key is external */
-    rv = hpre_dh_compute_key(key, pub_key, dh);
-    if (rv <= 0)
-        return rv;
-
-    dhsize = BN_num_bytes(dh->params.p);
-    pad = dhsize - rv;
-    /* pad is constant (zero) unless compute_key is external */
-    if (pad > 0) {
-        memmove(key + pad, key, rv);
-        memset(key, 0, pad);
-    }
-
-    if (pad < 0) {
-        US_ERR("invalid: recv key size > dhsize.");
-        return KAE_P_FAIL;
-    }
-
-    return rv + pad;
-}
-
-static int prov_dh_plain_derive(
-    PROV_DH_KEYEXCH_CTX *pdhctx, unsigned char *secret, size_t *secretlen, size_t outlen, unsigned int pad)
-{
-    const BIGNUM *pubkey = NULL;
-    size_t dhsize;
-    int ret;
-
-    /* pdhctx has been checked when the function is called */
-    if (pdhctx->dh == NULL) {
-        US_ERR("invalid: dh is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    dhsize = (size_t)DH_size(pdhctx->dh);
-    if (dhsize == 0) {
-        US_ERR("invalid: dhszie is zero.");
-        return KAE_P_FAIL;
-    }
-
-    if (secret == NULL) {
-        *secretlen = dhsize;
-        return KAE_P_SUCCESS;
-    }
-
-    if (outlen < dhsize) {
-        US_ERR("invalid: outlen < dhsize.");
-        return KAE_P_FAIL;
-    }
-
-    if (pdhctx->dhpeer == NULL) {
-        US_ERR("invalid: dhpeer is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    DH_get0_key(pdhctx->dhpeer, &pubkey, NULL);
-
-    if (pad)
-        ret = dh_compute_key_padded(secret, pubkey, pdhctx->dh);
-    else
-        ret = hpre_dh_compute_key(secret, pubkey, pdhctx->dh);
-    if (ret <= 0) {
-        US_ERR("failed to do dh compute, pad.");
-        return ret;
-    }
-
-    *secretlen = ret;
-
-    return KAE_P_SUCCESS;
-}
-
-/* Key derivation function from X9.63/SECG */
-static int ossl_dh_kdf_X9_42_asn1(
-    unsigned char *out, PROV_DH_KEYEXCH_CTX *pdhctx, const unsigned char *z, size_t z_len, const char *propq)
-{
-    OSSL_LIB_CTX *libctx = pdhctx->libctx;
-    const char *cek_alg = pdhctx->kdf_cekalg;
-    const unsigned char *ukm = pdhctx->kdf_ukm;
-    OSSL_PARAM params[KDF_PARAM_NUM] = {0};
-    size_t outlen = pdhctx->kdf_outlen;
-    size_t ukmlen = pdhctx->kdf_ukmlen;
-    const EVP_MD *md = pdhctx->kdf_md;
-    OSSL_PARAM *p = params;
-    const char *mdname;
-    EVP_KDF_CTX *kctx;
-    EVP_KDF *kdf;
-    int ret = 0;
-
-    kdf = EVP_KDF_fetch(libctx, OSSL_KDF_NAME_X942KDF_ASN1, propq);
-    if (kdf == NULL)
+        return 1;
+    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_PAD);
+    if (p != NULL && !OSSL_PARAM_get_uint(p, &pad))
         return 0;
-
-    kctx = EVP_KDF_CTX_new(kdf);
-    if (kctx == NULL)
-        goto end;
-
-    mdname = EVP_MD_get0_name(md);
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, (char *)mdname, 0);
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, (unsigned char *)z, z_len);
-    if (ukm != NULL)
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_UKM, (unsigned char *)ukm, ukmlen);
-
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_CEK_ALG, (char *)cek_alg, 0);
-    *p = OSSL_PARAM_construct_end();
-    ret = EVP_KDF_derive(kctx, out, outlen, params) > 0;
-
-end:
-    EVP_KDF_CTX_free(kctx);
-    EVP_KDF_free(kdf);
-
-    return ret;
+    if (method.set_ctx_params == NULL || !method.set_ctx_params(ctx->soft, params))
+        return 0;
+    ctx->pad = pad != 0;
+    p = OSSL_PARAM_locate_const(params, OSSL_EXCHANGE_PARAM_KDF_TYPE);
+    if (p != NULL)
+        ctx->use_kdf = ((const char *)p->data)[0] != '\0';
+    return 1;
 }
 
-static int prov_dh_X9_42_kdf_derive(
-    PROV_DH_KEYEXCH_CTX *pdhctx, unsigned char *secret, size_t *secretlen, size_t outlen)
+static int kae_keyexch_dh_init(void *vctx, void *key, const OSSL_PARAM params[])
 {
-    unsigned char *stmp;
-    size_t stmplen;
-    int ret = 0;
+    KAE_DH_CTX *ctx = vctx;
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
 
-    if (secret == NULL) {
-        *secretlen = pdhctx->kdf_outlen;
-        return KAE_P_SUCCESS;
-    }
+    if (key == NULL || !method.init(ctx->soft, key, params) || !DH_up_ref(key))
+        return 0;
+    DH_free(ctx->key);
+    DH_free(ctx->peer);
+    ctx->key = key;
+    ctx->peer = NULL;
+    ctx->pad = 0;
+    ctx->use_kdf = 0;
+    ctx->sync_cost = (KAE_DH_SYNC_COST){0};
+    return kae_keyexch_dh_set_ctx_params(ctx, params);
+}
 
-    if (outlen < pdhctx->kdf_outlen) {
-        US_ERR("invalid: outlen < kdf_outlen.");
-        return KAE_P_FAIL;
-    }
+static int kae_keyexch_dh_set_peer(void *vctx, void *peer)
+{
+    KAE_DH_CTX *ctx = vctx;
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
+    int codes = 0;
 
-    if (!prov_dh_plain_derive(pdhctx, NULL, &stmplen, 0, 1))
-        return KAE_P_FAIL;
+    if (ctx->key == NULL || peer == NULL ||
+        DH_get0_pub_key(peer) == NULL ||
+        !method.set_peer(ctx->soft, peer) ||
+        !DH_check_pub_key(ctx->key, DH_get0_pub_key(peer), &codes) || codes != 0 ||
+        !DH_up_ref(peer))
+        return 0;
+    DH_free(ctx->peer);
+    ctx->peer = peer;
+    ctx->sync_cost = (KAE_DH_SYNC_COST){0};
+    return 1;
+}
 
-    stmp = OPENSSL_secure_malloc(stmplen);
-    if (stmp == NULL) {
-        US_ERR("failed to do OPENSSL_secure_malloc.");
-        return KAE_P_FAIL;
-    }
+static int kae_keyexch_dh_derive_hpre(KAE_DH_CTX *ctx, unsigned char *out, size_t *outlen, int size)
+{
+    int len;
 
-    ret = prov_dh_plain_derive(pdhctx, stmp, &stmplen, stmplen, USE_PAD);
-    if (ret != KAE_P_SUCCESS)
-        goto end;
-
-    /* Do KDF stuff */
-    if (pdhctx->kdf_type == PROV_DH_KDF_X9_42_ASN1) {
-        if (ossl_dh_kdf_X9_42_asn1(secret, pdhctx, stmp, stmplen, NULL) == KAE_P_FAIL) {
-            ret = KAE_P_FAIL;
-            US_ERR("failed to do ossl_dh_kdf_X9_42_asn1.");
-            goto end;
+    len = hpre_dh_compute_key(out, DH_get0_pub_key(ctx->peer), ctx->key);
+    if (len <= 0 || len > size)
+        return 0;
+    if (ctx->pad && len < size) {
+        memmove(out + size - len, out, len);
+        memset(out, 0, size - len);
+        len = size;
+    } else if (!ctx->pad) {
+        int leading = 0;
+        while (leading < len && out[leading] == 0)
+            leading++;
+        if (leading != 0) {
+            memmove(out, out + leading, len - leading);
+            len -= leading;
         }
     }
+    *outlen = len;
+    return len > 0;
+}
 
-    *secretlen = pdhctx->kdf_outlen;
-    ret = KAE_P_SUCCESS;
+#define DH_SYNC_SAMPLE_INTERVAL 64
 
-end:
-    OPENSSL_secure_clear_free(stmp, stmplen);
+static uint64_t dh_monotonic_ns(void)
+{
+    struct timespec now;
 
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+        return 0;
+    return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+}
+
+static int kae_keyexch_dh_derive(void *vctx, unsigned char *out, size_t *outlen, size_t capacity)
+{
+    extern int dh_switch_soft;
+    KAE_DH_CTX *ctx = vctx;
+    int size;
+
+    if (ctx->key == NULL || outlen == NULL)
+        return 0;
+    /* The default provider owns KDF policy and its private KDF context. */
+    if (ctx->use_kdf || dh_switch_soft)
+        return get_default_dh_keyexch().derive(ctx->soft, out, outlen, capacity);
+    size = DH_size(ctx->key);
+    if (size <= 0)
+        return 0;
+    if (out == NULL) {
+        *outlen = size;
+        return 1;
+    }
+    if (capacity < (size_t)size || ctx->peer == NULL || DH_get0_priv_key(ctx->key) == NULL)
+        return 0;
+    if (ASYNC_get_current_job() != NULL)
+        return kae_keyexch_dh_derive_hpre(ctx, out, outlen, size);
+
+    /*
+     * Shared HPRE queues can be slower than local software under contention.
+     * Sample real derives on repeated synchronous use and retry HPRE regularly
+     * so that the context returns to it when accelerator load drops.
+     */
+    KAE_DH_SYNC_COST *cost = &ctx->sync_cost;
+    unsigned int sample = cost->next_sample;
+    cost->next_sample = (sample + 1) % DH_SYNC_SAMPLE_INTERVAL;
+    /* Interleave the two paths near parity instead of moving all work at once. */
+    unsigned int slow_hpre_share = 0;
+    if (cost->software_ns != 0 && cost->hpre_ns >= cost->software_ns - cost->software_ns / 8)
+        slow_hpre_share = cost->hpre_ns > cost->software_ns + cost->software_ns / 8 ? 3 : 1;
+    int use_software = sample == 1 || (sample != 0 && sample % 4 < slow_hpre_share);
+    uint64_t begin = sample < 2 ? dh_monotonic_ns() : 0;
+    int ret = use_software ? get_default_dh_keyexch().derive(ctx->soft, out, outlen, capacity) :
+        kae_keyexch_dh_derive_hpre(ctx, out, outlen, size);
+
+    if (begin != 0 && ret) {
+        uint64_t end = dh_monotonic_ns();
+        if (end > begin) {
+            uint64_t *estimate = use_software ? &cost->software_ns : &cost->hpre_ns;
+            uint64_t elapsed = end - begin;
+            *estimate = *estimate == 0 ? elapsed : *estimate - *estimate / 4 + elapsed / 4;
+        }
+    }
     return ret;
 }
 
-static int kae_keyexch_dh_derive(void *dhctx, unsigned char *secret, size_t *psecretlen, size_t outlen)
+static void kae_keyexch_dh_freectx(void *vctx)
 {
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-    int ret = KAE_P_FAIL;
+    KAE_DH_CTX *ctx = vctx;
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
 
-    if (pdhctx == NULL) {
-        US_ERR("invalid: pdhctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    switch (pdhctx->kdf_type) {
-        case PROV_DH_KDF_NONE:
-            ret = prov_dh_plain_derive(pdhctx, secret, psecretlen, outlen, pdhctx->pad);
-            break;
-        case PROV_DH_KDF_X9_42_ASN1:
-            ret = prov_dh_X9_42_kdf_derive(pdhctx, secret, psecretlen, outlen);
-            break;
-        default:
-            US_ERR("invalid: unsupport kdf type.");
-            ret = KAE_P_FAIL;
-            break;
-    }
-
-    if (ret == KAE_P_SUCCESS)
-        return KAE_P_SUCCESS;
-    if (ret == KAE_P_FAIL)
-        return kae_dh_sw_derive(dhctx, secret, psecretlen, outlen);
-    return KAE_P_FAIL;
-}
-
-/* The 2 parties must share the same domain parameters */
-static int kae_keyexch_dh_match_params(DH *priv, DH *peer)
-{
-    FFC_PARAMS *dhparams_priv = ossl_dh_get0_params(priv);
-    FFC_PARAMS *dhparams_peer = ossl_dh_get0_params(peer);
-    int ret;
-
-    if (dhparams_priv == NULL || dhparams_peer == NULL) {
-        US_ERR("failed to get dh params.");
-        return KAE_P_FAIL;
-    }
-
-    ret = ossl_ffc_params_cmp(dhparams_priv, dhparams_peer, IGNORE_Q);
-    if (ret == KAE_P_FAIL)
-        US_ERR("invalid: domain parameters of both parties do not match.");
-
-    return ret;
-}
-
-static int kae_keyexch_dh_set_peer(void *dhctx, void *dh)
-{
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-
-    if (pdhctx == NULL || dh == NULL) {
-        US_ERR("invalid: dh ctx or object is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (kae_keyexch_dh_match_params(dh, pdhctx->dh) == KAE_P_FAIL || DH_up_ref(dh) == KAE_P_FAIL) {
-        US_ERR("failed to match dh params.");
-        return KAE_P_FAIL;
-    }
-
-    // pthread_mutex_lock(&dh_mutex);
-    if (pdhctx->dhpeer)
-        DH_free(pdhctx->dhpeer);
-    pdhctx->dhpeer = dh;
-    // pthread_mutex_unlock(&dh_mutex);
-
-    return KAE_P_SUCCESS;
-}
-
-static void kae_keyexch_dh_freectx(void *dhctx)
-{
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-
-    if (pdhctx == NULL)
+    if (ctx == NULL)
         return;
-
-    if (pdhctx->kdf_cekalg) {
-        OPENSSL_free(pdhctx->kdf_cekalg);
-        pdhctx->kdf_cekalg = NULL;
-    }
-
-    if (pdhctx->dh) {
-        DH_free(pdhctx->dh);
-        pdhctx->dh = NULL;
-    }
-
-    if (pdhctx->dhpeer) {
-        DH_free(pdhctx->dhpeer);
-        pdhctx->dhpeer = NULL;
-    }
-
-    if (pdhctx->kdf_md) {
-        EVP_MD_free(pdhctx->kdf_md);
-        pdhctx->kdf_md = NULL;
-    }
-
-    if (pdhctx->kdf_ukm) {
-        OPENSSL_clear_free(pdhctx->kdf_ukm, pdhctx->kdf_ukmlen);
-        pdhctx->kdf_ukm = NULL;
-    }
-
-    if (pdhctx->kdf_cekalg) {
-        OPENSSL_free(pdhctx->kdf_cekalg);
-        pdhctx->kdf_cekalg = NULL;
-    }
-
-    OPENSSL_free(pdhctx);
+    if (ctx->soft != NULL && method.freectx != NULL)
+        method.freectx(ctx->soft);
+    DH_free(ctx->key);
+    DH_free(ctx->peer);
+    OPENSSL_free(ctx);
 }
 
-static void *kae_keyexch_dh_dupctx(void *dhctx)
+static void *kae_keyexch_dh_dupctx(void *vctx)
 {
-    PROV_DH_KEYEXCH_CTX *srcctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-    PROV_DH_KEYEXCH_CTX *dstctx;
+    KAE_DH_CTX *src = vctx, *dst = OPENSSL_zalloc(sizeof(*dst));
+    KAE_PKEY_KEYEXCH method = get_default_dh_keyexch();
 
-    if (srcctx == NULL) {
-        US_ERR("invalid: src ctx is NULL.");
+    if (dst == NULL)
         return NULL;
-    }
-
-    dstctx = OPENSSL_zalloc(sizeof(*dstctx));
-    if (dstctx == NULL) {
-        US_ERR("failed to alloc dst ctx.");
-        return NULL;
-    }
-
-    memcpy(dstctx, srcctx, sizeof(PROV_DH_KEYEXCH_CTX));
-    dstctx->dh = NULL;
-    dstctx->dhpeer = NULL;
-    dstctx->kdf_md = NULL;
-    dstctx->kdf_ukm = NULL;
-    dstctx->kdf_cekalg = NULL;
-
-    if (srcctx->dh && !DH_up_ref(srcctx->dh))
+    dst->pad = src->pad;
+    dst->use_kdf = src->use_kdf;
+    if (method.dupctx == NULL || (dst->soft = method.dupctx(src->soft)) == NULL)
         goto err;
-    else
-        dstctx->dh = srcctx->dh;
-
-    if (srcctx->dhpeer && !DH_up_ref(srcctx->dhpeer))
-        goto err;
-    else
-        dstctx->dhpeer = srcctx->dhpeer;
-
-    if (srcctx->kdf_md && !EVP_MD_up_ref(srcctx->kdf_md))
-        goto err;
-    else
-        dstctx->kdf_md = srcctx->kdf_md;
-
-    /* Duplicate UKM data if present */
-    if (srcctx->kdf_ukm && srcctx->kdf_ukmlen > 0) {
-        dstctx->kdf_ukm = OPENSSL_memdup(srcctx->kdf_ukm, srcctx->kdf_ukmlen);
-        if (dstctx->kdf_ukm == NULL)
+    if (src->key != NULL) {
+        if (!DH_up_ref(src->key))
             goto err;
+        dst->key = src->key;
     }
-
-    if (srcctx->kdf_cekalg != NULL) {
-        dstctx->kdf_cekalg = OPENSSL_strdup(srcctx->kdf_cekalg);
-        if (dstctx->kdf_cekalg == NULL)
+    if (src->peer != NULL) {
+        if (!DH_up_ref(src->peer))
             goto err;
+        dst->peer = src->peer;
     }
-
-    return dstctx;
-
+    return dst;
 err:
-    kae_keyexch_dh_freectx(dstctx);
-
+    kae_keyexch_dh_freectx(dst);
     return NULL;
 }
 
-static const OSSL_PARAM known_settable_ctx_params[] = {OSSL_PARAM_int(OSSL_EXCHANGE_PARAM_PAD, NULL),
-    OSSL_PARAM_utf8_string(OSSL_EXCHANGE_PARAM_KDF_TYPE, NULL, 0),
-    OSSL_PARAM_utf8_string(OSSL_EXCHANGE_PARAM_KDF_DIGEST, NULL, 0),
-    OSSL_PARAM_utf8_string(OSSL_EXCHANGE_PARAM_KDF_DIGEST_PROPS, NULL, 0),
-    OSSL_PARAM_size_t(OSSL_EXCHANGE_PARAM_KDF_OUTLEN, NULL),
-    OSSL_PARAM_octet_string(OSSL_EXCHANGE_PARAM_KDF_UKM, NULL, 0),
-    OSSL_PARAM_utf8_string(OSSL_KDF_PARAM_CEK_ALG, NULL, 0),
-    OSSL_PARAM_END};
-
-static const OSSL_PARAM *kae_keyexch_dh_settable_ctx_params(ossl_unused void *dhctx, ossl_unused void *provctx)
+static int kae_keyexch_dh_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
-    return known_settable_ctx_params;
+    KAE_DH_CTX *ctx = vctx;
+    return get_default_dh_keyexch().get_ctx_params(ctx->soft, params);
 }
 
-static int kae_keyexch_dh_get_ctx_params(void *dhctx, OSSL_PARAM params[])
+static const OSSL_PARAM *kae_keyexch_dh_gettable_ctx_params(void *vctx, void *provctx)
 {
-    PROV_DH_KEYEXCH_CTX *pdhctx = (PROV_DH_KEYEXCH_CTX *)dhctx;
-    const char *kdf_type;
-    OSSL_PARAM *p;
-
-    if (pdhctx == NULL) {
-        US_ERR("invalid: dh ctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    p = OSSL_PARAM_locate(params, OSSL_EXCHANGE_PARAM_KDF_TYPE);
-    if (p != NULL) {
-        switch (pdhctx->kdf_type) {
-            case PROV_DH_KDF_NONE:
-                kdf_type = "";
-                break;
-            case PROV_DH_KDF_X9_42_ASN1:
-                kdf_type = OSSL_KDF_NAME_X942KDF_ASN1;
-                break;
-            default:
-                US_ERR("invalid kdf_type.");
-                return KAE_P_FAIL;
-        }
-
-        if (!OSSL_PARAM_set_utf8_string(p, kdf_type)) {
-            US_ERR("failed to set utf8 string for kdf_type.");
-            return KAE_P_FAIL;
-        }
-    }
-
-    p = OSSL_PARAM_locate(params, OSSL_EXCHANGE_PARAM_KDF_DIGEST);
-    if (p != NULL && !OSSL_PARAM_set_utf8_string(p, pdhctx->kdf_md == NULL ? "" : EVP_MD_get0_name(pdhctx->kdf_md))) {
-        US_ERR("failed to set kdf_md.");
-        return KAE_P_FAIL;
-    }
-
-    p = OSSL_PARAM_locate(params, OSSL_EXCHANGE_PARAM_KDF_OUTLEN);
-    if (p != NULL && !OSSL_PARAM_set_size_t(p, pdhctx->kdf_outlen)) {
-        US_ERR("failed to set kdf_outlen.");
-        return KAE_P_FAIL;
-    }
-
-    p = OSSL_PARAM_locate(params, OSSL_EXCHANGE_PARAM_KDF_UKM);
-    if (p != NULL && !OSSL_PARAM_set_octet_ptr(p, pdhctx->kdf_ukm, pdhctx->kdf_ukmlen)) {
-        US_ERR("failed to set kdf_ukm.");
-        return KAE_P_FAIL;
-    }
-
-    p = OSSL_PARAM_locate(params, OSSL_KDF_PARAM_CEK_ALG);
-    if (p != NULL && !OSSL_PARAM_set_utf8_string(p, pdhctx->kdf_cekalg == NULL ? "" : pdhctx->kdf_cekalg)) {
-        US_ERR("failed to set kdf_cekalg.");
-        return KAE_P_FAIL;
-    }
-
-    return KAE_P_SUCCESS;
+    KAE_DH_CTX *ctx = vctx;
+    return get_default_dh_keyexch().gettable_ctx_params(ctx ? ctx->soft : NULL, dh_default_ctx());
 }
 
-static const OSSL_PARAM known_gettable_ctx_params[] = {OSSL_PARAM_utf8_string(OSSL_EXCHANGE_PARAM_KDF_TYPE, NULL, 0),
-    OSSL_PARAM_utf8_string(OSSL_EXCHANGE_PARAM_KDF_DIGEST, NULL, 0),
-    OSSL_PARAM_size_t(OSSL_EXCHANGE_PARAM_KDF_OUTLEN, NULL),
-    OSSL_PARAM_DEFN(OSSL_EXCHANGE_PARAM_KDF_UKM, OSSL_PARAM_OCTET_PTR, NULL, 0),
-    OSSL_PARAM_utf8_string(OSSL_KDF_PARAM_CEK_ALG, NULL, 0),
-    OSSL_PARAM_END};
-
-static const OSSL_PARAM *kae_keyexch_dh_gettable_ctx_params(ossl_unused void *dhctx, ossl_unused void *provctx)
+static const OSSL_PARAM *kae_keyexch_dh_settable_ctx_params(void *vctx, void *provctx)
 {
-    return known_gettable_ctx_params;
+    KAE_DH_CTX *ctx = vctx;
+    return get_default_dh_keyexch().settable_ctx_params(ctx ? ctx->soft : NULL, dh_default_ctx());
 }
