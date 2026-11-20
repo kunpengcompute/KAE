@@ -55,9 +55,7 @@ static struct digest_threshold_table g_digest_pkt_threshold_table[] = {
 static int sec_digests_dowork(sec_digest_priv *md_ctx);
 static int sec_digests_sync_dowork(sec_digest_priv *md_ctx);
 static int sec_digests_async_dowork(sec_digest_priv *md_ctx, op_done_t *op_done);
-static uint32_t sec_digests_sw_get_threshold(int nid);
-
-static uint32_t sec_digests_sw_get_threshold(int nid)
+uint32_t sec_digests_sw_get_threshold(int nid)
 {
     int threshold_table_sz = BLOCKSIZES_OF(g_digest_pkt_threshold_table);
     int i = 0;
@@ -101,6 +99,12 @@ int sec_digests_init(sec_digest_priv *md_ctx)
 
     sec_digests_get_alg(md_ctx);
     md_ctx->state = SEC_DIGEST_INIT;
+    md_ctx->last_update_buff = NULL;
+    md_ctx->last_update_bufflen = 0;
+    md_ctx->total_data_len = 0;
+    md_ctx->long_data_len = 0;
+    md_ctx->is_stream_copy = false;
+    md_ctx->is_copy = false;
     return OPENSSL_SUCCESS;
 }
 
@@ -119,9 +123,7 @@ static int sec_digests_update_inner(sec_digest_priv *md_ctx, size_t data_len, co
     int ret = OPENSSL_FAIL;
     size_t left_len = data_len;
     const unsigned char *tmpdata = (const unsigned char *)data;
-    sec_digests_set_msg_state(md_ctx, false);
-
-    while (md_ctx->last_update_bufflen + left_len > DIGEST_INPUT_CACHE_SIZE) {
+    while (left_len > DIGEST_INPUT_CACHE_SIZE - md_ctx->last_update_bufflen) {
         int copy_to_bufflen = DIGEST_INPUT_CACHE_SIZE - md_ctx->last_update_bufflen;
 
         kae_memcpy(md_ctx->last_update_buff + md_ctx->last_update_bufflen, tmpdata, copy_to_bufflen);
@@ -136,6 +138,7 @@ static int sec_digests_update_inner(sec_digest_priv *md_ctx, size_t data_len, co
         else
             (void)md_ctx->state;
 
+        sec_digests_set_msg_state(md_ctx, false);
         ret = sec_digests_sync_dowork(md_ctx);
         if (ret != KAE_SUCCESS) {
             US_WARN("do sec digest failed, switch to soft digest");
@@ -160,6 +163,8 @@ int sec_digests_update(sec_digest_priv *md_ctx, const void *data, size_t data_le
     // sec_digest_priv *md_ctx = (sec_digest_priv *)EVP_MD_CTX_md_data(ctx);
     // sec_digest_priv *md_ctx = ctx->priv;
     SEC_DIGESTS_RETURN_FAIL_IF(unlikely(md_ctx == NULL), "md_ctx is NULL.", OPENSSL_FAIL);
+    if (data_len > UINT64_MAX - md_ctx->total_data_len)
+        return OPENSSL_FAIL;
     if (md_ctx->e_digest_ctx == NULL && md_ctx->switch_flag != 1) {
         md_ctx->e_digest_ctx = wd_digests_get_engine_ctx(md_ctx);
         if (md_ctx->e_digest_ctx == NULL) {
@@ -195,7 +200,7 @@ int sec_digests_update(sec_digest_priv *md_ctx, const void *data, size_t data_le
     unsigned char digest[MAX_OUTLEN] = {0};
     md_ctx->out = digest;
 
-    if (md_ctx->last_update_bufflen + data_len <= DIGEST_INPUT_CACHE_SIZE) {
+    if (data_len <= DIGEST_INPUT_CACHE_SIZE - md_ctx->last_update_bufflen) {
         kae_memcpy(md_ctx->last_update_buff + md_ctx->last_update_bufflen, data, data_len);
         md_ctx->last_update_bufflen += data_len;
         return OPENSSL_SUCCESS;
@@ -375,7 +380,6 @@ static int sec_digests_async_dowork(sec_digest_priv *md_ctx, op_done_t *op_done)
 
     md_ctx->in = md_ctx->last_update_buff;
     md_ctx->do_digest_len = wd_digests_get_do_digest_len(e_digest_ctx, leftlen);
-    e_digest_ctx->op_data.has_next = (md_ctx->state == SEC_DIGEST_FINAL) ? false : true;
     wd_digests_set_input_data(e_digest_ctx);
 
     do {

@@ -75,11 +75,14 @@ typedef struct {
 	digest_engine_ctx_t	*e_digest_ctx;
 	EVP_MD_CTX		*soft_ctx;
 	EVP_MD *soft_md;
+	unsigned char *small_buf;
+	size_t small_len;
+	size_t small_capacity;
 	uint32_t                switch_flag;
 	uint32_t                app_datasize;
  	bool			is_stream_copy;
     bool            is_copy;
-	uint32_t		total_data_len;
+	uint64_t		total_data_len;
 	__u64			long_data_len;
     size_t md_size;
     size_t blk_size;
@@ -119,6 +122,7 @@ struct evp_md_ctx_st {
 } /* EVP_MD_CTX */ ;
 
 int sec_digest_module_init(void);
+uint32_t sec_digests_sw_get_threshold(int nid);
 
 int sec_digests_init(sec_digest_priv *md_ctx);
 int sec_digests_update(sec_digest_priv *md_ctx, const void *data, size_t data_len);

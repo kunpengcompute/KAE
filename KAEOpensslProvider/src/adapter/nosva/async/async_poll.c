@@ -42,6 +42,7 @@
 #define ASYNC_POLL_TASK_NUM 1024
 
 static void async_polling_thread_destroy(void);
+static pid_t polling_pid;
 
 static void *async_poll_process_func(void *args)
 {
@@ -61,6 +62,8 @@ static void *async_poll_process_func(void *args)
             US_ERR("wait async full_sem failed, errno:%d", errno);  // lint !e666
         }
 
+        if (__atomic_load_n(&g_async_poll_queue.shutdown, __ATOMIC_ACQUIRE))
+            break;
         task = async_get_queue_task_v1();
         if (task == NULL) {
             usleep(1);
@@ -104,22 +107,20 @@ int async_polling_thread_init(void)
 
     kae_memset(&g_async_poll_queue, 0, sizeof(async_poll_queue_t));
 
-    if (pthread_mutex_init(&(g_async_poll_queue.async_task_mutex), NULL) < 0)
-        US_ERR("init queue mutex failed, errno:%d", errno);  // lint !e666
-
     if (!async_poll_task_init_v1()) {
         US_ERR("init poll task queue failed.");
         return 0;
     }
 
-    if (kae_create_thread(&thread_id, NULL, async_poll_process_func, NULL) == 0) {
+    if (pthread_create(&thread_id, NULL, async_poll_process_func, NULL) != 0) {
         US_DEBUG("fail to create polling thread");
         goto _err;
     }
 
     g_async_poll_queue.thread_id = thread_id;
     g_async_poll_queue.init_mark = INITED;
-    (void)OPENSSL_atexit(async_polling_thread_destroy);
+    polling_pid = getpid();
+    /* The provider teardown joins this thread before the module can unload. */
 
     return 1;
 
@@ -130,17 +131,29 @@ _err:
 
 static void async_polling_thread_destroy(void)
 {
-    if (g_async_poll_queue.exit_mark == 1)
+    if (g_async_poll_queue.init_mark != INITED || polling_pid != getpid())
         return;
 
+    __atomic_store_n(&g_async_poll_queue.shutdown, 1, __ATOMIC_RELEASE);
+    sem_post(&g_async_poll_queue.full_sem);
+    pthread_join(g_async_poll_queue.thread_id, NULL);
     async_poll_task_free_v1();
     g_async_poll_queue.exit_mark = 1;
+    g_async_poll_queue.init_mark = 0;
+}
+
+void async_module_uninit_v1(void)
+{
+    async_polling_thread_destroy();
 }
 
 void async_module_init_v1(void)
 {
     if (kae_is_async_enabled()) {
-        async_poll_task_free_v1();
+        if (g_async_poll_queue.init_mark == INITED && polling_pid == getpid())
+            return;
+        /* A fork child has no polling thread to join. */
+        OPENSSL_free(g_async_poll_queue.async_poll_task_queue_head);
         async_polling_thread_reset();
         if (!async_polling_thread_init())
             kae_disable_async();

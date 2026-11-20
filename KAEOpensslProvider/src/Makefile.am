@@ -33,6 +33,7 @@ kae_provider_la_SOURCES=adapter/common/kae_config.c \
 		adapter/nosva/algorithm/pkey/hpre_dh.c \
 		provider/prov_nosva.c \
 		provider/prov_nosva/prov_rsa.c \
+		provider/prov_nosva/prov_pkey_35.c \
 		provider/prov_nosva/prov_sm2.c \
 		provider/prov_nosva/prov_digest.c \ 
 		provider/prov_nosva/prov_cipher.c \

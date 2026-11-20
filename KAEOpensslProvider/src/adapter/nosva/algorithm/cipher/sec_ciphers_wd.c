@@ -117,7 +117,8 @@ void sec_ciphers_cb(const void *msg, void *tag)
     struct wcrypto_cipher_msg *message = (struct wcrypto_cipher_msg *)msg;
     cipher_engine_ctx_t *eng_ctx = (cipher_engine_ctx_t *)tag;
 
-    kae_memcpy(eng_ctx->priv_ctx->out, message->out, message->out_bytes);
+    kae_memcpy(eng_ctx->priv_ctx->out, (const uint8_t *)message->out + eng_ctx->priv_ctx->offset,
+        eng_ctx->priv_ctx->do_cipher_len);
 }
 
 static int wd_ciphers_init_engine_ctx(cipher_engine_ctx_t *e_cipher_ctx)
@@ -193,18 +194,6 @@ void wd_ciphers_put_engine_ctx(cipher_engine_ctx_t *e_cipher_ctx)
     if (e_cipher_ctx->wd_ctx != NULL) {
         wcrypto_del_cipher_ctx(e_cipher_ctx->wd_ctx);
         e_cipher_ctx->wd_ctx = NULL;
-    }
-
-    if (e_cipher_ctx->priv_ctx && e_cipher_ctx->priv_ctx->ecb_encryto) {
-        if (e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx != NULL) {
-            EVP_CIPHER_CTX_free(e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx);
-            e_cipher_ctx->priv_ctx->ecb_encryto->ecb_ctx = NULL;
-        }
-
-        kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->key2);
-        kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->encryto_iv);
-        kae_free(e_cipher_ctx->priv_ctx->ecb_encryto->iv_out);
-        kae_free(e_cipher_ctx->priv_ctx->ecb_encryto);
     }
 
     if (e_cipher_ctx->q_node != NULL)

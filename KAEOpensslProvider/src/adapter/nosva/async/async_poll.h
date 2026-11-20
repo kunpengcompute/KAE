@@ -23,5 +23,6 @@
 #include "async_task_queue.h"
 
 void async_module_init_v1(void);
+void async_module_uninit_v1(void);
 
 #endif

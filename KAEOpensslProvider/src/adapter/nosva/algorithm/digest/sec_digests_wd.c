@@ -211,7 +211,6 @@ void wd_digests_set_input_data(digest_engine_ctx_t *e_digest_ctx)
     e_digest_ctx->op_data.in_bytes = md_ctx->do_digest_len;
     e_digest_ctx->op_data.out_bytes = md_ctx->out_len;
 
-    e_digest_ctx->op_data.has_next = (md_ctx->state == SEC_DIGEST_FINAL) ? false : true;
 }
 
 void wd_digests_get_output_data(digest_engine_ctx_t *e_digest_ctx)
@@ -219,7 +218,8 @@ void wd_digests_get_output_data(digest_engine_ctx_t *e_digest_ctx)
     sec_digest_priv *md_ctx = e_digest_ctx->md_ctx;
 
     // the real out data start at opdata.out + offset
-    if (e_digest_ctx->op_data.has_next == false)
+    if (e_digest_ctx->op_data.has_next == WCRYPTO_DIGEST_END
+        || e_digest_ctx->op_data.has_next == WCRYPTO_DIGEST_STREAM_END)
         kae_memcpy(md_ctx->out, (uint8_t *)e_digest_ctx->op_data.out, md_ctx->out_len);
 }
 
