@@ -95,12 +95,18 @@ typedef struct {
 	int id_set;
 } HPRE_SM2_PKEY_CTX;
 
+typedef struct {
+    BIGNUM *order;
+    BN_CTX *bn_ctx;
+    OSSL_LIB_CTX *libctx;
+} HPRE_SM2_RAND_CTX;
+
 typedef struct  {
 	HPRE_SM2_PKEY_CTX ctx;
 	// handle_t sess;
 	const BIGNUM *prikey;
 	const EC_POINT *pubkey;
-	BIGNUM *order;
+    HPRE_SM2_RAND_CTX *rand_ctx;
 	int init_status;
 	/* The nid of digest method */
 	int md_nid;
@@ -150,6 +156,7 @@ typedef struct {
 /* Structure for SM2 private context in kae_provider, related to KAE */
 typedef struct {
 	int init_status;
+    OSSL_LIB_CTX *libctx;
 	/* The session related to KAE */
 	// handle_t sess;
     hpre_sm2_priv_ctx *hsmctx;
@@ -184,6 +191,8 @@ typedef struct {
 	struct PROV_DIGEST md;
 
 	SM2_PROV_CTX *sm2_pctx;
+    void *soft_ctx;
+    int operation;
 } PROV_SM2_ASYM_CTX;
 
 typedef struct {
@@ -199,6 +208,9 @@ typedef struct {
 	 * be performed only once, on first update.
 	 */
 	unsigned int flag_compute_z_digest : 1;
+    unsigned int z_digest_valid : 1;
+    unsigned char z_digest[32];
+    EVP_MD_CTX *message_mdctx;
 
 	/* Will used by openssl, but not used by UADK, so put it outside SM2_PROV_CTX */
 	char mdname[OSSL_MAX_NAME_SIZE];
@@ -218,6 +230,8 @@ typedef struct {
 	int id_set;
 
 	SM2_PROV_CTX *sm2_pctx;
+    void *soft_ctx;
+    int operation;
 } PROV_SM2_SIGN_CTX;
 
 
@@ -228,6 +242,7 @@ void wd_sm2_uninit_qnode_pool(void);
 KAE_QUEUE_POOL_HEAD_S *wd_hpre_sm2_get_qnode_pool(void);
 
 int hpre_sm2_update_sess(SM2_PROV_CTX *sm2_pctx);
+void hpre_sm2_cleanup(SM2_PROV_CTX *sm2_pctx);
 
 int hpre_sm2_encrypt(PROV_SM2_ASYM_CTX *psm2ctx,
 		       unsigned char *out, size_t *outlen,

@@ -14,6 +14,7 @@
  * limitations under the License.
  *
  */
+#include <limits.h>
 #include <openssl/bn.h>
 #include <openssl/asn1t.h>
 #include <openssl/asn1.h>
@@ -52,21 +53,28 @@ IMPLEMENT_ASN1_FUNCTIONS(HPRE_SM2_Ciphertext)
 // 回调函数，返回值不按OPENSSL规范
 static int hpre_sm2_get_rand(char *out, size_t out_len, void *usr)
 {
+    HPRE_SM2_RAND_CTX *ctx = usr;
     int count = SM2_GET_RAND_MAX_CNT;
     BIGNUM *k;
     int ret;
 
-    if (!out) {
-        US_ERR("out is NULL.");
+    if (!out || !ctx || !ctx->order || !ctx->libctx) {
+        US_ERR("invalid SM2 random context.");
         return -1;
     }
 
+    /* Keep DRBG's small AES operations out of the global KAE preference. */
+    if (!ctx->bn_ctx) {
+        ctx->bn_ctx = BN_CTX_new_ex(ctx->libctx);
+        if (!ctx->bn_ctx)
+            return -ENOMEM;
+    }
     k = BN_new();
     if (!k)
         return -ENOMEM;
 
     do {
-        ret = BN_priv_rand_range(k, usr);
+        ret = BN_priv_rand_range_ex(k, ctx->order, 0, ctx->bn_ctx);
         if (!ret) {
             US_ERR("failed to BN_priv_rand_range.");
             ret = -ENOMEM;
@@ -85,9 +93,18 @@ static int hpre_sm2_get_rand(char *out, size_t out_len, void *usr)
     if (count < 0)
         ret = -1;
 err:
-    BN_free(k);
+    BN_clear_free(k);
 
     return ret;
+}
+
+static void hpre_sm2_rand_ctx_free(HPRE_SM2_RAND_CTX *ctx)
+{
+    if (!ctx)
+        return;
+    BN_CTX_free(ctx->bn_ctx);
+    BN_clear_free(ctx->order);
+    OPENSSL_clear_free(ctx, sizeof(*ctx));
 }
 
 // 回调函数
@@ -162,8 +179,9 @@ void wd_sm2_put_engine_ctx(hpre_sm2_engine_ctx_t *e_hpre_sm2_ctx)
     }
 
     if (e_hpre_sm2_ctx->qlist != NULL) {
-        (void)kae_put_node_to_pool(g_hpre_sm2_qnode_pool, e_hpre_sm2_ctx->qlist);
         e_hpre_sm2_ctx->qlist->engine_ctx = NULL;
+        (void)kae_put_node_to_pool(g_hpre_sm2_qnode_pool, e_hpre_sm2_ctx->qlist);
+        e_hpre_sm2_ctx->qlist = NULL;
     }
 
     e_hpre_sm2_ctx = NULL;
@@ -200,8 +218,8 @@ hpre_sm2_engine_ctx_t *wd_sm2_get_engine_ctx(hpre_sm2_priv_ctx *priv_ctx)
     // 初始化一次engine参数
     if (wd_sm2_init_engine_ctx(e_hpre_sm2_ctx) == KAE_FAIL) {  // todo
         US_WARN("init engine ctx fail!");
-        OPENSSL_free(e_hpre_sm2_ctx);
         wd_sm2_put_engine_ctx(e_hpre_sm2_ctx);
+        OPENSSL_free(e_hpre_sm2_ctx);
         return NULL;
     }
 
@@ -227,6 +245,30 @@ void hpre_free_sm2_eng_ctx(hpre_sm2_engine_ctx_t *eng_ctx, struct wcrypto_ecc_op
     eng_ctx->opdata.out = NULL;
 
     OPENSSL_free(eng_ctx);
+}
+
+static void hpre_sm2_free_iot(hpre_sm2_engine_ctx_t *eng, struct wcrypto_ecc_op_data opdata)
+{
+    if (opdata.in != NULL)
+        wcrypto_del_ecc_in(eng->wd_ctx, opdata.in);
+    if (opdata.out != NULL)
+        wcrypto_del_ecc_out(eng->wd_ctx, opdata.out);
+    memset(&eng->opdata, 0, sizeof(eng->opdata));
+}
+
+void hpre_sm2_cleanup(SM2_PROV_CTX *ctx)
+{
+    struct wcrypto_ecc_op_data empty = {0};
+    hpre_sm2_priv_ctx *priv;
+
+    if (ctx == NULL || ctx->hsmctx == NULL)
+        return;
+    priv = ctx->hsmctx;
+    hpre_free_sm2_eng_ctx(priv->e_hpre_sm2_ctx, empty);
+    hpre_sm2_rand_ctx_free(priv->rand_ctx);
+    OPENSSL_clear_free(priv, sizeof(*priv));
+    ctx->hsmctx = NULL;
+    ctx->init_status = 0;
 }
 
 static int hpre_sm2_get_hash_type(int nid_hash)
@@ -288,6 +330,8 @@ int hpre_sm2_update_sess(SM2_PROV_CTX *sm2_pctx)
     }
 
     hpre_sm2_priv_ctx *smctx = sm2_pctx->hsmctx;
+    smctx->ctx.md = sm2_pctx->sm2_md->md;
+    smctx->md_nid = sm2_pctx->sm2_md->md_nid;
 
     if (smctx->e_hpre_sm2_ctx == NULL) {
         smctx->e_hpre_sm2_ctx = wd_sm2_get_engine_ctx(smctx);
@@ -300,7 +344,7 @@ int hpre_sm2_update_sess(SM2_PROV_CTX *sm2_pctx)
     // struct wcrypto_ecc_ctx_setup setup;
     hpre_sm2_engine_ctx_t *e_sm2_ctx = smctx->e_hpre_sm2_ctx;
     void *sess;
-    BIGNUM *order;
+    HPRE_SM2_RAND_CTX *rand_ctx;
     int type;
 
     struct wd_queue *queue = smctx->e_hpre_sm2_ctx->qlist->kae_wd_queue;
@@ -318,15 +362,23 @@ int hpre_sm2_update_sess(SM2_PROV_CTX *sm2_pctx)
         e_sm2_ctx->setup.hash.type = type;
     }
 
-    order = BN_bin2bn((void *)sm2_order, sizeof(sm2_order), NULL);
+    rand_ctx = OPENSSL_zalloc(sizeof(*rand_ctx));
+    if (rand_ctx == NULL)
+        return OPENSSL_FAIL;
+    rand_ctx->libctx = sm2_pctx->libctx;
+    rand_ctx->order = BN_bin2bn(sm2_order, sizeof(sm2_order), NULL);
+    if (!rand_ctx->libctx || !rand_ctx->order) {
+        hpre_sm2_rand_ctx_free(rand_ctx);
+        return OPENSSL_FAIL;
+    }
     e_sm2_ctx->setup.rand.cb = hpre_sm2_get_rand;
-    e_sm2_ctx->setup.rand.usr = (void *)order;
+    e_sm2_ctx->setup.rand.usr = rand_ctx;
     e_sm2_ctx->setup.cb = (wcrypto_cb)hpre_sm2_cb;
     sess = wcrypto_create_ecc_ctx(queue, &e_sm2_ctx->setup);
     if (!sess) {
         US_ERR("failed to alloc sess");
         wd_sm2_put_engine_ctx(smctx->e_hpre_sm2_ctx);
-        BN_free(order);
+        hpre_sm2_rand_ctx_free(rand_ctx);
         smctx->init_status = HPRE_SM2_INIT_FAIL;
         return OPENSSL_FAIL;
     }
@@ -341,7 +393,8 @@ int hpre_sm2_update_sess(SM2_PROV_CTX *sm2_pctx)
 
     smctx->prikey = NULL;
     smctx->pubkey = NULL;
-    smctx->order = order;
+    hpre_sm2_rand_ctx_free(smctx->rand_ctx);
+    smctx->rand_ctx = rand_ctx;
 
     return OPENSSL_SUCCESS;
 }
@@ -739,7 +792,7 @@ static int hpre_sm2_update_public_key(hpre_sm2_priv_ctx *smctx, EC_KEY *ec_key)
 static int hpre_sync_do_sm2(struct hpre_sm2_engine_ctx *engine, struct wcrypto_ecc_op_data *opdata)
 {
     int ret = wcrypto_do_sm2(engine->wd_ctx, opdata, NULL);
-    if (ret != KAE_SUCCESS) {
+    if (ret != KAE_SUCCESS || opdata->status != 0) {
         return OPENSSL_FAIL;
     }
 
@@ -816,8 +869,9 @@ int hpre_sm2_crypto(struct wcrypto_ecc_op_data *opdata, hpre_sm2_priv_ctx *smctx
 
     async_cleanup_op_done_v1(&op);
 
+    opdata->status = smctx->e_hpre_sm2_ctx->opdata.status;
     US_DEBUG("hpre sm2 do async job success!");
-    return OPENSSL_SUCCESS;
+    return opdata->status == 0 ? OPENSSL_SUCCESS : OPENSSL_FAIL;
 
 err:
     US_ERR("hpre sm2 do async job err");
@@ -946,7 +1000,7 @@ int hpre_sm2_encrypt(
     US_DEBUG("hpre sm2 encrypt success!");
     ret = OPENSSL_SUCCESS;
 uninit_iot:
-    hpre_free_sm2_eng_ctx(smctx->e_hpre_sm2_ctx, opdata);
+    hpre_sm2_free_iot(smctx->e_hpre_sm2_ctx, opdata);
     if (ret == OPENSSL_SUCCESS)
         return ret;
 
@@ -956,10 +1010,17 @@ do_soft:
 }
 
 static int sm2_cipher_ber_to_bin(
-    unsigned char *ber, size_t ber_len, struct wcrypto_ecc_point *c1, struct wd_dtb *c2, struct wd_dtb *c3)
+    const EVP_MD *md, unsigned char *ber, size_t ber_len,
+    struct wcrypto_ecc_point *c1, struct wd_dtb *c2, struct wd_dtb *c3)
 {
     struct hpre_sm2_ciphertext *ctext_struct;
-    int len, len1;
+    const unsigned char *end;
+    size_t len, len1, c2len, c3len, total;
+    int md_size = EVP_MD_get_size(md);
+
+    if (ber_len > LONG_MAX || md_size <= 0)
+        return OPENSSL_FAIL;
+    end = ber + ber_len;
 
     ctext_struct = d2i_HPRE_SM2_Ciphertext(NULL, (const unsigned char **)&ber, ber_len);
     if (!ctext_struct) {
@@ -967,9 +1028,22 @@ static int sm2_cipher_ber_to_bin(
         return OPENSSL_FAIL;
     }
 
+    if (ber != end || ctext_struct->C1x == NULL || ctext_struct->C1y == NULL ||
+        ctext_struct->C2 == NULL || ctext_struct->C3 == NULL ||
+        BN_is_negative(ctext_struct->C1x) || BN_is_negative(ctext_struct->C1y) ||
+        ctext_struct->C2->length <= 0 || ctext_struct->C3->length != md_size)
+        goto free_ctext;
     len = BN_num_bytes(ctext_struct->C1x);
     len1 = BN_num_bytes(ctext_struct->C1y);
-    c1->x.data = malloc(len + len1 + ctext_struct->C2->length + ctext_struct->C3->length);
+    c2len = ctext_struct->C2->length;
+    c3len = ctext_struct->C3->length;
+    if (len > SM2_KEY_BYTES || len1 > SM2_KEY_BYTES || len > SIZE_MAX - len1)
+        goto free_ctext;
+    total = len + len1;
+    if (c3len > SIZE_MAX - total || c2len > SIZE_MAX - total - c3len)
+        goto free_ctext;
+    total += c3len + c2len;
+    c1->x.data = malloc(total);
     if (!c1->x.data) {
         goto free_ctext;
     }
@@ -1167,7 +1241,7 @@ int hpre_sm2_decrypt(
 
     md = (smctx->ctx.md == NULL) ? EVP_sm3() : smctx->ctx.md;
 
-    ret = sm2_cipher_ber_to_bin((void *)in, inlen, &c1, &c2, &c3);
+    ret = sm2_cipher_ber_to_bin(md, (void *)in, inlen, &c1, &c2, &c3);
     if (!ret)
         goto do_soft;
 
@@ -1200,7 +1274,7 @@ int hpre_sm2_decrypt(
     ret = OPENSSL_SUCCESS;
 
 uninit_iot:
-    hpre_free_sm2_eng_ctx(smctx->e_hpre_sm2_ctx, opdata);
+    hpre_sm2_free_iot(smctx->e_hpre_sm2_ctx, opdata);
 free_c1:
     free(c1.x.data);
     if (ret == OPENSSL_SUCCESS)  // 得考虑异常情况不走soft，抛异常
@@ -1388,7 +1462,7 @@ int hpre_sm2_sign(
     ret = OPENSSL_SUCCESS;
 
 uninit_iot:
-    hpre_free_sm2_eng_ctx(smctx->e_hpre_sm2_ctx, opdata);
+    hpre_sm2_free_iot(smctx->e_hpre_sm2_ctx, opdata);
 
     if (ret == OPENSSL_SUCCESS) {
         US_DEBUG("sm2_sign successed!\n");
@@ -1442,6 +1516,9 @@ static int hpre_sm2_sig_ber_to_bin(EC_KEY *ec, unsigned char *sig, size_t sig_le
     int ret, len1, len2;
     BIGNUM *b_r, *b_s;
 
+    if (sig_len > LONG_MAX)
+        return OPENSSL_FAIL;
+
     e_sig = ECDSA_SIG_new();
     if (!e_sig) {
         US_ERR("failed to ECDSA_SIG_new.");
@@ -1456,7 +1533,7 @@ static int hpre_sm2_sig_ber_to_bin(EC_KEY *ec, unsigned char *sig, size_t sig_le
 
     /* Ensure signature uses DER and doesn't have trailing garbage */
     len1 = i2d_ECDSA_SIG(e_sig, &der);
-    if (len1 != sig_len || memcmp(sig, der, len1) != 0) {
+    if (len1 <= 0 || (size_t)len1 != sig_len || der == NULL || memcmp(sig, der, len1) != 0) {
         US_ERR("sig data error, len1 != sig_len.");
         ret = OPENSSL_FAIL;
         goto free_der;
@@ -1472,6 +1549,11 @@ static int hpre_sm2_sig_ber_to_bin(EC_KEY *ec, unsigned char *sig, size_t sig_le
     b_s = (void *)ECDSA_SIG_get0_s((const ECDSA_SIG *)e_sig);
     if (!b_s) {
         US_ERR("failed to get s.");
+        ret = OPENSSL_FAIL;
+        goto free_der;
+    }
+
+    if (BN_is_negative(b_r) || BN_is_negative(b_s) || BN_is_zero(b_r) || BN_is_zero(b_s)) {
         ret = OPENSSL_FAIL;
         goto free_der;
     }
@@ -1551,7 +1633,7 @@ int hpre_sm2_verify(
     ret = OPENSSL_SUCCESS;
 
 uninit_iot:
-    hpre_free_sm2_eng_ctx(smctx->e_hpre_sm2_ctx, opdata);
+    hpre_sm2_free_iot(smctx->e_hpre_sm2_ctx, opdata);
     if (ret == OPENSSL_SUCCESS) {
         US_DEBUG("sm2_verify successed!\n");
         return OPENSSL_SUCCESS;
@@ -1608,7 +1690,8 @@ int hpre_module_sm2_init(void)
 {
 
     /* init queue */
-    wd_sm2_init_qnode_pool();
+    if (wd_sm2_init_qnode_pool() != KAE_SUCCESS)
+        return OPENSSL_FAIL;
 
     /* register async poll func */
     async_register_poll_fn_v1(ASYNC_TASK_WD_ECC, sm2_engine_ctx_poll);  // ASYNC_TASK_WD_ECC 按SVA代码包含sm2
