@@ -25,7 +25,7 @@ function build_engine()
     openssl_install_path=${openssl_install_path%/}
 
     cd ${SRC_PATH}/KAEOpensslEngine
-    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${openssl_install_path}/lib/pkgconfig
     autoreconf -i
     ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae --with-openssl_install_dir=$openssl_install_path CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
     make -j"$(kae_jobs)"
@@ -47,7 +47,7 @@ function build_engine_asm()
     fi
 
     cd ${SRC_PATH}/KAEOpensslEngine
-    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${openssl_install_path}/lib/pkgconfig
     autoreconf -i
     ./configure --libdir=/usr/local/lib/engines-1.1/ --enable-kae $enable_asm --with-openssl_install_dir=$openssl_install_path CFLAGS="-Wl,-z,relro,-z,now -fstack-protector-strong"
     make -j"$(kae_jobs)"
@@ -73,7 +73,7 @@ function build_engine_openssl3()
     openssl3_install_path=${openssl3_install_path%/}
     
     cd ${SRC_PATH}/KAEOpensslEngine
-    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${openssl3_install_path}/lib/pkgconfig
     autoreconf -i
 
     if [ ! -f "$openssl3_install_path/include/openssl/opensslv.h" ]; then  
@@ -113,7 +113,7 @@ function build_engine_openssl3_asm()
     fi
     
     cd ${SRC_PATH}/KAEOpensslEngine
-    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${openssl3_install_path}/lib/pkgconfig
     autoreconf -i
 
     if [ ! -f "$openssl3_install_path/include/openssl/opensslv.h" ]; then  
@@ -184,7 +184,7 @@ function build_engine3_tongsuo()
     tongsuo_install_path=${tongsuo_install_path%/}
     
     cd ${SRC_PATH}/KAEOpensslEngine
-    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${tongsuo_install_path}/lib/pkgconfig
     autoreconf -i
 
     if [ ! -f "$tongsuo_install_path/include/openssl/opensslv.h" ]; then  
