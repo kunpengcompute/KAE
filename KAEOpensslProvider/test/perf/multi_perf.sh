@@ -4,7 +4,7 @@ ENV=""
 SYNC_MULTIS="1 4 16 32 64"
 ASYNC_MULTIS="1 2 4 8 16"
 EXE="openssl"
-PROVIDER_DIR="/usr/local/lib/ossl-modules"
+PROVIDER_DIR="${OPENSSL_MODULES:-/usr/local/lib/provider}"
 PROVIDER="-provider kae_provider"
 RUN_TIMES=3 
 

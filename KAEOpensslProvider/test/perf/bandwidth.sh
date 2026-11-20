@@ -2,7 +2,7 @@
 RESFILE="bwidth.txt"
 ENV=""
 EXE="openssl"
-PROVIDER_DIR="/usr/local/lib/ossl-modules"
+PROVIDER_DIR="${OPENSSL_MODULES:-/usr/local/lib/provider}"
 PROVIDER="-provider kae_provider"
 RUN_TIMES=1
 TIME_SEC="20"
