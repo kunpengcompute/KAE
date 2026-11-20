@@ -1,0 +1,5 @@
+ACLOCAL_AMFLAGS = -I m4
+
+if HAVE_WD
+SUBDIRS = src
+endif

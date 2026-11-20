@@ -87,6 +87,10 @@ Commands:
     engine_boringssl        Install KAE BoringSSL engine
     engine_boringssl clean  Uninstall KAE BoringSSL engine
 
+  OpenSSL Provider:
+    ossl_provider <path>    Install KAE provider to /usr/local/lib/provider for the selected OpenSSL 3.x
+    ossl_provider clean     Uninstall only this KAE provider build
+
   Compression:
     zlib                    Install KAE-accelerated zlib
     zlib clean              Uninstall KAE-accelerated zlib
@@ -123,6 +127,9 @@ main() {
             ;;  
         "engine"|"engine_asm"|"engine3"|"engine3_asm"|"engine_gmssl"|"engine3_tongsuo"|"engine_boringssl")  
             bash ${SCRIPT_DIR}/scripts/buildScript/build_engine.sh "$@"
+            ;;
+        "ossl_provider")
+            bash "${SCRIPT_DIR}/scripts/buildScript/build_provider.sh" "$@"
             ;;
         "zlib"|"zstd"|"lz4"|"gzip"|"snappy")  
             bash ${SCRIPT_DIR}/scripts/buildScript/build_compression.sh "$@"
