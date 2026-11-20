@@ -19,7 +19,9 @@
 #include <openssl/kdf.h>
 
 #include "prov.h"
+#define KAE_PKEY_PUBLIC_DISPATCH
 #include "prov_pkey.h"
+#include <openssl/provider.h>
 #include "internal/prov_ffc.h"
 #include "../../adapter/common/kae_log.h"
 #include "../../adapter/common/kae_types.h"
@@ -35,7 +37,7 @@ static void *kae_keymgmt_dh_new(void *provctx)
         return NULL;
     }
 
-    return get_default_dh_keymgmt().new_fun(provctx);
+    return get_default_dh_keymgmt().new_fun(OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keymgmt().prov));
 }
 
 static void kae_keymgmt_dh_free(void *keydata)
@@ -65,7 +67,7 @@ static const OSSL_PARAM *kae_keymgmt_dh_gettable_params(void *provctx)
         return NULL;
     }
 
-    return get_default_dh_keymgmt().gettable_params(provctx);
+    return get_default_dh_keymgmt().gettable_params(OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keymgmt().prov));
 }
 
 static int kae_keymgmt_dh_set_params(void *key, const OSSL_PARAM params[])
@@ -85,7 +87,7 @@ static const OSSL_PARAM *kae_keymgmt_dh_settable_params(void *provctx)
         return NULL;
     }
 
-    return get_default_dh_keymgmt().settable_params(provctx);
+    return get_default_dh_keymgmt().settable_params(OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keymgmt().prov));
 }
 
 static void *kae_keymgmt_dh_gen_init(void *provctx, int selection, const OSSL_PARAM params[])
@@ -95,7 +97,7 @@ static void *kae_keymgmt_dh_gen_init(void *provctx, int selection, const OSSL_PA
         return NULL;
     }
 
-    return get_default_dh_keymgmt().gen_init(provctx, selection, params);
+    return get_default_dh_keymgmt().gen_init(OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keymgmt().prov), selection, params);
 }
 
 static int kae_keymgmt_dh_gen_set_template(void *genctx, void *templ)
@@ -125,345 +127,15 @@ static const OSSL_PARAM *kae_keymgmt_dh_gen_settable_params(ossl_unused void *ge
         return NULL;
     }
 
-    return get_default_dh_keymgmt().gen_settable_params(genctx, provctx);
+    return get_default_dh_keymgmt().gen_settable_params(genctx, OSSL_PROVIDER_get0_provider_ctx(get_default_dh_keymgmt().prov));
 }
 
-static int ossl_dh_get_named_group_uid_from_size(int pbits)
-{
-    int nid;
-
-    /*
-     * Just choose an approved safe prime group.
-     * The alternative to this is to generate FIPS186-4 domain parameters i.e.
-     * return dh_generate_ffc_parameters(ret, prime_len, 0, NULL, cb);
-     * As the FIPS186-4 generated params are for backwards compatibility,
-     * the safe prime group should be used as the default.
-     */
-    switch (pbits) {
-        case DH2048BITS:
-            nid = NID_ffdhe2048;
-            break;
-        case DH3072BITS:
-            nid = NID_ffdhe3072;
-            break;
-        case DH4096BITS:
-            nid = NID_ffdhe4096;
-            break;
-        /*
-         * Retain the commonly supported part. The different specifications are
-         * listed in the unsupported prime_len scope:
-         * 'pbits' 6144 and 8192 are supported by OpenSSL but not supported by kae,
-         * 'pbits' 768/1024/1536 are not supported by OpenSSL.
-         *
-         */
-        default:
-            US_ERR("kae unsupport dh size.");
-            return NID_undef;
-    }
-
-    return nid;
-}
-
-static DH *ossl_dh_new_ex(OSSL_LIB_CTX *libctx)
-{
-    DH *dh = OPENSSL_zalloc(sizeof(*dh));
-
-    if (dh == NULL) {
-        US_ERR("failed to alloc dh.");
-        return NULL;
-    }
-
-    dh->references = 1;
-    dh->lock = CRYPTO_THREAD_lock_new();
-    if (dh->lock == NULL) {
-        US_ERR("failed to new dh thread lock.");
-        OPENSSL_free(dh);
-        return NULL;
-    }
-
-    dh->libctx = libctx;
-
-    return dh;
-}
-
-static FFC_PARAMS *ossl_dh_get0_params(DH *dh)
-{
-    if (dh == NULL)
-        return NULL;
-
-    return &dh->params;
-}
-
-static void ossl_dh_free_ex(DH *dh)
-{
-    if (dh) {
-        CRYPTO_THREAD_lock_free(dh->lock);
-        OPENSSL_free(dh);
-    }
-}
-
-static int dh_gencb(int p, int n, BN_GENCB *cb)
-{
-    OSSL_PARAM params[] = {OSSL_PARAM_END, OSSL_PARAM_END, OSSL_PARAM_END};
-    PROV_DH_KEYMGMT_CTX *gctx = BN_GENCB_get_arg(cb);
-
-    params[0] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_POTENTIAL, &p);
-    params[1] = OSSL_PARAM_construct_int(OSSL_GEN_PARAM_ITERATION, &n);
-
-    return gctx->cb(params, gctx->cbarg);
-}
-
-static int ossl_dh_generate_ffc_parameters(DH *dh, int type, int pbits, int qbits, BN_GENCB *cb)
-{
-    int ret, res;
-
-    if (type == DH_PARAMGEN_TYPE_FIPS_186_2)
-        ret = ossl_ffc_params_FIPS186_2_generate(dh->libctx, &dh->params, FFC_PARAM_TYPE_DH, pbits, qbits, &res, cb);
-    else
-        ret = ossl_ffc_params_FIPS186_4_generate(dh->libctx, &dh->params, FFC_PARAM_TYPE_DH, pbits, qbits, &res, cb);
-    if (ret > 0)
-        dh->dirty_cnt++;
-
-    return ret;
-}
-
-static int prov_dh_gen_params_cb(PROV_DH_KEYMGMT_CTX *gctx, DH *dh, OSSL_CALLBACK *cb, void *cb_params)
-{
-    int ret = KAE_P_SUCCESS;
-    BN_GENCB *gencb;
-
-    if (cb == NULL || cb_params == NULL) {
-        US_ERR("invalid: cb function or param is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    gctx->cb = cb;
-    gctx->cbarg = cb_params;
-    /* gencb can be NULL */
-    gencb = BN_GENCB_new();
-    if (gencb != NULL)
-        BN_GENCB_set(gencb, dh_gencb, gctx);
-
-    if ((gctx->selection & OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS) != 0) {
-        /*
-         * NOTE: The old safe prime generator code is not used in fips mode,
-         * (i.e internally it ignores the generator and chooses a named
-         * group based on pbits.
-         */
-        if (gctx->gen_type == DH_PARAMGEN_TYPE_GENERATOR)
-            ret = DH_generate_parameters_ex(dh, gctx->pbits, gctx->generator, gencb);
-        else
-            ret = ossl_dh_generate_ffc_parameters(dh, gctx->gen_type, gctx->pbits, gctx->qbits, gencb);
-        if (ret <= 0) {
-            US_ERR("failed to generate ffc parameters.");
-            ret = KAE_P_FAIL;
-        }
-    }
-
-    if (gencb)
-        BN_GENCB_free(gencb);
-
-    return ret;
-}
-
-static DH *prov_dh_gen_params_ex(PROV_DH_KEYMGMT_CTX *gctx, FFC_PARAMS **ffc)
-{
-    DH *dh;
-
-    /* Use existing params */
-    dh = ossl_dh_new_ex(gctx->libctx);
-    if (dh == NULL) {
-        US_ERR("failed to new dh by nid.");
-        return NULL;
-    }
-
-    *ffc = ossl_dh_get0_params(dh);
-    if (*ffc == NULL) {
-        US_ERR("failed to get ffc params.");
-        goto free_dh;
-    }
-
-    /* Copy the template value if one was passed */
-    if (gctx->ffc_params != NULL && ossl_ffc_params_copy(*ffc, gctx->ffc_params) == 0) {
-        US_ERR("failed to copy params.");
-        goto free_dh;
-    }
-
-    if (ossl_ffc_params_set_seed(*ffc, gctx->seed, gctx->seedlen) == 0) {
-        US_ERR("failed to set seed.");
-        goto free_dh;
-    }
-
-    if (gctx->gindex != -1) {
-        ossl_ffc_params_set_gindex(*ffc, gctx->gindex);
-        if (gctx->pcounter != -1)
-            ossl_ffc_params_set_pcounter(*ffc, gctx->pcounter);
-    } else if (gctx->hindex != 0) {
-        ossl_ffc_params_set_h(*ffc, gctx->hindex);
-    }
-
-    if (gctx->mdname) {
-        if (ossl_ffc_set_digest(*ffc, gctx->mdname, gctx->mdprops) == 0) {
-            US_ERR("failed to set digest.");
-            goto free_dh;
-        }
-    }
-
-    return dh;
-
-free_dh:
-    ossl_dh_free_ex(dh);
-
-    return NULL;
-}
-
-static DH *prov_dh_gen_params_with_group(PROV_DH_KEYMGMT_CTX *gctx, FFC_PARAMS **ffc)
-{
-    const DH_NAMED_GROUP *group;
-    DH *dh = NULL;
-
-    /* Select a named group if there is not one already */
-    if (gctx->group_nid == NID_undef) {
-        gctx->group_nid = ossl_dh_get_named_group_uid_from_size(gctx->pbits);
-        if (gctx->group_nid == NID_undef) {
-            US_ERR("failed to get named group uid from size.");
-            return NULL;
-        }
-    }
-
-    group = ossl_ffc_uid_to_dh_named_group(gctx->group_nid);
-    if (!group) {
-        US_ERR("failed to get dh named group.");
-        return NULL;
-    }
-
-    dh = ossl_dh_new_ex(gctx->libctx);
-    if (dh == NULL) {
-        US_ERR("failed to get dh from libctx.");
-        return NULL;
-    }
-
-    dh->meth = DH_get_default_method();
-    ossl_ffc_named_group_set(&dh->params, group);
-    dh->params.nid = ossl_ffc_named_group_get_uid(group);
-    dh->dirty_cnt++;
-
-    *ffc = ossl_dh_get0_params(dh);
-    if (*ffc == NULL) {
-        US_ERR("failed to gen ffc params.");
-        ossl_dh_free_ex(dh);
-        return NULL;
-    }
-
-    return dh;
-}
-
-static DH *prov_dh_gen_params(PROV_DH_KEYMGMT_CTX *gctx, FFC_PARAMS **ffc, OSSL_CALLBACK *cb, void *cb_params)
-{
-    DH *dh;
-    int ret;
-
-    /* For parameter generation - If there is a group name just create it */
-    if (gctx->gen_type == DH_PARAMGEN_TYPE_GROUP && gctx->ffc_params == NULL) {
-        dh = prov_dh_gen_params_with_group(gctx, ffc);
-        if (dh == NULL || *ffc == NULL)
-            return NULL;
-    } else {
-        dh = prov_dh_gen_params_ex(gctx, ffc);
-        if (dh == NULL || *ffc == NULL)
-            return NULL;
-
-        ret = prov_dh_gen_params_cb(gctx, dh, cb, cb_params);
-        if (ret == KAE_P_FAIL) {
-            ossl_dh_free_ex(dh);
-            return NULL;
-        }
-    }
-
-    return dh;
-}
-
-static void *kae_dh_sw_gen(void *genctx, OSSL_CALLBACK *cb, void *cb_params)
-{
-    if (!get_default_dh_keymgmt().gen) {
-        US_WARN("failed to get dh keymgmt gen function.");
-        return NULL;
-    }
-
-    return get_default_dh_keymgmt().gen(genctx, cb, cb_params);
-}
-
-static void prov_dh_free_params(DH *dh)
-{
-    FFC_PARAMS *ffc;
-
-    ffc = ossl_dh_get0_params(dh);
-    if (ffc)
-        ossl_ffc_params_cleanup(ffc);
-
-    /*
-     * Release DH object that allocated by uadk_prov_dh_gen_params_ex() or
-     * uadk_prov_dh_gen_params_with_group().
-     */
-    ossl_dh_free_ex(dh);
-}
-
+/* Keep parameter generation and private-key policy with OpenSSL. */
 static void *kae_keymgmt_dh_gen(void *genctx, OSSL_CALLBACK *cb, void *cb_params)
 {
-    PROV_DH_KEYMGMT_CTX *gctx = (PROV_DH_KEYMGMT_CTX *)genctx;
-    FFC_PARAMS *ffc = NULL;
-    DH *dh = NULL;
-    int ret = KAE_P_FAIL;
+    KAE_PKEY_KEYMGMT method = get_default_dh_keymgmt();
 
-    if (gctx == NULL) {
-        US_ERR("invalid: keygen ctx is NULL.");
-        return NULL;
-    }
-
-    /*
-     * If a group name is selected then the type is group regardless of what
-     * the user selected. This overrides rather than errors for backwards
-     * compatibility.
-     */
-    if (gctx->group_nid != NID_undef)
-        gctx->gen_type = DH_PARAMGEN_TYPE_GROUP;
-
-    dh = prov_dh_gen_params(gctx, &ffc, cb, cb_params);
-    if (dh == NULL || ffc == NULL) {
-        ret = KAE_P_FAIL;
-        goto free_gen_params;
-    }
-    /* DH key generation */
-    if ((gctx->selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0) {
-        if (ffc->p == NULL || ffc->g == NULL) {
-            US_ERR("invalid: ffc->p or ffc->g is NULL.");
-            goto free_gen_params;
-        }
-
-        if (gctx->priv_len > 0)
-            (void)DH_set_length(dh, (long)gctx->priv_len);
-
-        ossl_ffc_params_enable_flags(
-            ffc, FFC_PARAM_FLAG_VALIDATE_LEGACY, gctx->gen_type == DH_PARAMGEN_TYPE_FIPS_186_2);
-
-        ret = hpre_dh_generate_key(dh);
-        if (ret != KAE_P_SUCCESS) {
-            US_ERR("failed to do dh generation key.");
-            goto free_gen_params;
-        }
-    }
-
-    DH_clear_flags(dh, DH_FLAG_TYPE_MASK);
-    DH_set_flags(dh, gctx->dh_type);
-
-    return dh;
-
-free_gen_params:
-    prov_dh_free_params(dh);
-
-    if (ret == KAE_P_FAIL)
-        return kae_dh_sw_gen(genctx, cb, cb_params);
-    return NULL;
+    return method.gen == NULL ? NULL : method.gen(genctx, cb, cb_params);
 }
 
 static void kae_keymgmt_dh_gen_cleanup(void *genctx)
@@ -574,6 +246,22 @@ static const char *kae_keymgmt_dh_query_operation_name(int operation_id)
     }
 
     return get_default_dh_keymgmt().query_operation_name(operation_id);
+}
+
+typedef struct {
+    void *soft;
+    DH *key;
+    DH *peer;
+    unsigned int pad;
+    int use_kdf;
+} KAE_DH_CTX;
+
+static FFC_PARAMS *ossl_dh_get0_params(DH *dh)
+{
+    if (dh == NULL)
+        return NULL;
+
+    return &dh->params;
 }
 
 static void *kae_keyexch_dh_newctx(void *provctx)

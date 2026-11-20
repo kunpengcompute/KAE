@@ -563,70 +563,17 @@ static const OSSL_PARAM *kae_asym_cipher_sm2_settable_ctx_params(void *ctx, void
 
 static void *kae_signature_sm2_newctx(void *provctx, const char *propq)
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = OPENSSL_zalloc(sizeof(PROV_SM2_SIGN_CTX));
-    SM2_PROV_CTX *smctx;
+    PROV_SM2_SIGN_CTX *ctx = OPENSSL_zalloc(sizeof(*ctx));
 
-    if (psm2ctx == NULL) {
-        US_WARN("failed to alloc sm2 signature ctx.");
+    if (ctx == NULL)
+        return NULL;
+    if ((ctx->sm2_pctx = sm2_ctx_new()) == NULL) {
+        kae_signature_sm2_freectx(ctx);
         return NULL;
     }
-    /* The libctx maybe NULL, if libctx is NULL, will use default ctx. */
-    psm2ctx->libctx = prov_libctx_of(provctx);
-
-    smctx = OPENSSL_zalloc(sizeof(SM2_PROV_CTX));
-    if (smctx == NULL) {
-        US_WARN("failed to alloc sm2 prov ctx.");
-        goto free_ctx;
-    }
-
-    smctx->sm2_pd = OPENSSL_zalloc(sizeof(SM2_PKEY_DATA));
-    if (smctx->sm2_pd == NULL) {
-        US_WARN("failed to alloc sm2 pkey data.");
-        goto free_smctx;
-    }
-
-    smctx->sm2_md = OPENSSL_zalloc(sizeof(SM2_MD_DATA));
-    if (smctx->sm2_md == NULL) {
-        US_WARN("failed to alloc sm2 md data.");
-        goto free_pd;
-    }
-
-    /*
-     * Use SM3 for digest method in default, other digest algs
-     * can be set with set_ctx_params API.
-     */
-    smctx->sm2_md->mdsize = SM3_DIGEST_LENGTH;
-    smctx->sm2_md->md_nid = NID_sm3;
-    strcpy(psm2ctx->mdname, OSSL_DIGEST_NAME_SM3);
-    smctx->sm2_md->mdctx = EVP_MD_CTX_new();
-    if (smctx->sm2_md->mdctx == NULL) {
-        US_WARN("failed to alloc sm2 mdctx.");
-        goto free_md;
-    }
-
-    psm2ctx->sm2_pctx = smctx;
-
-    if (propq) {
-        psm2ctx->propq = OPENSSL_strdup(propq);
-        if (psm2ctx->propq == NULL) {
-            US_WARN("failed to dup propq.");
-            goto free_mdctx;
-        }
-    }
-
-    return psm2ctx;
-
-free_mdctx:
-    EVP_MD_CTX_free(smctx->sm2_md->mdctx);
-free_md:
-    OPENSSL_free(smctx->sm2_md);
-free_pd:
-    OPENSSL_free(smctx->sm2_pd);
-free_smctx:
-    OPENSSL_free(smctx);
-free_ctx:
-    OPENSSL_free(psm2ctx);
-    return NULL;
+    ctx->flag_compute_z_digest = 1;
+    OPENSSL_strlcpy(ctx->mdname, "SM3", sizeof(ctx->mdname));
+    return ctx;
 }
 
 static int kae_signature_sm2_sign_init_sw(void *vpsm2ctx, void *ec, const OSSL_PARAM params[])
@@ -969,138 +916,6 @@ static int kae_prov_sm2_check_md_params(SM2_PROV_CTX *smctx)
 
     return KAE_P_SUCCESS;
 }
-#  define SM2_R_ID_TOO_LARGE                               111
-
-OSSL_LIB_CTX *ossl_ec_key_get_libctx(const EC_KEY *key)
-{
-    return key->libctx;
-}
-
-
-int ossl_sm2_compute_z_digest(uint8_t *out,
-                              const EVP_MD *digest,
-                              const uint8_t *id,
-                              const size_t id_len,
-                              const EC_KEY *key)
-{
-    int rc = 0;
-    const EC_GROUP *group = EC_KEY_get0_group(key);
-    const EC_POINT *pubkey = EC_KEY_get0_public_key(key);
-    BN_CTX *ctx = NULL;
-    EVP_MD_CTX *hash = NULL;
-    BIGNUM *p = NULL;
-    BIGNUM *a = NULL;
-    BIGNUM *b = NULL;
-    BIGNUM *xG = NULL;
-    BIGNUM *yG = NULL;
-    BIGNUM *xA = NULL;
-    BIGNUM *yA = NULL;
-    int p_bytes = 0;
-    uint8_t *buf = NULL;
-    uint16_t entl = 0;
-    uint8_t e_byte = 0;
-
-    /* SM2 Signatures require a public key, check for it */
-    if (pubkey == NULL) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_PASSED_NULL_PARAMETER);
-        goto done;
-    }
-
-    hash = EVP_MD_CTX_new();
-    ctx = BN_CTX_new_ex(ossl_ec_key_get_libctx(key));
-    if (hash == NULL || ctx == NULL) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_MALLOC_FAILURE);
-        goto done;
-    }
-
-    p = BN_CTX_get(ctx);
-    a = BN_CTX_get(ctx);
-    b = BN_CTX_get(ctx);
-    xG = BN_CTX_get(ctx);
-    yG = BN_CTX_get(ctx);
-    xA = BN_CTX_get(ctx);
-    yA = BN_CTX_get(ctx);
-
-    if (yA == NULL) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_MALLOC_FAILURE);
-        goto done;
-    }
-
-    if (!EVP_DigestInit(hash, digest)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_EVP_LIB);
-        goto done;
-    }
-
-    /* Z = h(ENTL || ID || a || b || xG || yG || xA || yA) */
-
-    if (id_len >= (UINT16_MAX / 8)) {
-        /* too large */
-        ERR_raise(ERR_LIB_SM2, SM2_R_ID_TOO_LARGE);
-        goto done;
-    }
-
-    entl = (uint16_t)(8 * id_len);
-
-    e_byte = entl >> 8;
-    if (!EVP_DigestUpdate(hash, &e_byte, 1)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_EVP_LIB);
-        goto done;
-    }
-    e_byte = entl & 0xFF;
-    if (!EVP_DigestUpdate(hash, &e_byte, 1)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_EVP_LIB);
-        goto done;
-    }
-
-    if (id_len > 0 && !EVP_DigestUpdate(hash, id, id_len)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_EVP_LIB);
-        goto done;
-    }
-
-    if (!EC_GROUP_get_curve(group, p, a, b, ctx)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_EC_LIB);
-        goto done;
-    }
-
-    p_bytes = BN_num_bytes(p);
-    buf = OPENSSL_zalloc(p_bytes);
-    if (buf == NULL) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_MALLOC_FAILURE);
-        goto done;
-    }
-
-    if (BN_bn2binpad(a, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || BN_bn2binpad(b, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || !EC_POINT_get_affine_coordinates(group,
-                                                EC_GROUP_get0_generator(group),
-                                                xG, yG, ctx)
-            || BN_bn2binpad(xG, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || BN_bn2binpad(yG, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || !EC_POINT_get_affine_coordinates(group,
-                                                pubkey,
-                                                xA, yA, ctx)
-            || BN_bn2binpad(xA, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || BN_bn2binpad(yA, buf, p_bytes) < 0
-            || !EVP_DigestUpdate(hash, buf, p_bytes)
-            || !EVP_DigestFinal(hash, out, NULL)) {
-        ERR_raise(ERR_LIB_SM2, ERR_R_INTERNAL_ERROR);
-        goto done;
-    }
-
-    rc = 1;
-
- done:
-    OPENSSL_free(buf);
-    BN_CTX_free(ctx);
-    EVP_MD_CTX_free(hash);
-    return rc;
-}
-
 static int sm2_sig_compute_z_digest(PROV_SM2_SIGN_CTX *psm2ctx)
 {
     SM2_PROV_CTX *smctx = psm2ctx->sm2_pctx;
@@ -1118,7 +933,7 @@ static int sm2_sig_compute_z_digest(PROV_SM2_SIGN_CTX *psm2ctx)
         }
 
         /* get hashed prefix 'z' of tbs message */
-        ret = ossl_sm2_compute_z_digest(z, smctx->sm2_md->md, psm2ctx->id, psm2ctx->id_len, psm2ctx->ec_key);
+        ret = hpre_sm2_compute_z_digest(z, smctx->sm2_md->md, psm2ctx->id, psm2ctx->id_len, psm2ctx->ec_key);
         if (ret == KAE_P_FAIL) {
             US_WARN("failed to kae_prov_sm2_compute_z_digest.");
             goto free_z;
@@ -1271,171 +1086,53 @@ static int kae_signature_sm2_digest_verify_final(void *vpsm2ctx, const unsigned 
     return kae_signature_sm2_verify(vpsm2ctx, sig, siglen, digest, (size_t)dlen);
 }
 
-static void kae_signature_sm2_freectx(void *vpsm2ctx)
+static void kae_signature_sm2_freectx(void *vctx)
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *smctx;
-
-    if (psm2ctx == NULL)
+    PROV_SM2_SIGN_CTX *ctx = vctx;
+    if (ctx == NULL)
         return;
-
-    smctx = psm2ctx->sm2_pctx;
-    if (smctx == NULL)
-        goto free_psm2ctx;
-
-    /*
-     * Pkey and md related data in smctx->sm2_md and smctx->sm2_pd will
-     * release by some openssl tools, such as dgst, after call freectx.
-     * Free pkey and md related data in our provider will cause double-free
-     * with openssl dgst tool, maybe it is an openssl bug, fix it later.
-     */
-
-    if (smctx->sm2_md->mdctx)
-        EVP_MD_CTX_free(smctx->sm2_md->mdctx);
-    OPENSSL_free(smctx);
-
-free_psm2ctx:
-    if (psm2ctx->propq)
-        OPENSSL_free(psm2ctx->propq);
-    if (psm2ctx->ec_key)
-        EC_KEY_free(psm2ctx->ec_key);
-    if (psm2ctx->id)
-        OPENSSL_free(psm2ctx->id);
-
-    OPENSSL_free(psm2ctx);
-    return;
+    if (ctx->soft_ctx != NULL)
+        get_default_sm2_signature().freectx(ctx->soft_ctx);
+    EVP_MD_CTX_free(ctx->message_mdctx);
+    sm2_ctx_free(ctx->sm2_pctx);
+    EC_KEY_free(ctx->ec_key);
+    OPENSSL_free(ctx->id);
+    OPENSSL_free(ctx->propq);
+    OPENSSL_free(ctx);
 }
 
-static int check_signature_src_ctx(PROV_SM2_SIGN_CTX *srcctx)
+static void *kae_signature_sm2_dupctx(void *vctx)
 {
-    SM2_PROV_CTX *src_smctx;
+    PROV_SM2_SIGN_CTX *src = vctx, *dst = OPENSSL_zalloc(sizeof(*dst));
 
-    if (srcctx == NULL) {
-        US_WARN("invalid: src ctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (srcctx->ec_key != NULL && !EC_KEY_up_ref(srcctx->ec_key)) {
-        US_WARN("failed to check srcctx key reference.");
-        return KAE_P_FAIL;
-    }
-
-    src_smctx = srcctx->sm2_pctx;
-    if (src_smctx == NULL) {
-        US_WARN("invalid: src_smctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (src_smctx->sm2_md == NULL) {
-        US_WARN("invalid: sm2_md is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (src_smctx->sm2_md->md != NULL && !EVP_MD_up_ref(src_smctx->sm2_md->md)) {
-        US_WARN("failed to check srcctx md reference.");
-        return KAE_P_FAIL;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static int create_dst_ctx_data(SM2_PROV_CTX *dst_smctx)
-{
-    dst_smctx->sm2_md = OPENSSL_zalloc(sizeof(SM2_MD_DATA));
-    if (dst_smctx->sm2_md == NULL) {
-        US_WARN("failed to alloc dst_smctx->sm2_md.");
-        return KAE_P_FAIL;
-    }
-
-    dst_smctx->sm2_pd = OPENSSL_zalloc(sizeof(SM2_PKEY_DATA));
-    if (dst_smctx->sm2_pd == NULL) {
-        US_WARN("failed to alloc dst_smctx->sm2_pd.");
-        OPENSSL_free(dst_smctx->sm2_md);
-        return KAE_P_FAIL;
-    }
-
-    return KAE_P_SUCCESS;
-}
-
-static void copy_ctx_data(SM2_PROV_CTX *dst_smctx, SM2_PROV_CTX *src_smctx)
-{
-    dst_smctx->sm2_md->md = src_smctx->sm2_md->md;
-    dst_smctx->sm2_md->mdsize = src_smctx->sm2_md->mdsize;
-    dst_smctx->sm2_md->md_nid = src_smctx->sm2_md->md_nid;
-    dst_smctx->sm2_pd = src_smctx->sm2_pd;
-    dst_smctx->hsmctx = src_smctx->hsmctx;
-    dst_smctx->init_status = src_smctx->init_status;
-}
-
-static void release_dst_ctx_data(SM2_PROV_CTX *dst_smctx)
-{
-    if (dst_smctx->sm2_md)
-        OPENSSL_free(dst_smctx->sm2_md);
-
-    if (dst_smctx->sm2_pd)
-        OPENSSL_free(dst_smctx->sm2_pd);
-}
-
-static void *kae_signature_sm2_dupctx(void *vpsm2ctx)
-{
-    PROV_SM2_SIGN_CTX *srcctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *dst_smctx, *src_smctx;
-    PROV_SM2_SIGN_CTX *dstctx;
-
-    if (check_signature_src_ctx(srcctx) == KAE_P_FAIL)
+    if (dst == NULL)
         return NULL;
-    src_smctx = srcctx->sm2_pctx;
-
-    dstctx = OPENSSL_zalloc(sizeof(PROV_SM2_SIGN_CTX));
-    if (dstctx == NULL) {
-        US_WARN("failed to alloc dst ctx.");
-        return NULL;
+    dst->operation = src->operation;
+    dst->flag_compute_z_digest = src->flag_compute_z_digest;
+    dst->z_digest_valid = src->z_digest_valid;
+    memcpy(dst->z_digest, src->z_digest, sizeof(dst->z_digest));
+    dst->id_set = src->id_set;
+    dst->id_len = src->id_len;
+    dst->aid_len = src->aid_len;
+    memcpy(dst->aid_buf, src->aid_buf, sizeof(dst->aid_buf));
+    dst->aid = dst->aid_buf;
+    memcpy(dst->mdname, src->mdname, sizeof(dst->mdname));
+    if (src->soft_ctx != NULL &&
+        (dst->soft_ctx = get_default_sm2_signature().dupctx(src->soft_ctx)) == NULL)
+        goto err;
+    dst->sm2_pctx = sm2_ctx_dup(src->sm2_pctx);
+    if (dst->sm2_pctx == NULL)
+        goto err;
+    if (src->ec_key != NULL) {
+        if (!EC_KEY_up_ref(src->ec_key))
+            goto err;
+        dst->ec_key = src->ec_key;
     }
-
-    memcpy(dstctx, srcctx, sizeof(PROV_SM2_SIGN_CTX));
-    dstctx->ec_key = srcctx->ec_key;
-
-    dst_smctx = OPENSSL_zalloc(sizeof(SM2_PROV_CTX));
-    if (dst_smctx == NULL) {
-        US_WARN("failed to alloc dst_smctx.");
-        goto free_dstctx;
-    }
-    dstctx->sm2_pctx = dst_smctx;
-
-    if (create_dst_ctx_data(dst_smctx) == KAE_P_FAIL)
-        goto free_dst_smctx;
-
-    if (src_smctx->sm2_md->mdctx != NULL) {
-        dst_smctx->sm2_md->mdctx = EVP_MD_CTX_new();
-        if (dst_smctx->sm2_md->mdctx == NULL ||
-            EVP_MD_CTX_copy_ex(dst_smctx->sm2_md->mdctx, src_smctx->sm2_md->mdctx) == 0) {
-            US_WARN("failed to new dst mdctx or copy src mdctx.");
-            goto free_dst_ctx_data;
-        }
-    }
-
-    copy_ctx_data(dst_smctx, src_smctx);
-
-    if (srcctx->id != NULL) {
-        dstctx->id = OPENSSL_malloc(srcctx->id_len);
-        if (dstctx->id == NULL) {
-            US_WARN("failed to alloc id.");
-            goto free_dst_mdctx;
-        }
-        dstctx->id_len = srcctx->id_len;
-        memcpy(dstctx->id, srcctx->id, srcctx->id_len);
-    }
-
-    return dstctx;
-
-free_dst_mdctx:
-    EVP_MD_CTX_free(dst_smctx->sm2_md->mdctx);
-free_dst_ctx_data:
-    release_dst_ctx_data(dst_smctx);
-free_dst_smctx:
-    OPENSSL_free(dst_smctx);
-free_dstctx:
-    OPENSSL_free(dstctx);
+    if (src->id_len != 0 && (dst->id = OPENSSL_memdup(src->id, src->id_len)) == NULL)
+        goto err;
+    return dst;
+err:
+    kae_signature_sm2_freectx(dst);
     return NULL;
 }
 
@@ -1594,78 +1291,26 @@ static const OSSL_PARAM *kae_signature_sm2_settable_ctx_params(ossl_unused void 
     return sm2_sig_known_settable_ctx_params;
 }
 
-static int kae_signature_sm2_get_ctx_md_params(void *vpsm2ctx, OSSL_PARAM *params)
+static int kae_signature_sm2_get_ctx_md_params(void *vctx, OSSL_PARAM params[])
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *smctx;
-
-    smctx = psm2ctx->sm2_pctx;
-    if (smctx == NULL) {
-        US_WARN("invalid: smctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (smctx->sm2_md->mdctx == NULL) {
-        US_WARN("invalid: mdctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    return EVP_MD_CTX_get_params(smctx->sm2_md->mdctx, params);
+    PROV_SM2_SIGN_CTX *ctx = vctx;
+    return EVP_MD_CTX_get_params(ctx->sm2_pctx->sm2_md->mdctx, params);
 }
 
-static const OSSL_PARAM *kae_signature_sm2_gettable_ctx_md_params(void *vpsm2ctx)
+static const OSSL_PARAM *kae_signature_sm2_gettable_ctx_md_params(void *vctx)
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *smctx;
-
-    smctx = psm2ctx->sm2_pctx;
-    if (smctx == NULL) {
-        US_WARN("invalid: smctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (smctx->sm2_md->md == NULL) {
-        US_WARN("invalid: md is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    return EVP_MD_gettable_ctx_params(smctx->sm2_md->md);
+    PROV_SM2_SIGN_CTX *ctx = vctx;
+    return EVP_MD_gettable_ctx_params(ctx->sm2_pctx->sm2_md->md);
 }
 
-static int kae_signature_sm2_set_ctx_md_params(void *vpsm2ctx, const OSSL_PARAM params[])
+static int kae_signature_sm2_set_ctx_md_params(void *vctx, const OSSL_PARAM params[])
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *smctx;
-
-    smctx = psm2ctx->sm2_pctx;
-    if (smctx == NULL) {
-        US_WARN("invalid: smctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (smctx->sm2_md->mdctx == NULL) {
-        US_WARN("invalid: mdctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    return EVP_MD_CTX_set_params(smctx->sm2_md->mdctx, params);
+    PROV_SM2_SIGN_CTX *ctx = vctx;
+    return EVP_MD_CTX_set_params(ctx->sm2_pctx->sm2_md->mdctx, params);
 }
 
-static const OSSL_PARAM *kae_signature_sm2_settable_ctx_md_params(void *vpsm2ctx)
+static const OSSL_PARAM *kae_signature_sm2_settable_ctx_md_params(void *vctx)
 {
-    PROV_SM2_SIGN_CTX *psm2ctx = (PROV_SM2_SIGN_CTX *)vpsm2ctx;
-    SM2_PROV_CTX *smctx;
-
-    smctx = psm2ctx->sm2_pctx;
-    if (smctx == NULL) {
-        US_WARN("invalid: smctx is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    if (smctx->sm2_md->md == NULL) {
-        US_WARN("invalid: md is NULL.");
-        return KAE_P_FAIL;
-    }
-
-    return EVP_MD_settable_ctx_params(smctx->sm2_md->md);
+    PROV_SM2_SIGN_CTX *ctx = vctx;
+    return EVP_MD_settable_ctx_params(ctx->sm2_pctx->sm2_md->md);
 }
