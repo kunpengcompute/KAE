@@ -6,15 +6,9 @@ export OPENSSL_MODULES=/usr/local/lib/ossl-modules
 echo -e "[LogSection]\ndebug_level=debug" > /var/log/kae.cnf
 
 
-# 16进制
-key="0123456789abcdef0123456789abcde1"
-iv="0123456789abcdef0123456789abcde2"
-
-
-# tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16384 > plain.txt
-# openssl enc -sm4-cbc -in plain.txt -out cipher.bin -K 0123456789abcdef0123456789abcde1 -iv 0123456789abcdef0123456789abcde2 -provider kae_provider -provider default
-# openssl enc -d -sm4-cbc -in cipher.bin -out decrypt.txt -K 0123456789abcdef0123456789abcde1 -iv 0123456789abcdef0123456789abcde2 -provider kae_provider -provider default
-
+# 每次运行生成测试用的对称密钥和 IV。
+key="$(openssl rand -hex 16)"
+iv="$(openssl rand -hex 16)"
 
 # 封装测试函数
 run_cipher_test() {

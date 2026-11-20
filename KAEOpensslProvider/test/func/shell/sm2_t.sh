@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 定义变量
-PRIVATE_KEY="private.key"
+SM2_PRIVATE_PEM="private.key"
 PUBLIC_KEY="public.key"
 DATA_FILE="data.txt"
 SIGNATURE_FILE="signature.bin"
@@ -16,13 +16,13 @@ echo "=================================="
 
 
 echo -e "\n生成 SM2 私钥..."
-openssl ecparam -name SM2 -genkey -out "$PRIVATE_KEY" -provider "$PROVIDER"
+openssl ecparam -name SM2 -genkey -out "$SM2_PRIVATE_PEM" -provider "$PROVIDER"
 if [ $? -ne 0 ]; then
     echo "错误：生成私钥失败"
     exit 1
 fi
 echo "导出 SM2 公钥..."
-openssl ec -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
+openssl ec -in "$SM2_PRIVATE_PEM" -pubout -out "$PUBLIC_KEY"
 if [ $? -ne 0 ]; then
     echo "错误：生成公钥失败"
     exit 1
@@ -36,7 +36,7 @@ fi
 
 echo -e "\n硬算签名、硬算验证"
 echo "[1/2] 使用私钥进行 SM3 签名..."
-openssl dgst -sm3 -sign "$PRIVATE_KEY" -out "$SIGNATURE_FILE" -provider "$PROVIDER" "$DATA_FILE"
+openssl dgst -sm3 -sign "$SM2_PRIVATE_PEM" -out "$SIGNATURE_FILE" -provider "$PROVIDER" "$DATA_FILE"
 if [ $? -ne 0 ]; then
     echo "错误：签名失败"
     exit 1
@@ -47,7 +47,7 @@ openssl dgst -sm3 -verify "$PUBLIC_KEY" -signature "$SIGNATURE_FILE" -provider "
 
 echo -e "\n软算签名、硬算验证"
 echo "[1/2] 使用私钥进行 SM3 签名..."
-openssl dgst -sm3 -sign "$PRIVATE_KEY" -out "$SIGNATURE_FILE" "$DATA_FILE"
+openssl dgst -sm3 -sign "$SM2_PRIVATE_PEM" -out "$SIGNATURE_FILE" "$DATA_FILE"
 if [ $? -ne 0 ]; then
     echo "错误：签名失败"
     exit 1
@@ -59,7 +59,7 @@ openssl dgst -sm3 -verify "$PUBLIC_KEY" -signature "$SIGNATURE_FILE" -provider "
 # 会失败。。
 echo -e "\n硬算签名、软算验证"
 echo "[1/2] 使用私钥进行 SM3 签名..."
-openssl dgst -sm3 -sign "$PRIVATE_KEY" -out "$SIGNATURE_FILE" -provider "$PROVIDER" "$DATA_FILE"
+openssl dgst -sm3 -sign "$SM2_PRIVATE_PEM" -out "$SIGNATURE_FILE" -provider "$PROVIDER" "$DATA_FILE"
 if [ $? -ne 0 ]; then
     echo "错误：签名失败"
     exit 1
