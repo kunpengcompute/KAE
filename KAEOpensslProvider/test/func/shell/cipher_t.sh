@@ -2,7 +2,7 @@
 set -e
 
 export KAE_CONF_ENV=/var/log/
-export OPENSSL_MODULES=/usr/local/lib/ossl-modules
+export OPENSSL_MODULES="${OPENSSL_MODULES:-/usr/local/lib/provider}"
 echo -e "[LogSection]\ndebug_level=debug" > /var/log/kae.cnf
 
 
