@@ -305,6 +305,13 @@ static void kae_init_algorithms(void)
         rsa_switch_soft = 1;
     }
 
+    dev_num = wd_get_available_dev_num("sm2");
+    sm2_switch_soft = dev_num <= 0 || !hpre_module_sm2_init();
+    /* Keep the advertised API usable through the independent software context. */
+    uadk_sm2_nosva = 1;
+    if (sm2_switch_soft)
+        US_WARN("no available sm2 hardware, switch to soft.");
+
     dev_num = wd_get_available_dev_num("dh");
     dh_switch_soft = dev_num <= 0 || !hpre_module_dh_init();
     if (dh_switch_soft)
