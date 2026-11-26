@@ -52,6 +52,7 @@ static void kae_set_conf_debuglevel()
 {
     char *conf_path = kae_getenv(g_kaezip_conf_env);
     unsigned int i = 0;
+    size_t level_len = 0;
     const char *filename = KAE_CONFIG_FILE_NAME;
     char *file_path = (char *)NULL;
     char *debuglev = (char *)NULL;
@@ -65,13 +66,19 @@ static void kae_set_conf_debuglevel()
     }
     strcat(file_path, conf_path);
     strcat(file_path, filename);
-    int ret = kaezip_drv_get_item(file_path, "LogSection", "debug_level", debuglev);
+    int ret = kaezip_drv_get_item(file_path, "LogSection", "debug_level", debuglev, MAX_LEVEL_LEN);
     if (ret != 0) {
         goto err;
     }
 
+    /* debuglev is guaranteed NUL terminated and shorter than MAX_LEVEL_LEN. */
+    level_len = strlen(debuglev);
+    if (level_len == 0) {
+        goto err;
+    }
+
     for (i = 0; i < sizeof(g_kaezip_log_level_string) / sizeof(g_kaezip_log_level_string[0]); i++) {
-        if (strncmp(g_kaezip_log_level_string[i], debuglev, strlen(debuglev) - 1) == 0) {
+        if (strncmp(g_kaezip_log_level_string[i], debuglev, level_len - 1) == 0) {
             g_kaezip_log_level = i;
             free(file_path);
             free(debuglev);
