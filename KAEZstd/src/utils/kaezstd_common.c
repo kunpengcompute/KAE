@@ -29,25 +29,17 @@ typedef enum ARCH_TYPE {
 } ARCH_TYPE;
 static int g_kaezstdInitialized = 0;
 
-static inline void versionCpy(char str1[], const char str2[])
-{
-    int i = 0;
-    while (i < VERSION_STRUCT_LEN - 1 && str2[i] != '\0') {
-        str1[i] = str2[i];
-        ++i;
-    }
-    str1[i] = '\0';
-}
-
 int kaezstd_get_version(KAEZstdVersion *ver)
 {
     if (ver == NULL) {
         return KAE_ZSTD_INVAL_PARA;
     }
-    versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "26.1.0");
-    versionCpy(ver->componentName, "KAEZstd");
-    versionCpy(ver->componentVersion, "2.2.0");
+    snprintf(ver->productName, sizeof(ver->productName), "%s", "Kunpeng Boostkit");
+    snprintf(ver->productVersion, sizeof(ver->productVersion), "%.*s",
+             (int)sizeof(ver->productVersion) - 1, KAE_VERSION_STRING);
+    snprintf(ver->componentName, sizeof(ver->componentName), "%s", "KAEZstd");
+    snprintf(ver->componentVersion, sizeof(ver->componentVersion), "%.*s",
+             (int)sizeof(ver->componentVersion) - 1, KAE_VERSION_STRING);
     return KAE_ZSTD_SUCC;
 }
 

@@ -130,23 +130,16 @@ int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, const
     return retvalue;
 }
 
-static inline void versionCpy(char s1[], const char s2[])
-{
-    int i = 0;
-    while (i < VERSION_STRUCT_MAXLEN && (s1[i] = s2[i])) {
-        ++i;
-    }
-    s1[i] = '\0';
-}
-
 int kaezlib_get_version(KAEZlibVersion *ver)
 {
     if (ver == NULL) {
         return 1;
     }
-    versionCpy(ver->productName, "Kunpeng Boostkit");
-    versionCpy(ver->productVersion, "26.1.0");
-    versionCpy(ver->componentName, "KAEZlib");
-    versionCpy(ver->componentVersion, "2.2.0");
+    snprintf(ver->productName, sizeof(ver->productName), "%s", "Kunpeng Boostkit");
+    snprintf(ver->productVersion, sizeof(ver->productVersion), "%.*s",
+             (int)sizeof(ver->productVersion) - 1, KAE_VERSION_STRING);
+    snprintf(ver->componentName, sizeof(ver->componentName), "%s", "KAEZlib");
+    snprintf(ver->componentVersion, sizeof(ver->componentVersion), "%.*s",
+             (int)sizeof(ver->componentVersion) - 1, KAE_VERSION_STRING);
     return 0;
 }

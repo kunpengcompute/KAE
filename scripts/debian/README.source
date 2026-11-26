@@ -11,8 +11,10 @@ by RPM builds. Remove old run directories explicitly when no longer needed.
 
 In the Ubuntu packaging repository, move scripts/debian to the root debian
 directory and maintain only that copy. Internal packaging paths deliberately
-use the standard debian/ layout. With that layout, dpkg-buildpackage can run
-directly, and the debpack wrapper also uses it without staging another copy.
+use the standard debian/ layout. The debpack wrapper synchronizes the upstream
+version from VERSION before calling dpkg-buildpackage without another copy.
+For direct dpkg-buildpackage use, run python3 debian/prepare-version.py first.
+This retains the Debian revision, distribution and previous changelog entries.
 Source uploads should be prepared from this standard Ubuntu layout; the orig
 archive must match it as well.
 
@@ -30,6 +32,7 @@ private debian/.build/source tree. No network downloads or module operations
 are needed during the build. The parent checkout remains unchanged.
 
 Use an orig.tar matching the complete upstream snapshot, including the shared
-package build scripts. If using an older upstream release tarball instead,
-represent its upstream-file differences as quilt patches in debian/patches.
+package build scripts and the root VERSION file. If using an older upstream
+release tarball instead, represent its upstream-file differences as quilt
+patches in debian/patches.
 Generated objects, staged packages and debian/.build are not source files.

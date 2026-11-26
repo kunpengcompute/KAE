@@ -16,14 +16,17 @@
 # @rem Description: build script
 set -e
 SRC_PATH=$(pwd)
-BUILDVERSION=$(ls "${SRC_PATH}"/open_source | grep libwd | awk '{print substr($0,7,5)}')
+KAE_VERSION=$(sh "${SRC_PATH}/../scripts/kae-version.sh")
 
 function Target_snappy()
 {
     cd "${SRC_PATH}"/open_source
     rm -rf snappy-1.1.10
     tar -zxvf snappy-1.1.10.tar.gz
-    patch -p0 --forward < kaesnappy_1_1_10.patch
+    (
+        set -o pipefail
+        sed "s/@KAE_VERSION@/${KAE_VERSION}/g" kaesnappy_1_1_10.patch | patch -p0 --forward
+    )
     cd ./snappy-1.1.10
 }
 
@@ -104,7 +107,7 @@ function Uninstall_kaesnappy()
         fi
     fi
 
-    local kaesnappy_path=$(ls /usr/local/kaesnappy/lib | grep libkaesnappy.so.${BUILDVERSION})
+    local kaesnappy_path=$(ls /usr/local/kaesnappy/lib | grep libkaesnappy.so.${KAE_VERSION})
     if [ -n "${kaesnappy_path}" ]; then
         if [ -d "${SRC_PATH}" ]; then
             cd "${SRC_PATH}"

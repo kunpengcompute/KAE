@@ -18,8 +18,8 @@ ENGINE_INSTALL_PATH := /usr/local/kaezstd
 CC=gcc
 
 LIBNAME := libkaezstd.so
-VERSION = 2.2.0
-TARGET = ${LIBNAME}.${VERSION}
+include ../scripts/kae-version.mk
+TARGET = ${LIBNAME}.${KAE_VERSION}
 SOFTLINK = libkaezstd.so
 
 ifndef SILENCE
@@ -81,9 +81,9 @@ symlinks : $(TARGET)
 
 # Rules for producing the objects.
 objs : $(OBJS)
-%.o : %.c
+%.o : %.c $(KAE_VERSION_DEPS)
 	@echo compiling $(notdir $<)
-	$(SILENCE) $(CC) -c $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
+	$(SILENCE) $(CC) -c $(KAE_VERSION_CPPFLAGS) $(CFLAGS) $(INCDIR) $(LDFLAGS) -o $@ $<
 
 libkaezstd.a: $(OBJS) Makefile
 	@echo compling static library
@@ -97,7 +97,7 @@ $(TARGET): $(OBJS) Makefile
 rebuild: clean all
 
 clean :
-	@-$(RM) *.d *.a *.so *.symbol $(TARGET)
+	@-$(RM) *.d *.a *.so *.symbol $(LIBNAME).*
 	@-$(RM) $(SOFTLINK) $(SOFTLINK).0
 	@-$(RM)
 	@find ${WORK_PATH} -name '*.o' -exec $(RM) {} \;

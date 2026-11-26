@@ -1052,20 +1052,23 @@ diff -uprN lz4-1.9.4/lib/lz4.h lz4-1.9.4-new/lib/lz4.h
 diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-new/lib/Makefile
 --- lz4-1.9.4/lib/Makefile	2022-08-16 06:45:31.000000000 +0800
 +++ lz4-1.9.4-new/lib/Makefile	2025-10-21 15:02:18.627506400 +0800
-@@ -53,6 +53,12 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -
+@@ -53,6 +53,15 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -
               -Wswitch-enum -Wdeclaration-after-statement -Wstrict-prototypes \
               -Wundef -Wpointer-arith -Wstrict-aliasing=1
  CFLAGS  += $(DEBUGFLAGS)
 +
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.2.0
++KAELZ4_LDFLAGS = -L/usr/local/kaelz4/lib \
++	$(addprefix -L,$(addsuffix /lib,$(KAEBUILDPATH)) $(KAELZ4PATH)) \
++	-Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib$(if $(strip $(KAEBUILDPATH)),:$(KAEBUILDPATH)/lib) \
++	-l:libkaelz4.so.@KAE_VERSION@
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDLIBS+=$(KAELZ4_LDFLAGS)
 +
  FLAGS    = $(CFLAGS) $(CPPFLAGS) $(LDFLAGS)
  
  SRCFILES := $(sort $(wildcard *.c))
-@@ -119,7 +125,7 @@ else   # not windows
+@@ -119,7 +128,7 @@ else   # not windows
  
  $(LIBLZ4): $(SRCFILES)
  	@echo compiling dynamic library $(LIBVER)
@@ -1077,12 +1080,15 @@ diff -uprN lz4-1.9.4/lib/Makefile lz4-1.9.4-new/lib/Makefile
 diff -uprN lz4-1.9.4/programs/Makefile lz4-1.9.4-new/programs/Makefile
 --- lz4-1.9.4/programs/Makefile	2022-08-16 06:45:31.000000000 +0800
 +++ lz4-1.9.4-new/programs/Makefile	2025-10-21 15:02:18.627506400 +0800
-@@ -60,6 +60,11 @@ ifeq ($(TARGET_OS)$(shell $(OS_VERSION))
+@@ -60,6 +60,14 @@ ifeq ($(TARGET_OS)$(shell $(OS_VERSION))
  LDFLAGS  += -lrt
  endif
  
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.2.0
++KAELZ4_LDFLAGS = -L/usr/local/kaelz4/lib \
++	$(addprefix -L,$(addsuffix /lib,$(KAEBUILDPATH)) $(KAELZ4PATH)) \
++	-Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib$(if $(strip $(KAEBUILDPATH)),:$(KAEBUILDPATH)/lib) \
++	-l:libkaelz4.so.@KAE_VERSION@
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDLIBS+=$(KAELZ4_LDFLAGS)
 +
@@ -1125,13 +1131,16 @@ diff -uprN lz4-1.9.4/tests/fuzzer.c lz4-1.9.4-new/tests/fuzzer.c
 diff -uprN lz4-1.9.4/tests/Makefile lz4-1.9.4-new/tests/Makefile
 --- lz4-1.9.4/tests/Makefile	2022-08-16 06:45:31.000000000 +0800
 +++ lz4-1.9.4-new/tests/Makefile	2025-10-21 15:02:18.627506400 +0800
-@@ -41,6 +41,12 @@ CFLAGS  += -Wall -Wextra -Wundef -Wcast-
+@@ -41,6 +41,15 @@ CFLAGS  += -Wall -Wextra -Wundef -Wcast-
             -Wpointer-arith -Wstrict-aliasing=1
  CFLAGS  += $(DEBUGFLAGS) $(MOREFLAGS)
  CPPFLAGS+= -I$(LZ4DIR) -I$(PRGDIR) -DXXH_NAMESPACE=LZ4_
 +
 +KAELZ4_CFLAGS=-I/usr/local/kaelz4/include -I$(KAELZ4PATH)/include -I$(KAELZ4PATH)/src/utils -DCONF_KAELZ4
-+KAELZ4_LDFLAGS=-L/usr/local/kaelz4/lib -L$(KAEBUILDPATH)/lib -L$(KAELZ4PATH) -Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib:$(KAEBUILDPATH)/lib -l:libkaelz4.so.2.2.0
++KAELZ4_LDFLAGS = -L/usr/local/kaelz4/lib \
++	$(addprefix -L,$(addsuffix /lib,$(KAEBUILDPATH)) $(KAELZ4PATH)) \
++	-Wl,-rpath,/usr/local/kaelz4/lib:/usr/local/lib$(if $(strip $(KAEBUILDPATH)),:$(KAEBUILDPATH)/lib) \
++	-l:libkaelz4.so.@KAE_VERSION@
 +CFLAGS+=$(KAELZ4_CFLAGS)
 +LDFLAGS+=$(KAELZ4_LDFLAGS)
 +

@@ -1,6 +1,7 @@
 Name:          kae
 Summary:       Huawei Kunpeng Accelerator Engine
-Version:       2.2.0
+# Rendered from the root VERSION by build.sh rpmpack.
+Version:       @KAE_VERSION@
 Release:       1
 License:       GPL-2.0
 Source:        %{name}-%{version}.tar.gz
@@ -8,12 +9,12 @@ ExclusiveOS:   linux
 BuildRoot:     %{_tmppath}/%{name}-%{version}-root
 Conflicts:     %{name} < %{version}-%{release}
 Provides:      %{name} = %{version}-%{release}
-BuildRequires: gcc, make, kernel-devel, libtool, numactl-devel, openssl-devel, chrpath, lz4-devel
+BuildRequires: gcc, gcc-c++, make, cmake, kernel-devel, libtool, autoconf, automake, pkgconfig, patch, numactl-devel, openssl-devel, chrpath, lz4-devel
 ExclusiveArch: aarch64
 Autoreq: no
 Autoprov: no
 
-%define kernel_version   %(rpm -q kernel-devel | sed 's/kernel-devel-//')
+%define kernel_version   %(rpm -q kernel-devel | sed -n '1{s/^kernel-devel-//;p;}')
 %define kae_build_path   %{_builddir}/%{name}-%{version}/kae_build
 %define kae_path         %{_builddir}/%{name}-%{version}/
 %define kae_driver_path  %{_builddir}/%{name}-%{version}/KAEKernelDriver
@@ -29,6 +30,7 @@ This package contains the Huawei Hisilicon Zip and Openssl Accelerator Engine.
 %prep
 %global debug_package %{nil}
 %setup -c -n %{name}-%{version}
+test "$(sh scripts/kae-version.sh)" = "%{version}"
 implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
 part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
 if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" != "0x48-0xd02" ]; then
@@ -36,7 +38,7 @@ if [ "${implementer}-${part}" != "0x48-0xd01" ] && [ "${implementer}-${part}" !=
 fi
 
 %build
-KAE_ALLOW_NON_KUNPENG_BUILD=%{kae_allow_non_kunpeng} sh build.sh rpm
+KAE_ALLOW_NON_KUNPENG_BUILD=%{kae_allow_non_kunpeng} bash scripts/buildScript/build_rpm.sh rpm
 
 
 %install
@@ -203,8 +205,12 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
 fi
 
 %post driver
+/sbin/ldconfig
+
+# Finish after the old package has unloaded modules and removed weak links.
+%posttrans driver
 echo "installing driver..."
-if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
+{
     implementer=$(cat /proc/cpuinfo | grep "CPU implementer" | awk 'NR==1{printf $4}')
     part=$(cat /proc/cpuinfo | grep "CPU part" | awk 'NR==1{printf $4}')
     running_kver=$(uname -r)
@@ -235,8 +241,7 @@ if [[ "$1" = "1" || "$1" = "2" ]] ; then  #1: install 2: update
     echo "options hisi_sec2 uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_sec2.conf
     echo "options hisi_hpre uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_hpre.conf
     echo "options hisi_zip  uacce_mode=2 pf_q_num=256" > /etc/modprobe.d/hisi_zip.conf
-fi
-/sbin/ldconfig
+}
 
 echo "uacce modules installed"
 echo "hisi_sec2 modules installed"
@@ -432,9 +437,6 @@ This package kae_openssl library.
 if  [ "$RPM_INSTALL_PREFIX" == "" ]; then
     RPM_INSTALL_PREFIX=/usr/local/lib/engines-1.1
 fi
-if [ "$1" = "2" ] ; then  #2: update
-    rm -rf $RPM_INSTALL_PREFIX      > /dev/null 2>&1 || true
-fi
 
 %post openssl
 echo "installing openssl engine..."
@@ -453,8 +455,9 @@ fi
 if  [ "$RPM_INSTALL_PREFIX" == "" ]; then
     RPM_INSTALL_PREFIX=/usr/local/lib/engines-1.1
 fi
-rm -rf $RPM_INSTALL_PREFIX   > /dev/null 2>&1 || true
-rm -f /var/log/kae.log*      > /dev/null 2>&1 || true
+if [ "$1" = "0" ] ; then  #0: uninstall
+    rm -f /var/log/kae.log* > /dev/null 2>&1 || true
+fi
 echo "openssl engine uninstalled"
 /sbin/ldconfig
 

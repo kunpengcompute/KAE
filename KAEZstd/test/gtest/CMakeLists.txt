@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 2.8.9)
 project(zstd_functest)
+set(KAE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+# Track VERSION so an incremental test build also refreshes its expectation.
+configure_file("${KAE_ROOT}/VERSION" "${CMAKE_CURRENT_BINARY_DIR}/kae-version" COPYONLY)
+execute_process(COMMAND sh "${KAE_ROOT}/scripts/kae-version.sh"
+    OUTPUT_VARIABLE KAE_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE KAE_VERSION_STATUS)
+if(NOT KAE_VERSION_STATUS EQUAL 0)
+    message(FATAL_ERROR "Cannot read the root KAE VERSION")
+endif()
+add_definitions(-DKAE_VERSION_STRING="${KAE_VERSION}")
 # Download and unpack googletest at configure time
 configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
 execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .

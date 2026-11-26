@@ -1,5 +1,9 @@
 AC_PREREQ([2.69])
-AC_INIT([uadk_engine], [1.1])
+# m4_include lets autom4te track VERSION and invalidate its cached expansion.
+m4_define([kae_release_version], m4_normalize(m4_include([../VERSION])))
+m4_syscmd([sh ../scripts/kae-version.sh >/dev/null])
+m4_if(m4_sysval, [0], [], [m4_fatal([Cannot read the root KAE VERSION])])
+AC_INIT([uadk_engine], [kae_release_version])
 AC_CONFIG_SRCDIR([src/e_uadk.c])
 AM_INIT_AUTOMAKE([1.10 no-define])
 AM_PROG_AS([AS])

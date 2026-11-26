@@ -65,7 +65,7 @@ function install_gzip()
     make
 
     cd "${SRC_PATH}"
-    ln -s ./open_source/gzip-1.13/gzip gzip
+    ln -sfn ./open_source/gzip-1.13/gzip gzip
 
     if [ -d "${TARGET_DIR}" ]; then
         rm -rf "${TARGET_DIR}"
