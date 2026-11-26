@@ -1162,6 +1162,30 @@ static void usage(void)
     printf("  example: ./kzip -A kaelz4 -m 2 -f ./kzip -o ./kzip.compressd -n 1000\n");
     printf("           ./kzip -A kaelz4 -d -m 2  -f ./kzip.compressd -o ./kzip.origin  -n 1000\n");
 }
+
+/*
+ * Copy an untrusted command line value into a fixed size buffer.
+ * Returns 0 on success, -1 when the value does not fit into dst.
+ * The destination is always NUL terminated on success.
+ */
+static int copy_opt_arg(char *dst, size_t dst_len, const char *value, const char *opt_name)
+{
+    int n = 0;
+
+    if (dst == NULL || dst_len == 0 || value == NULL || opt_name == NULL) {
+        return -1;
+    }
+
+    n = snprintf(dst, dst_len, "%s", value);
+    if (n < 0 || (size_t)n >= dst_len) {
+        printf("Error: the value of -%s is too long, the maximum length is %zu bytes.\n",
+               opt_name, dst_len - 1);
+        return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     // 初始化所有算法
@@ -1190,10 +1214,14 @@ int main(int argc, char **argv)
         if(optstring == NULL) continue;
         switch (o) {
             case 'A':
-                strcpy(algorithm_name, optarg);
+                if (copy_opt_arg(algorithm_name, sizeof(algorithm_name), optarg, "A") != 0) {
+                    return -1;
+                }
                 break;
             case 'c':
-                strcpy(cpuConfigStr, optarg);
+                if (copy_opt_arg(cpuConfigStr, sizeof(cpuConfigStr), optarg, "c") != 0) {
+                    return -1;
+                }
                 break;
             case 'd':
                 compress = 0;
@@ -1202,7 +1230,9 @@ int main(int argc, char **argv)
                 sess_nums = atoi(optarg);
                 break;
             case 'f':
-                strcpy(input_filename, optarg);
+                if (copy_opt_arg(input_filename, sizeof(input_filename), optarg, "f") != 0) {
+                    return -1;
+                }
                 break;
             case 'g':
                 g_log_level = atoi(optarg);
@@ -1222,7 +1252,9 @@ int main(int argc, char **argv)
                 loop_times = atoi(optarg);
                 break;
             case 'o':
-                strcpy(output_filename, optarg);
+                if (copy_opt_arg(output_filename, sizeof(output_filename), optarg, "o") != 0) {
+                    return -1;
+                }
                 break;
             case 'P':
                 g_enable_huge_pages = atoi(optarg);

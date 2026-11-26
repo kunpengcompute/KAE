@@ -44,27 +44,44 @@ int kaezip_drv_findsection(FILE *stream, const char *v_pszSection)
     return -1;
 }
 
-void kaezip_drv_get_value(char *pos, char *v_pszValue)
+/*
+ * Copy the value part of a "key = value;..." configuration line into
+ * v_pszValue. value_len is the total size of the destination buffer and the
+ * copy is truncated to value_len - 1 characters so that the result is always
+ * NUL terminated.
+ */
+void kaezip_drv_get_value(char *pos, char *v_pszValue, size_t value_len)
 {
-    while (*pos != '\0') {
+    size_t i = 0;
+
+    if (pos == NULL || v_pszValue == NULL || value_len == 0) {
+        return;
+    }
+
+    while ((*pos != '\0') && (*pos != ';')) {
         if (*pos == ' ') {
             pos++;
             continue;
         }
 
-        if (*pos == ';') {
-            *(v_pszValue++) = '\0';
-            return;
+        if (i >= (value_len - 1)) {
+            break;
         }
 
-        *(v_pszValue++) = *(pos++);
+        v_pszValue[i++] = *(pos++);
     }
+
+    v_pszValue[i] = '\0';
 }
 
-int kaezip_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
+int kaezip_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue, size_t value_len)
 {
     char line[256]; // array length:256
     char *pos = NULL;
+
+    if (stream == NULL || v_pszItem == NULL || v_pszValue == NULL || value_len == 0) {
+        return -1;
+    }
 
     while (!feof(stream)) {
         if (fgets(line, sizeof(line), stream) == NULL) {
@@ -75,7 +92,7 @@ int kaezip_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
             pos = strstr(line, "=");
             if (pos != NULL) {
                 pos++;
-                kaezip_drv_get_value(pos, v_pszValue);
+                kaezip_drv_get_value(pos, v_pszValue, value_len);
                 return 0;
             }
         }
@@ -88,10 +105,16 @@ int kaezip_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
     return -1;
 }
 
-int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, const char *v_pszItem, char *v_pszValue)
+int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, const char *v_pszItem,
+                        char *v_pszValue, size_t value_len)
 {
     FILE *stream;
     int retvalue = -1;
+
+    if (config_file == NULL || v_pszSection == NULL || v_pszItem == NULL ||
+        v_pszValue == NULL || value_len == 0) {
+        return -1;
+    }
 
     stream = fopen(config_file, "r");
     if (stream == NULL) {
@@ -99,7 +122,7 @@ int kaezip_drv_get_item(const char *config_file, const char *v_pszSection, const
     }
 
     if (kaezip_drv_findsection(stream, v_pszSection) == 0) {
-        retvalue = kaezip_drv_find_item(stream, v_pszItem, v_pszValue);
+        retvalue = kaezip_drv_find_item(stream, v_pszItem, v_pszValue, value_len);
     }
 
     fclose(stream);

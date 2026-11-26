@@ -73,27 +73,44 @@ int kaelz4_drv_findsection(FILE *stream, const char *v_pszSection)
     return -1;
 }
 
-void kaelz4_drv_get_value(char *pos, char *v_pszValue)
+/*
+ * Copy the value part of a "key = value;..." configuration line into
+ * v_pszValue. value_len is the total size of the destination buffer and the
+ * copy is truncated to value_len - 1 characters so that the result is always
+ * NUL terminated.
+ */
+void kaelz4_drv_get_value(char *pos, char *v_pszValue, size_t value_len)
 {
-    while (*pos != '\0') {
+    size_t i = 0;
+
+    if (pos == NULL || v_pszValue == NULL || value_len == 0) {
+        return;
+    }
+
+    while ((*pos != '\0') && (*pos != ';')) {
         if (*pos == ' ') {
             pos++;
             continue;
         }
 
-        if (*pos == ';') {
-            *(v_pszValue++) = '\0';
-            return;
+        if (i >= (value_len - 1)) {
+            break;
         }
 
-        *(v_pszValue++) = *(pos++);
+        v_pszValue[i++] = *(pos++);
     }
+
+    v_pszValue[i] = '\0';
 }
 
-int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
+int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue, size_t value_len)
 {
     char line[256]; // array length:256
     char *pos = NULL;
+
+    if (stream == NULL || v_pszItem == NULL || v_pszValue == NULL || value_len == 0) {
+        return -1;
+    }
 
     while (!feof(stream)) {
         if (fgets(line, sizeof(line), stream) == NULL) {
@@ -104,7 +121,7 @@ int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
             pos = strstr(line, "=");
             if (pos != NULL) {
                 pos++;
-                kaelz4_drv_get_value(pos, v_pszValue);
+                kaelz4_drv_get_value(pos, v_pszValue, value_len);
                 return 0;
             }
         }
@@ -118,10 +135,15 @@ int kaelz4_drv_find_item(FILE *stream, const char *v_pszItem, char *v_pszValue)
 }
 
 int kaelz4_drv_get_item(const char *config_file, const char *v_pszSection, 
-                     const char *v_pszItem, char *v_pszValue)
+                     const char *v_pszItem, char *v_pszValue, size_t value_len)
 {
     FILE *stream;
     int retvalue = -1;
+
+    if (config_file == NULL || v_pszSection == NULL || v_pszItem == NULL ||
+        v_pszValue == NULL || value_len == 0) {
+        return -1;
+    }
 
     stream = fopen(config_file, "r");
     if (stream == NULL) {
@@ -129,7 +151,7 @@ int kaelz4_drv_get_item(const char *config_file, const char *v_pszSection,
     }
 
     if (kaelz4_drv_findsection(stream, v_pszSection) == 0) {
-        retvalue = kaelz4_drv_find_item(stream, v_pszItem, v_pszValue);
+        retvalue = kaelz4_drv_find_item(stream, v_pszItem, v_pszValue, value_len);
     }
 
     fclose(stream);
@@ -146,6 +168,7 @@ static void kae_set_conf_debuglevel()
 {
     char *conf_path = kae_getenv(g_kaelz4_conf_env);
     unsigned int i = 0;
+    size_t level_len = 0;
     const char *filename = KAE_CONFIG_FILE_NAME;
     char *file_path = (char *)NULL;
     char *debuglev = (char *)NULL;
@@ -159,13 +182,19 @@ static void kae_set_conf_debuglevel()
     }
     strcat(file_path, conf_path);
     strcat(file_path, filename);
-    int ret = kaelz4_drv_get_item(file_path, "LogSection", "debug_level", debuglev);
+    int ret = kaelz4_drv_get_item(file_path, "LogSection", "debug_level", debuglev, MAX_LEVEL_LEN);
     if (ret != 0) {
         goto err;
     }
 
+    /* debuglev is guaranteed NUL terminated and shorter than MAX_LEVEL_LEN. */
+    level_len = strlen(debuglev);
+    if (level_len == 0) {
+        goto err;
+    }
+
     for (i = 0; i < sizeof(g_kaelz4_log_level_string) / sizeof(g_kaelz4_log_level_string[0]); i++) {
-        if (strncmp(g_kaelz4_log_level_string[i], debuglev, strlen(debuglev) - 1) == 0) {
+        if (strncmp(g_kaelz4_log_level_string[i], debuglev, level_len - 1) == 0) {
             g_kaelz4_log_level = i;
             free(file_path);
             free(debuglev);
